@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../providers.dart';
 import '../widgets/wizard_scaffold.dart';
+import '../widgets/deckhand_stepper.dart';
 
 class FlashConfirmScreen extends ConsumerStatefulWidget {
   const FlashConfirmScreen({super.key});
@@ -23,6 +24,7 @@ class _FlashConfirmScreenState extends ConsumerState<FlashConfirmScreen> {
     final osId = controller.decision<String>('flash.os');
     final theme = Theme.of(context);
     return WizardScaffold(
+      stepper: const DeckhandStepper(),
       title: 'Confirm the wipe',
       helperText: 'About to write $osId to $diskId. '
           'This erases EVERYTHING on that disk. No undo.',

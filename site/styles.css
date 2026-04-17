@@ -1,0 +1,124 @@
+:root {
+  --bg: #0c111b;
+  --bg-alt: #121826;
+  --text: #e4e7ef;
+  --text-muted: #8d96a9;
+  --accent: #7aa2ff;
+  --accent-alt: #9ee0c2;
+  --danger: #ff8585;
+  --border: #1f283a;
+  --card: #141b2c;
+  --radius: 12px;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+.container {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 0 24px;
+}
+
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+code { font-family: "SFMono-Regular", Menlo, Consolas, monospace; font-size: .9em; background: var(--bg-alt); padding: 2px 6px; border-radius: 4px; }
+
+/* ------------------------------------------------------------- Nav */
+.nav { border-bottom: 1px solid var(--border); padding: 14px 0; position: sticky; top: 0; background: rgba(12,17,27,.9); backdrop-filter: blur(8px); z-index: 10; }
+.nav-inner { display: flex; align-items: center; justify-content: space-between; }
+.brand { display: flex; align-items: center; gap: 8px; font-weight: 600; color: var(--text); font-size: 18px; }
+.brand:hover { text-decoration: none; }
+.brand-mark { width: 26px; height: 26px; color: var(--accent); }
+.nav-links a { color: var(--text-muted); margin-left: 20px; font-size: 14px; }
+.nav-links a:hover { color: var(--text); text-decoration: none; }
+
+/* ------------------------------------------------------------- Hero */
+.hero { padding: 96px 0 72px; border-bottom: 1px solid var(--border); }
+.hero h1 { font-size: clamp(36px, 6vw, 60px); line-height: 1.08; margin: 0 0 24px; letter-spacing: -.02em; }
+.hero h1 strong { color: var(--accent); font-weight: 600; }
+.hero-sub { font-size: 18px; color: var(--text-muted); max-width: 700px; margin: 0 0 28px; }
+.hero-sub a { color: var(--text); text-decoration: underline; }
+.hero-ctas { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 28px; }
+.hero-pair { color: var(--text-muted); font-size: 14px; }
+
+.btn {
+  display: inline-flex; align-items: center;
+  padding: 12px 24px; border-radius: 10px;
+  font-weight: 500; font-size: 15px;
+  text-decoration: none;
+  transition: transform 80ms ease, background 150ms ease;
+}
+.btn:hover { text-decoration: none; transform: translateY(-1px); }
+.btn-primary { background: var(--accent); color: #0b0f1a; }
+.btn-primary:hover { background: #8fb4ff; }
+.btn-ghost { border: 1px solid var(--border); color: var(--text); }
+.btn-ghost:hover { background: var(--bg-alt); }
+
+/* ---------------------------------------------------------- Sections */
+.section { padding: 80px 0; }
+.section.alt { background: var(--bg-alt); }
+.section h2 { font-size: 28px; margin: 0 0 24px; letter-spacing: -.01em; }
+.section-sub { color: var(--text-muted); margin: -8px 0 32px; max-width: 720px; }
+
+/* ---------------------------------------------------------- Feature cards */
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; }
+.card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 24px; }
+.card h3 { margin: 0 0 12px; font-size: 18px; }
+.card p { margin: 0; color: var(--text-muted); }
+
+/* ---------------------------------------------------------- Printer list */
+.printer-list { list-style: none; padding: 0; margin: 0; display: grid; gap: 12px; }
+.printer-list li {
+  background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+  padding: 16px 20px; display: flex; flex-wrap: wrap; align-items: center; gap: 12px;
+}
+.printer-list strong { font-size: 15px; }
+.printer-list .meta { color: var(--text-muted); font-size: 14px; margin-left: auto; }
+.printer-list .add-your-printer { border-style: dashed; background: transparent; justify-content: center; text-align: center; }
+.printer-list .add-your-printer a { color: var(--accent); font-weight: 500; }
+
+.badge { font-size: 11px; padding: 3px 8px; border-radius: 999px; text-transform: uppercase; letter-spacing: .04em; font-weight: 600; }
+.status-stub { background: #2a2f3d; color: var(--text-muted); }
+.status-alpha { background: #2e294c; color: #bba8ff; }
+.status-beta  { background: #1e3b4c; color: #9ee0ff; }
+.status-stable { background: #1f3f2d; color: var(--accent-alt); }
+.status-deprecated { background: #3f1f1f; color: var(--danger); }
+
+/* ---------------------------------------------------------- Downloads */
+.downloads { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin-bottom: 16px; }
+.download-card {
+  background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 20px; display: flex; flex-direction: column; gap: 6px;
+  color: var(--text); transition: border-color 150ms;
+}
+.download-card:hover { border-color: var(--accent); text-decoration: none; }
+.download-card .dl-os { font-weight: 600; font-size: 16px; }
+.download-card .dl-file { color: var(--text-muted); font-size: 13px; font-family: "SFMono-Regular", Menlo, Consolas, monospace; }
+.build-hint { color: var(--text-muted); font-size: 14px; }
+
+/* ---------------------------------------------------------- Docs grid */
+.docs-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; }
+.doc-card { display: block; background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; color: var(--text); }
+.doc-card:hover { border-color: var(--accent); text-decoration: none; }
+.doc-card h3 { margin: 0 0 8px; font-size: 16px; }
+.doc-card p { margin: 0; color: var(--text-muted); font-size: 14px; }
+
+/* ---------------------------------------------------------- Footer */
+.footer { padding: 32px 0; border-top: 1px solid var(--border); color: var(--text-muted); font-size: 14px; }
+.footer-inner { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
+.footer a { color: var(--text-muted); }
+.footer a:hover { color: var(--text); }
+
+@media (max-width: 640px) {
+  .nav-links { display: none; }
+  .hero { padding: 64px 0 48px; }
+  .section { padding: 56px 0; }
+}

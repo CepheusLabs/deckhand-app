@@ -1,0 +1,6 @@
+# Cloudflare Pages catch-alls.
+# 404 stays as /404.html; /docs shortcut to the GitHub docs path.
+/docs/*        https://github.com/CepheusLabs/deckhand/blob/main/docs/:splat   302
+/source        https://github.com/CepheusLabs/deckhand                         302
+/profiles      https://github.com/CepheusLabs/deckhand-builds                  302
+/releases      https://github.com/CepheusLabs/deckhand/releases/latest         302

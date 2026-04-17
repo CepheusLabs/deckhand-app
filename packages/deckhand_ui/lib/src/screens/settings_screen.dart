@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../widgets/wizard_scaffold.dart';
+import '../widgets/deckhand_stepper.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
@@ -9,6 +10,7 @@ class SettingsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return WizardScaffold(
+      stepper: const DeckhandStepper(),
       title: 'Settings',
       helperText:
           'Most settings live here. Anything not visible yet is on the '

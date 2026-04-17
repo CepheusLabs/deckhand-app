@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 
 import '../providers.dart';
 import '../widgets/wizard_scaffold.dart';
+import '../widgets/deckhand_stepper.dart';
 
 class ProgressScreen extends ConsumerStatefulWidget {
   const ProgressScreen({super.key});
@@ -63,6 +64,7 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> {
   @override
   Widget build(BuildContext context) {
     return WizardScaffold(
+      stepper: const DeckhandStepper(),
       title: _failed
           ? 'Something went wrong'
           : (_done ? 'All done' : 'Installing…'),

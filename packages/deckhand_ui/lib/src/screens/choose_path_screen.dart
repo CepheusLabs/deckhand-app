@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 
 import '../providers.dart';
 import '../widgets/wizard_scaffold.dart';
+import '../widgets/deckhand_stepper.dart';
 
 class ChoosePathScreen extends ConsumerStatefulWidget {
   const ChoosePathScreen({super.key});
@@ -19,6 +20,7 @@ class _ChoosePathScreenState extends ConsumerState<ChoosePathScreen> {
   @override
   Widget build(BuildContext context) {
     return WizardScaffold(
+      stepper: const DeckhandStepper(),
       title: 'Which path do you want to take?',
       helperText:
           'Choose whether to reuse the OS already on your printer or wipe '

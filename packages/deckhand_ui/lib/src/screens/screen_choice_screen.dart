@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../providers.dart';
 import '../widgets/wizard_scaffold.dart';
+import '../widgets/deckhand_stepper.dart';
 
 class ScreenChoiceScreen extends ConsumerStatefulWidget {
   const ScreenChoiceScreen({super.key});
@@ -21,6 +22,7 @@ class _ScreenChoiceScreenState extends ConsumerState<ScreenChoiceScreen> {
     _choice ??= screens.firstWhere((s) => s.recommended, orElse: () => screens.first).id;
 
     return WizardScaffold(
+      stepper: const DeckhandStepper(),
       title: 'Pick a screen daemon',
       helperText:
           'The screen daemon drives your printer\'s touchscreen. Some options '

@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../providers.dart';
 import '../widgets/wizard_scaffold.dart';
+import '../widgets/deckhand_stepper.dart';
 
 class FirmwareScreen extends ConsumerStatefulWidget {
   const FirmwareScreen({super.key});
@@ -23,6 +24,7 @@ class _FirmwareScreenState extends ConsumerState<FirmwareScreen> {
         (choices.isNotEmpty ? choices.first.id : null);
 
     return WizardScaffold(
+      stepper: const DeckhandStepper(),
       title: 'Pick your firmware',
       helperText:
           'Kalico is a community-maintained Klipper fork with weekly '

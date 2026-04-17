@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../widgets/wizard_scaffold.dart';
+import '../widgets/deckhand_stepper.dart';
 
 class FlashProgressScreen extends ConsumerStatefulWidget {
   const FlashProgressScreen({super.key});
@@ -27,6 +28,7 @@ class _FlashProgressScreenState extends ConsumerState<FlashProgressScreen> {
   @override
   Widget build(BuildContext context) {
     return WizardScaffold(
+      stepper: const DeckhandStepper(),
       title: _done ? 'Flash complete' : 'Writing image',
       helperText:
           'Do not unplug the eMMC or close Deckhand until this finishes. '

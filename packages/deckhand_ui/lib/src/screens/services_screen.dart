@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 
 import '../providers.dart';
 import '../widgets/wizard_scaffold.dart';
+import '../widgets/deckhand_stepper.dart';
 
 /// One-question-per-screen walker through every stock_os.services entry
 /// that declares a `wizard:` block. Uses an internal index to advance
@@ -57,6 +58,7 @@ class _ServicesScreenState extends ConsumerState<ServicesScreen> {
     final options = ((wiz['options'] as List?) ?? const []).cast<Map>();
 
     return WizardScaffold(
+      stepper: const DeckhandStepper(),
       title: svc.displayName,
       helperText: wiz['helper_text'] as String?,
       body: Column(

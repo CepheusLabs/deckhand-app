@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../providers.dart';
 import '../widgets/wizard_scaffold.dart';
+import '../widgets/deckhand_stepper.dart';
 
 class DoneScreen extends ConsumerWidget {
   const DoneScreen({super.key});
@@ -12,6 +13,7 @@ class DoneScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(wizardControllerProvider).state;
     return WizardScaffold(
+      stepper: const DeckhandStepper(),
       title: 'Setup complete',
       helperText:
           'Your printer is running community firmware with the configuration '

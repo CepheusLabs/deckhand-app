@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../providers.dart';
 import '../widgets/wizard_scaffold.dart';
+import '../widgets/deckhand_stepper.dart';
 
 class ReviewScreen extends ConsumerStatefulWidget {
   const ReviewScreen({super.key});
@@ -19,6 +20,7 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
   Widget build(BuildContext context) {
     final state = ref.watch(wizardControllerProvider).state;
     return WizardScaffold(
+      stepper: const DeckhandStepper(),
       title: 'Review your choices',
       helperText:
           'Every decision you made is listed below. Deckhand will execute '

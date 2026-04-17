@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../providers.dart';
 import '../widgets/wizard_scaffold.dart';
+import '../widgets/deckhand_stepper.dart';
 
 class FilesScreen extends ConsumerStatefulWidget {
   const FilesScreen({super.key});
@@ -27,6 +28,7 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
     }
 
     return WizardScaffold(
+      stepper: const DeckhandStepper(),
       title: 'Leftover files',
       helperText:
           'Deckhand can delete any of these. Defaults to the recommendation '

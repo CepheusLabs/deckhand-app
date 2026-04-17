@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../providers.dart';
 import '../widgets/wizard_scaffold.dart';
+import '../widgets/deckhand_stepper.dart';
 
 class FirstBootSetupScreen extends ConsumerStatefulWidget {
   const FirstBootSetupScreen({super.key});
@@ -21,6 +22,7 @@ class _FirstBootSetupScreenState extends ConsumerState<FirstBootSetupScreen> {
   @override
   Widget build(BuildContext context) {
     return WizardScaffold(
+      stepper: const DeckhandStepper(),
       title: 'First boot setup',
       helperText:
           'Create the user Deckhand and Moonraker will run as. Defaults '

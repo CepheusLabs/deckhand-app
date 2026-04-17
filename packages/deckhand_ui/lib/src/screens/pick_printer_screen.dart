@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 
 import '../providers.dart';
 import '../widgets/wizard_scaffold.dart';
+import '../widgets/deckhand_stepper.dart';
 
 class PickPrinterScreen extends ConsumerStatefulWidget {
   const PickPrinterScreen({super.key});
@@ -72,6 +73,7 @@ class _PickPrinterScreenState extends ConsumerState<PickPrinterScreen> {
           );
         }
         return WizardScaffold(
+      stepper: const DeckhandStepper(),
           title: 'Which printer are you setting up?',
           helperText:
               'Deckhand supports these printers. Pick yours — we use that '

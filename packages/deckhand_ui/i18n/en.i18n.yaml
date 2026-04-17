@@ -1,0 +1,180 @@
+# Deckhand UI — English strings
+#
+# Slang loads these at build time and generates `translations.g.dart`.
+# UI code references strings via `t.<path>` (e.g., `t.welcome.title`).
+#
+# Principles:
+#   - Keys are English-biased namespaces (screen or feature), values are
+#     the actual copy.
+#   - Longer copy uses block scalar (|) to preserve line breaks.
+#   - Interpolations use Slang's $variable syntax where needed.
+
+welcome:
+  title: Welcome to Deckhand
+  helper: |
+    Flash, set up, and maintain Klipper-based printers. This wizard walks
+    you through replacing vendor firmware with Kalico or Klipper end-to-
+    end, either in place on your existing OS or on a fresh install.
+  action_start: Start
+  action_settings: Settings
+  card_first_time:
+    title: First time here?
+    body: |
+      The wizard will ask which printer you have, try to reach it over
+      SSH using known default credentials, then let you pick what you
+      want to replace and what you want to keep.
+  card_safety:
+    title: Safety
+    body: |
+      Nothing destructive happens without explicit confirmation. Deckhand
+      can back up your entire eMMC to an image before any firmware swap,
+      so you always have a route back to stock.
+
+pick_printer:
+  title: Which printer are you setting up?
+  helper: |
+    Deckhand supports these printers. Pick yours — we use that choice to
+    load the right profile before anything else.
+  show_stubs: Show stub profiles
+  no_printer_link: My printer isn't here →
+  action_continue: Continue
+  action_back: Back
+  registry_error: "Failed to load printer registry: $error"
+
+connect:
+  title: Connect to your printer
+  helper: |
+    Enter your printer's IP address (or hostname). Deckhand will
+    authenticate using the default SSH credentials declared by this
+    printer's profile.
+  field_host: Host or IP
+  hint_host: e.g. 192.168.1.50 or mkspi.local
+  action_connect: Connect
+  action_connecting: Connecting…
+
+verify:
+  title: Verify your printer
+  helper: |
+    We'll run a few quick checks against your connected printer to
+    confirm this profile matches. Warnings don't block the wizard — you
+    can always proceed.
+  action_continue: Continue
+  action_back: Back
+
+choose_path:
+  title: Which path do you want to take?
+  helper: |
+    Choose whether to reuse the OS already on your printer or wipe the
+    eMMC and install a fresh Armbian image. Both lead to the same final
+    state (Kalico or Klipper + your chosen web UI); they differ in blast
+    radius and in what you have to manage yourself.
+  stock:
+    title: Keep my current OS
+    body: |
+      Transforms your printer in place. Snapshots the stock Klipper
+      install, then swaps in the firmware you pick. Any vendor services
+      you don't want are disabled or removed per your selections.
+  fresh:
+    title: Flash a new OS
+    body: |
+      Wipes the eMMC and installs a clean Armbian image. Strongly
+      preferred if you have an eMMC-to-USB adapter handy and want a
+      fully known-good base.
+  action_continue: Continue
+  action_back: Back
+
+errors:
+  dialog_title_generic: Something went wrong
+  action_retry: Retry
+  action_start_over: Start over
+  action_save_debug_bundle: Save debug bundle
+  ssh_connection:
+    title: Can't reach the printer
+  ssh_auth:
+    title: Couldn't sign in to the printer
+  host_key_mismatch:
+    title: Printer's SSH fingerprint changed
+  flash:
+    title: Disk flash failed
+  disk_enumeration:
+    title: Couldn't enumerate local disks
+  elevation_required:
+    title: Administrator permission required
+  profile_fetch:
+    title: Couldn't load printer profiles
+  profile_parse:
+    title: Malformed printer profile
+  upstream_fetch:
+    title: Couldn't fetch an upstream component
+  sidecar_start:
+    title: Helper binary didn't start
+  sidecar_rpc:
+    title: Background operation failed
+
+firmware:
+  title: Pick your firmware
+  helper: |
+    Kalico is a community-maintained Klipper fork with weekly rebases
+    and helpful extras (gcode_shell_command, danger_options). Mainline
+    Klipper is upstream/master — more conservative.
+
+webui:
+  title: Which web interface?
+  helper: |
+    Both Mainsail and Fluidd talk to Moonraker — pick one, the other,
+    or install both and switch per session. Neither is a power-user
+    option: Moonraker is still installed; you can add a UI later.
+
+kiauh:
+  title: Install KIAUH?
+
+screen_choice:
+  title: Pick a screen daemon
+
+services:
+  counter: $current of $total
+
+files:
+  title: Leftover files
+
+hardening:
+  title: Security hardening (optional)
+
+flash_target:
+  title: Which disk should we flash?
+
+choose_os:
+  title: Which OS image?
+
+flash_confirm:
+  title: Confirm the wipe
+
+flash_progress:
+  title_running: Writing image
+  title_done: Flash complete
+
+first_boot:
+  title: Put the eMMC back in the printer
+
+first_boot_setup:
+  title: First boot setup
+
+review:
+  title: Review your choices
+
+progress:
+  title_installing: Installing…
+  title_done: All done
+  title_failed: Something went wrong
+
+done:
+  title: Setup complete
+  next_steps: Next steps
+
+settings:
+  title: Settings
+
+common:
+  action_back: Back
+  action_continue: Continue
+  action_finish: Finish

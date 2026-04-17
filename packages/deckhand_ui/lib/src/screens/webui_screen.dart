@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../providers.dart';
 import '../widgets/wizard_scaffold.dart';
+import '../widgets/deckhand_stepper.dart';
 
 class WebuiScreen extends ConsumerStatefulWidget {
   const WebuiScreen({super.key});
@@ -25,6 +26,7 @@ class _WebuiScreenState extends ConsumerState<WebuiScreen> {
     if (_selected.isEmpty) _selected.addAll(defaultChoices);
 
     return WizardScaffold(
+      stepper: const DeckhandStepper(),
       title: 'Which web interface?',
       helperText:
           'Both Mainsail and Fluidd talk to Moonraker — pick one, the other, '

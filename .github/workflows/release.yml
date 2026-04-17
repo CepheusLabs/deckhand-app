@@ -9,11 +9,11 @@ permissions:
   contents: write
 
 jobs:
-  # -----------------------------------------------------------------
-  # Build the sidecar binary for every target OS/arch pair we ship.
-  # -----------------------------------------------------------------
-  sidecar:
-    name: Sidecar ${{ matrix.goos }}-${{ matrix.goarch }}
+  # ------------------------------------------------------------------
+  # Build Go sidecar + elevated helper for every target OS/arch pair.
+  # ------------------------------------------------------------------
+  go-binaries:
+    name: Go ${{ matrix.goos }}-${{ matrix.goarch }}
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -23,7 +23,6 @@ jobs:
           - { goos: darwin,  goarch: amd64, runner: macos-latest,   ext: ""     }
           - { goos: darwin,  goarch: arm64, runner: macos-latest,   ext: ""     }
           - { goos: linux,   goarch: amd64, runner: ubuntu-latest,  ext: ""     }
-          - { goos: linux,   goarch: arm64, runner: ubuntu-latest,  ext: ""     }
     steps:
       - uses: actions/checkout@v4
 
@@ -32,7 +31,7 @@ jobs:
           go-version: "1.22"
           cache-dependency-path: sidecar/go.sum
 
-      - name: Build
+      - name: Build sidecar + helper
         working-directory: sidecar
         env:
           GOOS: ${{ matrix.goos }}
@@ -42,31 +41,25 @@ jobs:
         run: |
           mkdir -p dist
           VERSION="${GITHUB_REF_NAME#v}"
-          go build -trimpath \
-            -ldflags "-s -w -X main.Version=${VERSION}" \
-            -o "dist/deckhand-sidecar-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }}" \
-            ./cmd/deckhand-sidecar
+          for cmd in deckhand-sidecar deckhand-elevated-helper; do
+            go build -trimpath \
+              -ldflags "-s -w -X main.Version=${VERSION}" \
+              -o "dist/${cmd}${{ matrix.ext }}" \
+              "./cmd/${cmd}"
+          done
 
       - uses: actions/upload-artifact@v4
         with:
-          name: sidecar-${{ matrix.goos }}-${{ matrix.goarch }}
+          name: go-${{ matrix.goos }}-${{ matrix.goarch }}
           path: sidecar/dist/*
 
-  # -----------------------------------------------------------------
-  # Flutter desktop builds — one job per target OS. Pulls in the
-  # matching sidecar artifact before packaging.
-  # -----------------------------------------------------------------
-  app:
-    name: App (${{ matrix.os }})
-    needs: sidecar
-    runs-on: ${{ matrix.runner }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - { os: windows, runner: windows-latest, build_cmd: "flutter build windows --release" }
-          - { os: macos,   runner: macos-latest,   build_cmd: "flutter build macos --release"   }
-          - { os: linux,   runner: ubuntu-latest,  build_cmd: "flutter build linux --release"   }
+  # ------------------------------------------------------------------
+  # Flutter desktop builds — one job per OS, packaged into an installer.
+  # ------------------------------------------------------------------
+  windows:
+    name: Windows (MSI)
+    needs: go-binaries
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
 
@@ -76,45 +69,157 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Linux deps
-        if: matrix.os == 'linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y ninja-build cmake libgtk-3-dev libsecret-1-dev
-
-      - name: Download sidecar artifact
+      - name: Download Go binaries
         uses: actions/download-artifact@v4
         with:
-          pattern: sidecar-${{ matrix.os }}-*
-          merge-multiple: true
-          path: app/sidecar-bin
+          name: go-windows-amd64
+          path: sidecar/dist
 
       - name: Pub get
         working-directory: app
         run: flutter pub get
 
-      - name: Create platform dirs (idempotent)
+      - name: Ensure platform dirs
         working-directory: app
-        run: flutter create --platforms=windows,macos,linux --project-name=deckhand .
+        run: flutter create --platforms=windows --project-name=deckhand .
 
-      - name: Build
+      - name: Flutter build
         working-directory: app
-        run: ${{ matrix.build_cmd }}
+        run: flutter build windows --release
+
+      - name: Set up Inno Setup
+        uses: nextgens/inno-setup-action@v1.0.11
+
+      - name: Build installer
+        shell: pwsh
+        run: |
+          $version = "${env:GITHUB_REF_NAME}".TrimStart("v")
+          iscc /dVersion=$version packaging\windows\deckhand.iss
+
+      - name: Code-sign (if cert present)
+        if: env.SIGNTOOL_CERT_THUMBPRINT != ''
+        shell: pwsh
+        env:
+          SIGNTOOL_CERT_THUMBPRINT: ${{ secrets.WINDOWS_SIGN_THUMBPRINT }}
+        run: |
+          Get-ChildItem packaging\windows\dist\*.exe | ForEach-Object {
+            & signtool sign /sha1 $env:SIGNTOOL_CERT_THUMBPRINT /tr http://timestamp.digicert.com /td sha256 /fd sha256 $_.FullName
+          }
 
       - uses: actions/upload-artifact@v4
         with:
-          name: deckhand-app-${{ matrix.os }}
-          path: |
-            app/build/windows/x64/runner/Release/**
-            app/build/macos/Build/Products/Release/deckhand.app
-            app/build/linux/x64/release/bundle/**
+          name: deckhand-windows
+          path: packaging/windows/dist/*
 
-  # -----------------------------------------------------------------
-  # Publish a GitHub Release with every artifact attached.
-  # -----------------------------------------------------------------
+  macos:
+    name: macOS (DMG)
+    needs: go-binaries
+    runs-on: macos-latest
+    strategy:
+      matrix:
+        arch: [amd64, arm64]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.38.9"
+          channel: stable
+          cache: true
+
+      - name: Download Go binaries
+        uses: actions/download-artifact@v4
+        with:
+          name: go-darwin-${{ matrix.arch }}
+          path: sidecar/dist
+
+      - name: Pub get
+        working-directory: app
+        run: flutter pub get
+
+      - name: Ensure platform dirs
+        working-directory: app
+        run: flutter create --platforms=macos --project-name=deckhand .
+
+      - name: Flutter build
+        working-directory: app
+        run: flutter build macos --release
+
+      - name: Build DMG
+        env:
+          MACOS_SIGN_ID: ${{ secrets.MACOS_SIGN_ID }}
+          MACOS_NOTARIZE_APPLE_ID: ${{ secrets.MACOS_NOTARIZE_APPLE_ID }}
+          MACOS_NOTARIZE_PASSWORD: ${{ secrets.MACOS_NOTARIZE_PASSWORD }}
+          MACOS_NOTARIZE_TEAM_ID: ${{ secrets.MACOS_NOTARIZE_TEAM_ID }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          chmod +x packaging/macos/build_dmg.sh
+          ./packaging/macos/build_dmg.sh "$VERSION-${{ matrix.arch }}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: deckhand-macos-${{ matrix.arch }}
+          path: packaging/macos/dist/*
+
+  linux:
+    name: Linux (AppImage)
+    needs: go-binaries
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.38.9"
+          channel: stable
+          cache: true
+
+      - name: Download Go binaries
+        uses: actions/download-artifact@v4
+        with:
+          name: go-linux-amd64
+          path: sidecar/dist
+
+      - name: System deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build cmake libgtk-3-dev libsecret-1-dev file
+
+      - name: Pub get
+        working-directory: app
+        run: flutter pub get
+
+      - name: Ensure platform dirs
+        working-directory: app
+        run: flutter create --platforms=linux --project-name=deckhand .
+
+      - name: Flutter build
+        working-directory: app
+        run: flutter build linux --release
+
+      - name: Install appimagetool
+        run: |
+          wget -q https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage -O /tmp/appimagetool
+          chmod +x /tmp/appimagetool
+          sudo mv /tmp/appimagetool /usr/local/bin/appimagetool
+
+      - name: Build AppImage
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          chmod +x packaging/linux/build_appimage.sh
+          ./packaging/linux/build_appimage.sh "$VERSION"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: deckhand-linux
+          path: packaging/linux/dist/*
+
+  # ------------------------------------------------------------------
+  # Collect everything into a draft release.
+  # ------------------------------------------------------------------
   release:
     name: Publish release
-    needs: [sidecar, app]
+    needs: [windows, macos, linux]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4

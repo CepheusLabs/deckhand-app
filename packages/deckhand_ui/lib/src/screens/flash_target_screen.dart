@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 
 import '../providers.dart';
 import '../widgets/wizard_scaffold.dart';
+import '../widgets/deckhand_stepper.dart';
 
 class FlashTargetScreen extends ConsumerStatefulWidget {
   const FlashTargetScreen({super.key});
@@ -26,6 +27,7 @@ class _FlashTargetScreenState extends ConsumerState<FlashTargetScreen> {
   @override
   Widget build(BuildContext context) {
     return WizardScaffold(
+      stepper: const DeckhandStepper(),
       title: 'Which disk should we flash?',
       helperText:
           'Connect your printer\'s eMMC via a USB adapter. Deckhand will '

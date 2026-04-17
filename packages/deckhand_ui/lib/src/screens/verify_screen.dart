@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../providers.dart';
 import '../widgets/wizard_scaffold.dart';
+import '../widgets/deckhand_stepper.dart';
 
 class VerifyScreen extends ConsumerWidget {
   const VerifyScreen({super.key});
@@ -19,6 +20,7 @@ class VerifyScreen extends ConsumerWidget {
     final detections = profile?.stockOs.detections ?? const [];
 
     return WizardScaffold(
+      stepper: const DeckhandStepper(),
       title: 'Verify your printer',
       helperText:
           'We\'ll run a few quick checks against your connected printer to '

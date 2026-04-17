@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../providers.dart';
 import '../widgets/wizard_scaffold.dart';
+import '../widgets/deckhand_stepper.dart';
 
 class ChooseOsScreen extends ConsumerStatefulWidget {
   const ChooseOsScreen({super.key});
@@ -22,6 +23,7 @@ class _ChooseOsScreenState extends ConsumerState<ChooseOsScreen> {
         options.firstOrNull?.id;
 
     return WizardScaffold(
+      stepper: const DeckhandStepper(),
       title: 'Which OS image?',
       helperText:
           'Pick the base Linux image to flash onto your printer\'s eMMC. '

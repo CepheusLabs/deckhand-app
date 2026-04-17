@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Deckhand — open-source setup for Klipper 3D printers</title>
+    <meta name="description" content="Deckhand replaces vendor firmware on Klipper 3D printers with Kalico or mainline Klipper. Cross-platform desktop tool from Cepheus Labs. Pairs with Printdeck." />
+
+    <!-- Open Graph / social -->
+    <meta property="og:title" content="Deckhand" />
+    <meta property="og:description" content="OSS setup for Klipper 3D printers. Replace vendor firmware without surprises." />
+    <meta property="og:url" content="https://dh.printdeck.io" />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header class="nav">
+      <div class="container nav-inner">
+        <a class="brand" href="/">
+          <svg viewBox="0 0 32 32" class="brand-mark" aria-hidden="true">
+            <rect x="4" y="10" width="24" height="14" rx="2" fill="currentColor" />
+            <rect x="10" y="4" width="12" height="8" rx="1" fill="currentColor" opacity=".6" />
+          </svg>
+          Deckhand
+        </a>
+        <nav class="nav-links">
+          <a href="#what">What it does</a>
+          <a href="#printers">Supported printers</a>
+          <a href="#download">Download</a>
+          <a href="https://github.com/CepheusLabs/deckhand">Source</a>
+        </nav>
+      </div>
+    </header>
+
+    <main>
+      <section class="hero">
+        <div class="container hero-inner">
+          <h1>Install <strong>open firmware</strong> on your 3D printer.</h1>
+          <p class="hero-sub">
+            Deckhand replaces vendor firmware with community-maintained
+            <a href="https://github.com/KalicoCrew/kalico">Kalico</a> or
+            <a href="https://github.com/Klipper3d/klipper">Klipper</a>,
+            without surprises. Cross-platform desktop app. No hosted
+            backend — it runs entirely on your machine.
+          </p>
+          <div class="hero-ctas">
+            <a class="btn btn-primary" href="#download">Download for your OS</a>
+            <a class="btn btn-ghost" href="https://github.com/CepheusLabs/deckhand/blob/main/docs/WIZARD-FLOW.md">See the wizard walkthrough</a>
+          </div>
+          <p class="hero-pair">
+            Pair with <a href="https://printdeck.io">Printdeck</a> for fleet management once the printer is up.
+          </p>
+        </div>
+      </section>
+
+      <section id="what" class="section">
+        <div class="container">
+          <h2>What Deckhand does</h2>
+          <div class="cards">
+            <div class="card">
+              <h3>Two safe paths</h3>
+              <p>
+                Transform a stock install in place (snapshotted, reversible)
+                or wipe the eMMC and flash a clean Armbian image. Either
+                way you end up on Kalico or Klipper with Moonraker and the
+                web UI you picked.
+              </p>
+            </div>
+            <div class="card">
+              <h3>Every decision is yours</h3>
+              <p>
+                Wizard walks through firmware, web UI, screen daemon,
+                vendor-service removal, and cleanup — one question at a
+                time. No bundled opinions; the profile tells you what each
+                choice does.
+              </p>
+            </div>
+            <div class="card">
+              <h3>Nothing phones home</h3>
+              <p>
+                Deckhand talks to your printer on LAN and fetches public
+                upstreams (GitHub, Armbian) over HTTPS. Strict per-host
+                allow-list. No hosted backend, no telemetry, no
+                subscriptions.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="printers" class="section alt">
+        <div class="container">
+          <h2>Supported printers</h2>
+          <p class="section-sub">
+            Printer profiles live in
+            <a href="https://github.com/CepheusLabs/deckhand-builds">deckhand-builds</a>.
+            Community contributions welcome.
+          </p>
+          <ul class="printer-list">
+            <li>
+              <strong>Phrozen Arco</strong>
+              <span class="badge status-alpha">alpha</span>
+              <span class="meta">RK3328 · CoreXY · ChromaKit AMS</span>
+            </li>
+            <li>
+              <strong>Sovol Zero</strong>
+              <span class="badge status-stub">stub</span>
+              <span class="meta">waiting for a contributor to populate</span>
+            </li>
+            <li>
+              <strong>Sovol SV08 Max</strong>
+              <span class="badge status-stub">stub</span>
+              <span class="meta">waiting for a contributor to populate</span>
+            </li>
+            <li class="add-your-printer">
+              <a href="https://github.com/CepheusLabs/deckhand-builds/blob/main/AUTHORING.md">Add yours →</a>
+            </li>
+          </ul>
+        </div>
+      </section>
+
+      <section id="download" class="section">
+        <div class="container">
+          <h2>Download</h2>
+          <p class="section-sub">
+            Pre-release builds land on GitHub. Pick the installer for your
+            operating system — signing is in progress.
+          </p>
+          <div class="downloads">
+            <a class="download-card" href="https://github.com/CepheusLabs/deckhand/releases/latest" data-os="windows">
+              <span class="dl-os">Windows</span>
+              <span class="dl-file">Deckhand-…-win-x64.exe</span>
+            </a>
+            <a class="download-card" href="https://github.com/CepheusLabs/deckhand/releases/latest" data-os="macos">
+              <span class="dl-os">macOS</span>
+              <span class="dl-file">Deckhand-…-macos.dmg</span>
+            </a>
+            <a class="download-card" href="https://github.com/CepheusLabs/deckhand/releases/latest" data-os="linux">
+              <span class="dl-os">Linux</span>
+              <span class="dl-file">Deckhand-…-linux-x86_64.AppImage</span>
+            </a>
+          </div>
+          <p class="build-hint">
+            Want to build from source? <code>git clone</code> the repo
+            and follow <a href="https://github.com/CepheusLabs/deckhand/blob/main/docs/ARCHITECTURE.md#build-prerequisites-contributor">the build prerequisites</a>.
+          </p>
+        </div>
+      </section>
+
+      <section class="section alt">
+        <div class="container">
+          <h2>For the curious</h2>
+          <div class="docs-grid">
+            <a class="doc-card" href="https://github.com/CepheusLabs/deckhand/blob/main/docs/ARCHITECTURE.md">
+              <h3>Architecture</h3>
+              <p>Flutter UI + Go sidecar, package layout, IPC protocol, data directories, packaging.</p>
+            </a>
+            <a class="doc-card" href="https://github.com/CepheusLabs/deckhand/blob/main/docs/WIZARD-FLOW.md">
+              <h3>Wizard flow</h3>
+              <p>Every screen the wizard shows, mapped to the profile fields that drive it.</p>
+            </a>
+            <a class="doc-card" href="https://github.com/CepheusLabs/deckhand/blob/main/docs/IPC.md">
+              <h3>Sidecar IPC</h3>
+              <p>JSON-RPC 2.0 method catalog for the Go sidecar.</p>
+            </a>
+            <a class="doc-card" href="https://github.com/CepheusLabs/deckhand-builds/blob/main/AUTHORING.md">
+              <h3>Profile authoring</h3>
+              <p>How to add or modify a printer profile. Full schema, examples, DSL reference.</p>
+            </a>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <div class="container footer-inner">
+        <p>
+          Deckhand is an <a href="https://github.com/CepheusLabs/deckhand/blob/main/LICENSE">AGPL-3.0</a>
+          project by <a href="https://cepheuslabs.com">Cepheus Labs</a>.
+        </p>
+        <p>
+          <a href="https://github.com/CepheusLabs/deckhand">Source</a>
+          ·
+          <a href="https://github.com/CepheusLabs/deckhand-builds">Printer profiles</a>
+          ·
+          <a href="https://printdeck.io">Printdeck</a>
+        </p>
+      </div>
+    </footer>
+
+    <script src="/app.js" defer></script>
+  </body>
+</html>

@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../providers.dart';
 import '../widgets/wizard_scaffold.dart';
+import '../widgets/deckhand_stepper.dart';
 
 class FirstBootScreen extends ConsumerStatefulWidget {
   const FirstBootScreen({super.key});
@@ -35,6 +36,7 @@ class _FirstBootScreenState extends ConsumerState<FirstBootScreen> {
   @override
   Widget build(BuildContext context) {
     return WizardScaffold(
+      stepper: const DeckhandStepper(),
       title: 'Put the eMMC back in the printer',
       helperText:
           '1. Unplug the USB adapter.\n'

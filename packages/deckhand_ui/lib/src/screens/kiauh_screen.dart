@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../providers.dart';
 import '../widgets/wizard_scaffold.dart';
+import '../widgets/deckhand_stepper.dart';
 
 class KiauhScreen extends ConsumerStatefulWidget {
   const KiauhScreen({super.key});
@@ -27,6 +28,7 @@ class _KiauhScreenState extends ConsumerState<KiauhScreen> {
     _install ??= kiauh['default_install'] as bool? ?? true;
 
     return WizardScaffold(
+      stepper: const DeckhandStepper(),
       title: 'Install KIAUH?',
       helperText: explainer,
       body: Column(
