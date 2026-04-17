@@ -4,9 +4,21 @@ on:
   push:
     tags:
       - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing tag to build (e.g. v1.0.0). Must already exist on the repo.'
+        required: true
+        type: string
 
 permissions:
   contents: write
+
+# Every job checks out at this ref so dispatch-mode builds pick up the
+# tagged source tree instead of whatever's on main.
+env:
+  BUILD_REF: ${{ github.event.inputs.tag || github.ref }}
+  VERSION_RAW: ${{ github.event.inputs.tag || github.ref_name }}
 
 jobs:
   # ------------------------------------------------------------------
@@ -24,9 +36,11 @@ jobs:
           - { goos: darwin,  goarch: arm64, runner: macos-latest,   ext: ""     }
           - { goos: linux,   goarch: amd64, runner: ubuntu-latest,  ext: ""     }
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ env.BUILD_REF }}
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version: "1.22"
           cache-dependency-path: sidecar/go.sum
@@ -40,7 +54,7 @@ jobs:
         shell: bash
         run: |
           mkdir -p dist
-          VERSION="${GITHUB_REF_NAME#v}"
+          VERSION="${VERSION_RAW#v}"
           for cmd in deckhand-sidecar deckhand-elevated-helper; do
             go build -trimpath \
               -ldflags "-s -w -X main.Version=${VERSION}" \
@@ -61,7 +75,9 @@ jobs:
     needs: go-binaries
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ env.BUILD_REF }}
 
       - uses: subosito/flutter-action@v2
         with:
@@ -93,7 +109,7 @@ jobs:
       - name: Build installer
         shell: pwsh
         run: |
-          $version = "${env:GITHUB_REF_NAME}".TrimStart("v")
+          $version = "${env:VERSION_RAW}".TrimStart("v")
           iscc /dVersion=$version packaging\windows\deckhand.iss
 
       - name: Code-sign (if cert present)
@@ -119,7 +135,9 @@ jobs:
       matrix:
         arch: [amd64, arm64]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ env.BUILD_REF }}
 
       - uses: subosito/flutter-action@v2
         with:
@@ -152,7 +170,7 @@ jobs:
           MACOS_NOTARIZE_PASSWORD: ${{ secrets.MACOS_NOTARIZE_PASSWORD }}
           MACOS_NOTARIZE_TEAM_ID: ${{ secrets.MACOS_NOTARIZE_TEAM_ID }}
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
+          VERSION="${VERSION_RAW#v}"
           chmod +x packaging/macos/build_dmg.sh
           ./packaging/macos/build_dmg.sh "$VERSION-${{ matrix.arch }}"
 
@@ -166,7 +184,9 @@ jobs:
     needs: go-binaries
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ env.BUILD_REF }}
 
       - uses: subosito/flutter-action@v2
         with:
@@ -205,7 +225,7 @@ jobs:
 
       - name: Build AppImage
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
+          VERSION="${VERSION_RAW#v}"
           chmod +x packaging/linux/build_appimage.sh
           ./packaging/linux/build_appimage.sh "$VERSION"
 
@@ -215,10 +235,12 @@ jobs:
           path: packaging/linux/dist/*
 
   # ------------------------------------------------------------------
-  # Collect everything into a draft release.
+  # Upload artifacts onto the existing GitHub release for this tag
+  # (release-please already created the release entry with the
+  # changelog; we attach the installers + binaries).
   # ------------------------------------------------------------------
   release:
-    name: Publish release
+    name: Attach installers to release
     needs: [windows, macos, linux]
     runs-on: ubuntu-latest
     steps:
@@ -229,6 +251,7 @@ jobs:
 
       - uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ env.VERSION_RAW }}
           files: release-artifacts/**/*
           draft: false
-          generate_release_notes: true
+          fail_on_unmatched_files: false
