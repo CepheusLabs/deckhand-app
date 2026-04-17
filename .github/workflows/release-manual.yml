@@ -1,0 +1,60 @@
+name: Manual release tag
+
+# Fallback for cutting a release when Release Please's PR is stuck or
+# you need an off-cycle tag. Usage: Actions → "Manual release tag" →
+# Run workflow → enter version (e.g., "0.1.1").
+#
+# The tag push triggers .github/workflows/release.yml which builds the
+# installers.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version (without the leading v). E.g. 0.1.1'
+        required: true
+        type: string
+      confirm:
+        description: 'Type "RELEASE" to confirm'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check confirmation
+        if: ${{ github.event.inputs.confirm != 'RELEASE' }}
+        run: |
+          echo "::error::Confirmation text did not match; aborting."
+          exit 1
+
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Validate version
+        env:
+          VERSION: ${{ github.event.inputs.version }}
+        run: |
+          if ! echo "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.-]+)?$'; then
+            echo "::error::Version must be SemVer (e.g. 0.1.0 or 0.1.0-rc.1)"; exit 1
+          fi
+          if git rev-parse --verify --quiet "refs/tags/v$VERSION"; then
+            echo "::error::Tag v$VERSION already exists"; exit 1
+          fi
+
+      - name: Configure git
+        run: |
+          git config user.name 'cepheus-labs-bot'
+          git config user.email 'support@cepheuslabs.com'
+
+      - name: Tag + push
+        env:
+          VERSION: ${{ github.event.inputs.version }}
+        run: |
+          git tag -a "v$VERSION" -m "Release v$VERSION"
+          git push origin "v$VERSION"

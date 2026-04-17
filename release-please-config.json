@@ -1,0 +1,63 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "release-type": "simple",
+  "bootstrap-sha": "71c6592",
+  "include-component-in-tag": false,
+  "include-v-in-tag": true,
+  "changelog-sections": [
+    { "type": "feat",      "section": "Features" },
+    { "type": "fix",       "section": "Bug fixes" },
+    { "type": "perf",      "section": "Performance" },
+    { "type": "refactor",  "section": "Refactoring" },
+    { "type": "docs",      "section": "Documentation" },
+    { "type": "build",     "section": "Build system" },
+    { "type": "ci",        "section": "CI" },
+    { "type": "test",      "section": "Tests" },
+    { "type": "prod",      "section": "Features" },
+    { "type": "ui",        "section": "UI" },
+    { "type": "implement", "section": "Features" },
+    { "type": "scaffold",  "section": "Build system", "hidden": true },
+    { "type": "chore",     "section": "Chores",       "hidden": true }
+  ],
+  "packages": {
+    ".": {
+      "release-type": "simple",
+      "package-name": "deckhand",
+      "changelog-path": "CHANGELOG.md",
+      "extra-files": [
+        {
+          "type": "generic",
+          "path": "app/pubspec.yaml"
+        },
+        {
+          "type": "generic",
+          "path": "packages/deckhand_core/pubspec.yaml"
+        },
+        {
+          "type": "generic",
+          "path": "packages/deckhand_profiles/pubspec.yaml"
+        },
+        {
+          "type": "generic",
+          "path": "packages/deckhand_ssh/pubspec.yaml"
+        },
+        {
+          "type": "generic",
+          "path": "packages/deckhand_flash/pubspec.yaml"
+        },
+        {
+          "type": "generic",
+          "path": "packages/deckhand_discovery/pubspec.yaml"
+        },
+        {
+          "type": "generic",
+          "path": "packages/deckhand_ui/pubspec.yaml"
+        },
+        {
+          "type": "generic",
+          "path": "packages/deckhand_profile_script/pubspec.yaml"
+        }
+      ]
+    }
+  }
+}
