@@ -1,85 +1,70 @@
 # Contributing to Deckhand
 
-## Commit messages — Conventional Commits
+## Versioning
 
-Deckhand uses [Conventional Commits](https://www.conventionalcommits.org)
-so [release-please](https://github.com/googleapis/release-please) can
-compute the next version and generate a changelog automatically.
+Deckhand uses **date-based CalVer** (matching Printdeck's
+`frontend/scripts/build.sh`):
 
-Structure:
+- **Version**: today's UTC date, not zero-padded — `YY.M.D` (e.g. `26.4.18`)
+- **Build number**: total `git rev-list --count HEAD` (monotonic)
+- **Tag**: `v<VERSION>-<BUILD>` (e.g. `v26.4.18-1247`)
 
+The version is computed automatically — there's nothing to bump, nothing
+to remember. You write code, push, GitHub Actions stamps the release.
+
+## Commit messages
+
+No conventional-commits discipline required (but no harm in using them
+if you want — the release notes are generated from `git log`).
+
+Keep commits reasonably self-contained and their subjects meaningful;
+the GitHub Release for each version lists every commit that landed since
+the previous one.
+
+## How releases happen
+
+1. You push to `main`.
+2. `.github/workflows/release.yml` runs. It:
+   - Computes `VERSION=YY.M.D`, `BUILD=git rev-list --count HEAD`.
+   - Builds the Go sidecar + elevated helper for 4 OS/arch pairs.
+   - Builds the Flutter app for Windows / macOS (both arches) / Linux.
+   - Runs Inno Setup / create-dmg / appimagetool to produce installers.
+   - Signs + notarizes if the appropriate secrets are configured.
+   - Tags the commit `v<VERSION>-<BUILD>`.
+   - Publishes a GitHub Release with every artifact attached and
+     auto-generated notes from the commits since the previous tag.
+
+Takes ~25-30 minutes end-to-end. The longest jobs are the macOS and
+Windows Flutter builds.
+
+## Off-cycle / rebuild an old version
+
+`Actions → Release → Run workflow`, enter a branch / tag / SHA in the
+`ref` input. The workflow still computes the version from today's date
+— if you want a reproducible rebuild of an old tag, check out that tag
+locally and push it back with a new tag name, or just accept today's
+date as the new version.
+
+## Local builds
+
+`scripts/build.sh` mirrors the CI logic for local development:
+
+```powershell
+./scripts/build.sh sidecar             # just the Go binaries
+./scripts/build.sh windows             # Flutter Windows + sidecar
+./scripts/build.sh macos               # Flutter macOS (both arches)
+./scripts/build.sh linux               # Flutter Linux
 ```
-<type>[optional scope]: <short summary>
 
-[optional body]
-
-[optional footers, e.g. BREAKING CHANGE: …]
-```
-
-### Types we use
-
-| Type | When | Bumps |
-|------|------|-------|
-| `feat:` | new user-visible feature | minor (`0.X.0`) |
-| `fix:` | bug fix | patch (`0.0.X`) |
-| `perf:` | performance improvement | patch |
-| `refactor:` | internal cleanup, no behavior change | patch |
-| `docs:` | docs only | patch |
-| `test:` | tests only | patch |
-| `build:` | build system / packaging | patch |
-| `ci:` | CI config | patch |
-| `chore:` | misc housekeeping | none (hidden) |
-| `ui:` | Flutter UI work | patch (shown in changelog under "UI") |
-| `prod:` | production-readiness work | minor |
-
-### Breaking changes
-
-Any commit with `!` after the type (`feat!:` or `fix!:`) **or** a
-`BREAKING CHANGE:` footer bumps **major** (`X.0.0`). Example:
-
-```
-feat!: replace SshService.run signature
-
-BREAKING CHANGE: run() now requires an explicit Duration timeout.
-```
-
-### Scopes
-
-Free-form; use when it clarifies. Examples:
-
-```
-feat(ui): add stepper to wizard screens
-fix(sidecar): crash on empty disk list
-docs(profiles): clarify DSL predicate list
-```
-
-## How releases are cut
-
-1. You merge PRs to `main` with conventional-commit titles.
-2. Release Please watches `main` and maintains a **release PR**
-   (`chore(main): release X.Y.Z`) that bumps
-   `.release-please-manifest.json`, updates every `pubspec.yaml`
-   version, and adds the changelog entry.
-3. When you merge the release PR, release-please tags the repo
-   (`vX.Y.Z`).
-4. The tag push fires `.github/workflows/release.yml`, which builds
-   the sidecar, elevated helper, and Flutter apps for every target OS
-   and publishes a draft GitHub release with all installers attached.
-5. You review the draft release on GitHub and hit publish.
-
-### Off-cycle releases
-
-If you need to cut a tag without going through the Release Please PR
-(e.g., an emergency fix), use **Actions → "Manual release tag" → Run
-workflow** and enter a SemVer string. The tag still fires
-`release.yml`.
+Same `YY.M.D+<commit_count>` stamping. Handy for verifying a build
+before pushing or for producing a dev-signed artifact.
 
 ## Code conventions
 
-- Dart: run `dart format .` before committing. CI enforces.
-- Dart analyze: runs `--fatal-infos`; info-level deprecations are
-  treated as errors.
-- Go: standard `gofmt` + `go vet`. CI runs both.
+- Dart: `dart format .` before committing. CI enforces with
+  `--set-exit-if-changed`.
+- Dart analyze: `--fatal-infos`; info-level deprecations are errors.
+- Go: `gofmt` + `go vet`. CI runs both.
 - Line endings: LF (`.gitattributes` handles CRLF on Windows).
 
 ## Running tests locally

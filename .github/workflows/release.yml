@@ -1,31 +1,69 @@
 name: Release
 
+# Versioning: YY.M.D (today, not zero-padded) + git commit count.
+# Matches Printdeck's scripts/build.sh format. Example: 26.4.18+1247,
+# tagged v26.4.18-1247 on the repo.
+#
+# Triggers:
+#   - push to main      → compute version, build, tag, release
+#   - workflow_dispatch → rebuild on demand (picks HEAD of the provided
+#                         ref, defaults to main)
+
 on:
   push:
-    tags:
-      - "v*.*.*"
+    branches: [main]
   workflow_dispatch:
     inputs:
-      tag:
-        description: 'Existing tag to build (e.g. v1.0.0). Must already exist on the repo.'
-        required: true
+      ref:
+        description: 'Branch/tag/SHA to build (default: main)'
+        required: false
+        default: main
         type: string
 
 permissions:
   contents: write
 
-# Every job checks out at this ref so dispatch-mode builds pick up the
-# tagged source tree instead of whatever's on main.
-env:
-  BUILD_REF: ${{ github.event.inputs.tag || github.ref }}
-  VERSION_RAW: ${{ github.event.inputs.tag || github.ref_name }}
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 jobs:
   # ------------------------------------------------------------------
-  # Build Go sidecar + elevated helper for every target OS/arch pair.
+  # Resolve the version once, surface it to every downstream job.
+  # ------------------------------------------------------------------
+  version:
+    name: Compute version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      build: ${{ steps.v.outputs.build }}
+      tag: ${{ steps.v.outputs.tag }}
+      ref: ${{ steps.v.outputs.ref }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.ref || github.ref }}
+
+      - id: v
+        shell: bash
+        run: |
+          VERSION=$(date -u +"%y.%-m.%-d")
+          BUILD=$(git rev-list --count HEAD)
+          TAG="v${VERSION}-${BUILD}"
+          REF=$(git rev-parse HEAD)
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "build=$BUILD"     >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG"         >> "$GITHUB_OUTPUT"
+          echo "ref=$REF"         >> "$GITHUB_OUTPUT"
+          echo "::notice::Deckhand release $VERSION+$BUILD ($TAG at $REF)"
+
+  # ------------------------------------------------------------------
+  # Go sidecar + elevated helper for every target OS/arch pair.
   # ------------------------------------------------------------------
   go-binaries:
     name: Go ${{ matrix.goos }}-${{ matrix.goarch }}
+    needs: version
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -38,7 +76,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
-          ref: ${{ env.BUILD_REF }}
+          ref: ${{ needs.version.outputs.ref }}
 
       - uses: actions/setup-go@v6
         with:
@@ -51,13 +89,13 @@ jobs:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
           CGO_ENABLED: "0"
+          STAMP: ${{ needs.version.outputs.version }}+${{ needs.version.outputs.build }}
         shell: bash
         run: |
           mkdir -p dist
-          VERSION="${VERSION_RAW#v}"
           for cmd in deckhand-sidecar deckhand-elevated-helper; do
             go build -trimpath \
-              -ldflags "-s -w -X main.Version=${VERSION}" \
+              -ldflags "-s -w -X main.Version=${STAMP}" \
               -o "dist/${cmd}${{ matrix.ext }}" \
               "./cmd/${cmd}"
           done
@@ -68,16 +106,15 @@ jobs:
           path: sidecar/dist/*
 
   # ------------------------------------------------------------------
-  # Flutter desktop builds — one job per OS, packaged into an installer.
+  # Flutter desktop builds → installers (one per OS).
   # ------------------------------------------------------------------
   windows:
     name: Windows (MSI)
-    needs: go-binaries
+    needs: [version, go-binaries]
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v5
-        with:
-          ref: ${{ env.BUILD_REF }}
+        with: { ref: "${{ needs.version.outputs.ref }}" }
 
       - uses: subosito/flutter-action@v2
         with:
@@ -101,16 +138,20 @@ jobs:
 
       - name: Flutter build
         working-directory: app
-        run: flutter build windows --release
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+          BUILD: ${{ needs.version.outputs.build }}
+        shell: bash
+        run: flutter build windows --release --build-name="$VERSION" --build-number="$BUILD"
 
       - name: Set up Inno Setup
         uses: nextgens/inno-setup-action@v1.0.11
 
       - name: Build installer
         shell: pwsh
-        run: |
-          $version = "${env:VERSION_RAW}".TrimStart("v")
-          iscc /dVersion=$version packaging\windows\deckhand.iss
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: iscc /dVersion=$env:VERSION packaging\windows\deckhand.iss
 
       - name: Code-sign (if cert present)
         if: env.SIGNTOOL_CERT_THUMBPRINT != ''
@@ -129,15 +170,14 @@ jobs:
 
   macos:
     name: macOS (DMG)
-    needs: go-binaries
+    needs: [version, go-binaries]
     runs-on: macos-latest
     strategy:
       matrix:
         arch: [amd64, arm64]
     steps:
       - uses: actions/checkout@v5
-        with:
-          ref: ${{ env.BUILD_REF }}
+        with: { ref: "${{ needs.version.outputs.ref }}" }
 
       - uses: subosito/flutter-action@v2
         with:
@@ -161,7 +201,10 @@ jobs:
 
       - name: Flutter build
         working-directory: app
-        run: flutter build macos --release
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+          BUILD: ${{ needs.version.outputs.build }}
+        run: flutter build macos --release --build-name="$VERSION" --build-number="$BUILD"
 
       - name: Build DMG
         env:
@@ -169,8 +212,8 @@ jobs:
           MACOS_NOTARIZE_APPLE_ID: ${{ secrets.MACOS_NOTARIZE_APPLE_ID }}
           MACOS_NOTARIZE_PASSWORD: ${{ secrets.MACOS_NOTARIZE_PASSWORD }}
           MACOS_NOTARIZE_TEAM_ID: ${{ secrets.MACOS_NOTARIZE_TEAM_ID }}
+          VERSION: ${{ needs.version.outputs.version }}
         run: |
-          VERSION="${VERSION_RAW#v}"
           chmod +x packaging/macos/build_dmg.sh
           ./packaging/macos/build_dmg.sh "$VERSION-${{ matrix.arch }}"
 
@@ -181,12 +224,11 @@ jobs:
 
   linux:
     name: Linux (AppImage)
-    needs: go-binaries
+    needs: [version, go-binaries]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-        with:
-          ref: ${{ env.BUILD_REF }}
+        with: { ref: "${{ needs.version.outputs.ref }}" }
 
       - uses: subosito/flutter-action@v2
         with:
@@ -215,7 +257,10 @@ jobs:
 
       - name: Flutter build
         working-directory: app
-        run: flutter build linux --release
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+          BUILD: ${{ needs.version.outputs.build }}
+        run: flutter build linux --release --build-name="$VERSION" --build-number="$BUILD"
 
       - name: Install appimagetool
         run: |
@@ -224,8 +269,9 @@ jobs:
           sudo mv /tmp/appimagetool /usr/local/bin/appimagetool
 
       - name: Build AppImage
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
         run: |
-          VERSION="${VERSION_RAW#v}"
           chmod +x packaging/linux/build_appimage.sh
           ./packaging/linux/build_appimage.sh "$VERSION"
 
@@ -235,23 +281,41 @@ jobs:
           path: packaging/linux/dist/*
 
   # ------------------------------------------------------------------
-  # Upload artifacts onto the existing GitHub release for this tag
-  # (release-please already created the release entry with the
-  # changelog; we attach the installers + binaries).
+  # Tag the commit + publish a GitHub Release with every artifact.
   # ------------------------------------------------------------------
   release:
-    name: Attach installers to release
-    needs: [windows, macos, linux]
+    name: Publish release
+    needs: [version, windows, macos, linux]
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          ref: ${{ needs.version.outputs.ref }}
+
       - uses: actions/download-artifact@v4
         with:
           path: release-artifacts
           merge-multiple: false
 
+      - name: Create tag
+        env:
+          TAG: ${{ needs.version.outputs.tag }}
+          REF: ${{ needs.version.outputs.ref }}
+        run: |
+          git config user.name  'cepheus-labs-bot'
+          git config user.email 'support@cepheuslabs.com'
+          if git rev-parse --verify --quiet "refs/tags/$TAG" >/dev/null; then
+            echo "Tag $TAG already exists — reusing."
+          else
+            git tag -a "$TAG" "$REF" -m "Deckhand $TAG"
+            git push origin "$TAG"
+          fi
+
       - uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ env.VERSION_RAW }}
+          tag_name: ${{ needs.version.outputs.tag }}
+          name: Deckhand ${{ needs.version.outputs.version }}+${{ needs.version.outputs.build }}
           files: release-artifacts/**/*
           draft: false
-          fail_on_unmatched_files: false
+          generate_release_notes: true
