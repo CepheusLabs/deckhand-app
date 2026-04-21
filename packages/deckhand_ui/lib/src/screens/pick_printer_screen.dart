@@ -17,7 +17,6 @@ class PickPrinterScreen extends ConsumerStatefulWidget {
 class _PickPrinterScreenState extends ConsumerState<PickPrinterScreen> {
   late Future<ProfileRegistry> _registryFuture;
   String? _selectedId;
-  bool _showStubs = false;
 
   @override
   void initState() {
@@ -44,36 +43,20 @@ class _PickPrinterScreenState extends ConsumerState<PickPrinterScreen> {
           );
         } else {
           final entries = snap.data!.entries
-              .where((e) => _showStubs || e.status != 'stub')
+              .where((e) => e.status != 'stub')
               .toList();
-          body = Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  const Text('Show stub profiles'),
-                  const SizedBox(width: 8),
-                  Switch(
-                    value: _showStubs,
-                    onChanged: (v) => setState(() => _showStubs = v),
+          body = Wrap(
+            spacing: 12,
+            runSpacing: 12,
+            children: entries
+                .map(
+                  (e) => _PrinterCard(
+                    entry: e,
+                    selected: _selectedId == e.id,
+                    onTap: () => setState(() => _selectedId = e.id),
                   ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Wrap(
-                spacing: 12,
-                runSpacing: 12,
-                children: entries
-                    .map(
-                      (e) => _PrinterCard(
-                        entry: e,
-                        selected: _selectedId == e.id,
-                        onTap: () => setState(() => _selectedId = e.id),
-                      ),
-                    )
-                    .toList(),
-              ),
-            ],
+                )
+                .toList(),
           );
         }
         return WizardScaffold(
