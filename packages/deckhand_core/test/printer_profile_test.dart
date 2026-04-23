@@ -108,5 +108,124 @@ void main() {
       expect(p.stockOs.files.single.paths, ['/a', '/b']);
       expect(p.stockOs.paths.single.action, 'snapshot_and_replace');
     });
+
+    test('parses identification hints', () {
+      final p = PrinterProfile.fromJson({
+        'profile_id': 'x',
+        'identification': {
+          'moonraker_objects': ['phrozen_dev', 'some_other'],
+          'hostname_patterns': [r'^mkspi$'],
+        },
+      });
+      expect(p.identification.moonrakerObjects,
+          ['phrozen_dev', 'some_other']);
+      expect(p.identification.hostnamePatterns, [r'^mkspi$']);
+    });
+
+    test('identification defaults to empty when absent', () {
+      final p = PrinterProfile.fromJson({'profile_id': 'x'});
+      expect(p.identification.moonrakerObjects, isEmpty);
+      expect(p.identification.hostnamePatterns, isEmpty);
+      expect(p.identification.markerFile, isNull);
+    });
+
+    test('identification parses markerFile', () {
+      final p = PrinterProfile.fromJson({
+        'profile_id': 'x',
+        'identification': {'marker_file': 'deckhand.json'},
+      });
+      expect(p.identification.markerFile, 'deckhand.json');
+    });
+  });
+
+  group('PrinterMatch.score', () {
+    const hints = ProfileIdentification(
+      markerFile: 'deckhand.json',
+      moonrakerObjects: ['phrozen_dev'],
+      hostnamePatterns: [r'^mkspi$'],
+    );
+
+    test('marker file with matching profile_id => confirmed + reason', () {
+      final m = PrinterMatch.score(
+        hints: hints,
+        markerFileContent: '{"profile_id": "phrozen-arco"}',
+        hostname: null,
+        registeredObjects: const [],
+        profileId: 'phrozen-arco',
+      );
+      expect(m.confidence, PrinterMatchConfidence.confirmed);
+      expect(m.reason, contains('phrozen-arco'));
+    });
+
+    test('marker file without profile_id match => still confirmed', () {
+      final m = PrinterMatch.score(
+        hints: hints,
+        markerFileContent: '{"legacy": "yes"}',
+        hostname: null,
+        registeredObjects: const [],
+        profileId: 'phrozen-arco',
+      );
+      expect(m.confidence, PrinterMatchConfidence.confirmed);
+      expect(m.reason, contains('marker'));
+    });
+
+    test('object prefix match => confirmed', () {
+      final m = PrinterMatch.score(
+        hints: hints,
+        markerFileContent: null,
+        hostname: 'mkspi',
+        registeredObjects: const ['phrozen_dev:runout', 'stepper_x'],
+        profileId: 'phrozen-arco',
+      );
+      expect(m.confidence, PrinterMatchConfidence.confirmed);
+      expect(m.reason, contains('phrozen_dev'));
+    });
+
+    test('hostname-only match => probable', () {
+      final m = PrinterMatch.score(
+        hints: hints,
+        markerFileContent: null,
+        hostname: 'mkspi',
+        registeredObjects: const ['stepper_x'],
+        profileId: 'phrozen-arco',
+      );
+      expect(m.confidence, PrinterMatchConfidence.probable);
+      expect(m.reason, contains('mkspi'));
+    });
+
+    test('no signals, hints present => miss', () {
+      final m = PrinterMatch.score(
+        hints: hints,
+        markerFileContent: null,
+        hostname: 'octopi',
+        registeredObjects: const ['stepper_x'],
+        profileId: 'phrozen-arco',
+      );
+      expect(m.confidence, PrinterMatchConfidence.miss);
+    });
+
+    test('no hints at all => unknown (can\'t say either way)', () {
+      final m = PrinterMatch.score(
+        hints: const ProfileIdentification(),
+        markerFileContent: null,
+        hostname: 'octopi',
+        registeredObjects: const [],
+        profileId: 'x',
+      );
+      expect(m.confidence, PrinterMatchConfidence.unknown);
+    });
+
+    test('malformed hostname regex is skipped, not fatal', () {
+      final m = PrinterMatch.score(
+        hints: const ProfileIdentification(
+          hostnamePatterns: [r'['], // invalid regex
+        ),
+        markerFileContent: null,
+        hostname: 'whatever',
+        registeredObjects: const [],
+        profileId: 'x',
+      );
+      expect(m.confidence, PrinterMatchConfidence.miss);
+    });
   });
 }

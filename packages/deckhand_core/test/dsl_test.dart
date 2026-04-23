@@ -88,5 +88,41 @@ void main() {
         isTrue,
       );
     });
+
+    group('os_python_below', () {
+      test('reads profile.os.stock.python and compares numerically', () {
+        final e = env(
+          {},
+          profile: {
+            'os': {
+              'stock': {'python': '3.7.3'},
+            },
+          },
+        );
+        expect(dsl.evaluate('os_python_below("3.9")', e), isTrue);
+        expect(dsl.evaluate('os_python_below("3.7")', e), isFalse);
+        expect(dsl.evaluate('os_python_below("3.8")', e), isTrue);
+      });
+
+      test('prefers cached probe result when present', () {
+        final e = env(
+          {'probe.os_python_below.3.9': false},
+          profile: {
+            'os': {
+              'stock': {'python': '3.7.3'},
+            },
+          },
+        );
+        // Cached value wins over profile-derived comparison.
+        expect(dsl.evaluate('os_python_below("3.9")', e), isFalse);
+      });
+
+      test('returns false when profile lacks os.stock.python', () {
+        expect(
+          dsl.evaluate('os_python_below("3.9")', env({}, profile: {})),
+          isFalse,
+        );
+      });
+    });
   });
 }
