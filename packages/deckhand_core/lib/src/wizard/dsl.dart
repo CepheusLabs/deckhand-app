@@ -128,17 +128,19 @@ Map<String, DslPredicate> defaultPredicates() => {
     //   1. Probe-cached decision (`probe.os_python_below.<thresh>`).
     //   2. Live default-python version (`probe.python_default`).
     //   3. Profile's declared `os.stock.python`.
-    // Missing data is treated as "not below" so we don't run a python
-    // rebuild we can't reason about.
+    // Missing / unparseable data is treated as "not below" so we
+    // don't run a python rebuild we can't reason about.
     final cached = env.decisions['probe.os_python_below.$threshStr'];
     if (cached is bool) return cached;
     final livePy = env.decisions['probe.python_default'];
-    if (livePy is String && livePy.isNotEmpty && livePy != 'unknown') {
-      return _compareVersions(livePy, threshStr) < 0;
+    if (livePy is String && _looksLikePythonVersion(livePy)) {
+      return _compareVersions(_normalizePythonVersion(livePy), threshStr) < 0;
     }
     final stockRaw = env.getProfileField('os.stock.python');
-    if (stockRaw is! String || stockRaw.trim().isEmpty) return false;
-    return _compareVersions(stockRaw, threshStr) < 0;
+    if (stockRaw is! String || !_looksLikePythonVersion(stockRaw)) {
+      return false;
+    }
+    return _compareVersions(_normalizePythonVersion(stockRaw), threshStr) < 0;
   },
   // Matches the live /etc/os-release codename captured by the state
   // probe, not the profile's declared `os.stock.codename`. Use this
@@ -161,6 +163,29 @@ Map<String, DslPredicate> defaultPredicates() => {
     return wanted.contains(actual.toLowerCase());
   },
 };
+
+/// True iff [s] begins with a recognisable version number we can
+/// compare against. Guards against garbage values like "unknown",
+/// empty strings, or literal `Python 3.13` banners that slipped past
+/// the probe's `python3 -c` extraction.
+bool _looksLikePythonVersion(String s) {
+  final trimmed = s.trim();
+  if (trimmed.isEmpty) return false;
+  if (trimmed.toLowerCase() == 'unknown') return false;
+  // Accept "3.13", "3.13.0", "3.13.0-rc1", "Python 3.13" (with or
+  // without leading label/whitespace). Require at least major.minor.
+  return RegExp(r'(^|\s)\d+\.\d+').hasMatch(trimmed);
+}
+
+/// Strip off any leading `Python ` label / whitespace from a Python
+/// version banner so [_compareVersions] sees only "3.13.0".
+String _normalizePythonVersion(String s) {
+  final t = s.trim();
+  final stripped = t
+      .replaceFirst(RegExp(r'^[Pp]ython\s+'), '')
+      .trim();
+  return stripped;
+}
 
 /// Compare dotted version strings component-wise, numerically.
 /// Non-integer components (e.g. a trailing "-rc1") are ignored.

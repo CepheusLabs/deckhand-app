@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:meta/meta.dart';
 import 'package:path/path.dart' as p;
 
 import '../models/printer_profile.dart';
@@ -78,6 +79,16 @@ class WizardController {
   PrinterState get printerState => _printerState;
   Stream<WizardEvent> get events => _eventsController.stream;
 
+  /// Test-only: inject a canned [PrinterState] so widget tests can
+  /// exercise probe-driven UI branches without standing up an SSH
+  /// session. Emits [PrinterStateRefreshed] so screens that watch
+  /// [wizardStateProvider] rebuild in response.
+  @visibleForTesting
+  set printerStateForTesting(PrinterState value) {
+    _printerState = value;
+    _emit(PrinterStateRefreshed(value));
+  }
+
   Future<void> loadProfile(String profileId, {String? ref}) async {
     final cache = await profiles.ensureCached(profileId: profileId, ref: ref);
     final profile = await profiles.load(cache);
@@ -148,10 +159,24 @@ class WizardController {
   /// manually (via [refreshPrinterState]) after a user action that
   /// changes the printer state (e.g. after the install flow
   /// completes and you navigate back to adjust decisions).
-  Future<void> _refreshPrinterState() async {
+  ///
+  /// Freshness gate: a background probe finished within the last
+  /// [_probeFreshness] skips. Wizard navigation that bounces users
+  /// back/forward on option screens (/services -> /files -> /services)
+  /// would otherwise re-probe every time, wasting bandwidth and the
+  /// printer's CPU.
+  static const _probeFreshness = Duration(seconds: 30);
+  Future<void> _refreshPrinterState({bool force = false}) async {
     final s = _session;
     final pf = _profile;
     if (s == null || pf == null) return;
+    if (!force) {
+      final last = _printerState.probedAt;
+      if (last != null &&
+          DateTime.now().difference(last) < _probeFreshness) {
+        return;
+      }
+    }
     try {
       final probe = PrinterStateProbe(ssh: ssh);
       final report = await probe.probe(session: s, profile: pf);
@@ -171,7 +196,104 @@ class WizardController {
   }
 
   /// Public entry point for screens that want to trigger a re-probe.
-  Future<void> refreshPrinterState() => _refreshPrinterState();
+  /// Pass `force: true` to bypass the freshness gate (e.g. after a
+  /// restoreBackup so the backup list reflects the new state).
+  Future<void> refreshPrinterState({bool force = false}) =>
+      _refreshPrinterState(force: force);
+
+  /// Restore a prior write_file auto-snapshot. Copies `backupPath`
+  /// back over `originalPath` using sudo when the target is outside
+  /// the SSH user's home. `cp -p` preserves the original's mode and
+  /// ownership metadata that we captured at backup time - so the
+  /// restored file matches what was there before Deckhand touched it.
+  /// The backup file is LEFT in place after restore; callers can use
+  /// [deleteBackup] to clean up once they're satisfied.
+  /// Throws [StepExecutionException] on failure.
+  Future<void> restoreBackup(DeckhandBackup backup) async {
+    final s = _requireSession();
+    final useSudo = _looksLikeSystemPath(s, backup.originalPath);
+    final qSrc = _shellQuote(backup.backupPath);
+    final qDst = _shellQuote(backup.originalPath);
+    // cp -p preserves mode+owner+timestamps. We chain a `chown --
+    // reference` as belt-and-suspenders when running under sudo:
+    // if the backup's metadata was somehow flattened to root-owned
+    // (shouldn't happen because cp -p preserves), this explicitly
+    // copies ownership off the backup file. Silently continues when
+    // chown fails (e.g. chown not in PATH on busybox).
+    final cp = useSudo ? 'sudo cp -p' : 'cp -p';
+    final fixOwn = useSudo
+        ? ' && sudo chown --reference=$qSrc $qDst 2>/dev/null || true'
+        : '';
+    final cmd = '$cp $qSrc $qDst$fixOwn';
+    final res = await _runSsh(cmd);
+    if (!res.success) {
+      throw StepExecutionException(
+        'Could not restore ${backup.originalPath} from '
+        '${backup.backupPath}',
+        stderr: res.stderr,
+      );
+    }
+    await _refreshPrinterState(force: true);
+  }
+
+  /// Fetch the content of a backup file so the UI can show a preview
+  /// before the user commits to restoring. Returns null on read
+  /// failure (best-effort; the user can still restore without
+  /// preview). Files over 256 KiB are truncated so a runaway preview
+  /// can't DoS the UI.
+  Future<String?> readBackupContent(DeckhandBackup backup) async {
+    _requireSession();
+    const maxBytes = 256 * 1024;
+    final useSudo = _looksLikeSystemPath(_session!, backup.backupPath);
+    final q = _shellQuote(backup.backupPath);
+    final head = useSudo ? 'sudo head -c $maxBytes' : 'head -c $maxBytes';
+    final res = await _runSsh('$head $q 2>/dev/null || true');
+    if (res.stdout.isEmpty) return null;
+    // Tag truncation so the UI can surface it.
+    if (res.stdout.length >= maxBytes) {
+      return '${res.stdout}\n\n[... truncated at 256 KiB ...]';
+    }
+    return res.stdout;
+  }
+
+  /// Delete a `.deckhand-pre-*` backup + its `.meta.json` sidecar.
+  /// Used by the verify_screen after the user has confirmed they
+  /// don't need the rollback snapshot anymore. Throws on failure.
+  Future<void> deleteBackup(DeckhandBackup backup) async {
+    _requireSession();
+    final useSudo = _looksLikeSystemPath(_session!, backup.backupPath);
+    final rm = useSudo ? 'sudo rm -f' : 'rm -f';
+    final qBackup = _shellQuote(backup.backupPath);
+    final qMeta = _shellQuote('${backup.backupPath}.meta.json');
+    final res = await _runSsh('$rm $qBackup $qMeta');
+    if (!res.success) {
+      throw StepExecutionException(
+        'Could not delete backup ${backup.backupPath}',
+        stderr: res.stderr,
+      );
+    }
+    await _refreshPrinterState(force: true);
+  }
+
+  /// Sweep all `.deckhand-pre-*` backups older than [olderThan] from
+  /// the printer. Used by verify_screen's "Prune old backups" action.
+  /// Returns the number of backup files removed (excluding sidecar
+  /// metadata which is counted as part of the same logical backup).
+  Future<int> pruneBackups({
+    Duration olderThan = const Duration(days: 30),
+  }) async {
+    _requireSession();
+    final cutoff = DateTime.now().subtract(olderThan);
+    final victims = _printerState.deckhandBackups.where((b) {
+      final age = b.createdAt;
+      if (age == null) return false;
+      return age.isBefore(cutoff);
+    }).toList();
+    for (final b in victims) {
+      await deleteBackup(b);
+    }
+    return victims.length;
+  }
 
   Future<void> setDecision(String path, Object value) async {
     final updated = Map<String, Object>.from(_state.decisions);
@@ -535,6 +657,24 @@ class WizardController {
     if (target == null) {
       throw StepExecutionException('write_file missing target');
     }
+    // Per-step precondition: only run when `require_path` exists on
+    // the printer. Lets a profile gate destructive writes on runtime
+    // state (e.g. "only rewrite KlipperScreen's launcher if
+    // KlipperScreen is actually installed"). Cheaper than wrapping
+    // every caller in a conditional.
+    final requirePath = step['require_path'] as String?;
+    if (requirePath != null) {
+      final qReq = _shellQuote(requirePath);
+      final check = await ssh.run(s, '[ -e $qReq ] && echo y || echo n');
+      if (!check.stdout.contains('y')) {
+        _log(
+          step,
+          '[write_file] skipped: require_path "$requirePath" does not '
+          'exist on this printer',
+        );
+        return;
+      }
+    }
     String rendered;
     if (content != null) {
       rendered = _render(content);
@@ -567,18 +707,45 @@ class WizardController {
     try {
       if (backup) {
         final qTarget0 = _shellQuote(target);
-        final backupPath = '$target.deckhand-pre-$ts';
+        final profileTag = _profile?.id ?? 'unknown';
+        final backupPath =
+            '$target.deckhand-pre-$profileTag-$ts';
+        final metadataPath = '$backupPath.meta.json';
         final qBackup = _shellQuote(backupPath);
-        // Only snapshot if the target already exists. `cp -p` preserves
-        // mode/owner/timestamps so a user-led rollback is byte-exact.
-        final snapCmd = useSudo
-            ? 'if [ -e $qTarget0 ]; then sudo cp -p $qTarget0 $qBackup; fi'
-            : 'if [ -e $qTarget0 ]; then cp -p $qTarget0 $qBackup; fi';
+        final qMeta = _shellQuote(metadataPath);
+        // Metadata sidecar: profile-id, profile-version, step-id,
+        // timestamp. Written next to the backup so future runs (or a
+        // human inspecting with `cat`) know who + when + why.
+        final meta = const JsonEncoder.withIndent('  ').convert({
+          'profile_id': _profile?.id,
+          'profile_version': _profile?.version,
+          'step_id': step['id'],
+          'backup_of': target,
+          'created_at_ms': ts,
+          'created_at_iso': DateTime.now().toUtc().toIso8601String(),
+          'deckhand_schema': 1,
+        });
+        final qMetaContent = _shellQuote(meta);
+        // Use a test+copy that ECHOES "created" so we can tell
+        // "backup taken" from "no-op (target didn't exist)". Also
+        // pre-flight-probe the destination directory is writable
+        // (some images mount /etc as a RO overlay) and surface a
+        // distinct error in that case. `cp -p` preserves mode/owner/
+        // timestamps so a rollback is byte-exact.
+        final cp = useSudo ? 'sudo cp -p' : 'cp -p';
+        final writeMeta = useSudo
+            ? 'sudo sh -c "printf %s $qMetaContent > $qMeta"'
+            : 'sh -c "printf %s $qMetaContent > $qMeta"';
+        final snapCmd =
+            'if [ ! -e $qTarget0 ]; then echo DECKHAND_BACKUP_NOOP; '
+            'elif ! [ -w "\$(dirname $qTarget0)" ] && [ -z "$useSudo" ]; then '
+            '  echo DECKHAND_BACKUP_RO_FS; '
+            'else '
+            '  $cp $qTarget0 $qBackup && $writeMeta && '
+            '  echo DECKHAND_BACKUP_CREATED; '
+            'fi';
         final snapRes = await _runSsh(snapCmd);
         if (!snapRes.success) {
-          // Non-fatal: surface a warning but keep going - the user
-          // explicitly triggered the write and might not care about
-          // a backup failure on a fresh install (no prior file).
           _emit(
             StepWarning(
               stepId: step['id'] as String? ?? 'write_file',
@@ -586,9 +753,20 @@ class WizardController {
                   'overwrite: ${snapRes.stderr.trim()}',
             ),
           );
-        } else if (snapRes.stdout.trim().isNotEmpty ||
-            snapRes.stderr.trim().isEmpty) {
+        } else if (snapRes.stdout.contains('DECKHAND_BACKUP_CREATED')) {
           _log(step, '[write_file] backup -> $backupPath');
+        } else if (snapRes.stdout.contains('DECKHAND_BACKUP_RO_FS')) {
+          _emit(
+            StepWarning(
+              stepId: step['id'] as String? ?? 'write_file',
+              message:
+                  'Target filesystem is read-only; no backup taken. The '
+                  'write step below may still succeed under sudo, but '
+                  'you will have no rollback snapshot.',
+            ),
+          );
+        } else {
+          _log(step, '[write_file] no prior $target; nothing to back up');
         }
       }
       await ssh.upload(s, tmpLocal, remoteTmp);

@@ -687,15 +687,135 @@ void main() {
       await controller.connectSsh(host: '127.0.0.1');
       await controller.startExecution();
 
-      // The backup step runs BEFORE the install: it checks if the
-      // target exists and cp -p's it sideways. Must be sudo-wrapped
-      // for system paths and must point at a suffixed sibling.
+      // The backup step runs BEFORE the install: it probes whether
+      // the target exists, does RO-FS detection, then cp -p's it
+      // sideways. Must be sudo-wrapped for system paths and point at
+      // a suffixed sibling.
       final backup = ssh.steps.firstWhere(
         (c) => c.contains('cp -p'),
       );
-      expect(backup, contains('if [ -e '));
+      // The new command distinguishes three outcomes:
+      //   DECKHAND_BACKUP_NOOP    (target did not exist)
+      //   DECKHAND_BACKUP_RO_FS   (target dir not writable + no sudo)
+      //   DECKHAND_BACKUP_CREATED (backup + meta sidecar written)
+      expect(backup, contains('if [ ! -e '));
+      expect(backup, contains('DECKHAND_BACKUP_NOOP'));
+      expect(backup, contains('DECKHAND_BACKUP_RO_FS'));
+      expect(backup, contains('DECKHAND_BACKUP_CREATED'));
       expect(backup, contains('/etc/apt/sources.list'));
       expect(backup, contains('.deckhand-pre-'));
+      // New naming: includes the profile id as a tag.
+      expect(backup, contains('test-printer'));
+      // Metadata sidecar gets written alongside the backup.
+      expect(backup, contains('.meta.json'));
+      expect(backup, contains('"profile_id": "test-printer"'));
+    });
+
+    test('write_file require_path gates the write on a live precondition',
+        () async {
+      final ssh = FakeSsh()
+        // First [ -e ... ] check returns 'n' to indicate the required
+        // path is missing.
+        ..nextRun = const SshCommandResult(
+          stdout: 'n', stderr: '', exitCode: 0,
+        );
+      final controller = newController(
+        profileJson: baseProfileJson(
+          stockKeepSteps: [
+            {
+              'id': 'hook',
+              'kind': 'write_file',
+              'target': '/home/root/missing/hook.sh',
+              'require_path': '/home/root/missing',
+              'content': '#!/bin/sh\nexit 0',
+              'backup': false,
+            },
+          ],
+        ),
+        ssh: ssh,
+      );
+      await controller.loadProfile('test-printer');
+      controller.setFlow(WizardFlow.stockKeep);
+      await controller.connectSsh(host: '127.0.0.1');
+      await controller.startExecution();
+      // Only the precondition check ran; no mv / install / cp.
+      final nonProbe = ssh.steps;
+      expect(nonProbe.any((c) => c.contains('[ -e ')), isTrue);
+      expect(
+        nonProbe.any((c) => c.contains('install -m')),
+        isFalse,
+        reason: 'write_file should have skipped when require_path missing',
+      );
+    });
+  });
+
+  group('WizardController.restoreBackup / deleteBackup / pruneBackups', () {
+    test('restoreBackup routed through _runSsh, sudo-stripped for system path',
+        () async {
+      final ssh = FakeSsh();
+      final controller = newController(
+        profileJson: baseProfileJson(),
+        ssh: ssh,
+      );
+      await controller.loadProfile('test-printer');
+      await controller.connectSsh(host: '127.0.0.1');
+      await controller.restoreBackup(
+        const DeckhandBackup(
+          originalPath: '/etc/apt/sources.list',
+          backupPath: '/etc/apt/sources.list.deckhand-pre-1776',
+        ),
+      );
+      // Find the cp -p call. Since _runSsh strips the outer `sudo `
+      // before passing to the SshService, the captured command
+      // STARTS with `cp -p` - the fact that it doesn't start with
+      // `sudo ` is the evidence the strip path fired + sudoPassword
+      // was forwarded.
+      final cp = ssh.steps.firstWhere((c) => c.contains('cp -p'));
+      expect(cp, startsWith('cp -p'));
+      expect(cp, contains('/etc/apt/sources.list'));
+      // Inner chown preserves ownership from the backup's metadata
+      // (belt-and-suspenders over cp -p's own preservation).
+      expect(cp, contains('chown --reference='));
+    });
+
+    test('restoreBackup stays unprivileged for paths under the user home',
+        () async {
+      final ssh = FakeSsh();
+      final controller = newController(
+        profileJson: baseProfileJson(),
+        ssh: ssh,
+      );
+      await controller.loadProfile('test-printer');
+      await controller.connectSsh(host: '127.0.0.1');
+      await controller.restoreBackup(
+        const DeckhandBackup(
+          originalPath: '/home/root/printer.cfg',
+          backupPath: '/home/root/printer.cfg.deckhand-pre-1776',
+        ),
+      );
+      final cp = ssh.steps.firstWhere((c) => c.contains('cp -p'));
+      expect(cp, startsWith('cp -p'));
+      expect(cp, isNot(contains('sudo')));
+    });
+
+    test('deleteBackup removes both the backup file AND its sidecar',
+        () async {
+      final ssh = FakeSsh();
+      final controller = newController(
+        profileJson: baseProfileJson(),
+        ssh: ssh,
+      );
+      await controller.loadProfile('test-printer');
+      await controller.connectSsh(host: '127.0.0.1');
+      await controller.deleteBackup(
+        const DeckhandBackup(
+          originalPath: '/etc/apt/sources.list',
+          backupPath: '/etc/apt/sources.list.deckhand-pre-1776',
+        ),
+      );
+      final rm = ssh.steps.firstWhere((c) => c.contains('rm -f'));
+      expect(rm, contains('.deckhand-pre-1776'));
+      expect(rm, contains('.meta.json'));
     });
   });
 

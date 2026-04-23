@@ -18,13 +18,30 @@ Widget testHarness({
   final router = GoRouter(
     initialLocation: initialLocation,
     routes: [
-      GoRoute(path: '/', builder: (_, __) => child),
-      GoRoute(path: '/firmware', builder: (_, __) => child),
-      GoRoute(path: '/webui', builder: (_, __) => child),
-      GoRoute(path: '/kiauh', builder: (_, __) => child),
-      GoRoute(path: '/connect', builder: (_, __) => child),
-      GoRoute(path: '/progress', builder: (_, __) => child),
-      GoRoute(path: '/pick-printer', builder: (_, __) => child),
+      for (final path in const [
+        '/',
+        '/pick-printer',
+        '/connect',
+        '/verify',
+        '/choose-path',
+        '/firmware',
+        '/webui',
+        '/kiauh',
+        '/screen-choice',
+        '/services',
+        '/files',
+        '/hardening',
+        '/flash-target',
+        '/choose-os',
+        '/flash-confirm',
+        '/first-boot',
+        '/first-boot-setup',
+        '/review',
+        '/progress',
+        '/done',
+        '/settings',
+      ])
+        GoRoute(path: path, builder: (_, __) => child),
     ],
   );
   return ProviderScope(

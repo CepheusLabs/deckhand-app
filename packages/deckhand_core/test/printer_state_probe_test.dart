@@ -140,6 +140,78 @@ void main() {
       expect(state.probedAt, isNotNull);
     });
 
+    test('parses .deckhand-pre-* backup entries sorted newest-first',
+        () async {
+      ssh.nextStdout = [
+        // Older
+        'backup\t/etc/apt/sources.list:::/etc/apt/sources.list.deckhand-pre-1776910000000:::',
+        // Newer
+        'backup\t/home/mks/printer.cfg:::/home/mks/printer.cfg.deckhand-pre-1776910500000:::',
+      ].join('\n');
+      final state = await probe.probe(
+        session: _fakeSession,
+        profile: _minimalProfile,
+      );
+      expect(state.deckhandBackups, hasLength(2));
+      // Newest-first: /home/mks/printer.cfg comes before /etc/apt.
+      expect(
+        state.deckhandBackups.first.originalPath,
+        '/home/mks/printer.cfg',
+      );
+      expect(
+        state.deckhandBackups.last.originalPath,
+        '/etc/apt/sources.list',
+      );
+    });
+
+    test('parses new profile-tagged .deckhand-pre-<profile>-<ts> naming',
+        () async {
+      ssh.nextStdout = [
+        'backup\t/etc/apt/sources.list:::/etc/apt/sources.list.deckhand-pre-phrozen-arco-1776910000000:::',
+      ].join('\n');
+      final state = await probe.probe(
+        session: _fakeSession,
+        profile: _minimalProfile,
+      );
+      expect(state.deckhandBackups, hasLength(1));
+      expect(state.deckhandBackups.single.createdAt, isNotNull);
+    });
+
+    test('parses backup metadata sidecar when present', () async {
+      final meta = '{"profile_id":"phrozen-arco","profile_version":"1.0.0",'
+          '"step_id":"fix_apt_sources","created_at_ms":1776910000000,'
+          '"created_at_iso":"2026-04-22T00:00:00.000Z"}';
+      ssh.nextStdout = [
+        'backup\t/etc/apt/sources.list:::'
+            '/etc/apt/sources.list.deckhand-pre-phrozen-arco-1776910000000:::'
+            '$meta',
+      ].join('\n');
+      final state = await probe.probe(
+        session: _fakeSession,
+        profile: _minimalProfile,
+      );
+      final b = state.deckhandBackups.single;
+      expect(b.profileId, 'phrozen-arco');
+      expect(b.profileVersion, '1.0.0');
+      expect(b.stepId, 'fix_apt_sources');
+      expect(b.createdAt, isNotNull);
+    });
+
+    test('malformed meta sidecar JSON is tolerated, backup still usable',
+        () async {
+      ssh.nextStdout = [
+        'backup\t/etc/apt/sources.list:::'
+            '/etc/apt/sources.list.deckhand-pre-1776910000000:::'
+            '{not valid json',
+      ].join('\n');
+      final state = await probe.probe(
+        session: _fakeSession,
+        profile: _minimalProfile,
+      );
+      expect(state.deckhandBackups, hasLength(1));
+      expect(state.deckhandBackups.single.profileId, isNull);
+    });
+
     test('malformed lines are silently skipped', () async {
       ssh.nextStdout = [
         'garbage-line-no-tab',

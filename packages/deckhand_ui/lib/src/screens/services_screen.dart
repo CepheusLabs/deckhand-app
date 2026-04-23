@@ -264,16 +264,23 @@ class _ServiceCard extends StatelessWidget {
   /// Small status chip summarising what the probe saw for this service.
   /// Hidden when probe data is unavailable (screen hasn't been probed
   /// yet) so we don't falsely imply "all clean" during that window.
+  ///
+  /// Status tiers (strongest signal first):
+  ///   - running   - unit is active OR pattern-matched process found
+  ///   - installed + stopped - unit file on disk but systemctl says
+  ///                           inactive (user disabled it, or it
+  ///                           hasn't been started). Calls out that
+  ///                           choosing "disable" here is still a
+  ///                           meaningful action even though the
+  ///                           service isn't currently running.
+  ///   - launcher present - script path from launched_by exists but
+  ///                        no systemd unit + no running process
+  ///                        (e.g. a cron/init.d launcher).
+  ///   - not detected - nothing matched; action is a no-op.
   Widget? _probeChip(ThemeData theme) {
     final s = state;
     if (s == null) return null;
-    if (s.unitActive) {
-      return _StatusChip(
-        label: 'running',
-        color: theme.colorScheme.tertiary,
-      );
-    }
-    if (s.processRunning) {
+    if (s.unitActive || s.processRunning) {
       return _StatusChip(
         label: 'running',
         color: theme.colorScheme.tertiary,
@@ -281,7 +288,7 @@ class _ServiceCard extends StatelessWidget {
     }
     if (s.unitExists) {
       return _StatusChip(
-        label: 'installed',
+        label: 'installed + stopped',
         color: theme.colorScheme.secondary,
       );
     }
