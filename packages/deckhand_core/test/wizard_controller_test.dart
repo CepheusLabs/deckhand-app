@@ -437,10 +437,17 @@ void main() {
         expect(runCmd, isNot(startsWith('-E ')));
         expect(runCmd, contains('--fast'));
 
-        // Cleanup: the last SSH command removes both helpers.
-        expect(ssh.runCalls.last, startsWith('rm -rf'));
-        expect(ssh.runCalls.last, contains('deckhand-askpass-'));
-        expect(ssh.runCalls.last, contains('deckhand-bin-'));
+        // Cleanup is deferred to controller.dispose() so repeated
+        // script steps reuse the same helper. Verify it happens then.
+        final pre = ssh.runCalls.length;
+        await controller.dispose();
+        final cleanup = ssh.runCalls
+            .sublist(pre)
+            .where((c) => c.startsWith('rm -rf'))
+            .toList();
+        expect(cleanup, hasLength(1));
+        expect(cleanup.single, contains('deckhand-askpass-'));
+        expect(cleanup.single, contains('deckhand-bin-'));
       },
     );
 
