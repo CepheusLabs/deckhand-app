@@ -29,14 +29,23 @@ class _ScreenChoiceScreenState extends ConsumerState<ScreenChoiceScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final screens =
-        ref.watch(wizardControllerProvider).profile?.screens ?? const [];
+    ref.watch(wizardStateProvider);
+    final controller = ref.watch(wizardControllerProvider);
+    final screens = controller.profile?.screens ?? const [];
+    final probe = controller.printerState;
+    // Pre-select a screen that's already installed + active, so users
+    // returning to a partly-configured machine don't silently re-pick
+    // the profile-recommended one over what they're running.
     _choice ??= screens
         .firstWhere(
-          (s) => s.recommended && _isSelectable(s),
+          (s) => probe.screenInstalls[s.id]?.active == true &&
+              _isSelectable(s),
           orElse: () => screens.firstWhere(
-            _isSelectable,
-            orElse: () => screens.first,
+            (s) => s.recommended && _isSelectable(s),
+            orElse: () => screens.firstWhere(
+              _isSelectable,
+              orElse: () => screens.first,
+            ),
           ),
         )
         .id;
@@ -70,6 +79,20 @@ class _ScreenChoiceScreenState extends ConsumerState<ScreenChoiceScreen> {
                         if (s.status != null) ...[
                           const SizedBox(width: 8),
                           _StatusBadge(status: s.status as String),
+                        ],
+                        if (probe.screenInstalls[s.id]?.active == true) ...[
+                          const SizedBox(width: 6),
+                          _InstallBadge(
+                            label: 'running',
+                            color: theme.colorScheme.primary,
+                          ),
+                        ] else if (
+                            probe.screenInstalls[s.id]?.installed == true) ...[
+                          const SizedBox(width: 6),
+                          _InstallBadge(
+                            label: 'installed',
+                            color: theme.colorScheme.secondary,
+                          ),
                         ],
                       ],
                     ),
@@ -111,6 +134,34 @@ class _ScreenChoiceScreenState extends ConsumerState<ScreenChoiceScreen> {
       return Text(kind == null ? '' : 'source: $kind');
     }
     return Text(notes);
+  }
+}
+
+class _InstallBadge extends StatelessWidget {
+  const _InstallBadge({required this.label, required this.color});
+  final String label;
+  final Color color;
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.18),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: color.withValues(alpha: 0.4),
+          width: 0.5,
+        ),
+      ),
+      child: Text(
+        label,
+        style: theme.textTheme.labelSmall?.copyWith(
+          color: color,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
   }
 }
 

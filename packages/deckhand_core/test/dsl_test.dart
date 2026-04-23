@@ -123,6 +123,65 @@ void main() {
           isFalse,
         );
       });
+
+      test('live probe.python_default overrides profile os.stock.python',
+          () {
+        final e = env(
+          // Live probe saw python 3.13 on the machine.
+          {'probe.python_default': '3.13.0'},
+          profile: {
+            // But the profile still claims stock is 3.7.3 (old Buster).
+            'os': {
+              'stock': {'python': '3.7.3'},
+            },
+          },
+        );
+        // 3.13 is NOT below 3.9 -> false.
+        expect(dsl.evaluate('os_python_below("3.9")', e), isFalse);
+        // Explicit below-3.14 case still true.
+        expect(dsl.evaluate('os_python_below("3.14")', e), isTrue);
+      });
+    });
+
+    group('os_codename_is', () {
+      test('matches probe-captured /etc/os-release codename', () {
+        final e = env({'probe.os_codename': 'trixie'});
+        expect(dsl.evaluate('os_codename_is("trixie")', e), isTrue);
+        expect(dsl.evaluate('os_codename_is("buster")', e), isFalse);
+      });
+
+      test('case-insensitive comparison', () {
+        final e = env({'probe.os_codename': 'Bookworm'});
+        expect(dsl.evaluate('os_codename_is("bookworm")', e), isTrue);
+      });
+
+      test('returns false when probe data is missing', () {
+        expect(
+          dsl.evaluate('os_codename_is("buster")', env({})),
+          isFalse,
+        );
+      });
+    });
+
+    group('os_codename_in', () {
+      test('matches any value in the provided list', () {
+        final e = env({'probe.os_codename': 'bookworm'});
+        expect(
+          dsl.evaluate('os_codename_in([buster, bullseye, bookworm])', e),
+          isTrue,
+        );
+        expect(
+          dsl.evaluate('os_codename_in([trixie, sid])', e),
+          isFalse,
+        );
+      });
+
+      test('returns false when probe data is missing', () {
+        expect(
+          dsl.evaluate('os_codename_in([buster])', env({})),
+          isFalse,
+        );
+      });
     });
   });
 }

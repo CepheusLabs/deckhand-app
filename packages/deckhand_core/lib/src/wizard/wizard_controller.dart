@@ -154,7 +154,7 @@ class WizardController {
     if (s == null || pf == null) return;
     try {
       final probe = PrinterStateProbe(ssh: ssh);
-      final report = await probe.probe(session: s, inventory: pf.stockOs);
+      final report = await probe.probe(session: s, profile: pf);
       _printerState = report;
       _emit(PrinterStateRefreshed(report));
     } catch (e) {

@@ -1,3 +1,4 @@
+import 'package:deckhand_core/deckhand_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -20,16 +21,26 @@ class _WebuiScreenState extends ConsumerState<WebuiScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final profile = ref.watch(wizardControllerProvider).profile;
+    ref.watch(wizardStateProvider);
+    final controller = ref.watch(wizardControllerProvider);
+    final profile = controller.profile;
     final webui = profile?.stack.webui ?? const {};
     final choices = ((webui['choices'] as List?) ?? const []).cast<Map>();
     final defaultChoices = ((webui['default_choices'] as List?) ?? const [])
         .cast<String>();
+    final probe = controller.printerState;
 
-    // Seed once on first build so the user's own toggles aren't clobbered
-    // by the defaults after they clear a checkbox.
+    // Seed once on first build. Prefer "whatever is already installed
+    // on this specific printer" over the profile's declared defaults -
+    // that way users returning to a partly-configured machine don't
+    // accidentally un-select the UI they're already running.
     if (!_seeded) {
-      _selected.addAll(defaultChoices);
+      final installed = [
+        for (final raw in choices)
+          if (probe.stackInstalls[raw['id']]?.installed == true)
+            raw['id'] as String,
+      ];
+      _selected.addAll(installed.isNotEmpty ? installed : defaultChoices);
       _seeded = true;
     }
 
@@ -80,20 +91,19 @@ class _WebuiScreenState extends ConsumerState<WebuiScreen> {
             ),
           ),
           for (final raw in choices)
-            CheckboxListTile(
-              value: _selected.contains(raw['id']),
-              onChanged: (v) => setState(() {
+            _WebuiChoiceTile(
+              raw: raw,
+              selected: _selected.contains(raw['id']),
+              install: probe.stackInstalls[raw['id']],
+              descriptionBuilder: _userFacingBlurb,
+              onToggle: (v) => setState(() {
                 final id = raw['id'] as String;
-                if (v == true) {
+                if (v) {
                   _selected.add(id);
                 } else {
                   _selected.remove(id);
                 }
               }),
-              title: Text(
-                raw['display_name'] as String? ?? raw['id'] as String,
-              ),
-              subtitle: Text(_userFacingBlurb(raw)),
             ),
         ],
       ),
@@ -127,5 +137,82 @@ class _WebuiScreenState extends ConsumerState<WebuiScreen> {
     final port = raw['default_port'];
     final name = raw['display_name'] as String? ?? raw['id'] as String;
     return port == null ? name : '$name on port $port';
+  }
+}
+
+/// One web-UI choice tile with a live "already installed" chip driven
+/// by the state probe. Keeps the existing checkbox UX but adds the
+/// signal users need to avoid reinstalling a working UI on top of
+/// itself.
+class _WebuiChoiceTile extends StatelessWidget {
+  const _WebuiChoiceTile({
+    required this.raw,
+    required this.selected,
+    required this.install,
+    required this.descriptionBuilder,
+    required this.onToggle,
+  });
+  final Map raw;
+  final bool selected;
+  final InstallState? install;
+  final String Function(Map) descriptionBuilder;
+  final ValueChanged<bool> onToggle;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final id = raw['id'] as String? ?? '';
+    final alreadyInstalled = install?.installed ?? false;
+    final isActive = install?.active ?? false;
+    Widget? chip;
+    if (alreadyInstalled && isActive) {
+      chip = _StatusChip(
+        label: 'installed + running',
+        color: theme.colorScheme.primary,
+      );
+    } else if (alreadyInstalled) {
+      chip = _StatusChip(
+        label: 'installed',
+        color: theme.colorScheme.secondary,
+      );
+    }
+    return CheckboxListTile(
+      value: selected,
+      onChanged: (v) => onToggle(v ?? false),
+      title: Row(
+        children: [
+          Expanded(child: Text(raw['display_name'] as String? ?? id)),
+          if (chip != null) ...[
+            const SizedBox(width: 8),
+            chip,
+          ],
+        ],
+      ),
+      subtitle: Text(descriptionBuilder(raw)),
+    );
+  }
+}
+
+class _StatusChip extends StatelessWidget {
+  const _StatusChip({required this.label, required this.color});
+  final String label;
+  final Color color;
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(
+        label,
+        style: theme.textTheme.labelSmall?.copyWith(
+          color: color,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
   }
 }

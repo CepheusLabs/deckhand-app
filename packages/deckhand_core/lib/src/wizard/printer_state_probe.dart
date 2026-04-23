@@ -1,6 +1,21 @@
 import '../services/ssh_service.dart';
 import '../models/printer_profile.dart';
 
+/// What the probe found for a single stack/screen install candidate.
+/// `installed=true` iff the install path exists AND (when checkable)
+/// its declared systemd unit is present. `active` reflects whether
+/// the service is currently running, when there's one to check.
+class InstallState {
+  const InstallState({
+    required this.installed,
+    required this.active,
+    this.path,
+  });
+  final bool installed;
+  final bool active;
+  final String? path;
+}
+
 /// Snapshot of what actually exists / runs on a specific printer,
 /// captured in a single SSH round-trip. Used by wizard screens to
 /// grey-out options that are already-clean (service not installed,
@@ -15,6 +30,8 @@ class PrinterState {
     required this.services,
     required this.files,
     required this.paths,
+    required this.stackInstalls,
+    required this.screenInstalls,
     required this.python311Installed,
     this.osId,
     this.osCodename,
@@ -29,6 +46,12 @@ class PrinterState {
   final Map<String, bool> files;
   // Path id -> "does the path exist".
   final Map<String, bool> paths;
+  // Stack-component id (moonraker, kiauh, crowsnest, fluidd, mainsail,
+  // ...) -> InstallState. Lets the wizard tell "already installed" from
+  // "user should pick".
+  final Map<String, InstallState> stackInstalls;
+  // Screen id -> InstallState. Same idea for profile.screens.
+  final Map<String, InstallState> screenInstalls;
   final bool python311Installed;
   // From /etc/os-release. The profile often claims the printer is
   // still on the vendor-shipped OS, but users upgrade - we should key
@@ -45,6 +68,8 @@ class PrinterState {
     services: {},
     files: {},
     paths: {},
+    stackInstalls: {},
+    screenInstalls: {},
     python311Installed: false,
   );
 }
@@ -88,9 +113,9 @@ class PrinterStateProbe {
 
   Future<PrinterState> probe({
     required SshSession session,
-    required StockOsInventory inventory,
+    required PrinterProfile profile,
   }) async {
-    final script = _buildScript(inventory);
+    final script = _buildScript(profile);
     final res = await ssh.run(
       session,
       script,
@@ -103,7 +128,8 @@ class PrinterStateProbe {
     return _parseReport(res.stdout);
   }
 
-  String _buildScript(StockOsInventory inv) {
+  String _buildScript(PrinterProfile profile) {
+    final inv = profile.stockOs;
     final lines = <String>[
       '#!/bin/sh',
       // We can't rely on bash being /bin/sh on every distro, so stay
@@ -143,9 +169,13 @@ class PrinterStateProbe {
           ? (launchedBy['path'] as String? ?? '')
           : '';
       final qScript = _shellEscape(scriptPath);
-      final id = _shellEscape(svc.id);
+      // `id` is inlined unquoted on purpose. Profile ids are already
+      // constrained to `[a-z0-9_-]+` so there's nothing to escape,
+      // and inlining them keeps the probe's wire format (`svc:<id>:
+      // <facet>`) matching cleanly with the parser expectations.
+      final id = svc.id;
       lines.addAll([
-        '# ${svc.id}',
+        '# $id',
         if (unit != "''")
           '( systemctl list-unit-files $unit >/dev/null 2>&1 && '
               'say svc:$id:unit_exists 1 ) || say svc:$id:unit_exists 0',
@@ -161,7 +191,7 @@ class PrinterStateProbe {
       ]);
     }
     for (final f in inv.files) {
-      final id = _shellEscape(f.id);
+      final id = f.id;
       final paths = f.paths.map(_shellEscape).toList();
       // A file id is "present" if ANY of its declared paths exist.
       // Glob patterns: use `ls -d` and check exit; find-based probing
@@ -174,17 +204,91 @@ class PrinterStateProbe {
       }
     }
     for (final pth in inv.paths) {
-      final id = _shellEscape(pth.id);
+      final id = pth.id;
       final path = _shellEscape(pth.path);
       lines.add('[ -e $path ] && say path:$id 1 || say path:$id 0');
     }
+    // --------------------------------------------------------
+    // Stack components: moonraker / kiauh / crowsnest / webui
+    // choices. For each, check the install_path is present AND,
+    // when a systemd unit is declared, that it's active.
+    final stack = profile.stack;
+    _addStackProbe(lines, 'moonraker', stack.moonraker);
+    _addStackProbe(lines, 'kiauh', stack.kiauh);
+    _addStackProbe(lines, 'crowsnest', stack.crowsnest);
+    final webuiChoices = ((stack.webui?['choices'] as List?) ?? const [])
+        .cast<Map>();
+    for (final raw in webuiChoices) {
+      final c = raw.cast<String, dynamic>();
+      final id = c['id'] as String?;
+      if (id == null) continue;
+      _addStackProbe(lines, id, c);
+    }
+    // --------------------------------------------------------
+    // Screens: profile.screens[*].install_path. Many screens are
+    // just bundled directories with no systemd unit - we only check
+    // install_path existence in that case.
+    for (final sc in profile.screens) {
+      final raw = sc.raw;
+      final installPath = raw['install_path'] as String?
+          ?? raw['source_path'] as String?;
+      if (installPath == null) continue;
+      final qPath = _shellPathEscape(installPath);
+      lines.add('[ -e $qPath ] && say screen:${sc.id}:installed 1 || say screen:${sc.id}:installed 0');
+      final unit = raw['systemd_unit'] as String?;
+      if (unit != null && unit.isNotEmpty) {
+        final qUnit = _shellEscape(unit);
+        lines.add(
+          '( systemctl is-active $qUnit >/dev/null 2>&1 && '
+          'say screen:${sc.id}:active 1 ) || say screen:${sc.id}:active 0',
+        );
+      }
+      lines.add('say screen:${sc.id}:path $qPath');
+    }
     return lines.join('\n');
+  }
+
+  void _addStackProbe(
+    List<String> lines,
+    String id,
+    Map<String, dynamic>? cfg,
+  ) {
+    if (cfg == null) return;
+    final installPath = cfg['install_path'] as String?;
+    if (installPath == null) return;
+    final qPath = _shellPathEscape(installPath);
+    lines.add('[ -d $qPath ] && say stack:$id:installed 1 || say stack:$id:installed 0');
+    lines.add('say stack:$id:path $qPath');
+    final unit = cfg['systemd_unit'] as String?;
+    if (unit != null && unit.isNotEmpty) {
+      final qUnit = _shellEscape(unit);
+      lines.add(
+        '( systemctl is-active $qUnit >/dev/null 2>&1 && '
+        'say stack:$id:active 1 ) || say stack:$id:active 0',
+      );
+    }
+  }
+
+  /// Escape a path that may start with `~` for use as a shell argument.
+  /// Single-quoting a `~/foo` would suppress tilde expansion (bash
+  /// only expands `~` when unquoted or at the very start), so we
+  /// swap to `"$HOME/foo"` when we see one. Absolute paths keep the
+  /// simple single-quote form.
+  String _shellPathEscape(String path) {
+    if (path == '~') return r'"$HOME"';
+    if (path.startsWith('~/')) {
+      final rest = path.substring(2).replaceAll(r'\', r'\\').replaceAll('"', r'\"');
+      return '"\$HOME/$rest"';
+    }
+    return _shellEscape(path);
   }
 
   PrinterState _parseReport(String stdout) {
     final services = <String, _ServiceAcc>{};
     final files = <String, bool>{};
     final paths = <String, bool>{};
+    final stackAcc = <String, _InstallAcc>{};
+    final screenAcc = <String, _InstallAcc>{};
     var python = false;
     String? osId;
     String? osCodename;
@@ -241,6 +345,14 @@ class PrinterStateProbe {
         paths[key.substring(5)] = val == '1';
         continue;
       }
+      if (key.startsWith('stack:')) {
+        _accumulateInstall(stackAcc, key.substring(6), val);
+        continue;
+      }
+      if (key.startsWith('screen:')) {
+        _accumulateInstall(screenAcc, key.substring(7), val);
+        continue;
+      }
     }
 
     final svcState = {
@@ -257,6 +369,22 @@ class PrinterStateProbe {
       services: svcState,
       files: files,
       paths: paths,
+      stackInstalls: {
+        for (final e in stackAcc.entries)
+          e.key: InstallState(
+            installed: e.value.installed,
+            active: e.value.active,
+            path: e.value.path,
+          ),
+      },
+      screenInstalls: {
+        for (final e in screenAcc.entries)
+          e.key: InstallState(
+            installed: e.value.installed,
+            active: e.value.active,
+            path: e.value.path,
+          ),
+      },
       python311Installed: python,
       osId: osId,
       osCodename: osCodename,
@@ -265,6 +393,29 @@ class PrinterStateProbe {
       kernelRelease: kernel,
       probedAt: DateTime.now(),
     );
+  }
+
+  /// Fold a single `stack:<id>:<facet>` or `screen:<id>:<facet>` probe
+  /// line into its per-id accumulator. Unknown facets are ignored so
+  /// the parser is forward-compatible with future probe additions.
+  void _accumulateInstall(
+    Map<String, _InstallAcc> accMap,
+    String rest,
+    String val,
+  ) {
+    final idx = rest.lastIndexOf(':');
+    if (idx < 0) return;
+    final id = rest.substring(0, idx);
+    final facet = rest.substring(idx + 1);
+    final acc = accMap.putIfAbsent(id, _InstallAcc.new);
+    switch (facet) {
+      case 'installed':
+        acc.installed = val == '1';
+      case 'active':
+        acc.active = val == '1';
+      case 'path':
+        acc.path = val;
+    }
   }
 
   String _shellEscape(String s) {
@@ -278,4 +429,10 @@ class _ServiceAcc {
   bool unitActive = false;
   bool procRunning = false;
   bool launcherExists = false;
+}
+
+class _InstallAcc {
+  bool installed = false;
+  bool active = false;
+  String? path;
 }
