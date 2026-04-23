@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../i18n/translations.g.dart';
 import '../providers.dart';
 import '../widgets/wizard_scaffold.dart';
 import '../widgets/deckhand_stepper.dart';
@@ -37,11 +38,8 @@ class _WebuiScreenState extends ConsumerState<WebuiScreen> {
 
     return WizardScaffold(
       stepper: const DeckhandStepper(),
-      title: 'Which web interface?',
-      helperText:
-          'Web dashboards for controlling the printer from a browser. They '
-          'both talk to the same backend (Moonraker), so you can install '
-          'both and switch between them any time.',
+      title: t.webui.title,
+      helperText: t.webui.helper,
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -69,8 +67,8 @@ class _WebuiScreenState extends ConsumerState<WebuiScreen> {
                 Expanded(
                   child: Text(
                     hasSelection
-                        ? 'Pick at least one. This step cannot be skipped.'
-                        : 'Pick at least one to continue.',
+                        ? t.webui.requirement_ok
+                        : t.webui.requirement_missing,
                     style: theme.textTheme.bodyMedium?.copyWith(
                       color: hasSelection
                           ? theme.colorScheme.onSurfaceVariant
@@ -100,7 +98,7 @@ class _WebuiScreenState extends ConsumerState<WebuiScreen> {
         ],
       ),
       primaryAction: WizardAction(
-        label: 'Continue',
+        label: t.common.action_continue,
         onPressed: hasSelection
             ? () async {
                 await ref
@@ -111,7 +109,10 @@ class _WebuiScreenState extends ConsumerState<WebuiScreen> {
             : null,
       ),
       secondaryActions: [
-        WizardAction(label: 'Back', onPressed: () => context.go('/firmware')),
+        WizardAction(
+          label: t.common.action_back,
+          onPressed: () => context.go('/firmware'),
+        ),
       ],
     );
   }

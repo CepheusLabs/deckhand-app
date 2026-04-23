@@ -29,6 +29,13 @@ final securityServiceProvider = Provider<SecurityService>(
   (_) => _throwUnimplemented('securityServiceProvider'),
 );
 
+/// Persisted user settings (local-profiles-dir, show-stubs, etc.).
+/// The Settings screen calls back into this to persist changes, then
+/// the user restarts the app to pick up the new profile source.
+final deckhandSettingsProvider = Provider<DeckhandSettings>(
+  (_) => _throwUnimplemented('deckhandSettingsProvider'),
+);
+
 /// Optional: raw-device writes. Null when elevation is unavailable (e.g.
 /// early dev builds before the helper binary ships alongside the app).
 final elevatedHelperServiceProvider = Provider<ElevatedHelperService?>(

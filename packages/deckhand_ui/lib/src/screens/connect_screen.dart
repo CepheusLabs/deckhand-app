@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../i18n/translations.g.dart';
 import '../providers.dart';
 import '../widgets/wizard_scaffold.dart';
 import '../widgets/deckhand_stepper.dart';
@@ -29,10 +30,6 @@ class ConnectScreen extends ConsumerStatefulWidget {
 }
 
 class _ConnectScreenState extends ConsumerState<ConnectScreen> {
-  /// Per-probe time budget. Under this, transient hiccups are retried
-  /// once; over it, we just log the card as "unknown" and move on.
-  static const _probeTimeout = Duration(seconds: 3);
-
   final _hostController = TextEditingController();
   String? _error;
   bool _connecting = false;
@@ -112,10 +109,11 @@ class _ConnectScreenState extends ConsumerState<ConnectScreen> {
     final hints =
         profile?.identification ?? const ProfileIdentification();
 
+    final probeTimeout = Duration(seconds: hints.probeTimeoutSeconds);
     Future<T?> withRetry<T>(Future<T> Function() op) async {
       for (var attempt = 0; attempt < 2; attempt++) {
         try {
-          return await op().timeout(_probeTimeout);
+          return await op().timeout(probeTimeout);
         } catch (_) {
           if (attempt == 1) return null;
           await Future<void>.delayed(const Duration(milliseconds: 300));
@@ -223,19 +221,15 @@ class _ConnectScreenState extends ConsumerState<ConnectScreen> {
 
     return WizardScaffold(
       stepper: const DeckhandStepper(),
-      title: 'Connect to your printer',
-      helperText:
-          'Deckhand scans your LAN two ways: mDNS for printers that '
-          'advertise Moonraker, and a TCP sweep of port 7125. Each host is '
-          'probed to see whether it matches your selected profile - '
-          'confirmed matches surface at the top.',
+      title: t.connect.title,
+      helperText: t.connect.helper,
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
               Text(
-                'Found on your network',
+                t.connect.section_discovered,
                 style: theme.textTheme.titleMedium,
               ),
               const SizedBox(width: 12),
@@ -248,7 +242,7 @@ class _ConnectScreenState extends ConsumerState<ConnectScreen> {
               const Spacer(),
               TextButton.icon(
                 icon: const Icon(Icons.refresh),
-                label: const Text('Rescan'),
+                label: Text(t.connect.action_rescan),
                 onPressed: _scanning || _connecting ? null : _scan,
               ),
             ],
@@ -256,10 +250,7 @@ class _ConnectScreenState extends ConsumerState<ConnectScreen> {
           const SizedBox(height: 8),
           if (!_scanning && _discovered.isEmpty)
             Text(
-              'Nothing responded on port 7125 across your local subnet, and '
-              'no Moonraker mDNS advertisements were seen either. Your '
-              'printer may be on a different VLAN, behind a firewall, or '
-              'using a non-default port - enter the IP/hostname below.',
+              t.connect.empty_state,
               style: theme.textTheme.bodySmall,
             )
           else
@@ -282,14 +273,14 @@ class _ConnectScreenState extends ConsumerState<ConnectScreen> {
           const Divider(),
           const SizedBox(height: 16),
 
-          Text('Or enter manually', style: theme.textTheme.titleMedium),
+          Text(t.connect.section_manual, style: theme.textTheme.titleMedium),
           const SizedBox(height: 12),
           TextField(
             controller: _hostController,
-            decoration: const InputDecoration(
-              labelText: 'Host or IP',
-              hintText: 'e.g. 192.168.1.50 or mkspi.local',
-              border: OutlineInputBorder(),
+            decoration: InputDecoration(
+              labelText: t.connect.field_host,
+              hintText: t.connect.hint_host,
+              border: const OutlineInputBorder(),
             ),
             enabled: !_connecting,
             onChanged: (_) => setState(() {}),
@@ -310,14 +301,16 @@ class _ConnectScreenState extends ConsumerState<ConnectScreen> {
         ],
       ),
       primaryAction: WizardAction(
-        label: _connecting ? 'Connecting...' : 'Connect',
+        label: _connecting
+            ? t.connect.action_connecting
+            : t.connect.action_connect,
         onPressed: _connecting || manualHost.isEmpty
             ? null
             : () => _connect(manualHost),
       ),
       secondaryActions: [
         WizardAction(
-          label: 'Back',
+          label: t.common.action_back,
           onPressed: () => context.go('/pick-printer'),
         ),
       ],
@@ -442,15 +435,22 @@ class _DiscoveredCard extends StatelessWidget {
   }
 
   String _semanticsForMatch(PrinterMatch m, String profileName) {
+    final reason = m.reason == null ? '' : ' because ${m.reason}';
     switch (m.confidence) {
       case PrinterMatchConfidence.confirmed:
-        return 'confirmed match for $profileName${m.reason == null ? "" : " because ${m.reason}"}';
+        return t.connect.semantics_confirmed(
+          profile: profileName,
+          reason: reason,
+        );
       case PrinterMatchConfidence.probable:
-        return 'probable match for $profileName${m.reason == null ? "" : " because ${m.reason}"}';
+        return t.connect.semantics_probable(
+          profile: profileName,
+          reason: reason,
+        );
       case PrinterMatchConfidence.miss:
-        return 'does not match $profileName';
+        return t.connect.semantics_miss(profile: profileName);
       case PrinterMatchConfidence.unknown:
-        return 'match status unknown';
+        return t.connect.semantics_unknown;
     }
   }
 }
@@ -470,25 +470,25 @@ class _MatchBadge extends StatelessWidget {
         switch (m?.confidence) {
       PrinterMatchConfidence.confirmed => (
         Icons.check_circle,
-        'Looks like your $name',
+        t.connect.match_confirmed(profile: name),
         theme.colorScheme.primary,
         m?.reason,
       ),
       PrinterMatchConfidence.probable => (
         Icons.help_outline,
-        'Probably your $name',
+        t.connect.match_probable(profile: name),
         theme.colorScheme.secondary,
         m?.reason,
       ),
       PrinterMatchConfidence.miss => (
         Icons.cancel_outlined,
-        'Does not look like $name',
+        t.connect.match_miss(profile: name),
         theme.colorScheme.outline,
         null,
       ),
       _ => (
         Icons.hourglass_empty,
-        'Checking...',
+        t.connect.match_checking,
         theme.colorScheme.outline,
         null,
       ),

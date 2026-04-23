@@ -4,6 +4,8 @@ import 'dart:io';
 
 import 'package:dartssh2/dartssh2.dart';
 import 'package:deckhand_core/deckhand_core.dart';
+
+import 'shell_quoting.dart';
 import 'package:uuid/uuid.dart';
 
 /// [SshService] backed by dartssh2.
@@ -193,10 +195,9 @@ class DartsshService implements SshService {
     KeyCredential(:final user) => user,
   };
 
-  String _shellQuote(String s) {
-    final escaped = s.replaceAll("'", r"'\''");
-    return "'$escaped'";
-  }
+  // Kept as an instance method for back-compat; delegates to the
+  // library-level helper which owns the semantics + tests.
+  String _shellQuote(String s) => shellSingleQuote(s);
 }
 
 /// Thrown when all credential attempts fail.

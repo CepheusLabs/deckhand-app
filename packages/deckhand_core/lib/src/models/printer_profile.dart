@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 /// Strongly-typed model of a parsed `profile.yaml` from deckhand-builds.
 ///
 /// Fields match the authoritative spec in
@@ -97,6 +99,7 @@ class ProfileIdentification {
     this.markerFile,
     this.moonrakerObjects = const [],
     this.hostnamePatterns = const [],
+    this.probeTimeoutSeconds = 3,
   });
 
   /// Filename under Moonraker's `config` root (typically
@@ -119,6 +122,11 @@ class ProfileIdentification {
   /// signal when no stronger evidence is available.
   final List<String> hostnamePatterns;
 
+  /// How long each per-host identification probe is allowed before
+  /// giving up. Slow printers (mid-Klippy-restart, SBCs thrashing
+  /// swap) can be bumped up by the profile. Default 3s.
+  final int probeTimeoutSeconds;
+
   factory ProfileIdentification.fromJson(Map<String, dynamic> j) =>
       ProfileIdentification(
         markerFile: j['marker_file'] as String?,
@@ -126,6 +134,8 @@ class ProfileIdentification {
             ((j['moonraker_objects'] as List?) ?? const []).cast<String>(),
         hostnamePatterns:
             ((j['hostname_patterns'] as List?) ?? const []).cast<String>(),
+        probeTimeoutSeconds:
+            (j['probe_timeout_seconds'] as num?)?.toInt() ?? 3,
       );
 }
 
@@ -153,24 +163,42 @@ class PrinterMatch {
     required String profileId,
   }) {
     // Tier 1: marker file written by Deckhand. Strongest signal.
-    if (hints.markerFile != null && markerFileContent != null) {
-      // Content should be JSON with profile_id. We don't hard-require
-      // that; any non-empty marker at the expected path is convincing,
-      // but a matching profile_id upgrades the reason text.
-      final lower = markerFileContent.trim();
-      if (lower.contains('"profile_id"') &&
-          lower.contains('"$profileId"')) {
-        return PrinterMatch(
-          confidence: PrinterMatchConfidence.confirmed,
-          reason: 'installed by Deckhand as $profileId',
-        );
+    // Parse the body as JSON so we don't get fooled by `profile_id`
+    // appearing inside some other key's value. A non-JSON but
+    // non-empty file still counts (older schemas, custom markers) -
+    // anything Deckhand-written under this exact filename is
+    // convincing enough on its own.
+    if (hints.markerFile != null && markerFileContent != null &&
+        markerFileContent.trim().isNotEmpty) {
+      Object? parsed;
+      try {
+        parsed = jsonDecode(markerFileContent);
+      } catch (_) {
+        parsed = null;
       }
-      if (lower.isNotEmpty) {
-        return PrinterMatch(
-          confidence: PrinterMatchConfidence.confirmed,
-          reason: 'Deckhand marker file present',
-        );
+      if (parsed is Map<String, dynamic>) {
+        final pid = parsed['profile_id'];
+        if (pid is String && pid == profileId) {
+          return PrinterMatch(
+            confidence: PrinterMatchConfidence.confirmed,
+            reason: 'installed by Deckhand as $profileId',
+          );
+        }
+        // Marker for a different profile - that's a miss, not a
+        // fallback match. Fall through to lower tiers.
+        if (pid is String && pid != profileId) {
+          return PrinterMatch(
+            confidence: PrinterMatchConfidence.miss,
+            reason: 'marker file belongs to `$pid`',
+          );
+        }
       }
+      // Non-JSON or JSON without profile_id: still Deckhand-ish,
+      // still a soft confirmation.
+      return PrinterMatch(
+        confidence: PrinterMatchConfidence.confirmed,
+        reason: 'Deckhand marker file present',
+      );
     }
     // Tier 2: Klipper object fingerprint. Pre-install printers match
     // here; post-install printers usually match here as well since we

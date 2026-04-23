@@ -53,10 +53,21 @@ class WizardController {
   // Remembered so we can run `sudo -S` without allocating a pty. Not
   // persisted anywhere; dropped when the controller disposes.
   String? _sshPassword;
+  // Set of askpass helpers staged this session, keyed by step id. The
+  // first script step stages the helper; subsequent script steps reuse
+  // it. Cleaned up all at once in `dispose()` so each script doesn't
+  // pay the upload cost + the per-step cleanup race.
+  _ScriptSudoHelper? _sessionAskpass;
+  // The `kind:` of the step currently executing under `_runStep` (or
+  // null when nothing is running / execution is complete). Read by
+  // the stepper so it can switch its "Install" label to a more
+  // specific phase label ("Writing image") during long-running steps.
+  String? _currentStepKind;
   var _state = WizardState.initial();
 
   WizardState get state => _state;
   PrinterProfile? get profile => _profile;
+  String? get currentStepKind => _currentStepKind;
   Stream<WizardEvent> get events => _eventsController.stream;
 
   Future<void> loadProfile(String profileId, {String? ref}) async {
@@ -173,6 +184,8 @@ class WizardController {
 
     for (final step in flow.steps) {
       final id = step['id'] as String? ?? 'unnamed';
+      final kind = step['kind'] as String? ?? '';
+      _currentStepKind = kind;
       _emit(StepStarted(id));
       try {
         await _runStep(step);
@@ -180,6 +193,8 @@ class WizardController {
       } catch (e) {
         _emit(StepFailed(stepId: id, error: '$e'));
         rethrow;
+      } finally {
+        _currentStepKind = null;
       }
     }
     _emit(const ExecutionCompleted());
@@ -751,61 +766,60 @@ class WizardController {
         ? '$interpreter $remote'
         : '$interpreter $remote $argStr';
 
+    String envPrefix = '';
     _ScriptSudoHelper? helper;
-    try {
-      String envPrefix = '';
-      if (setUpAskpass) {
-        helper = await _installSudoAskpassHelper();
-        envPrefix =
-            'SUDO_ASKPASS=${_shellQuote(helper.askpassPath)} '
-            'PATH=${_shellQuote(helper.binDir)}:\$PATH ';
+    if (setUpAskpass) {
+      helper = await _installSudoAskpassHelper();
+      envPrefix =
+          'SUDO_ASKPASS=${_shellQuote(helper.askpassPath)} '
+          'PATH=${_shellQuote(helper.binDir)}:\$PATH ';
+    }
+    // If askpass is staged, the outer sudo (if requested) routes
+    // through the same helper via `-A`, so the whole command ships
+    // with an env prefix and no `sudo ` at position 0 - _runSsh
+    // leaves it alone. Without askpass, fall back to `sudo -E` and
+    // let _runSsh strip it to forward the password via sudo -S.
+    final String cmd;
+    if (useSudo && setUpAskpass) {
+      cmd = '${envPrefix}sudo -A -E $baseCmd';
+    } else if (useSudo) {
+      cmd = 'sudo -E $baseCmd';
+    } else {
+      cmd = '$envPrefix$baseCmd';
+    }
+    _log(
+      step,
+      '[script] running $rel'
+      '${useSudo ? " (root)" : ""}'
+      '${setUpAskpass ? " (askpass)" : ""}',
+    );
+    final res = await _runSsh(cmd, timeout: Duration(seconds: timeoutSecs));
+    if (res.stdout.trim().isNotEmpty) {
+      for (final line in res.stdout.trim().split('\n')) {
+        _log(step, '[script]   $line');
       }
-      // If askpass is staged, the outer sudo (if requested) routes
-      // through the same helper via `-A`, so the whole command ships
-      // with an env prefix and no `sudo ` at position 0 - _runSsh
-      // leaves it alone. Without askpass, fall back to `sudo -E` and
-      // let _runSsh strip it to forward the password via sudo -S.
-      final String cmd;
-      if (useSudo && setUpAskpass) {
-        cmd = '${envPrefix}sudo -A -E $baseCmd';
-      } else if (useSudo) {
-        cmd = 'sudo -E $baseCmd';
-      } else {
-        cmd = '$envPrefix$baseCmd';
-      }
-      _log(
-        step,
-        '[script] running $rel'
-        '${useSudo ? " (root)" : ""}'
-        '${setUpAskpass ? " (askpass)" : ""}',
-      );
-      final res = await _runSsh(cmd, timeout: Duration(seconds: timeoutSecs));
-      if (res.stdout.trim().isNotEmpty) {
-        for (final line in res.stdout.trim().split('\n')) {
-          _log(step, '[script]   $line');
-        }
-      }
-      if (!res.success && !ignoreErrors) {
+    }
+    if (!res.success && !ignoreErrors) {
+      // Sniff a sudoers-blocks-askpass configuration and give the
+      // profile author a usable pointer instead of the raw sudo
+      // error. Typical culprit: `Defaults !visiblepw` or a missing
+      // `mks ALL=(ALL) NOPASSWD:` line combined with requiretty.
+      if (_looksLikeSudoPtyError(res.stderr)) {
         throw StepExecutionException(
-          'script $rel failed (exit ${res.exitCode})',
+          'script $rel could not authenticate for sudo over an SSH '
+          'session without a tty. Check the printer\'s sudoers config: '
+          'either grant passwordless sudo for this user, or ensure '
+          'SUDO_ASKPASS is permitted (no `Defaults requiretty`, no '
+          '`Defaults !visiblepw`).',
           stderr: res.stderr,
         );
       }
-      _log(step, '[script] done ($rel, exit ${res.exitCode})');
-    } finally {
-      // Scrub helper files even on failure. Best-effort: a network
-      // error here shouldn't mask the original script error.
-      if (helper != null) {
-        try {
-          await ssh.run(
-            _requireSession(),
-            'rm -rf '
-            '${_shellQuote(helper.askpassPath)} '
-            '${_shellQuote(helper.binDir)}',
-          );
-        } catch (_) {}
-      }
+      throw StepExecutionException(
+        'script $rel failed (exit ${res.exitCode})',
+        stderr: res.stderr,
+      );
     }
+    _log(step, '[script] done ($rel, exit ${res.exitCode})');
   }
 
   /// Stages a temporary sudo-askpass helper + `sudo` wrapper on the
@@ -825,6 +839,12 @@ class WizardController {
   /// printer is already authenticated via SSH with the same password,
   /// so there's no leak of a higher-privilege secret.
   Future<_ScriptSudoHelper> _installSudoAskpassHelper() async {
+    // Reuse within a single WizardController lifetime: the helper
+    // costs two uploads + a chmod, and the password in it is the same
+    // for every step. Cleared in dispose().
+    final cached = _sessionAskpass;
+    if (cached != null) return cached;
+
     final s = _requireSession();
     final pw = _sshPassword;
     if (pw == null) {
@@ -849,6 +869,10 @@ class WizardController {
         await File(askpassLocal).delete();
       } catch (_) {}
     }
+    // Belt + suspenders: some SFTP servers ignore the `mode` hint we
+    // passed at upload time. Force 0700 explicitly, and pre-empt any
+    // umask weirdness while we're here.
+    await ssh.run(s, 'chmod 700 ${_shellQuote(askpassPath)}');
 
     // Wrapper: call real sudo with -A so it uses askpass.
     const wrapperBody =
@@ -866,8 +890,27 @@ class WizardController {
         await File(wrapperLocal).delete();
       } catch (_) {}
     }
+    await ssh.run(s, 'chmod 755 ${_shellQuote('$binDir/sudo')}');
 
-    return _ScriptSudoHelper(askpassPath: askpassPath, binDir: binDir);
+    final helper = _ScriptSudoHelper(
+      askpassPath: askpassPath,
+      binDir: binDir,
+    );
+    _sessionAskpass = helper;
+    return helper;
+  }
+
+  /// Heuristic: does this stderr output look like sudo failing to
+  /// authenticate in no-pty mode? If so, we can surface a much better
+  /// message than "script exited 1". Matches the common Debian/Ubuntu
+  /// signatures; not locale-aware, but sudo defaults to English for
+  /// these paths.
+  bool _looksLikeSudoPtyError(String stderr) {
+    final lower = stderr.toLowerCase();
+    return lower.contains('a terminal is required') ||
+        lower.contains('no tty present') ||
+        lower.contains('askpass helper') ||
+        lower.contains('a password is required');
   }
 
   /// Writes `~/printer_data/config/<filename>` (default `deckhand.json`)
@@ -1064,26 +1107,50 @@ class WizardController {
     return completer.future;
   }
 
-  /// Runs [command] over SSH. If [command] starts with `sudo ` and we
-  /// have a saved password for the session, strips the prefix and
-  /// delegates to [SshService.run] with `sudoPassword` - so sudo reads
-  /// the password on stdin (`-S`) and doesn't need a pty. Anything
-  /// without a sudo prefix runs as-is.
+  /// Runs [command] over SSH. If [command] starts with `sudo`,
+  /// `/usr/bin/sudo`, or `/bin/sudo` and we have a cached password
+  /// for the session, strips that sudo word and delegates to
+  /// [SshService.run] with `sudoPassword`. The SshService then wraps
+  /// in `echo <pw> | sudo -S ...`, so sudo reads the password on stdin
+  /// without needing a pty.
+  ///
+  /// Commands that START with a `KEY=value` env assignment (e.g. the
+  /// askpass-wrapped `SUDO_ASKPASS=... sudo -A -E ...` form built by
+  /// `_runScript`) are intentionally NOT stripped: we already routed
+  /// auth through askpass, and combining `-S` with `-A` varies by sudo
+  /// version. Anything without a sudo at position zero runs as-is.
   Future<SshCommandResult> _runSsh(
     String command, {
     Duration timeout = const Duration(seconds: 30),
   }) {
     final s = _requireSession();
-    const prefix = 'sudo ';
-    if (command.startsWith(prefix) && _sshPassword != null) {
+    final stripped = _stripSudoPrefix(command);
+    if (stripped != null && _sshPassword != null) {
       return ssh.run(
         s,
-        command.substring(prefix.length),
+        stripped,
         timeout: timeout,
         sudoPassword: _sshPassword,
       );
     }
     return ssh.run(s, command, timeout: timeout);
+  }
+
+  /// Returns the command with the `sudo` token removed if [command]
+  /// begins with sudo / /usr/bin/sudo / /bin/sudo. Returns null for
+  /// everything else (subshells, env-prefixed commands, commands that
+  /// start with any other word).
+  ///
+  /// Compound commands (`sudo X && rm Y`, `sudo X | grep Y`) are
+  /// matched - the outer `sudo -S` replacement still produces the
+  /// right behaviour because we only authenticate sudo and let the
+  /// rest of the shell line run unchanged.
+  String? _stripSudoPrefix(String command) {
+    final m = RegExp(
+      r'^(?<sudo>sudo|/usr/bin/sudo|/bin/sudo)(?:\s+(?<rest>.*))?$',
+    ).firstMatch(command);
+    if (m == null) return null;
+    return m.namedGroup('rest') ?? '';
   }
 
   SshSession _requireSession() {
@@ -1266,6 +1333,23 @@ class WizardController {
   void _emit(WizardEvent e) => _eventsController.add(e);
 
   Future<void> dispose() async {
+    // Scrub the session askpass helper *before* tearing down the SSH
+    // session so the password file doesn't linger on /tmp until the
+    // next reboot. Best-effort: a broken connection here shouldn't
+    // break disposal.
+    final helper = _sessionAskpass;
+    final session = _session;
+    if (helper != null && session != null) {
+      try {
+        await ssh.run(
+          session,
+          'rm -rf '
+          '${_shellQuote(helper.askpassPath)} '
+          '${_shellQuote(helper.binDir)}',
+        );
+      } catch (_) {}
+      _sessionAskpass = null;
+    }
     await _eventsController.close();
     if (_session != null) await ssh.disconnect(_session!);
     // Overwrite then drop the cached SSH password so the GC has no

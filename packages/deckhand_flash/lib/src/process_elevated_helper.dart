@@ -67,12 +67,7 @@ class ProcessElevatedHelperService implements ElevatedHelperService {
     final stderrFile = File('${stdoutFile.path}.err');
     await stdoutFile.writeAsString('');
 
-    // Double-quote each arg for PowerShell's ArgumentList. Any embedded
-    // double-quote is doubled per PowerShell's escaping rules. No shell
-    // interpolation happens because we pass an array.
-    final argList = helperArgs
-        .map((a) => '"${a.replaceAll('"', '""')}"')
-        .join(',');
+    final argList = helperArgs.map(powerShellQuoteArg).join(',');
 
     final psCommand = [
       '\$p = Start-Process -FilePath "$helperPath" ',
@@ -280,6 +275,16 @@ FlashPhase _phaseFromString(String? s) => switch (s) {
 };
 
 String _shellQuote(String s) => "'${s.replaceAll("'", r"'\''")}'";
+
+/// Quote [arg] for inclusion in a PowerShell `-ArgumentList a,b,c`
+/// literal. Double-wraps + doubles any embedded `"` per PowerShell's
+/// native escaping rules. No shell expansion happens because we pass
+/// the args as an array, not a single string.
+///
+/// Public so the unit test can pin the semantics down - a bad escape
+/// could silently misquote a disk path with a space and flash the
+/// wrong device.
+String powerShellQuoteArg(String arg) => '"${arg.replaceAll('"', '""')}"';
 
 class ElevatedHelperException implements Exception {
   ElevatedHelperException(this.message);

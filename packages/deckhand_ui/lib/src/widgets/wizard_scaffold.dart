@@ -40,7 +40,13 @@ class WizardScaffold extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(title, style: theme.textTheme.headlineMedium),
+                      Semantics(
+                        header: true,
+                        child: Text(
+                          title,
+                          style: theme.textTheme.headlineMedium,
+                        ),
+                      ),
                       if (helperText != null) ...[
                         const SizedBox(height: 12),
                         Text(

@@ -54,6 +54,23 @@ class DeckhandSettings {
   bool get useEdgeProfileChannel => _values['use_edge_profile_channel'] == true;
   set useEdgeProfileChannel(bool v) => _values['use_edge_profile_channel'] = v;
 
+  /// Absolute path to a locally-checked-out copy of `deckhand-builds`.
+  /// When set, the profile service reads profiles from this directory
+  /// instead of fetching them from GitHub. Useful for profile authoring.
+  /// Null / empty string means "fetch from GitHub".
+  String? get localProfilesDir {
+    final v = _values['local_profiles_dir'];
+    if (v is String && v.trim().isNotEmpty) return v.trim();
+    return null;
+  }
+  set localProfilesDir(String? v) {
+    if (v == null || v.trim().isEmpty) {
+      _values.remove('local_profiles_dir');
+    } else {
+      _values['local_profiles_dir'] = v.trim();
+    }
+  }
+
   Future<void> save() async {
     final file = File(path);
     await file.parent.create(recursive: true);

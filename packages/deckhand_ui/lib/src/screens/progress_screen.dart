@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../i18n/translations.g.dart';
 import '../providers.dart';
 import '../widgets/profile_text.dart';
 import '../widgets/wizard_scaffold.dart';
@@ -143,12 +144,14 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> {
       return (id: c['id'] as String? ?? '', label: c['label'] as String? ?? '');
     }).toList();
     final buttons = actions.isEmpty
-        ? [(id: 'continue', label: 'Continue')]
+        ? [(id: 'continue', label: t.progress.prompt_default_action)]
         : actions;
     return _showFadedDialog<String>(
       barrierDismissible: false,
       child: AlertDialog(
-        title: Text(step['title'] as String? ?? 'One moment'),
+        title: Text(
+          step['title'] as String? ?? t.progress.prompt_default_title,
+        ),
         content: Text(flattenProfileText(message)),
         actions: [
           for (final a in buttons)
@@ -170,7 +173,9 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> {
       barrierDismissible: false,
       child: StatefulBuilder(
         builder: (context, setLocal) => AlertDialog(
-          title: Text(step['title'] as String? ?? 'Pick one'),
+          title: Text(
+            step['title'] as String? ?? t.progress.choose_one_default_title,
+          ),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -199,7 +204,7 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> {
           actions: [
             FilledButton(
               onPressed: () => Navigator.of(context).pop(choice),
-              child: const Text('OK'),
+              child: Text(t.progress.choose_one_ok),
             ),
           ],
         ),
@@ -207,14 +212,16 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> {
     );
   }
 
-  /// Resolves choice options for a `choose_one` step. Supports three
+  /// Resolves choice options for a `choose_one` step. Supports four
   /// shapes the profile schema allows:
   ///   1. inline `options: [{id, label, description?}, ...]`
-  ///   2. `options_from: os.fresh_install_options` (reads the OS
-  ///      images off the loaded profile)
-  ///   3. `options_from: firmware.choices` (reads firmware choices)
-  /// Anything else returns an empty list, which the caller treats as
-  /// a resolvable no-op.
+  ///   2. `options_from: os.fresh_install_options` (OS images)
+  ///   3. `options_from: firmware.choices` (firmware variants)
+  ///   4. `options_from: screens` / `addons` / `mcus` (profile-level
+  ///      lists keyed by id + display_name)
+  ///   5. `options_from: stack.webui.choices` (web UI choices)
+  /// Unknown paths fail loud with a log line so profile authors get
+  /// a usable error instead of a silent empty dialog.
   List<({String id, String label, String? subtitle})>
       _resolveChooseOneOptions(
     Map<String, dynamic> step,
@@ -250,7 +257,50 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> {
                   subtitle: c.description,
                 ))
             .toList();
+      case 'screens':
+        return profile.screens
+            .map((s) => (
+                  id: s.id,
+                  label: s.displayName ?? s.id,
+                  subtitle: s.raw['description'] as String?,
+                ))
+            .toList();
+      case 'addons':
+        return profile.addons
+            .map((a) => (
+                  id: a.id,
+                  label: a.displayName ?? a.id,
+                  subtitle: a.raw['description'] as String?,
+                ))
+            .toList();
+      case 'mcus':
+        return profile.mcus
+            .map((m) => (
+                  id: m.id,
+                  label: m.displayName ?? m.id,
+                  subtitle: m.raw['description'] as String?,
+                ))
+            .toList();
+      case 'stack.webui.choices':
+        final choices = ((profile.stack.webui?['choices'] as List?) ??
+            const []).cast<Map>();
+        return choices.map((c) {
+          final m = c.cast<String, dynamic>();
+          return (
+            id: m['id'] as String? ?? '',
+            label: m['display_name'] as String? ?? m['id'] as String? ?? '',
+            subtitle: m['description'] as String?,
+          );
+        }).toList();
       default:
+        // Fail loud so profile authors don't get a silent empty
+        // dialog. We return [] so the wizard still advances rather
+        // than wedging forever, but the log tells them what's wrong.
+        debugPrint(
+          '[progress_screen] unknown options_from path "$from"; '
+          'add a case to _resolveChooseOneOptions or declare `options: '
+          '[...]` inline on the step.',
+        );
         return const [];
     }
   }
@@ -267,12 +317,12 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> {
       if (!mounted) return null;
       await _showFadedDialog<void>(
         child: AlertDialog(
-          title: const Text('Could not list disks'),
+          title: Text(t.progress.disk_picker_list_error_title),
           content: Text('$e'),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(context).pop(),
-              child: const Text('OK'),
+              child: Text(t.progress.choose_one_ok),
             ),
           ],
         ),
@@ -284,15 +334,12 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> {
       if (!mounted) return null;
       await _showFadedDialog<void>(
         child: AlertDialog(
-          title: const Text('No removable disks found'),
-          content: const Text(
-            'Plug the printer eMMC into a USB adapter, then try again. '
-            'Internal disks are dimmed here to prevent accidents.',
-          ),
+          title: Text(t.progress.disk_picker_no_disks_title),
+          content: Text(t.progress.disk_picker_no_disks_body),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(context).pop(),
-              child: const Text('OK'),
+              child: Text(t.progress.choose_one_ok),
             ),
           ],
         ),
@@ -305,7 +352,9 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> {
       barrierDismissible: false,
       child: StatefulBuilder(
         builder: (context, setLocal) => AlertDialog(
-          title: Text(step['title'] as String? ?? 'Pick the target disk'),
+          title: Text(
+            step['title'] as String? ?? t.progress.disk_picker_title,
+          ),
           content: SizedBox(
             width: 480,
             child: RadioGroup<String>(
@@ -330,11 +379,11 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> {
           actions: [
             TextButton(
               onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Cancel'),
+              child: Text(t.progress.disk_picker_cancel),
             ),
             FilledButton(
               onPressed: () => Navigator.of(context).pop(choice),
-              child: const Text('Use this disk'),
+              child: Text(t.progress.disk_picker_confirm),
             ),
           ],
         ),
@@ -371,24 +420,27 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> {
   /// header honest: during eMMC writes it says "Writing image", not
   /// "Installing..."
   String _titleForState() {
-    if (_failed) return 'Something went wrong';
-    if (_done) return 'All done';
+    if (_failed) return t.progress.title_failed;
+    if (_done) return t.progress.title_done;
     return switch (_currentStepKind) {
-      'os_download' => 'Downloading image',
-      'flash_disk' => 'Writing image',
-      'wait_for_ssh' => 'Waiting for the printer to come back',
-      'install_firmware' => 'Installing firmware',
-      'install_stack' => 'Installing Moonraker + web UI',
-      'link_extras' => 'Copying Klipper extras',
-      'install_screen' => 'Installing the touchscreen UI',
-      'flash_mcus' => 'Flashing MCU firmware',
-      'apply_services' => 'Cleaning up stock services',
-      'apply_files' => 'Cleaning up stock files',
-      'snapshot_paths' => 'Backing up stock files',
-      'write_file' => 'Writing config',
-      'install_marker' => 'Marking this printer as Deckhand-managed',
-      'verify' => 'Verifying',
-      _ => 'Working...',
+      'os_download' => t.progress.phase_os_download,
+      'flash_disk' => t.progress.phase_flash_disk,
+      'wait_for_ssh' => t.progress.phase_wait_for_ssh,
+      'install_firmware' => t.progress.phase_install_firmware,
+      'install_stack' => t.progress.phase_install_stack,
+      'link_extras' => t.progress.phase_link_extras,
+      'install_screen' => t.progress.phase_install_screen,
+      'flash_mcus' => t.progress.phase_flash_mcus,
+      'apply_services' => t.progress.phase_apply_services,
+      'apply_files' => t.progress.phase_apply_files,
+      'snapshot_paths' => t.progress.phase_snapshot_paths,
+      'write_file' => t.progress.phase_write_file,
+      'install_marker' => t.progress.phase_install_marker,
+      'verify' => t.progress.phase_verify,
+      'script' => t.progress.phase_script,
+      'ssh_commands' => t.progress.phase_ssh_commands,
+      'conditional' => t.progress.phase_conditional,
+      _ => t.progress.title_working,
     };
   }
 
@@ -403,10 +455,12 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> {
         children: [
           if (_currentFraction != null || _currentProgressMessage != null) ...[
             Semantics(
-              label: 'Current step progress',
+              label: t.progress.semantics_progress_label,
               value: _currentFraction == null
-                  ? 'indeterminate'
-                  : '${((_currentFraction ?? 0) * 100).round()} percent',
+                  ? t.progress.semantics_progress_indeterminate
+                  : t.progress.semantics_progress_percent(
+                      percent: ((_currentFraction ?? 0) * 100).round(),
+                    ),
               child: LinearProgressIndicator(value: _currentFraction),
             ),
             if (_currentProgressMessage != null) ...[
@@ -426,7 +480,7 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> {
               borderRadius: BorderRadius.circular(8),
             ),
             child: Semantics(
-              label: 'Step execution log',
+              label: t.progress.semantics_log_label,
               child: ListView.builder(
                 itemCount: _log.length,
                 itemBuilder: (_, i) => Text(
@@ -439,7 +493,11 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> {
         ],
       ),
       primaryAction: WizardAction(
-        label: _done ? 'Finish' : (_failed ? 'Close' : 'Running...'),
+        label: _done
+            ? t.progress.action_finish
+            : (_failed
+                ? t.progress.action_close
+                : t.progress.action_running),
         onPressed: _done
             ? () => context.go('/done')
             : (_failed ? () => context.go('/') : null),

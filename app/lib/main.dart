@@ -27,6 +27,11 @@ Future<void> main() async {
   await Directory(paths.stateDir).create(recursive: true);
   await Directory(paths.logsDir).create(recursive: true);
 
+  // Settings drives the local-profiles-dir override (and other toggles).
+  // Loaded once at boot; the Settings screen calls back into it to
+  // persist changes.
+  final settings = await DeckhandSettings.load(paths.settingsFile);
+
   // Sidecar binary ships alongside the Flutter executable.
   final sidecar = SidecarClient(binaryPath: _resolveSidecarPath());
   try {
@@ -35,11 +40,23 @@ Future<void> main() async {
     debugPrint('Sidecar failed to start: $e\n$st');
   }
 
+  // Env var still takes precedence over settings (developer override
+  // that's more visible than a JSON file).
+  final envLocalDir = Platform.environment['DECKHAND_PROFILES_LOCAL'];
+  final localProfilesDir = envLocalDir != null && envLocalDir.trim().isNotEmpty
+      ? envLocalDir
+      : settings.localProfilesDir;
+
   runApp(
     ProviderScope(
       overrides: [
+        deckhandSettingsProvider.overrideWithValue(settings),
         profileServiceProvider.overrideWithValue(
-          SidecarProfileService(sidecar: sidecar, paths: paths),
+          SidecarProfileService(
+            sidecar: sidecar,
+            paths: paths,
+            localProfilesDir: localProfilesDir,
+          ),
         ),
         sshServiceProvider.overrideWithValue(DartsshService()),
         flashServiceProvider.overrideWithValue(SidecarFlashService(sidecar)),
