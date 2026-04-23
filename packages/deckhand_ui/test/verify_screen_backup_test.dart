@@ -51,8 +51,15 @@ void main() {
         expect(find.text('Restore'), findsOneWidget);
         expect(find.text('Preview'), findsOneWidget);
         expect(find.text('Delete'), findsOneWidget);
+        // New configurable prune control: dropdown + keep-latest
+        // checkbox + "Prune now" trigger.
         expect(
-          find.text('Prune backups > 30 days old'),
+          find.textContaining('Prune backups older than'),
+          findsOneWidget,
+        );
+        expect(find.text('Prune now'), findsOneWidget);
+        expect(
+          find.textContaining('Keep the newest snapshot'),
           findsOneWidget,
         );
       },

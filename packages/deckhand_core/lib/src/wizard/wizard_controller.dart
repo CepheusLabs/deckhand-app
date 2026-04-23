@@ -83,10 +83,20 @@ class WizardController {
   /// exercise probe-driven UI branches without standing up an SSH
   /// session. Emits [PrinterStateRefreshed] so screens that watch
   /// [wizardStateProvider] rebuild in response.
+  ///
+  /// The setter body runs inside an `assert(() { ... return true; }())`
+  /// wrapper so it's a silent no-op in profile / release builds - a
+  /// contributor who accidentally calls this from production code on
+  /// a release build gets no state change, never a misleading state
+  /// update that could mask real bugs. `@visibleForTesting` stays as
+  /// a linter hint on top of the runtime gate.
   @visibleForTesting
   set printerStateForTesting(PrinterState value) {
-    _printerState = value;
-    _emit(PrinterStateRefreshed(value));
+    assert(() {
+      _printerState = value;
+      _emit(PrinterStateRefreshed(value));
+      return true;
+    }());
   }
 
   Future<void> loadProfile(String profileId, {String? ref}) async {
@@ -239,22 +249,57 @@ class WizardController {
   /// Fetch the content of a backup file so the UI can show a preview
   /// before the user commits to restoring. Returns null on read
   /// failure (best-effort; the user can still restore without
-  /// preview). Files over 256 KiB are truncated so a runaway preview
-  /// can't DoS the UI.
+  /// preview).
+  ///
+  /// Guards:
+  ///   - 256 KiB byte cap so a big binary can't DoS the UI.
+  ///   - 200-line cap; very-long single-line content (minified JSON,
+  ///     one-liner configs) truncates at the line level too.
+  ///   - Binary detection via null-byte probe in the first 512 bytes;
+  ///     binary files return a marker string rather than garbage.
   Future<String?> readBackupContent(DeckhandBackup backup) async {
     _requireSession();
     const maxBytes = 256 * 1024;
+    const maxLines = 200;
     final useSudo = _looksLikeSystemPath(_session!, backup.backupPath);
     final q = _shellQuote(backup.backupPath);
+    // Binary probe first: `file -b --mime` is POSIX and present on
+    // every Debian / Armbian / busybox-with-util-linux we care about.
+    // A `charset=binary` classification means null bytes / non-UTF8
+    // data; we never hand the UI raw bytes in that case.
+    final fileCmd = useSudo
+        ? 'sudo file -b --mime $q 2>/dev/null'
+        : 'file -b --mime $q 2>/dev/null';
+    final probe = await _runSsh(fileCmd);
+    if (probe.stdout.contains('charset=binary')) {
+      return '[binary file, ${_humanizeBytes(backup.backupPath)} - '
+          'preview unavailable]';
+    }
+    // Text read with byte cap; pipe through head -n for line cap.
     final head = useSudo ? 'sudo head -c $maxBytes' : 'head -c $maxBytes';
     final res = await _runSsh('$head $q 2>/dev/null || true');
     if (res.stdout.isEmpty) return null;
-    // Tag truncation so the UI can surface it.
-    if (res.stdout.length >= maxBytes) {
-      return '${res.stdout}\n\n[... truncated at 256 KiB ...]';
+    var body = res.stdout;
+    final bytesTruncated = body.length >= maxBytes;
+    final lines = body.split('\n');
+    var linesTruncated = false;
+    if (lines.length > maxLines) {
+      body = lines.take(maxLines).join('\n');
+      linesTruncated = true;
     }
-    return res.stdout;
+    final notes = <String>[
+      if (bytesTruncated) 'truncated at 256 KiB',
+      if (linesTruncated)
+        'truncated at $maxLines lines (file has ${lines.length} lines total)',
+    ];
+    if (notes.isEmpty) return body;
+    return '$body\n\n[... ${notes.join("; ")} ...]';
   }
+
+  /// Best-effort humanised byte-size placeholder. The stat is cheap
+  /// but we don't actually fetch it - just use the filename for the
+  /// preview label.
+  String _humanizeBytes(String path) => path.split('/').last;
 
   /// Delete a `.deckhand-pre-*` backup + its `.meta.json` sidecar.
   /// Used by the verify_screen after the user has confirmed they
@@ -276,23 +321,46 @@ class WizardController {
   }
 
   /// Sweep all `.deckhand-pre-*` backups older than [olderThan] from
-  /// the printer. Used by verify_screen's "Prune old backups" action.
-  /// Returns the number of backup files removed (excluding sidecar
-  /// metadata which is counted as part of the same logical backup).
+  /// the printer. When [keepLatestPerTarget] is true, the single
+  /// newest backup for each `originalPath` is spared even when it
+  /// would otherwise be in the victim set - useful as a safety net
+  /// against "I pruned too aggressively and now have no snapshot of
+  /// my sources.list."
   ///
-  /// Performance: deletes every victim in ONE ssh.run call (a single
-  /// `rm -f <a> <a.meta.json> <b> ...`), then re-probes once. Calling
-  /// [deleteBackup] per-victim would fire one probe per deletion.
+  /// Used by verify_screen's "Prune old backups" action.
+  /// Returns the number of backup files removed (sidecars counted
+  /// as part of the same logical backup).
+  ///
+  /// Performance: deletes every victim in ONE ssh.run call per
+  /// privilege bucket, then re-probes once.
   Future<int> pruneBackups({
     Duration olderThan = const Duration(days: 30),
+    bool keepLatestPerTarget = false,
   }) async {
     _requireSession();
     final cutoff = DateTime.now().subtract(olderThan);
-    final victims = _printerState.deckhandBackups.where((b) {
+    var victims = _printerState.deckhandBackups.where((b) {
       final age = b.createdAt;
       if (age == null) return false;
       return age.isBefore(cutoff);
     }).toList();
+    if (keepLatestPerTarget) {
+      // Build {originalPath -> newest backup} across the FULL backup
+      // list, then exclude those from the victim set regardless of
+      // age. Caller opts in when they want a safety-net keep policy.
+      final newest = <String, DeckhandBackup>{};
+      for (final b in _printerState.deckhandBackups) {
+        final t = b.createdAt?.millisecondsSinceEpoch ?? 0;
+        final current = newest[b.originalPath];
+        if (current == null ||
+            (current.createdAt?.millisecondsSinceEpoch ?? 0) < t) {
+          newest[b.originalPath] = b;
+        }
+      }
+      final spared = newest.values.map((b) => b.backupPath).toSet();
+      victims = victims.where((b) => !spared.contains(b.backupPath))
+          .toList();
+    }
     if (victims.isEmpty) return 0;
     // Split into sudo-required and plain batches so we don't escalate
     // when we don't need to (and don't fail when sudo is required).
@@ -763,18 +831,27 @@ class WizardController {
         });
         final qMetaContent = _shellQuote(meta);
         // Use a test+copy that ECHOES "created" so we can tell
-        // "backup taken" from "no-op (target didn't exist)". Also
-        // pre-flight-probe the destination directory is writable
-        // (some images mount /etc as a RO overlay) and surface a
-        // distinct error in that case. `cp -p` preserves mode/owner/
-        // timestamps so a rollback is byte-exact.
+        // "backup taken" from "no-op (target didn't exist)" from
+        // "filesystem is read-only". Correct RO detection: actually
+        // try to create a touch-file in the target dir and clean it
+        // up. Relying on `-w dirname` is wrong for bind-mounted RO
+        // overlays where `stat` says writable but any actual write
+        // fails. `cp -p` preserves mode/owner/timestamps so a
+        // rollback is byte-exact.
         final cp = useSudo ? 'sudo cp -p' : 'cp -p';
         final writeMeta = useSudo
             ? 'sudo sh -c "printf %s $qMetaContent > $qMeta"'
             : 'sh -c "printf %s $qMetaContent > $qMeta"';
+        final writeProbe = useSudo
+            ? 'sudo touch "\$(dirname $qTarget0)/.deckhand-wtest-$ts" '
+                '2>/dev/null && '
+                'sudo rm -f "\$(dirname $qTarget0)/.deckhand-wtest-$ts"'
+            : 'touch "\$(dirname $qTarget0)/.deckhand-wtest-$ts" '
+                '2>/dev/null && '
+                'rm -f "\$(dirname $qTarget0)/.deckhand-wtest-$ts"';
         final snapCmd =
             'if [ ! -e $qTarget0 ]; then echo DECKHAND_BACKUP_NOOP; '
-            'elif ! [ -w "\$(dirname $qTarget0)" ] && [ -z "$useSudo" ]; then '
+            'elif ! ( $writeProbe ); then '
             '  echo DECKHAND_BACKUP_RO_FS; '
             'else '
             '  $cp $qTarget0 $qBackup && $writeMeta && '

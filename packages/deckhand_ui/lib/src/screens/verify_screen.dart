@@ -105,13 +105,28 @@ class _VerifyScreenState extends ConsumerState<VerifyScreen> {
     );
   }
 
+  /// Prune interval in days. User can pick from a dropdown; defaults
+  /// to 30 for the "old enough to forget, new enough to still be
+  /// plausibly relevant" middle-of-the-road choice.
+  int _pruneDays = 30;
+  /// When true, the single newest backup per original-path survives
+  /// the prune regardless of age. Safety net for "I pruned every
+  /// backup and now have no snapshot to roll back to."
+  bool _keepLatestPerTarget = true;
+
   Future<void> _pruneOld() async {
-    final n = await ref
-        .read(wizardControllerProvider)
-        .pruneBackups(olderThan: const Duration(days: 30));
+    final n = await ref.read(wizardControllerProvider).pruneBackups(
+          olderThan: Duration(days: _pruneDays),
+          keepLatestPerTarget: _keepLatestPerTarget,
+        );
     if (!mounted) return;
+    final keepSuffix = _keepLatestPerTarget
+        ? ' (kept the newest snapshot for each target)'
+        : '';
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Pruned $n backup(s) older than 30 days.')),
+      SnackBar(content: Text(
+        'Pruned $n backup(s) older than $_pruneDays days$keepSuffix.',
+      )),
     );
   }
 
@@ -202,14 +217,15 @@ class _VerifyScreenState extends ConsumerState<VerifyScreen> {
                         style: TextStyle(color: theme.colorScheme.error),
                       ),
                     ],
-                    const SizedBox(height: 8),
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: TextButton.icon(
-                        icon: const Icon(Icons.cleaning_services, size: 16),
-                        label: const Text('Prune backups > 30 days old'),
-                        onPressed: _pruneOld,
-                      ),
+                    const SizedBox(height: 12),
+                    _PruneControls(
+                      days: _pruneDays,
+                      keepLatestPerTarget: _keepLatestPerTarget,
+                      onDaysChanged: (v) =>
+                          setState(() => _pruneDays = v),
+                      onKeepLatestChanged: (v) =>
+                          setState(() => _keepLatestPerTarget = v),
+                      onPrune: _pruneOld,
                     ),
                   ],
                 ),
@@ -369,6 +385,74 @@ class _VerifyScreenState extends ConsumerState<VerifyScreen> {
       '$label - $detail',
       if (note.isNotEmpty) note,
     ].join('\n');
+  }
+}
+
+class _PruneControls extends StatelessWidget {
+  const _PruneControls({
+    required this.days,
+    required this.keepLatestPerTarget,
+    required this.onDaysChanged,
+    required this.onKeepLatestChanged,
+    required this.onPrune,
+  });
+  final int days;
+  final bool keepLatestPerTarget;
+  final ValueChanged<int> onDaysChanged;
+  final ValueChanged<bool> onKeepLatestChanged;
+  final VoidCallback onPrune;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Wrap(
+      spacing: 12,
+      runSpacing: 8,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text('Prune backups older than', style: theme.textTheme.bodySmall),
+            const SizedBox(width: 8),
+            DropdownButton<int>(
+              value: days,
+              items: const [
+                DropdownMenuItem(value: 7, child: Text('7 days')),
+                DropdownMenuItem(value: 14, child: Text('14 days')),
+                DropdownMenuItem(value: 30, child: Text('30 days')),
+                DropdownMenuItem(value: 60, child: Text('60 days')),
+                DropdownMenuItem(value: 90, child: Text('90 days')),
+                DropdownMenuItem(value: 180, child: Text('180 days')),
+              ],
+              onChanged: (v) {
+                if (v != null) onDaysChanged(v);
+              },
+            ),
+          ],
+        ),
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Checkbox(
+              value: keepLatestPerTarget,
+              onChanged: (v) => onKeepLatestChanged(v ?? true),
+            ),
+            Flexible(
+              child: Text(
+                'Keep the newest snapshot per target',
+                style: theme.textTheme.bodySmall,
+              ),
+            ),
+          ],
+        ),
+        FilledButton.tonalIcon(
+          icon: const Icon(Icons.cleaning_services, size: 16),
+          label: const Text('Prune now'),
+          onPressed: onPrune,
+        ),
+      ],
+    );
   }
 }
 

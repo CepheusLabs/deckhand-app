@@ -767,9 +767,7 @@ void main() {
       );
       // Find the cp -p call. Since _runSsh strips the outer `sudo `
       // before passing to the SshService, the captured command
-      // STARTS with `cp -p` - the fact that it doesn't start with
-      // `sudo ` is the evidence the strip path fired + sudoPassword
-      // was forwarded.
+      // STARTS with `cp -p`.
       final cp = ssh.steps.firstWhere((c) => c.contains('cp -p'));
       expect(cp, startsWith('cp -p'));
       expect(cp, contains('/etc/apt/sources.list'));
@@ -777,6 +775,38 @@ void main() {
       // (belt-and-suspenders over cp -p's own preservation).
       expect(cp, contains('chown --reference='));
     });
+
+    test(
+      'restoreBackup forwards the SSH password on the cp call specifically',
+      () async {
+        final ssh = FakeSsh();
+        final controller = newController(
+          profileJson: baseProfileJson(),
+          ssh: ssh,
+        );
+        await controller.loadProfile('test-printer');
+        await controller.connectSsh(host: '127.0.0.1');
+        await controller.restoreBackup(
+          const DeckhandBackup(
+            originalPath: '/etc/apt/sources.list',
+            backupPath: '/etc/apt/sources.list.deckhand-pre-1776',
+          ),
+        );
+        // Use per-call details so we can pin the sudoPassword on the
+        // specific cp call. lastSudoPassword would be overwritten by
+        // the post-restore force-reprobe (which doesn't use sudo).
+        final cpCall = ssh.stepDetails.firstWhere(
+          (d) => d.command.contains('cp -p') &&
+              d.command.contains('/etc/apt/sources.list'),
+        );
+        expect(
+          cpCall.sudoPassword,
+          'root',
+          reason: 'Must forward the cached SSH password to sudo via -S '
+              'when the original path is root-owned.',
+        );
+      },
+    );
 
     test('restoreBackup stays unprivileged for paths under the user home',
         () async {
@@ -893,6 +923,47 @@ void main() {
       );
     });
 
+    test('pruneBackups keepLatestPerTarget spares the newest per target',
+        () async {
+      final ssh = FakeSsh();
+      final controller = newController(
+        profileJson: baseProfileJson(),
+        ssh: ssh,
+      );
+      await controller.loadProfile('test-printer');
+      await controller.connectSsh(host: '127.0.0.1');
+      // Two backups of the SAME target, both old. Without keepLatest
+      // both would be pruned; with it, the newer survives.
+      final older = DateTime.now().subtract(const Duration(days: 90));
+      final newer = DateTime.now().subtract(const Duration(days: 60));
+      controller.printerStateForTesting = PrinterState(
+        services: const {},
+        files: const {},
+        paths: const {},
+        stackInstalls: const {},
+        screenInstalls: const {},
+        python311Installed: false,
+        deckhandBackups: [
+          DeckhandBackup(
+            originalPath: '/etc/apt/sources.list',
+            backupPath: '/etc/apt/sources.list.deckhand-pre-older',
+            createdAt: older,
+          ),
+          DeckhandBackup(
+            originalPath: '/etc/apt/sources.list',
+            backupPath: '/etc/apt/sources.list.deckhand-pre-newer',
+            createdAt: newer,
+          ),
+        ],
+        probedAt: DateTime.now(),
+      );
+      final n = await controller.pruneBackups(keepLatestPerTarget: true);
+      expect(n, 1);
+      final rm = ssh.steps.firstWhere((c) => c.contains('rm -f'));
+      expect(rm, contains('deckhand-pre-older'));
+      expect(rm, isNot(contains('deckhand-pre-newer')));
+    });
+
     test('pruneBackups with nothing to do returns 0 and does not touch ssh',
         () async {
       final ssh = FakeSsh();
@@ -910,11 +981,45 @@ void main() {
       expect(ssh.steps.length, beforeCount);
     });
 
-    test('readBackupContent fetches via head + sudo for system paths',
+    test('readBackupContent runs binary-probe then text-read via sudo',
         () async {
       final ssh = FakeSsh()
         ..nextRun = const SshCommandResult(
-          stdout: 'file content here',
+          stdout: 'text/plain; charset=utf-8',
+          stderr: '',
+          exitCode: 0,
+        );
+      final controller = newController(
+        profileJson: baseProfileJson(),
+        ssh: ssh,
+      );
+      await controller.loadProfile('test-printer');
+      await controller.connectSsh(host: '127.0.0.1');
+      await controller.readBackupContent(
+        const DeckhandBackup(
+          originalPath: '/etc/apt/sources.list',
+          backupPath: '/etc/apt/sources.list.deckhand-pre-1',
+        ),
+      );
+      // Step 1: file -b --mime on the backup (for binary detection).
+      expect(
+        ssh.steps.any((c) => c.contains('file -b --mime')),
+        isTrue,
+        reason: 'must run MIME probe before reading content',
+      );
+      // Step 2: head -c 262144 to read the body with a byte cap.
+      expect(
+        ssh.steps.any((c) => c.contains('head -c 262144')),
+        isTrue,
+        reason: 'must cap the body read at 256 KiB',
+      );
+    });
+
+    test('readBackupContent returns a marker string for binary backups',
+        () async {
+      final ssh = FakeSsh()
+        ..nextRun = const SshCommandResult(
+          stdout: 'application/octet-stream; charset=binary',
           stderr: '',
           exitCode: 0,
         );
@@ -930,9 +1035,8 @@ void main() {
           backupPath: '/etc/apt/sources.list.deckhand-pre-1',
         ),
       );
-      expect(content, 'file content here');
-      final cmd = ssh.steps.firstWhere((c) => c.contains('head -c'));
-      expect(cmd, contains('head -c 262144'));
+      expect(content, contains('binary file'));
+      expect(content, contains('preview unavailable'));
     });
   });
 
@@ -1099,6 +1203,18 @@ class FakeSshUpload {
   final int? mode;
 }
 
+/// Per-call record so tests can assert on sudoPassword forwarding
+/// without the "last call wins and gets overwritten" flakiness the
+/// single-variable approach had.
+class FakeSshRunCall {
+  const FakeSshRunCall({
+    required this.command,
+    required this.sudoPassword,
+  });
+  final String command;
+  final String? sudoPassword;
+}
+
 class FakeSsh implements SshService {
   SshCommandResult nextRun = const SshCommandResult(
     stdout: '',
@@ -1106,7 +1222,11 @@ class FakeSsh implements SshService {
     exitCode: 0,
   );
   final runCalls = <String>[];
+  final runDetails = <FakeSshRunCall>[];
   final uploadCalls = <FakeSshUpload>[];
+
+  /// Legacy single-variable tracker. Kept for back-compat with tests
+  /// that don't care about per-call granularity.
   String? lastSudoPassword;
 
   /// Run calls with the background state-probe filtered out. The probe
@@ -1115,6 +1235,11 @@ class FakeSsh implements SshService {
   /// generated, not the probe's multi-line shell script.
   List<String> get steps =>
       runCalls.where((c) => !c.startsWith('#!/bin/sh')).toList();
+
+  /// Same filter, but returns full run details (command + sudoPw).
+  List<FakeSshRunCall> get stepDetails => runDetails
+      .where((d) => !d.command.startsWith('#!/bin/sh'))
+      .toList();
 
   @override
   Future<SshSession> connect({
@@ -1137,6 +1262,9 @@ class FakeSsh implements SshService {
     String? sudoPassword,
   }) async {
     runCalls.add(command);
+    runDetails.add(
+      FakeSshRunCall(command: command, sudoPassword: sudoPassword),
+    );
     lastSudoPassword = sudoPassword;
     return nextRun;
   }
