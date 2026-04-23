@@ -124,16 +124,41 @@ Map<String, DslPredicate> defaultPredicates() => {
     final threshStr = threshold is String
         ? threshold
         : threshold.toString();
-    // Prefer a probe-cached result if one was pre-resolved by the
-    // runtime; fall back to the version declared in the profile's
-    // `os.stock.python`. Missing data is treated as "not below" so
-    // we don't run a python rebuild we can't reason about.
-    final cached =
-        env.decisions['probe.os_python_below.$threshStr'];
+    // Priority order (strongest signal first):
+    //   1. Probe-cached decision (`probe.os_python_below.<thresh>`).
+    //   2. Live default-python version (`probe.python_default`).
+    //   3. Profile's declared `os.stock.python`.
+    // Missing data is treated as "not below" so we don't run a python
+    // rebuild we can't reason about.
+    final cached = env.decisions['probe.os_python_below.$threshStr'];
     if (cached is bool) return cached;
+    final livePy = env.decisions['probe.python_default'];
+    if (livePy is String && livePy.isNotEmpty && livePy != 'unknown') {
+      return _compareVersions(livePy, threshStr) < 0;
+    }
     final stockRaw = env.getProfileField('os.stock.python');
     if (stockRaw is! String || stockRaw.trim().isEmpty) return false;
     return _compareVersions(stockRaw, threshStr) < 0;
+  },
+  // Matches the live /etc/os-release codename captured by the state
+  // probe, not the profile's declared `os.stock.codename`. Use this
+  // to gate steps that only apply to one specific distro snapshot -
+  // e.g. `fix_apt_sources` rewriting sources.list for Buster but
+  // leaving a user-upgraded Bookworm/Trixie install alone.
+  'os_codename_is': (args, env) {
+    _expect(args, 1, 'os_codename_is');
+    final want = args[0];
+    final actual = env.decisions['probe.os_codename'];
+    if (actual is! String || want is! String) return false;
+    return actual.toLowerCase() == want.toLowerCase();
+  },
+  'os_codename_in': (args, env) {
+    _expect(args, 1, 'os_codename_in');
+    final list = args[0];
+    final actual = env.decisions['probe.os_codename'];
+    if (actual is! String || list is! List) return false;
+    final wanted = list.whereType<String>().map((s) => s.toLowerCase());
+    return wanted.contains(actual.toLowerCase());
   },
 };
 

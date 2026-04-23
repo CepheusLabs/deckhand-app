@@ -511,7 +511,7 @@ void main() {
       // Only the script itself is uploaded, nothing else.
       expect(ssh.uploadCalls, hasLength(1));
       expect(ssh.uploadCalls.single.remote, '/tmp/deckhand-pure.sh');
-      expect(ssh.runCalls.single, 'bash /tmp/deckhand-pure.sh');
+      expect(ssh.steps.single, 'bash /tmp/deckhand-pure.sh');
     });
 
     test(
@@ -545,7 +545,7 @@ void main() {
         expect(ssh.uploadCalls, hasLength(1));
         // `sudo -E bash ...` -> _runSsh strips `sudo ` and forwards
         // the password via the sudoPassword parameter.
-        expect(ssh.runCalls.single, startsWith('-E bash /tmp/deckhand-rebuild.sh'));
+        expect(ssh.steps.single, startsWith('-E bash /tmp/deckhand-rebuild.sh'));
         expect(ssh.lastSudoPassword, 'root');
       },
     );
@@ -571,7 +571,7 @@ void main() {
       await controller.connectSsh(host: '127.0.0.1');
       await controller.startExecution();
 
-      expect(ssh.runCalls.single, 'systemctl status klipper');
+      expect(ssh.steps.single, 'systemctl status klipper');
       expect(ssh.lastSudoPassword, 'root');
     });
 
@@ -594,7 +594,7 @@ void main() {
       await controller.connectSsh(host: '127.0.0.1');
       await controller.startExecution();
 
-      expect(ssh.runCalls.single, 'ls /home/mks');
+      expect(ssh.steps.single, 'ls /home/mks');
       expect(ssh.lastSudoPassword, isNull);
     });
   });
@@ -612,6 +612,10 @@ void main() {
               'content': 'deb http://deb.debian.org/debian bookworm main',
               'mode': '0644',
               'owner': 'root',
+              // Disable the auto-backup step so this test asserts on
+              // the write operation in isolation. There's a dedicated
+              // auto-backup test below.
+              'backup': false,
             },
           ],
         ),
@@ -626,9 +630,9 @@ void main() {
       // sudo-stripped by _runSsh).
       expect(ssh.uploadCalls, hasLength(1));
       expect(ssh.uploadCalls.single.remote, startsWith('/tmp/deckhand-write-'));
-      expect(ssh.runCalls.single, startsWith('install -m 644 '));
-      expect(ssh.runCalls.single, contains("-o 'root' "));
-      expect(ssh.runCalls.single, contains('/etc/apt/sources.list'));
+      expect(ssh.steps.single, startsWith('install -m 644 '));
+      expect(ssh.steps.single, contains("-o 'root' "));
+      expect(ssh.steps.single, contains('/etc/apt/sources.list'));
       expect(ssh.lastSudoPassword, 'root');
     });
 
@@ -643,6 +647,7 @@ void main() {
               'target': '/home/root/startup.sh',
               'content': '#!/bin/sh\nexit 0',
               'mode': '0755',
+              'backup': false,
             },
           ],
         ),
@@ -654,9 +659,43 @@ void main() {
       await controller.startExecution();
 
       // Non-system path: plain mv + chmod, no sudo.
-      expect(ssh.runCalls.single, startsWith('mv '));
-      expect(ssh.runCalls.single, contains('chmod 755'));
+      expect(ssh.steps.single, startsWith('mv '));
+      expect(ssh.steps.single, contains('chmod 755'));
       expect(ssh.lastSudoPassword, isNull);
+    });
+
+    test('auto-backup snapshots existing file before overwriting', () async {
+      final ssh = FakeSsh();
+      final controller = newController(
+        profileJson: baseProfileJson(
+          stockKeepSteps: [
+            {
+              'id': 'apt',
+              'kind': 'write_file',
+              'target': '/etc/apt/sources.list',
+              'content': 'deb http://deb.debian.org/debian bookworm main',
+              'mode': '0644',
+              'owner': 'root',
+              // backup default is true; omitting the key tests that.
+            },
+          ],
+        ),
+        ssh: ssh,
+      );
+      await controller.loadProfile('test-printer');
+      controller.setFlow(WizardFlow.stockKeep);
+      await controller.connectSsh(host: '127.0.0.1');
+      await controller.startExecution();
+
+      // The backup step runs BEFORE the install: it checks if the
+      // target exists and cp -p's it sideways. Must be sudo-wrapped
+      // for system paths and must point at a suffixed sibling.
+      final backup = ssh.steps.firstWhere(
+        (c) => c.contains('cp -p'),
+      );
+      expect(backup, contains('if [ -e '));
+      expect(backup, contains('/etc/apt/sources.list'));
+      expect(backup, contains('.deckhand-pre-'));
     });
   });
 
@@ -676,12 +715,16 @@ void main() {
       await controller.connectSsh(host: '127.0.0.1');
       await controller.startExecution();
 
-      // mkdir, then upload, then mv.
-      expect(ssh.runCalls, hasLength(2));
-      expect(ssh.runCalls.first, startsWith('mkdir -p '));
-      expect(ssh.runCalls.first, contains('/home/root/printer_data/config'));
-      expect(ssh.runCalls.last, startsWith('mv '));
-      expect(ssh.runCalls.last, contains('/deckhand.json'));
+      // Filter out the background state-probe call that fires on
+      // connect - it's a multi-line `#!/bin/sh` script and isn't
+      // part of what this test cares about.
+      final relevant = ssh.runCalls
+          .where((c) => !c.startsWith('#!/bin/sh'))
+          .toList();
+      expect(relevant.any((c) => c.startsWith('mkdir -p ') &&
+          c.contains('/home/root/printer_data/config')), isTrue);
+      expect(relevant.any((c) => c.startsWith('mv ') &&
+          c.contains('/deckhand.json')), isTrue);
 
       // The payload must contain the profile id + schema version.
       final uploadedContent = ssh.uploadCalls.single.content;
@@ -828,6 +871,13 @@ class FakeSsh implements SshService {
   final runCalls = <String>[];
   final uploadCalls = <FakeSshUpload>[];
   String? lastSudoPassword;
+
+  /// Run calls with the background state-probe filtered out. The probe
+  /// fires automatically on connect and muddies per-test assertions;
+  /// every test cares about the FOREGROUND commands its step
+  /// generated, not the probe's multi-line shell script.
+  List<String> get steps =>
+      runCalls.where((c) => !c.startsWith('#!/bin/sh')).toList();
 
   @override
   Future<SshSession> connect({

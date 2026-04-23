@@ -18,4 +18,5 @@ export 'src/services/upstream_service.dart';
 export 'src/services/security_service.dart';
 export 'src/services/elevated_helper_service.dart';
 export 'src/wizard/dsl.dart';
+export 'src/wizard/printer_state_probe.dart';
 export 'src/wizard/wizard_controller.dart';

@@ -57,28 +57,55 @@ class _ServicesScreenState extends ConsumerState<ServicesScreen> {
       if (!_seeded) setState(_seedDefaults);
     });
 
+    // Subscribe to wizard events so the list rebuilds when the probe
+    // lands fresh data (changes which services show up as absent).
+    ref.watch(wizardStateProvider);
     final controller = ref.watch(wizardControllerProvider);
     final queue = _queue();
+    final probe = controller.printerState;
+    final probeReady = probe.probedAt != null;
+
+    // Split into "detected on this printer" and "absent / already
+    // clean". Absent cards still render but greyed + collapsed so
+    // the user can see we looked and found nothing.
+    final present = <StockService>[];
+    final absent = <StockService>[];
+    for (final svc in queue) {
+      final state = probe.services[svc.id];
+      if (probeReady && state != null && !state.present) {
+        absent.add(svc);
+      } else {
+        present.add(svc);
+      }
+    }
 
     return WizardScaffold(
       stepper: const DeckhandStepper(),
       title: 'Stock services',
       helperText:
-          'Each Phrozen service below is up to you. Click a card to see the '
-          'full explanation and pick an action. Every service already has a '
-          'sensible default picked based on your other choices; change what '
-          'you care about and leave the rest alone.',
+          'Each stock service below is up to you. We probed your printer '
+          'after you connected - services already removed or disabled show '
+          'up dimmed under "Already clean" so you don\'t waste time picking '
+          'an action for something that isn\'t there. Pick what you care '
+          'about; defaults handle the rest.',
       body: queue.isEmpty
           ? const Text('Nothing to configure on this profile.')
           : Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                for (final svc in queue)
+                if (!probeReady)
+                  const Padding(
+                    padding: EdgeInsets.only(bottom: 8),
+                    child: _ProbeLoadingBanner(),
+                  ),
+                for (final svc in present)
                   _ServiceCard(
                     service: svc,
+                    state: probe.services[svc.id],
                     currentDecision:
                         controller.decision<String>('service.${svc.id}'),
                     expanded: _expanded.contains(svc.id),
+                    dimmed: false,
                     onExpandChange: (v) => setState(() {
                       if (v) {
                         _expanded.add(svc.id);
@@ -91,6 +118,27 @@ class _ServicesScreenState extends ConsumerState<ServicesScreen> {
                       setState(() {});
                     },
                   ),
+                if (absent.isNotEmpty) ...[
+                  const SizedBox(height: 16),
+                  _SectionHeader(
+                    label: 'Already clean (${absent.length})',
+                    subtitle:
+                        'These services were declared in the profile but '
+                        'we did not find them running on this printer. No '
+                        'action needed.',
+                  ),
+                  for (final svc in absent)
+                    _ServiceCard(
+                      service: svc,
+                      state: probe.services[svc.id],
+                      currentDecision:
+                          controller.decision<String>('service.${svc.id}'),
+                      expanded: false,
+                      dimmed: true,
+                      onExpandChange: (_) {},
+                      onChoose: (_) {},
+                    ),
+                ],
               ],
             ),
       primaryAction: WizardAction(
@@ -110,15 +158,19 @@ class _ServicesScreenState extends ConsumerState<ServicesScreen> {
 class _ServiceCard extends StatelessWidget {
   const _ServiceCard({
     required this.service,
+    required this.state,
     required this.currentDecision,
     required this.expanded,
+    required this.dimmed,
     required this.onExpandChange,
     required this.onChoose,
   });
 
   final StockService service;
+  final ServiceRuntimeState? state;
   final String? currentDecision;
   final bool expanded;
+  final bool dimmed;
   final ValueChanged<bool> onExpandChange;
   final ValueChanged<String> onChoose;
 
@@ -133,7 +185,11 @@ class _ServiceCard extends StatelessWidget {
 
     final selectedLabel = _labelFor(options, currentDecision);
 
-    return Card(
+    final probeChip = _probeChip(theme);
+
+    return Opacity(
+      opacity: dimmed ? 0.55 : 1.0,
+      child: Card(
       margin: const EdgeInsets.only(bottom: 10),
       child: Theme(
         // Remove ExpansionTile's built-in divider lines so it sits
@@ -141,14 +197,24 @@ class _ServiceCard extends StatelessWidget {
         data: theme.copyWith(dividerColor: Colors.transparent),
         child: ExpansionTile(
           initiallyExpanded: expanded,
-          onExpansionChanged: onExpandChange,
+          onExpansionChanged: dimmed ? null : onExpandChange,
           tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
           childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-          title: Text(
-            service.displayName,
-            style: theme.textTheme.titleMedium,
+          title: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  service.displayName,
+                  style: theme.textTheme.titleMedium,
+                ),
+              ),
+              if (probeChip != null) ...[
+                const SizedBox(width: 8),
+                probeChip,
+              ],
+            ],
           ),
-          subtitle: selectedLabel == null
+          subtitle: selectedLabel == null || dimmed
               ? null
               : Padding(
                   padding: const EdgeInsets.only(top: 4),
@@ -191,6 +257,43 @@ class _ServiceCard extends StatelessWidget {
           ],
         ),
       ),
+      ),
+    );
+  }
+
+  /// Small status chip summarising what the probe saw for this service.
+  /// Hidden when probe data is unavailable (screen hasn't been probed
+  /// yet) so we don't falsely imply "all clean" during that window.
+  Widget? _probeChip(ThemeData theme) {
+    final s = state;
+    if (s == null) return null;
+    if (s.unitActive) {
+      return _StatusChip(
+        label: 'running',
+        color: theme.colorScheme.tertiary,
+      );
+    }
+    if (s.processRunning) {
+      return _StatusChip(
+        label: 'running',
+        color: theme.colorScheme.tertiary,
+      );
+    }
+    if (s.unitExists) {
+      return _StatusChip(
+        label: 'installed',
+        color: theme.colorScheme.secondary,
+      );
+    }
+    if (s.launcherScriptExists) {
+      return _StatusChip(
+        label: 'launcher present',
+        color: theme.colorScheme.secondary,
+      );
+    }
+    return _StatusChip(
+      label: 'not detected',
+      color: theme.colorScheme.outline,
     );
   }
 
@@ -223,6 +326,88 @@ class _OptionTile extends StatelessWidget {
       subtitle: desc == null || desc.isEmpty ? null : Text(desc),
       isThreeLine: desc != null && desc.length > 60,
       contentPadding: EdgeInsets.zero,
+    );
+  }
+}
+
+class _SectionHeader extends StatelessWidget {
+  const _SectionHeader({required this.label, required this.subtitle});
+  final String label;
+  final String subtitle;
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8, top: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label, style: theme.textTheme.titleSmall),
+          const SizedBox(height: 2),
+          Text(
+            subtitle,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ProbeLoadingBanner extends StatelessWidget {
+  const _ProbeLoadingBanner();
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Row(
+        children: [
+          const SizedBox(
+            width: 14,
+            height: 14,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'Probing this printer to see which services are actually '
+              'running. You can start picking while we check.',
+              style: theme.textTheme.bodySmall,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StatusChip extends StatelessWidget {
+  const _StatusChip({required this.label, required this.color});
+  final String label;
+  final Color color;
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(
+        label,
+        style: theme.textTheme.labelSmall?.copyWith(
+          color: color,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
     );
   }
 }

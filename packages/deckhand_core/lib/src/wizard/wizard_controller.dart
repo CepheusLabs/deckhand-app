@@ -14,6 +14,7 @@ import '../services/security_service.dart';
 import '../services/ssh_service.dart';
 import '../services/upstream_service.dart';
 import 'dsl.dart';
+import 'printer_state_probe.dart';
 
 /// Which high-level flow the wizard is running.
 enum WizardFlow { none, stockKeep, freshFlash }
@@ -63,11 +64,18 @@ class WizardController {
   // the stepper so it can switch its "Install" label to a more
   // specific phase label ("Writing image") during long-running steps.
   String? _currentStepKind;
+  // Snapshot of what's actually present/running on this specific
+  // printer. Populated by [probePrinterState]; screens read from it
+  // to dim options that don't apply to THIS machine (service already
+  // absent, file already deleted, etc.) even though the profile
+  // declares them for the printer type.
+  PrinterState _printerState = PrinterState.empty;
   var _state = WizardState.initial();
 
   WizardState get state => _state;
   PrinterProfile? get profile => _profile;
   String? get currentStepKind => _currentStepKind;
+  PrinterState get printerState => _printerState;
   Stream<WizardEvent> get events => _eventsController.stream;
 
   Future<void> loadProfile(String profileId, {String? ref}) async {
@@ -105,6 +113,10 @@ class WizardController {
     }
     _state = _state.copyWith(sshHost: host);
     _emit(SshConnected(host: host, user: session.user));
+    // Fire the inventory probe in the background so the services /
+    // files / screens screens render with machine-specific state
+    // without making the user wait at the Connect step for it.
+    unawaited(_refreshPrinterState());
   }
 
   /// Connect with a specific username/password. Used as the fallback when
@@ -127,7 +139,39 @@ class WizardController {
     _sshPassword = password;
     _state = _state.copyWith(sshHost: host);
     _emit(SshConnected(host: host, user: session.user));
+    unawaited(_refreshPrinterState());
   }
+
+  /// Re-run the state probe against the current SSH session. Emits
+  /// [PrinterStateRefreshed] when fresh data lands so screens can
+  /// rebuild. Called automatically on connect; screens can call it
+  /// manually (via [refreshPrinterState]) after a user action that
+  /// changes the printer state (e.g. after the install flow
+  /// completes and you navigate back to adjust decisions).
+  Future<void> _refreshPrinterState() async {
+    final s = _session;
+    final pf = _profile;
+    if (s == null || pf == null) return;
+    try {
+      final probe = PrinterStateProbe(ssh: ssh);
+      final report = await probe.probe(session: s, inventory: pf.stockOs);
+      _printerState = report;
+      _emit(PrinterStateRefreshed(report));
+    } catch (e) {
+      // Probe is best-effort. If it fails (network blip, missing
+      // systemctl, etc.) screens simply render the full abstract
+      // option list like they did before probing existed.
+      _emit(
+        StepWarning(
+          stepId: 'printer_state_probe',
+          message: 'Could not probe printer state: $e',
+        ),
+      );
+    }
+  }
+
+  /// Public entry point for screens that want to trigger a re-probe.
+  Future<void> refreshPrinterState() => _refreshPrinterState();
 
   Future<void> setDecision(String path, Object value) async {
     final updated = Map<String, Object>.from(_state.decisions);
@@ -141,10 +185,7 @@ class WizardController {
   String resolveServiceDefault(StockService svc) {
     final rules =
         ((svc.raw['wizard'] as Map?)?['default_rules'] as List?) ?? const [];
-    final env = DslEnv(
-      decisions: _state.decisions,
-      profile: _profile?.raw ?? const {},
-    );
+    final env = _buildDslEnv();
     for (final r in rules.whereType<Map>().map(
       (m) => m.cast<String, dynamic>(),
     )) {
@@ -158,6 +199,40 @@ class WizardController {
       }
     }
     return svc.defaultAction;
+  }
+
+  /// Build the DSL evaluation env with live probe results folded in
+  /// as `probe.*` decision entries. Centralised so every DSL caller
+  /// sees the same view of the printer - otherwise we'd leak the
+  /// profile-declared "stock OS" assumptions into conditions that
+  /// should be live-state-aware.
+  DslEnv _buildDslEnv() {
+    final decisions = Map<String, Object>.from(_state.decisions);
+    final probe = _printerState;
+    if (probe.osCodename != null) {
+      decisions['probe.os_codename'] = probe.osCodename!;
+    }
+    if (probe.osId != null) {
+      decisions['probe.os_id'] = probe.osId!;
+    }
+    if (probe.osVersionId != null) {
+      decisions['probe.os_version_id'] = probe.osVersionId!;
+    }
+    if (probe.pythonDefaultVersion != null) {
+      decisions['probe.python_default'] = probe.pythonDefaultVersion!;
+    }
+    // python3.11 presence lets os_python_below short-circuit to false
+    // for any threshold <= 3.11 regardless of what the profile claims
+    // the stock Python version is.
+    if (probe.python311Installed) {
+      decisions['probe.os_python_below.3.9'] = false;
+      decisions['probe.os_python_below.3.10'] = false;
+      decisions['probe.os_python_below.3.11'] = false;
+    }
+    return DslEnv(
+      decisions: decisions,
+      profile: _profile?.raw ?? const {},
+    );
   }
 
   void setFlow(WizardFlow flow) {
@@ -477,6 +552,12 @@ class WizardController {
     final useSudo = step['sudo'] as bool? ?? _looksLikeSystemPath(s, target);
     final mode = _parseFileMode(step['mode']);
     final owner = step['owner'] as String?;
+    // Auto-snapshot the existing file before overwriting, unless the
+    // step explicitly opts out (backup: false). System files (/etc/*)
+    // are the priority case: rewriting sources.list or a systemd unit
+    // silently is a recipe for unrecoverable mistakes when the profile
+    // got it wrong. A `.deckhand-pre-<ts>` sibling is easy to restore.
+    final backup = step['backup'] as bool? ?? true;
 
     final ts = DateTime.now().millisecondsSinceEpoch;
     final tmpLocal = p.join(Directory.systemTemp.path, 'deckhand-$ts.tmp');
@@ -484,6 +565,32 @@ class WizardController {
     await File(tmpLocal).writeAsString(rendered);
 
     try {
+      if (backup) {
+        final qTarget0 = _shellQuote(target);
+        final backupPath = '$target.deckhand-pre-$ts';
+        final qBackup = _shellQuote(backupPath);
+        // Only snapshot if the target already exists. `cp -p` preserves
+        // mode/owner/timestamps so a user-led rollback is byte-exact.
+        final snapCmd = useSudo
+            ? 'if [ -e $qTarget0 ]; then sudo cp -p $qTarget0 $qBackup; fi'
+            : 'if [ -e $qTarget0 ]; then cp -p $qTarget0 $qBackup; fi';
+        final snapRes = await _runSsh(snapCmd);
+        if (!snapRes.success) {
+          // Non-fatal: surface a warning but keep going - the user
+          // explicitly triggered the write and might not care about
+          // a backup failure on a fresh install (no prior file).
+          _emit(
+            StepWarning(
+              stepId: step['id'] as String? ?? 'write_file',
+              message: 'Could not snapshot existing $target before '
+                  'overwrite: ${snapRes.stderr.trim()}',
+            ),
+          );
+        } else if (snapRes.stdout.trim().isNotEmpty ||
+            snapRes.stderr.trim().isEmpty) {
+          _log(step, '[write_file] backup -> $backupPath');
+        }
+      }
       await ssh.upload(s, tmpLocal, remoteTmp);
       final qTmp = _shellQuote(remoteTmp);
       final qTarget = _shellQuote(target);
@@ -1083,10 +1190,7 @@ class WizardController {
   Future<void> _runConditional(Map<String, dynamic> step) async {
     final when = step['when'] as String?;
     if (when == null) return;
-    final env = DslEnv(
-      decisions: _state.decisions,
-      profile: _profile?.raw ?? const {},
-    );
+    final env = _buildDslEnv();
     final matches = _dsl.evaluate(when, env);
     if (!matches) {
       _log(step, '[conditional] skipping - condition false');
@@ -1489,4 +1593,12 @@ class UserInputRequired extends WizardEvent {
 
 class ExecutionCompleted extends WizardEvent {
   const ExecutionCompleted();
+}
+
+/// Emitted once the state probe lands fresh data. Screens watching
+/// `wizardStateProvider` rebuild on this (via the generic stream)
+/// and re-render with machine-specific state applied.
+class PrinterStateRefreshed extends WizardEvent {
+  const PrinterStateRefreshed(this.state);
+  final PrinterState state;
 }
