@@ -1,4 +1,4 @@
-// Package main is deckhand-elevated-helper — a single-op Go binary the
+// Package main is deckhand-elevated-helper - a single-op Go binary the
 // Deckhand Flutter UI launches with platform-native elevation (UAC on
 // Windows, AuthorizationServices on macOS, pkexec on Linux) when it
 // needs to write to a raw block device.
@@ -129,7 +129,7 @@ func runWriteImage(args []string) {
 
 	srcSha := hex.EncodeToString(hasher.Sum(nil))
 	if *expectedSha != "" && srcSha != *expectedSha {
-		fatalf("image sha256 mismatch (got %s, want %s) — aborting before verification pass", srcSha, *expectedSha)
+		fatalf("image sha256 mismatch (got %s, want %s) - aborting before verification pass", srcSha, *expectedSha)
 	}
 
 	emitJSON(map[string]any{

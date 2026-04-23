@@ -16,5 +16,6 @@ export 'src/services/discovery_service.dart';
 export 'src/services/moonraker_service.dart';
 export 'src/services/upstream_service.dart';
 export 'src/services/security_service.dart';
+export 'src/services/elevated_helper_service.dart';
 export 'src/wizard/dsl.dart';
 export 'src/wizard/wizard_controller.dart';

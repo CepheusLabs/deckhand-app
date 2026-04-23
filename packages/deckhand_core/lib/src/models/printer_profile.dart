@@ -25,6 +25,7 @@ class PrinterProfile {
     required this.flows,
     required this.verifiers,
     required this.requiredHosts,
+    this.identification = const ProfileIdentification(),
     this.maintainers = const [],
   });
 
@@ -48,6 +49,7 @@ class PrinterProfile {
   final FlowConfig flows;
   final List<VerifierConfig> verifiers;
   final List<String> requiredHosts;
+  final ProfileIdentification identification;
   final List<MaintainerSpec> maintainers;
 
   factory PrinterProfile.fromJson(Map<String, dynamic> json) {
@@ -75,9 +77,141 @@ class PrinterProfile {
       ).map(VerifierConfig.fromJson).toList(),
       requiredHosts: ((json['required_hosts'] as List?) ?? const [])
           .cast<String>(),
+      identification: ProfileIdentification.fromJson(
+        _mapOr(json['identification']),
+      ),
       maintainers: _listOfMap(
         json['maintainers'],
       ).map(MaintainerSpec.fromJson).toList(),
+    );
+  }
+}
+
+/// Hints the connect screen uses to pick the right discovered printer
+/// out of a LAN full of similar-looking Klipper boxes. The default
+/// (empty) identification matches nothing, so unconfigured profiles
+/// never claim discovered hosts - the user falls back to picking
+/// manually.
+class ProfileIdentification {
+  const ProfileIdentification({
+    this.markerFile,
+    this.moonrakerObjects = const [],
+    this.hostnamePatterns = const [],
+  });
+
+  /// Filename under Moonraker's `config` root (typically
+  /// `~/printer_data/config/`) that Deckhand writes during install to
+  /// mark the printer as ours. Strongest identification signal: a
+  /// printer with this file definitely went through our process.
+  /// When the file content parses as JSON with `profile_id` matching
+  /// the loaded profile, that's a definite match.
+  final String? markerFile;
+
+  /// Klipper object names that, if any appear in a live Moonraker
+  /// `/printer/objects/list`, identify this printer model. Matched as
+  /// prefix-or-exact against each registered object (so `phrozen_dev`
+  /// matches `phrozen_dev`, `phrozen_dev:runout`, etc.). Used to catch
+  /// stock (pre-Deckhand) printers before the marker file exists.
+  final List<String> moonrakerObjects;
+
+  /// Regex patterns the Moonraker `/printer/info.hostname` can match
+  /// to strengthen identification. Contributes as a weak "probable"
+  /// signal when no stronger evidence is available.
+  final List<String> hostnamePatterns;
+
+  factory ProfileIdentification.fromJson(Map<String, dynamic> j) =>
+      ProfileIdentification(
+        markerFile: j['marker_file'] as String?,
+        moonrakerObjects:
+            ((j['moonraker_objects'] as List?) ?? const []).cast<String>(),
+        hostnamePatterns:
+            ((j['hostname_patterns'] as List?) ?? const []).cast<String>(),
+      );
+}
+
+/// The confidence bucket for a match result. Ordered so [confirmed]
+/// sorts first and [miss] sorts last in lists.
+enum PrinterMatchConfidence { confirmed, probable, unknown, miss }
+
+/// Pure function: score a discovered printer against a profile's
+/// identification hints. Lives in the model so both the UI and tests
+/// can reach it without a Flutter context.
+class PrinterMatch {
+  const PrinterMatch({required this.confidence, this.reason});
+  final PrinterMatchConfidence confidence;
+  final String? reason;
+
+  static const PrinterMatch unknown = PrinterMatch(
+    confidence: PrinterMatchConfidence.unknown,
+  );
+
+  static PrinterMatch score({
+    required ProfileIdentification hints,
+    required String? markerFileContent,
+    required String? hostname,
+    required List<String> registeredObjects,
+    required String profileId,
+  }) {
+    // Tier 1: marker file written by Deckhand. Strongest signal.
+    if (hints.markerFile != null && markerFileContent != null) {
+      // Content should be JSON with profile_id. We don't hard-require
+      // that; any non-empty marker at the expected path is convincing,
+      // but a matching profile_id upgrades the reason text.
+      final lower = markerFileContent.trim();
+      if (lower.contains('"profile_id"') &&
+          lower.contains('"$profileId"')) {
+        return PrinterMatch(
+          confidence: PrinterMatchConfidence.confirmed,
+          reason: 'installed by Deckhand as $profileId',
+        );
+      }
+      if (lower.isNotEmpty) {
+        return PrinterMatch(
+          confidence: PrinterMatchConfidence.confirmed,
+          reason: 'Deckhand marker file present',
+        );
+      }
+    }
+    // Tier 2: Klipper object fingerprint. Pre-install printers match
+    // here; post-install printers usually match here as well since we
+    // preserve vendor extras.
+    for (final prefix in hints.moonrakerObjects) {
+      for (final obj in registeredObjects) {
+        if (obj == prefix ||
+            obj.startsWith('$prefix ') ||
+            obj.startsWith('$prefix:')) {
+          return PrinterMatch(
+            confidence: PrinterMatchConfidence.confirmed,
+            reason: 'Klipper config uses `$prefix`',
+          );
+        }
+      }
+    }
+    // Tier 3: hostname pattern. Weak on its own - common hostnames
+    // like `mkspi` don't prove anything. Surfaced as "probable" so
+    // the user knows to double-check.
+    if (hostname != null) {
+      for (final pat in hints.hostnamePatterns) {
+        try {
+          if (RegExp(pat).hasMatch(hostname)) {
+            return PrinterMatch(
+              confidence: PrinterMatchConfidence.probable,
+              reason: 'hostname `$hostname` matches profile',
+            );
+          }
+        } catch (_) {
+          // Malformed regex - skip silently.
+        }
+      }
+    }
+    // If the profile supplies any hints at all, we can say "miss"
+    // confidently. If it supplies none, we stay unknown.
+    final hasAny = hints.markerFile != null ||
+        hints.moonrakerObjects.isNotEmpty ||
+        hints.hostnamePatterns.isNotEmpty;
+    return PrinterMatch(
+      confidence:
+          hasAny ? PrinterMatchConfidence.miss : PrinterMatchConfidence.unknown,
     );
   }
 }

@@ -17,6 +17,15 @@ abstract class UpstreamService {
     required String destPath,
     String? tag,
   });
+
+  /// Stream a full-image download (base Linux OS image) to [destPath],
+  /// optionally verifying the resulting file's sha256 matches
+  /// [expectedSha256].
+  Stream<OsDownloadProgress> osDownload({
+    required String url,
+    required String destPath,
+    String? expectedSha256,
+  });
 }
 
 class UpstreamFetchResult {
@@ -29,3 +38,23 @@ class UpstreamFetchResult {
   final String resolvedRef;
   final String? assetName;
 }
+
+/// Progress event emitted while an OS image is streaming to disk.
+class OsDownloadProgress {
+  const OsDownloadProgress({
+    required this.bytesDone,
+    required this.bytesTotal,
+    required this.phase,
+    this.sha256,
+    this.path,
+  });
+  final int bytesDone;
+  final int bytesTotal;
+  final OsDownloadPhase phase;
+  final String? sha256;
+  final String? path;
+
+  double get fraction => bytesTotal == 0 ? 0 : bytesDone / bytesTotal;
+}
+
+enum OsDownloadPhase { downloading, done, failed }

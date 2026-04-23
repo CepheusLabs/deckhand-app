@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:deckhand_core/deckhand_core.dart';
@@ -71,6 +72,21 @@ class SidecarUpstreamService implements UpstreamService {
     );
   }
 
+  @override
+  Stream<OsDownloadProgress> osDownload({
+    required String url,
+    required String destPath,
+    String? expectedSha256,
+  }) {
+    return sidecar
+        .callStreaming('os.download', {
+          'url': url,
+          'dest': destPath,
+          if (expectedSha256 != null) 'sha256': expectedSha256,
+        })
+        .transform(_osDownloadTransformer);
+  }
+
   bool _matches(String name, String pattern) {
     // Very simple glob: `*.zip` / `*fluidd*.zip`. No regex surface.
     if (!pattern.contains('*')) return name == pattern;
@@ -92,3 +108,40 @@ class UpstreamException implements Exception {
   @override
   String toString() => 'UpstreamException: $message';
 }
+
+final _osDownloadTransformer =
+    StreamTransformer<SidecarEvent, OsDownloadProgress>.fromHandlers(
+      handleData: (event, sink) {
+        switch (event) {
+          case SidecarProgress(:final notification):
+            final p = notification.params;
+            final done = (p['bytes_done'] as num?)?.toInt() ?? 0;
+            final total = (p['bytes_total'] as num?)?.toInt() ?? 0;
+            final phase = _phaseFromString(p['phase'] as String?);
+            sink.add(
+              OsDownloadProgress(
+                bytesDone: done,
+                bytesTotal: total,
+                phase: phase,
+              ),
+            );
+          case SidecarResult(:final result):
+            sink.add(
+              OsDownloadProgress(
+                bytesDone: 0,
+                bytesTotal: 0,
+                phase: OsDownloadPhase.done,
+                sha256: result['sha256'] as String?,
+                path: result['path'] as String?,
+              ),
+            );
+        }
+      },
+    );
+
+OsDownloadPhase _phaseFromString(String? s) => switch (s) {
+  'downloading' => OsDownloadPhase.downloading,
+  'done' => OsDownloadPhase.done,
+  'failed' => OsDownloadPhase.failed,
+  _ => OsDownloadPhase.downloading,
+};

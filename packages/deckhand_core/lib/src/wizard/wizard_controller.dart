@@ -1,10 +1,12 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:path/path.dart' as p;
 
 import '../models/printer_profile.dart';
 import '../services/discovery_service.dart';
+import '../services/elevated_helper_service.dart';
 import '../services/flash_service.dart';
 import '../services/moonraker_service.dart';
 import '../services/profile_service.dart';
@@ -26,6 +28,7 @@ class WizardController {
     required this.moonraker,
     required this.upstream,
     required this.security,
+    this.elevatedHelper,
   });
 
   final ProfileService profiles;
@@ -36,6 +39,10 @@ class WizardController {
   final UpstreamService upstream;
   final SecurityService security;
 
+  /// Optional: when non-null, raw-device writes go through the elevated
+  /// helper (UAC / pkexec / osascript). Tests leave this null.
+  final ElevatedHelperService? elevatedHelper;
+
   late final DslEvaluator _dsl = DslEvaluator(defaultPredicates());
   final _eventsController = StreamController<WizardEvent>.broadcast();
   final _pendingInput = <String, Completer<Object?>>{};
@@ -43,6 +50,9 @@ class WizardController {
   PrinterProfile? _profile;
   ProfileCacheEntry? _profileCache;
   SshSession? _session;
+  // Remembered so we can run `sudo -S` without allocating a pty. Not
+  // persisted anywhere; dropped when the controller disposes.
+  String? _sshPassword;
   var _state = WizardState.initial();
 
   WizardState get state => _state;
@@ -74,6 +84,14 @@ class WizardController {
       credentials: creds.cast<SshCredential>(),
     );
     _session = session;
+    // Remember the password of whichever default matched, so sudo
+    // commands can feed it on stdin.
+    for (final c in pf.ssh.defaultCredentials) {
+      if (c.user == session.user && c.password != null) {
+        _sshPassword = c.password;
+        break;
+      }
+    }
     _state = _state.copyWith(sshHost: host);
     _emit(SshConnected(host: host, user: session.user));
   }
@@ -95,6 +113,7 @@ class WizardController {
       credential: PasswordCredential(user: user, password: password),
     );
     _session = session;
+    _sshPassword = password;
     _state = _state.copyWith(sshHost: host);
     _emit(SshConnected(host: host, user: session.user));
   }
@@ -201,9 +220,14 @@ class WizardController {
       case 'conditional':
         await _runConditional(step);
       case 'prompt':
+        await _awaitUserInput(id, step);
       case 'choose_one':
       case 'disk_picker':
-        await _awaitUserInput(id, step);
+        await _resolveOrAwaitInput(id, step);
+      case 'script':
+        await _runScript(step);
+      case 'install_marker':
+        await _runInstallMarker(step);
       default:
         _emit(
           StepWarning(
@@ -215,13 +239,13 @@ class WizardController {
   }
 
   Future<void> _runSshCommands(Map<String, dynamic> step) async {
-    final s = _requireSession();
+    _requireSession();
     final commands = ((step['commands'] as List?) ?? const []).cast<String>();
     final ignore = step['ignore_errors'] as bool? ?? false;
     for (final cmd in commands) {
       final rendered = _render(cmd);
-      final res = await ssh.run(s, rendered);
-      _log(step, '[ssh] $rendered → exit ${res.exitCode}');
+      final res = await _runSsh(rendered);
+      _log(step, '[ssh] $rendered -> exit ${res.exitCode}');
       if (!res.success && !ignore) {
         throw StepExecutionException(
           'Command failed: $rendered',
@@ -232,7 +256,7 @@ class WizardController {
   }
 
   Future<void> _runSnapshotPaths(Map<String, dynamic> step) async {
-    final s = _requireSession();
+    _requireSession();
     final pathIds = ((step['paths'] as List?) ?? const []).cast<String>();
     final ts = DateTime.now().toUtc().toIso8601String().replaceAll(':', '-');
     for (final id in pathIds) {
@@ -245,8 +269,8 @@ class WizardController {
       final rendered = _render(snapshotTo);
       final cmd =
           'if [ -e "${path.path}" ]; then mv "${path.path}" "$rendered"; fi';
-      final res = await ssh.run(s, cmd);
-      _log(step, '[snapshot] ${path.path} → $rendered (exit ${res.exitCode})');
+      final res = await _runSsh(cmd);
+      _log(step, '[snapshot] ${path.path} -> $rendered (exit ${res.exitCode})');
       if (!res.success) {
         throw StepExecutionException(
           'snapshot failed for ${path.path}',
@@ -257,16 +281,15 @@ class WizardController {
   }
 
   Future<void> _runInstallFirmware(Map<String, dynamic> step) async {
-    final s = _requireSession();
+    _requireSession();
     final fw = _selectedFirmware();
     if (fw == null) throw StepExecutionException('no firmware selected');
     final install = fw.installPath ?? '~/klipper';
-    _log(step, '[firmware] cloning ${fw.repo} @ ${fw.ref} → $install');
+    _log(step, '[firmware] cloning ${fw.repo} @ ${fw.ref} -> $install');
     final cloneCmd =
         'if [ -d "$install/.git" ]; then cd "$install" && git fetch origin && git checkout ${fw.ref} && git pull --ff-only; '
         'else rm -rf "$install" && git clone --depth 1 -b ${fw.ref} ${fw.repo} "$install"; fi';
-    final cloneRes = await ssh.run(
-      s,
+    final cloneRes = await _runSsh(
       cloneCmd,
       timeout: const Duration(minutes: 10),
     );
@@ -279,8 +302,7 @@ class WizardController {
         'PY=\$(command -v python3.11 || command -v python3) && \$PY -m venv $venv && '
         '$venv/bin/pip install --quiet -U pip setuptools wheel && '
         '$venv/bin/pip install --quiet -r $install/scripts/klippy-requirements.txt';
-    final venvRes = await ssh.run(
-      s,
+    final venvRes = await _runSsh(
       venvCmd,
       timeout: const Duration(minutes: 15),
     );
@@ -310,7 +332,7 @@ class WizardController {
   }
 
   Future<void> _runInstallStack(Map<String, dynamic> step) async {
-    final s = _requireSession();
+    _requireSession();
     final components = ((step['components'] as List?) ?? const [])
         .cast<String>();
     final stack = _profile!.stack;
@@ -333,7 +355,7 @@ class WizardController {
         final cmd =
             'if [ -d "$install/.git" ]; then cd "$install" && git pull --ff-only; '
             'else git clone --depth 1 -b $ref $repo "$install"; fi';
-        final res = await ssh.run(s, cmd, timeout: const Duration(minutes: 10));
+        final res = await _runSsh(cmd, timeout: const Duration(minutes: 10));
         if (!res.success) {
           throw StepExecutionException(
             '$name clone failed',
@@ -346,7 +368,7 @@ class WizardController {
   }
 
   Future<void> _runApplyServices(Map<String, dynamic> step) async {
-    final s = _requireSession();
+    _requireSession();
     for (final svc in _profile!.stockOs.services) {
       final action =
           _state.decisions['service.${svc.id}'] as String? ?? svc.defaultAction;
@@ -356,13 +378,12 @@ class WizardController {
         case 'remove':
         case 'disable':
           if (unit != null) {
-            await ssh.run(
-              s,
+            await _runSsh(
               'sudo systemctl disable --now $unit 2>/dev/null || true',
             );
           }
           if (proc != null) {
-            await ssh.run(s, 'sudo pkill -f "$proc" 2>/dev/null || true');
+            await _runSsh('sudo pkill -f "$proc" 2>/dev/null || true');
           }
           _log(step, '[services] ${svc.id}: disabled');
         case 'stub':
@@ -374,7 +395,7 @@ class WizardController {
   }
 
   Future<void> _runApplyFiles(Map<String, dynamic> step) async {
-    final s = _requireSession();
+    _requireSession();
     for (final f in _profile!.stockOs.files) {
       final decision =
           _state.decisions['file.${f.id}'] as String? ?? f.defaultAction;
@@ -403,7 +424,7 @@ class WizardController {
         } else {
           cmd = 'sudo rm -rf ${_shellQuote(path)}';
         }
-        final res = await ssh.run(s, cmd);
+        final res = await _runSsh(cmd);
         _log(step, '[files] rm ${f.id}: $path (exit ${res.exitCode})');
         if (res.stdout.trim().isNotEmpty) {
           for (final line in res.stdout.trim().split('\n')) {
@@ -421,8 +442,9 @@ class WizardController {
     final target = step['target'] as String?;
     final templatePath = step['template'] as String?;
     final content = step['content'] as String?;
-    if (target == null)
+    if (target == null) {
       throw StepExecutionException('write_file missing target');
+    }
     String rendered;
     if (content != null) {
       rendered = _render(content);
@@ -432,19 +454,83 @@ class WizardController {
     } else {
       throw StepExecutionException('write_file requires template or content');
     }
-    final tmpLocal = p.join(
-      Directory.systemTemp.path,
-      'deckhand-${DateTime.now().millisecondsSinceEpoch}.tmp',
-    );
+
+    // Explicit `sudo: true` wins; otherwise default to sudo for paths
+    // outside the SSH user's home directory. We can't SFTP directly to
+    // root-owned paths like /etc/apt/sources.list, so stage in /tmp
+    // and mv into place.
+    final useSudo = step['sudo'] as bool? ?? _looksLikeSystemPath(s, target);
+    final mode = _parseFileMode(step['mode']);
+    final owner = step['owner'] as String?;
+
+    final ts = DateTime.now().millisecondsSinceEpoch;
+    final tmpLocal = p.join(Directory.systemTemp.path, 'deckhand-$ts.tmp');
+    final remoteTmp = '/tmp/deckhand-write-$ts.tmp';
     await File(tmpLocal).writeAsString(rendered);
+
     try {
-      await ssh.upload(s, tmpLocal, target);
-      _log(step, '[write_file] wrote $target (${rendered.length} bytes)');
+      await ssh.upload(s, tmpLocal, remoteTmp);
+      final qTmp = _shellQuote(remoteTmp);
+      final qTarget = _shellQuote(target);
+      final modeArg = mode != null ? '-m ${mode.toRadixString(8)} ' : '';
+      final ownerArg = owner != null ? '-o ${_shellQuote(owner)} ' : '';
+      final String cmd;
+      if (useSudo) {
+        // `install` atomically places the file with the right mode (and
+        // optional owner). `rm -f` cleans up even if install is a no-op
+        // symlink, though it usually consumes the source.
+        cmd =
+            'sudo install ${modeArg}${ownerArg}$qTmp $qTarget && rm -f $qTmp';
+      } else {
+        final chmod = mode != null
+            ? ' && chmod ${mode.toRadixString(8)} $qTarget'
+            : '';
+        cmd = 'mv $qTmp $qTarget$chmod';
+      }
+      final res = await _runSsh(cmd);
+      _log(
+        step,
+        '[write_file] wrote $target (${rendered.length} bytes'
+        '${useSudo ? ', via sudo' : ''})',
+      );
+      if (!res.success) {
+        // Make sure we don't leave the staged file behind.
+        await _runSsh('rm -f $qTmp');
+        throw StepExecutionException(
+          'write_file $target failed',
+          stderr: res.stderr,
+        );
+      }
     } finally {
       try {
         await File(tmpLocal).delete();
       } catch (_) {}
     }
+  }
+
+  bool _looksLikeSystemPath(SshSession s, String target) {
+    // Anything under the login user's home (and /tmp) is writable
+    // without elevation; everything else we assume needs sudo.
+    if (target.startsWith('/home/${s.user}/')) return false;
+    if (target.startsWith('/tmp/')) return false;
+    return true;
+  }
+
+  /// Accepts an int (already decimal) or a string like `"0644"` / `"755"`
+  /// / `"0o755"` and returns the integer mode. Returns null when the
+  /// step omits `mode:`.
+  int? _parseFileMode(Object? v) {
+    if (v == null) return null;
+    if (v is int) return v;
+    if (v is num) return v.toInt();
+    if (v is String) {
+      var raw = v.trim();
+      if (raw.startsWith('0o') || raw.startsWith('0O')) {
+        raw = raw.substring(2);
+      }
+      return int.parse(raw, radix: 8);
+    }
+    return null;
   }
 
   Future<void> _runInstallScreen(Map<String, dynamic> step) async {
@@ -468,8 +554,7 @@ class WizardController {
         final srcInstall = _resolveProfilePath(installScript);
         const remoteInstall = '~/deckhand-screen-install.sh';
         await ssh.upload(s, srcInstall, remoteInstall, mode: 493); // 0o755
-        final res = await ssh.run(
-          s,
+        final res = await _runSsh(
           'bash $remoteInstall',
           timeout: const Duration(minutes: 5),
         );
@@ -495,7 +580,7 @@ class WizardController {
   }
 
   Future<void> _runFlashMcus(Map<String, dynamic> step) async {
-    final s = _requireSession();
+    _requireSession();
     final which = ((step['which'] as List?) ?? const []).cast<String>();
     final fw = _selectedFirmware();
     if (fw == null) throw StepExecutionException('no firmware selected');
@@ -510,8 +595,7 @@ class WizardController {
       final writeConf =
           'cd $install && cat > .config <<"MCUCONF"\n$configLines\nMCUCONF\n'
           'make olddefconfig >/dev/null && make clean >/dev/null && make -j1';
-      final build = await ssh.run(
-        s,
+      final build = await _runSsh(
         writeConf,
         timeout: const Duration(minutes: 20),
       );
@@ -551,14 +635,342 @@ class WizardController {
     final dest =
         step['dest'] as String? ??
         p.join(Directory.systemTemp.path, 'deckhand-${opt.id}.img');
-    _log(step, '[os] downloading ${opt.url} → $dest');
-    _log(step, '[os] download dispatch handled by flash-progress UI');
+    _log(step, '[os] downloading ${opt.url} -> $dest');
+
+    final stepId = step['id'] as String? ?? 'os_download';
+    String? sha;
+    await for (final ev in upstream.osDownload(
+      url: opt.url,
+      destPath: dest,
+      expectedSha256: opt.sha256,
+    )) {
+      if (ev.phase == OsDownloadPhase.done) {
+        sha = ev.sha256;
+        _emit(
+          StepProgress(
+            stepId: stepId,
+            percent: 1.0,
+            message: 'download complete',
+          ),
+        );
+      } else if (ev.phase == OsDownloadPhase.failed) {
+        throw StepExecutionException('os download failed');
+      } else {
+        _emit(
+          StepProgress(
+            stepId: stepId,
+            percent: ev.fraction,
+            message:
+                '${(ev.bytesDone / (1 << 20)).toStringAsFixed(1)} MiB'
+                '${ev.bytesTotal > 0 ? ' / ${(ev.bytesTotal / (1 << 20)).toStringAsFixed(1)} MiB' : ''}',
+          ),
+        );
+      }
+    }
+
+    // Record artefact location + hash for the flash_disk step.
+    await setDecision('flash.image_path', dest);
+    if (sha != null) {
+      await setDecision('flash.image_sha256', sha);
+    }
+    _log(step, '[os] ready at $dest${sha != null ? " (sha256 $sha)" : ""}');
   }
 
   Future<void> _runFlashDisk(Map<String, dynamic> step) async {
     final diskId = _state.decisions['flash.disk'] as String?;
     if (diskId == null) throw StepExecutionException('no flash disk selected');
-    _log(step, '[flash] elevated-helper invocation queued for $diskId');
+    final imagePath = _state.decisions['flash.image_path'] as String?;
+    if (imagePath == null) {
+      throw StepExecutionException(
+        'no image path recorded - did os_download run?',
+      );
+    }
+    final helper = elevatedHelper;
+    if (helper == null) {
+      throw StepExecutionException(
+        'elevated helper not configured - cannot write raw disk',
+      );
+    }
+    final token = await security.issueConfirmationToken(
+      operation: 'write_image',
+      target: diskId,
+    );
+    final verify = step['verify_after_write'] as bool? ?? true;
+    final expectedSha = _state.decisions['flash.image_sha256'] as String?;
+    final stepId = step['id'] as String? ?? 'flash_disk';
+    _log(step, '[flash] writing $imagePath -> $diskId (verify=$verify)');
+
+    await for (final ev in helper.writeImage(
+      imagePath: imagePath,
+      diskId: diskId,
+      confirmationToken: token.value,
+      verifyAfterWrite: verify,
+      expectedSha256: expectedSha,
+    )) {
+      final pct = ev.fraction;
+      _emit(StepProgress(stepId: stepId, percent: pct, message: ev.message));
+      if (ev.phase == FlashPhase.failed) {
+        throw StepExecutionException(ev.message ?? 'flash failed');
+      }
+    }
+    _log(step, '[flash] done');
+  }
+
+  Future<void> _runScript(Map<String, dynamic> step) async {
+    final s = _requireSession();
+    final rel = step['path'] as String?;
+    if (rel == null) {
+      throw StepExecutionException('script step missing "path"');
+    }
+    final local = _resolveProfilePath(rel);
+    if (!await File(local).exists()) {
+      throw StepExecutionException('script not found: $rel');
+    }
+    final remote = '/tmp/deckhand-${p.basename(rel)}';
+    await ssh.upload(s, local, remote, mode: 493); // 0o755
+    final interpreter = step['interpreter'] as String? ?? 'bash';
+    final extraArgs = ((step['args'] as List?) ?? const []).cast<String>();
+    final ignoreErrors = step['ignore_errors'] as bool? ?? false;
+    final timeoutSecs = (step['timeout_seconds'] as num?)?.toInt() ?? 600;
+    // Two orthogonal knobs, intentionally un-coupled:
+    //   - `sudo: true`  -> wrap the whole invocation in `sudo -E`
+    //                      so the script runs as root from line 1.
+    //   - `askpass`     -> stand up an askpass helper + a PATH-shimmed
+    //                      `sudo` wrapper so any *internal* `sudo X`
+    //                      the script issues can authenticate without
+    //                      a pty. On by default whenever we have a
+    //                      cached password (i.e. password SSH). Turn
+    //                      off with `askpass: false` for scripts you
+    //                      want to prove don't elevate at all.
+    final useSudo = step['sudo'] as bool? ?? false;
+    final setUpAskpass =
+        (step['askpass'] as bool? ?? true) && _sshPassword != null;
+
+    final argStr = extraArgs.map(_shellQuote).join(' ');
+    final baseCmd = argStr.isEmpty
+        ? '$interpreter $remote'
+        : '$interpreter $remote $argStr';
+
+    _ScriptSudoHelper? helper;
+    try {
+      String envPrefix = '';
+      if (setUpAskpass) {
+        helper = await _installSudoAskpassHelper();
+        envPrefix =
+            'SUDO_ASKPASS=${_shellQuote(helper.askpassPath)} '
+            'PATH=${_shellQuote(helper.binDir)}:\$PATH ';
+      }
+      // If askpass is staged, the outer sudo (if requested) routes
+      // through the same helper via `-A`, so the whole command ships
+      // with an env prefix and no `sudo ` at position 0 - _runSsh
+      // leaves it alone. Without askpass, fall back to `sudo -E` and
+      // let _runSsh strip it to forward the password via sudo -S.
+      final String cmd;
+      if (useSudo && setUpAskpass) {
+        cmd = '${envPrefix}sudo -A -E $baseCmd';
+      } else if (useSudo) {
+        cmd = 'sudo -E $baseCmd';
+      } else {
+        cmd = '$envPrefix$baseCmd';
+      }
+      _log(
+        step,
+        '[script] running $rel'
+        '${useSudo ? " (root)" : ""}'
+        '${setUpAskpass ? " (askpass)" : ""}',
+      );
+      final res = await _runSsh(cmd, timeout: Duration(seconds: timeoutSecs));
+      if (res.stdout.trim().isNotEmpty) {
+        for (final line in res.stdout.trim().split('\n')) {
+          _log(step, '[script]   $line');
+        }
+      }
+      if (!res.success && !ignoreErrors) {
+        throw StepExecutionException(
+          'script $rel failed (exit ${res.exitCode})',
+          stderr: res.stderr,
+        );
+      }
+      _log(step, '[script] done ($rel, exit ${res.exitCode})');
+    } finally {
+      // Scrub helper files even on failure. Best-effort: a network
+      // error here shouldn't mask the original script error.
+      if (helper != null) {
+        try {
+          await ssh.run(
+            _requireSession(),
+            'rm -rf '
+            '${_shellQuote(helper.askpassPath)} '
+            '${_shellQuote(helper.binDir)}',
+          );
+        } catch (_) {}
+      }
+    }
+  }
+
+  /// Stages a temporary sudo-askpass helper + `sudo` wrapper on the
+  /// remote printer.
+  ///
+  /// - `<askpassPath>` is a 0700 shell script that prints the cached
+  ///   SSH password on stdout. sudo reads it via `SUDO_ASKPASS` when
+  ///   invoked with `-A`.
+  /// - `<binDir>/sudo` is a 0755 shim that forwards to `/usr/bin/sudo
+  ///   -A "$@"`. With `<binDir>` at the front of PATH, every `sudo`
+  ///   call inside the script (including `sudo apt-get`, `sudo
+  ///   systemctl`, etc.) transparently uses askpass.
+  ///
+  /// Both files live in `/tmp` and the caller is expected to remove
+  /// them once the script completes (see the `finally` block in
+  /// `_runScript`). Leaving them around briefly is acceptable: the
+  /// printer is already authenticated via SSH with the same password,
+  /// so there's no leak of a higher-privilege secret.
+  Future<_ScriptSudoHelper> _installSudoAskpassHelper() async {
+    final s = _requireSession();
+    final pw = _sshPassword;
+    if (pw == null) {
+      throw StateError('cannot install askpass helper without a password');
+    }
+    final ts = DateTime.now().microsecondsSinceEpoch;
+    final askpassPath = '/tmp/deckhand-askpass-$ts';
+    final binDir = '/tmp/deckhand-bin-$ts';
+
+    // askpass: print the password. Single-quoted via _shellQuote so
+    // special characters survive the trip through bash unmangled.
+    final askpassBody = "#!/bin/sh\nprintf '%s' ${_shellQuote(pw)}\n";
+    final askpassLocal = p.join(
+      Directory.systemTemp.path,
+      'deckhand-askpass-$ts.sh',
+    );
+    await File(askpassLocal).writeAsString(askpassBody);
+    try {
+      await ssh.upload(s, askpassLocal, askpassPath, mode: 448); // 0o700
+    } finally {
+      try {
+        await File(askpassLocal).delete();
+      } catch (_) {}
+    }
+
+    // Wrapper: call real sudo with -A so it uses askpass.
+    const wrapperBody =
+        '#!/bin/sh\nexec /usr/bin/sudo -A "\$@"\n';
+    final wrapperLocal = p.join(
+      Directory.systemTemp.path,
+      'deckhand-sudo-$ts.sh',
+    );
+    await File(wrapperLocal).writeAsString(wrapperBody);
+    try {
+      await ssh.run(s, 'mkdir -p ${_shellQuote(binDir)}');
+      await ssh.upload(s, wrapperLocal, '$binDir/sudo', mode: 493); // 0o755
+    } finally {
+      try {
+        await File(wrapperLocal).delete();
+      } catch (_) {}
+    }
+
+    return _ScriptSudoHelper(askpassPath: askpassPath, binDir: binDir);
+  }
+
+  /// Writes `~/printer_data/config/<filename>` (default `deckhand.json`)
+  /// so the connect screen can recognise this printer as one Deckhand
+  /// has already processed - even after the user strips out the stock
+  /// vendor artefacts (`phrozen_dev`, MKS bloat, etc.) we were keying
+  /// on before. Moonraker serves the file under the `config` root, so
+  /// no Klipper restart or printer.cfg surgery is needed.
+  Future<void> _runInstallMarker(Map<String, dynamic> step) async {
+    _requireSession();
+    final pf = _profile;
+    if (pf == null) throw StepExecutionException('no profile loaded');
+    final filename = step['filename'] as String? ?? 'deckhand.json';
+    final targetDir =
+        step['target_dir'] as String? ??
+        '/home/${_session!.user}/printer_data/config';
+    final extra = (step['extra'] as Map?)?.cast<String, dynamic>() ?? const {};
+
+    final payload = <String, dynamic>{
+      'profile_id': pf.id,
+      'profile_version': pf.version,
+      'display_name': pf.displayName,
+      'installed_at': DateTime.now().toUtc().toIso8601String(),
+      'deckhand_schema': 1,
+      ...extra,
+    };
+    final json = const JsonEncoder.withIndent('  ').convert(payload);
+    final target = '$targetDir/$filename';
+
+    // Ensure the config dir exists (fresh installs may not have laid
+    // out printer_data yet). Use plain ssh.run, not _runSsh - we don't
+    // want sudo wrapping.
+    final mkdir = await ssh.run(_requireSession(), 'mkdir -p ${_shellQuote(targetDir)}');
+    if (!mkdir.success) {
+      throw StepExecutionException(
+        'could not create $targetDir',
+        stderr: mkdir.stderr,
+      );
+    }
+
+    // Stage + mv (same pattern as _runWriteFile). Tempfile stays
+    // under the user's control; no elevation needed for the Moonraker
+    // config root.
+    final ts = DateTime.now().millisecondsSinceEpoch;
+    final tmpLocal = p.join(Directory.systemTemp.path, 'deckhand-marker-$ts.tmp');
+    final remoteTmp = '/tmp/deckhand-marker-$ts.tmp';
+    await File(tmpLocal).writeAsString(json);
+    try {
+      await ssh.upload(_requireSession(), tmpLocal, remoteTmp);
+      final res = await _runSsh(
+        'mv ${_shellQuote(remoteTmp)} ${_shellQuote(target)}',
+      );
+      if (!res.success) {
+        await _runSsh('rm -f ${_shellQuote(remoteTmp)}');
+        throw StepExecutionException(
+          'could not write marker to $target',
+          stderr: res.stderr,
+        );
+      }
+      _log(step, '[marker] wrote $target (${json.length} bytes)');
+    } finally {
+      try {
+        await File(tmpLocal).delete();
+      } catch (_) {}
+    }
+  }
+
+  /// For `choose_one` / `disk_picker` steps: if a pre-wizard screen
+  /// already recorded the decision, emit the resolution and move on;
+  /// otherwise fall back to awaiting user input.
+  Future<void> _resolveOrAwaitInput(
+    String id,
+    Map<String, dynamic> step,
+  ) async {
+    final existing = _lookupExistingDecision(step);
+    if (existing != null) {
+      _log(step, '[input] using existing decision: $existing');
+      _emit(DecisionRecorded(path: id, value: existing));
+      return;
+    }
+    await _awaitUserInput(id, step);
+  }
+
+  /// Checks known decision keys that may already hold the answer for
+  /// this step. Keeps the controller in sync with the pre-wizard
+  /// screens (flash_target_screen, choose_os_screen) without hardcoding
+  /// their step ids in the profile.
+  Object? _lookupExistingDecision(Map<String, dynamic> step) {
+    final kind = step['kind'] as String? ?? '';
+    final optionsFrom = step['options_from'] as String?;
+    final id = step['id'] as String? ?? '';
+
+    // Most specific first: step id.
+    final byId = _state.decisions[id];
+    if (byId != null) return byId;
+
+    if (kind == 'disk_picker') {
+      return _state.decisions['flash.disk'];
+    }
+    if (kind == 'choose_one' && optionsFrom == 'os.fresh_install_options') {
+      return _state.decisions['flash.os'];
+    }
+    return null;
   }
 
   Future<void> _runWaitForSsh(Map<String, dynamic> step) async {
@@ -577,13 +989,13 @@ class WizardController {
   }
 
   Future<void> _runVerify(Map<String, dynamic> step) async {
-    final s = _requireSession();
+    _requireSession();
     for (final v in _profile!.verifiers) {
       final kind = v.raw['kind'] as String? ?? '';
       switch (kind) {
         case 'ssh_command':
           final cmd = v.raw['command'] as String;
-          final res = await ssh.run(s, cmd);
+          final res = await _runSsh(cmd);
           final contains = v.raw['expect_stdout_contains'] as String?;
           final equals = v.raw['expect_stdout_equals'] as String?;
           var passed = res.success;
@@ -652,6 +1064,28 @@ class WizardController {
     return completer.future;
   }
 
+  /// Runs [command] over SSH. If [command] starts with `sudo ` and we
+  /// have a saved password for the session, strips the prefix and
+  /// delegates to [SshService.run] with `sudoPassword` - so sudo reads
+  /// the password on stdin (`-S`) and doesn't need a pty. Anything
+  /// without a sudo prefix runs as-is.
+  Future<SshCommandResult> _runSsh(
+    String command, {
+    Duration timeout = const Duration(seconds: 30),
+  }) {
+    final s = _requireSession();
+    const prefix = 'sudo ';
+    if (command.startsWith(prefix) && _sshPassword != null) {
+      return ssh.run(
+        s,
+        command.substring(prefix.length),
+        timeout: timeout,
+        sudoPassword: _sshPassword,
+      );
+    }
+    return ssh.run(s, command, timeout: timeout);
+  }
+
   SshSession _requireSession() {
     final s = _session;
     if (s == null) throw StepExecutionException('SSH not connected');
@@ -685,11 +1119,29 @@ class WizardController {
     }
   }
 
+  /// Turn a profile-declared relative path into an absolute local path.
+  ///
+  /// Three conventions, in priority order:
+  ///   - absolute (`/etc/foo`): returned as-is.
+  ///   - profile-local (`./scripts/foo.sh`): resolved against the
+  ///     profile's directory (where profile.yaml lives).
+  ///   - repo-root-relative (`shared/scripts/build-python.sh`): resolved
+  ///     against the deckhand-builds repo root. Profile dirs live at
+  ///     `<root>/printers/<id>/`, so the repo root is two levels up.
+  ///
+  /// Bare paths without a prefix default to profile-local (the legacy
+  /// behaviour) - add `./` for new profiles to make the intent loud.
   String _resolveProfilePath(String ref) {
-    final base = _profileCache?.localPath ?? '.';
-    if (ref.startsWith('./')) return p.join(base, ref.substring(2));
+    final profileDir = _profileCache?.localPath ?? '.';
     if (ref.startsWith('/')) return ref;
-    return p.join(base, ref);
+    if (ref.startsWith('./')) return p.join(profileDir, ref.substring(2));
+    // `shared/` is the repo-level tree of scripts and templates reused
+    // across printers. Resolve it against the repo root.
+    if (ref.startsWith('shared/') || ref.startsWith('shared\\')) {
+      final repoRoot = p.dirname(p.dirname(profileDir));
+      return p.join(repoRoot, ref);
+    }
+    return p.join(profileDir, ref);
   }
 
   Future<void> _uploadDir(String localDir, String remote) async {
@@ -714,7 +1166,7 @@ class WizardController {
       await ssh.upload(s, tmpTar, remoteTar);
       final extract =
           'mkdir -p "$remote" && tar -xf "$remoteTar" -C "\$(dirname "$remote")" && rm -f "$remoteTar"';
-      final res = await ssh.run(s, extract);
+      final res = await _runSsh(extract);
       if (!res.success) {
         throw StepExecutionException(
           'remote extract failed',
@@ -816,7 +1268,22 @@ class WizardController {
   Future<void> dispose() async {
     await _eventsController.close();
     if (_session != null) await ssh.disconnect(_session!);
+    // Overwrite then drop the cached SSH password so the GC has no
+    // reason to hold onto its backing string. Dart strings are
+    // immutable so this is a best-effort hint, not a guarantee.
+    _sshPassword = null;
+    _session = null;
+    _pendingInput.clear();
   }
+}
+
+/// Paths to transient sudo helper assets a script step staged on the
+/// remote printer. Returned from [_installSudoAskpassHelper] so the
+/// caller's `finally` block can clean them up again.
+class _ScriptSudoHelper {
+  const _ScriptSudoHelper({required this.askpassPath, required this.binDir});
+  final String askpassPath;
+  final String binDir;
 }
 
 class WizardState {

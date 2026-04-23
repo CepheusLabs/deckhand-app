@@ -43,6 +43,42 @@ class MoonrakerHttpService implements MoonrakerService {
     final state = stats?['state'] as String?;
     return state == 'printing' || state == 'paused';
   }
+
+  @override
+  Future<List<String>> listObjects({
+    required String host,
+    int port = 7125,
+  }) async {
+    final res = await _dio.get<Map<String, dynamic>>(
+      'http://$host:$port/printer/objects/list',
+    );
+    final objects =
+        (res.data?['result'] as Map?)?['objects'] as List? ?? const [];
+    return objects.whereType<String>().toList();
+  }
+
+  @override
+  Future<String?> fetchConfigFile({
+    required String host,
+    int port = 7125,
+    required String filename,
+  }) async {
+    try {
+      final res = await _dio.get<String>(
+        'http://$host:$port/server/files/config/$filename',
+        options: Options(responseType: ResponseType.plain),
+      );
+      return res.data;
+    } on DioException catch (e) {
+      // 404 when the file doesn't exist; anything else is either
+      // Moonraker not responding or a permission issue - both are
+      // treated the same (no identification signal).
+      if (e.response?.statusCode == 404) return null;
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
 }
 
 /// Backwards-compat alias - same service, HTTP-backed today.

@@ -6,3 +6,4 @@ export 'src/sidecar_client.dart';
 export 'src/sidecar_flash_service.dart';
 export 'src/security_service.dart';
 export 'src/upstream_service.dart';
+export 'src/process_elevated_helper.dart';

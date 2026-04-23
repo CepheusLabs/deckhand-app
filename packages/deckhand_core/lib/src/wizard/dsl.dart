@@ -76,7 +76,10 @@ abstract class DslProbes {
   Future<bool> remoteFileExists(String path);
   Future<bool> remoteServiceActive(String unit);
   Future<bool> remoteProcessRunning(String pattern);
-  Future<bool> osPythonBelow(String version);
+  // Note: `os_python_below` used to live here as an async probe, but
+  // we now evaluate it synchronously against `profile.os.stock.python`
+  // (see defaultPredicates). An async probe against the live printer
+  // can still be added later if a profile needs it.
 }
 
 class DslException implements Exception {
@@ -115,11 +118,44 @@ Map<String, DslPredicate> defaultPredicates() => {
     _expect(args, 1, 'decision_made');
     return env.decisions.containsKey(args[0] as String);
   },
-  // Async probes are evaluated by pre-caching their result. When the
-  // UI walks a tree of expressions it pre-resolves any async lookups
-  // and stores them under the probe's canonical key. The synchronous
-  // predicate then reads back from decisions.
+  'os_python_below': (args, env) {
+    _expect(args, 1, 'os_python_below');
+    final threshold = args[0];
+    final threshStr = threshold is String
+        ? threshold
+        : threshold.toString();
+    // Prefer a probe-cached result if one was pre-resolved by the
+    // runtime; fall back to the version declared in the profile's
+    // `os.stock.python`. Missing data is treated as "not below" so
+    // we don't run a python rebuild we can't reason about.
+    final cached =
+        env.decisions['probe.os_python_below.$threshStr'];
+    if (cached is bool) return cached;
+    final stockRaw = env.getProfileField('os.stock.python');
+    if (stockRaw is! String || stockRaw.trim().isEmpty) return false;
+    return _compareVersions(stockRaw, threshStr) < 0;
+  },
 };
+
+/// Compare dotted version strings component-wise, numerically.
+/// Non-integer components (e.g. a trailing "-rc1") are ignored.
+/// Returns -1 if [a] < [b], 0 if equal, 1 if [a] > [b].
+int _compareVersions(String a, String b) {
+  final ap = a.split('.').map(_vpart).toList();
+  final bp = b.split('.').map(_vpart).toList();
+  final n = ap.length > bp.length ? ap.length : bp.length;
+  for (var i = 0; i < n; i++) {
+    final av = i < ap.length ? ap[i] : 0;
+    final bv = i < bp.length ? bp[i] : 0;
+    if (av != bv) return av.compareTo(bv);
+  }
+  return 0;
+}
+
+int _vpart(String s) {
+  final m = RegExp(r'^(\d+)').firstMatch(s);
+  return m == null ? 0 : int.parse(m.group(1)!);
+}
 
 void _expect(List<Object?> args, int n, String name) {
   if (args.length != n) {
