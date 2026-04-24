@@ -182,19 +182,89 @@ class _ConnectScreenState extends ConsumerState<ConnectScreen> {
     }
   }
 
-  Future<void> _connect(String host) async {
+  Future<void> _connect(String host, {bool acceptHostKey = false}) async {
     setState(() {
       _connecting = true;
       _error = null;
     });
     try {
-      await ref.read(wizardControllerProvider).connectSsh(host: host);
+      await ref.read(wizardControllerProvider).connectSsh(
+            host: host,
+            acceptHostKey: acceptHostKey,
+          );
       if (mounted) context.go('/verify');
+    } on HostKeyUnpinnedException catch (e) {
+      // First-time connect to this host. Show the fingerprint and ask
+      // the user to confirm before we pin it and retry.
+      if (!mounted) return;
+      final accept = await _showHostKeyDialog(
+        host: e.host,
+        fingerprint: e.fingerprint,
+        title: t.connect.host_key_title_new,
+        body: t.connect.host_key_body_new,
+        confirmLabel: t.connect.host_key_confirm_new,
+      );
+      if (accept == true && mounted) {
+        await _connect(host, acceptHostKey: true);
+        return;
+      }
+      if (mounted) setState(() => _error = e.userTitle);
+    } on HostKeyMismatchException catch (e) {
+      // Fingerprint changed since we last pinned - could be reinstall,
+      // could be MITM. Do NOT auto-retry. User has to clear it
+      // manually from Settings.
+      if (!mounted) return;
+      await _showHostKeyDialog(
+        host: e.host,
+        fingerprint: e.fingerprint,
+        title: t.connect.host_key_title_mismatch,
+        body: t.connect.host_key_body_mismatch,
+        confirmLabel: null,
+      );
+      if (mounted) setState(() => _error = e.userTitle);
     } catch (e) {
       setState(() => _error = '$e');
     } finally {
       if (mounted) setState(() => _connecting = false);
     }
+  }
+
+  Future<bool?> _showHostKeyDialog({
+    required String host,
+    required String fingerprint,
+    required String title,
+    required String body,
+    required String? confirmLabel,
+  }) {
+    return showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(title),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(body),
+            const SizedBox(height: 12),
+            SelectableText(
+              '$host\n$fingerprint',
+              style: const TextStyle(fontFamily: 'monospace'),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(t.common.action_cancel),
+          ),
+          if (confirmLabel != null)
+            FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: Text(confirmLabel),
+            ),
+        ],
+      ),
+    );
   }
 
   @override

@@ -215,6 +215,7 @@ class _StubSsh implements SshService {
     required String host,
     int port = 22,
     required List<SshCredential> credentials,
+    bool acceptHostKey = false,
   }) async => SshSession(id: 'stub', host: host, port: port, user: 'root');
   @override
   Future<SshCommandResult> run(

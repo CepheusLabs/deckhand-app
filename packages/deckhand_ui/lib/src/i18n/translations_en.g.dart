@@ -149,6 +149,21 @@ class TranslationsConnectEn {
 	/// en: 'Rescan'
 	String get action_rescan => 'Rescan';
 
+	/// en: 'First time connecting to this printer'
+	String get host_key_title_new => 'First time connecting to this printer';
+
+	/// en: 'Deckhand has not seen this printer before. Compare the fingerprint below against what the printer reports locally. If it matches, accept it and Deckhand will remember it for future connections. '
+	String get host_key_body_new => 'Deckhand has not seen this printer before. Compare the fingerprint\nbelow against what the printer reports locally. If it matches,\naccept it and Deckhand will remember it for future connections.\n';
+
+	/// en: 'Accept and connect'
+	String get host_key_confirm_new => 'Accept and connect';
+
+	/// en: 'This printer's SSH fingerprint changed'
+	String get host_key_title_mismatch => 'This printer\'s SSH fingerprint changed';
+
+	/// en: 'The fingerprint presented by this printer does not match the one Deckhand saved previously. This can happen if you reinstalled the printer's OS, but it can also indicate something is intercepting the connection. If you expected this change, clear the pinned fingerprint in Settings and try again. '
+	String get host_key_body_mismatch => 'The fingerprint presented by this printer does not match the one\nDeckhand saved previously. This can happen if you reinstalled the\nprinter\'s OS, but it can also indicate something is intercepting\nthe connection. If you expected this change, clear the pinned\nfingerprint in Settings and try again.\n';
+
 	/// en: 'Found on your network'
 	String get section_discovered => 'Found on your network';
 
@@ -646,6 +661,9 @@ class TranslationsCommonEn {
 
 	/// en: 'Finish'
 	String get action_finish => 'Finish';
+
+	/// en: 'Cancel'
+	String get action_cancel => 'Cancel';
 }
 
 // Path: welcome.card_first_time
@@ -870,6 +888,11 @@ extension on Translations {
 			'connect.action_connect' => 'Connect',
 			'connect.action_connecting' => 'Connecting…',
 			'connect.action_rescan' => 'Rescan',
+			'connect.host_key_title_new' => 'First time connecting to this printer',
+			'connect.host_key_body_new' => 'Deckhand has not seen this printer before. Compare the fingerprint\nbelow against what the printer reports locally. If it matches,\naccept it and Deckhand will remember it for future connections.\n',
+			'connect.host_key_confirm_new' => 'Accept and connect',
+			'connect.host_key_title_mismatch' => 'This printer\'s SSH fingerprint changed',
+			'connect.host_key_body_mismatch' => 'The fingerprint presented by this printer does not match the one\nDeckhand saved previously. This can happen if you reinstalled the\nprinter\'s OS, but it can also indicate something is intercepting\nthe connection. If you expected this change, clear the pinned\nfingerprint in Settings and try again.\n',
 			'connect.section_discovered' => 'Found on your network',
 			'connect.section_manual' => 'Or enter manually',
 			'connect.empty_state' => 'Nothing responded on port 7125 across your local subnet, and no\nMoonraker mDNS advertisements were seen either. Your printer may be\non a different VLAN, behind a firewall, or using a non-default\nport - enter the IP/hostname below.\n',
@@ -983,6 +1006,7 @@ extension on Translations {
 			'common.action_back' => 'Back',
 			'common.action_continue' => 'Continue',
 			'common.action_finish' => 'Finish',
+			'common.action_cancel' => 'Cancel',
 			_ => null,
 		};
 	}

@@ -68,6 +68,8 @@ class HostKeyMismatchException extends DeckhandException {
        super('Host key mismatch for $host ($fingerprint)');
   final String _host;
   final String _fp;
+  String get host => _host;
+  String get fingerprint => _fp;
   @override
   String get userTitle => 'Printer\'s SSH fingerprint changed';
   @override
@@ -76,6 +78,30 @@ class HostKeyMismatchException extends DeckhandException {
       'pinned previously ($_fp). This could mean the printer was reinstalled - '
       'or that something is intercepting the connection. Clear the pinned '
       'fingerprint in Settings if you expected this.';
+}
+
+/// Thrown on the first SSH connect to a host whose fingerprint Deckhand
+/// has never seen. The UI should show the fingerprint to the user and
+/// offer a "connect and pin" action that retries with `acceptHostKey:
+/// true`.
+class HostKeyUnpinnedException extends DeckhandException {
+  const HostKeyUnpinnedException({
+    required String host,
+    required String fingerprint,
+  }) : _host = host,
+       _fp = fingerprint,
+       super('Host key for $host is not yet pinned ($fingerprint)');
+  final String _host;
+  final String _fp;
+  String get host => _host;
+  String get fingerprint => _fp;
+  @override
+  String get userTitle => 'First time connecting to this printer';
+  @override
+  String get userMessage =>
+      'Deckhand has not seen $_host before. Its SSH fingerprint is $_fp. '
+      'Confirm that this matches the printer you expect, then accept to pin '
+      'it for future connections.';
 }
 
 // -----------------------------------------------------------------

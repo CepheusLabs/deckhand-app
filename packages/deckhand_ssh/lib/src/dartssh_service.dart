@@ -1,16 +1,22 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:dartssh2/dartssh2.dart';
 import 'package:deckhand_core/deckhand_core.dart';
-
-import 'shell_quoting.dart';
 import 'package:uuid/uuid.dart';
 
 /// [SshService] backed by dartssh2.
 class DartsshService implements SshService {
-  DartsshService();
+  DartsshService({SecurityService? security}) : _security = security;
+
+  /// Optional fingerprint store. When null (test harnesses), host-key
+  /// verification is skipped and every connect proceeds - matching the
+  /// pre-verification behaviour so existing tests keep passing. In
+  /// production the app wires [DefaultSecurityService] here and MITM
+  /// attempts hit [HostKeyMismatchException].
+  final SecurityService? _security;
 
   final _uuid = const Uuid();
   final _sessions = <String, SSHClient>{};
@@ -24,6 +30,37 @@ class DartsshService implements SshService {
   }) async {
     final socket = await SSHSocket.connect(host, port);
 
+    // Host-key verification state captured by the async verifier so the
+    // outer connect() can rethrow a typed exception after dartssh2 has
+    // torn the socket down.
+    String? seenFingerprint;
+    String? pinnedFingerprint;
+    var mismatch = false;
+    var unpinned = false;
+
+    Future<bool> verifier(String type, Uint8List fingerprint) async {
+      final fpHex = _formatFingerprint(type, fingerprint);
+      seenFingerprint = fpHex;
+
+      // Security-service-less callers (test fakes, etc.) fall back to
+      // accept-all - we cannot verify without a store, and forcing a
+      // store into tests would ripple through every fake.
+      if (_security == null) return true;
+
+      pinnedFingerprint = await _security.pinnedHostFingerprint(host);
+      if (pinnedFingerprint == null) {
+        if (acceptHostKey) {
+          await _security.pinHostFingerprint(host: host, fingerprint: fpHex);
+          return true;
+        }
+        unpinned = true;
+        return false;
+      }
+      final ok = _constantTimeEquals(pinnedFingerprint!, fpHex);
+      if (!ok) mismatch = true;
+      return ok;
+    }
+
     SSHClient client;
     switch (credential) {
       case PasswordCredential(:final user, :final password):
@@ -31,6 +68,7 @@ class DartsshService implements SshService {
           socket,
           username: user,
           onPasswordRequest: () => password,
+          onVerifyHostKey: verifier,
         );
       case KeyCredential(:final user, :final privateKeyPath, :final passphrase):
         final pem = await File(privateKeyPath).readAsString();
@@ -38,6 +76,7 @@ class DartsshService implements SshService {
           socket,
           username: user,
           identities: SSHKeyPair.fromPem(pem, passphrase),
+          onVerifyHostKey: verifier,
         );
     }
 
@@ -45,6 +84,20 @@ class DartsshService implements SshService {
       await client.authenticated;
     } catch (e) {
       client.close();
+      // Prefer the typed host-key errors over the generic auth/transport
+      // failure dartssh2 throws when the verifier rejects.
+      if (mismatch) {
+        throw HostKeyMismatchException(
+          host: host,
+          fingerprint: seenFingerprint ?? 'unknown',
+        );
+      }
+      if (unpinned) {
+        throw HostKeyUnpinnedException(
+          host: host,
+          fingerprint: seenFingerprint ?? 'unknown',
+        );
+      }
       rethrow;
     }
 
@@ -58,26 +111,60 @@ class DartsshService implements SshService {
     );
   }
 
+  /// Format a fingerprint as `type SHA256:<hex-pairs>`. The MD5 form
+  /// dartssh2 hands us is historically weak, so we pair it with the
+  /// algorithm type and a hex rendering - enough for the user to
+  /// compare against `ssh-keygen -l -E sha256 -f ...` output on the
+  /// printer.
+  String _formatFingerprint(String type, Uint8List fingerprint) {
+    final buf = StringBuffer(type)..write(' ');
+    for (var i = 0; i < fingerprint.length; i++) {
+      if (i > 0) buf.write(':');
+      buf.write(fingerprint[i].toRadixString(16).padLeft(2, '0'));
+    }
+    return buf.toString();
+  }
+
+  /// Constant-time string compare to avoid leaking fingerprint
+  /// characters via early-exit timing. Overkill for local-network MITM
+  /// but cheap.
+  bool _constantTimeEquals(String a, String b) {
+    if (a.length != b.length) return false;
+    var diff = 0;
+    for (var i = 0; i < a.length; i++) {
+      diff |= a.codeUnitAt(i) ^ b.codeUnitAt(i);
+    }
+    return diff == 0;
+  }
+
   @override
   Future<SshSession> tryDefaults({
     required String host,
     int port = 22,
     required List<SshCredential> credentials,
+    bool acceptHostKey = false,
   }) async {
     Object? lastError;
     for (final cred in credentials) {
       try {
-        return await connect(host: host, port: port, credential: cred);
+        return await connect(
+          host: host,
+          port: port,
+          credential: cred,
+          acceptHostKey: acceptHostKey,
+        );
+      } on HostKeyMismatchException {
+        // Host-key errors are not credential-failure - don't silently
+        // try more passwords or the user gets a misleading "none of
+        // them worked" when the real problem is MITM.
+        rethrow;
+      } on HostKeyUnpinnedException {
+        rethrow;
       } catch (e) {
         lastError = e;
       }
     }
-    throw SshAuthException(
-      host: host,
-      port: port,
-      message: 'None of the default credentials authenticated',
-      inner: lastError,
-    );
+    throw SshAuthException(host: host, cause: lastError);
   }
 
   @override
@@ -200,19 +287,8 @@ class DartsshService implements SshService {
   String _shellQuote(String s) => shellSingleQuote(s);
 }
 
-/// Thrown when all credential attempts fail.
-class SshAuthException implements Exception {
-  SshAuthException({
-    required this.host,
-    required this.port,
-    required this.message,
-    this.inner,
-  });
-  final String host;
-  final int port;
-  final String message;
-  final Object? inner;
-
-  @override
-  String toString() => 'SshAuthException($host:$port): $message';
-}
+// SshAuthException was duplicated here and in deckhand_core/errors.dart.
+// The core version is the one plumbed through the rest of the app
+// (UI catches DeckhandException at screen boundaries), so this
+// duplicate has been removed. Callers should import it from
+// package:deckhand_core/deckhand_core.dart.

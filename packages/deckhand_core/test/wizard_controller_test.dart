@@ -1414,6 +1414,7 @@ class FakeSsh implements SshService {
     required String host,
     int port = 22,
     required List<SshCredential> credentials,
+    bool acceptHostKey = false,
   }) async => SshSession(id: 'fake', host: host, port: port, user: 'root');
   @override
   Future<SshCommandResult> run(

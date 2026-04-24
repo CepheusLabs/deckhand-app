@@ -53,6 +53,19 @@ connect:
   action_connect: Connect
   action_connecting: Connecting…
   action_rescan: Rescan
+  host_key_title_new: First time connecting to this printer
+  host_key_body_new: |
+    Deckhand has not seen this printer before. Compare the fingerprint
+    below against what the printer reports locally. If it matches,
+    accept it and Deckhand will remember it for future connections.
+  host_key_confirm_new: Accept and connect
+  host_key_title_mismatch: This printer's SSH fingerprint changed
+  host_key_body_mismatch: |
+    The fingerprint presented by this printer does not match the one
+    Deckhand saved previously. This can happen if you reinstalled the
+    printer's OS, but it can also indicate something is intercepting
+    the connection. If you expected this change, clear the pinned
+    fingerprint in Settings and try again.
   section_discovered: Found on your network
   section_manual: Or enter manually
   empty_state: |
@@ -251,3 +264,4 @@ common:
   action_back: Back
   action_continue: Continue
   action_finish: Finish
+  action_cancel: Cancel

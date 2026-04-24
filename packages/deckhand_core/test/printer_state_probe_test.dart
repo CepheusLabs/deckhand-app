@@ -288,12 +288,33 @@ void main() {
       await probe.probe(session: _fakeSession, profile: profile);
 
       final script = ssh.lastCommand!;
-      // Must use "$HOME/..." (double-quoted so the var expands) NOT
-      // '~/...' (single-quoted so ~ stays literal and [ -d '~/...' ]
-      // always fails).
-      expect(script, contains(r'"$HOME/moonraker"'));
-      expect(script, contains(r'"$HOME/kiauh"'));
+      // $HOME must expand (double-quoted or unquoted context) AND the
+      // path suffix must be single-quoted so shell metacharacters in
+      // it cannot be interpreted. Plain `'~/...'` would be a bug
+      // because single-quoting stops tilde expansion.
+      expect(script, contains(r'"$HOME"/' "'moonraker'"));
+      expect(script, contains(r'"$HOME"/' "'kiauh'"));
       expect(script, isNot(contains("'~/moonraker'")));
+    });
+
+    test('tilde-prefixed paths with shell metachars stay inert', () async {
+      final ssh = _StubSsh();
+      final probe = PrinterStateProbe(ssh: ssh);
+      final profile = PrinterProfile.fromJson({
+        'profile_id': 'p',
+        'stack': {
+          'moonraker': {
+            // A malicious profile stuffs $(reboot) into the path.
+            'repo': 'x', 'ref': 'y', 'install_path': r'~/$(reboot)',
+          },
+        },
+      });
+      await probe.probe(session: _fakeSession, profile: profile);
+      final script = ssh.lastCommand!;
+      // The $(reboot) must live inside single quotes so the remote
+      // shell treats it as a literal filename, not a subshell command.
+      expect(script, contains(r"'$(reboot)'"));
+      expect(script, isNot(contains(r'"$HOME/$(reboot)"')));
     });
   });
 }
@@ -328,6 +349,7 @@ class _StubSsh implements SshService {
     required String host,
     int port = 22,
     required List<SshCredential> credentials,
+    bool acceptHostKey = false,
   }) async => SshSession(id: 's', host: host, port: port, user: 'mks');
   @override
   Future<SshCommandResult> run(

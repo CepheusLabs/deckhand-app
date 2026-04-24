@@ -56,7 +56,12 @@ func runWriteImage(args []string) {
 	token := fs.String("token", "", "single-use confirmation token issued by the UI")
 	verify := fs.Bool("verify", true, "read the written disk back and compare sha256")
 	expectedSha := fs.String("sha256", "", "optional expected sha256 of the image (post-write verification compares against this)")
-	_ = fs.Parse(args)
+	// flag.ExitOnError calls os.Exit on parse failure, so Parse's return
+	// is only informational in that mode. Keep the explicit call so a
+	// future switch to ContinueOnError still surfaces the error.
+	if err := fs.Parse(args); err != nil {
+		fatalf("parse flags: %v", err)
+	}
 
 	if *image == "" || *target == "" || *token == "" {
 		fatalf("write-image requires --image, --target, and --token")
@@ -70,7 +75,10 @@ func runWriteImage(args []string) {
 		fatalf("token is implausibly short; refusing")
 	}
 
-	devicePath := targetToDevicePath(*target)
+	devicePath, err := targetToDevicePath(*target)
+	if err != nil {
+		fatalf("validate target: %v", err)
+	}
 	emitJSON(map[string]any{"event": "preparing", "device": devicePath, "image": *image})
 
 	src, err := os.Open(*image)
@@ -85,7 +93,11 @@ func runWriteImage(args []string) {
 		total = info.Size()
 	}
 
-	dst, err := os.OpenFile(devicePath, os.O_RDWR, 0)
+	// O_WRONLY (not O_RDWR): the verify pass reopens with os.Open. Asking
+	// for only the access level we actually need makes auditing clearer
+	// and avoids rejections on systems that have different read/write
+	// permissions for the same device node.
+	dst, err := os.OpenFile(devicePath, os.O_WRONLY, 0)
 	if err != nil {
 		fatalf("open device: %v", err)
 	}
@@ -173,7 +185,7 @@ func verifyDevice(devicePath string, expectBytes int64) (string, error) {
 			h.Write(buf[:n])
 			done += int64(n)
 		}
-		if rerr == io.EOF {
+		if errors.Is(rerr, io.EOF) {
 			break
 		}
 		if rerr != nil {

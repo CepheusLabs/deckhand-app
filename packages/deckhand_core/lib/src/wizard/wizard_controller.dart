@@ -14,6 +14,7 @@ import '../services/profile_service.dart';
 import '../services/security_service.dart';
 import '../services/ssh_service.dart';
 import '../services/upstream_service.dart';
+import '../shell/shell_quoting.dart';
 import 'dsl.dart';
 import 'printer_state_probe.dart';
 
@@ -108,7 +109,11 @@ class WizardController {
     _emit(ProfileLoaded(profile));
   }
 
-  Future<void> connectSsh({required String host, int? port}) async {
+  Future<void> connectSsh({
+    required String host,
+    int? port,
+    bool acceptHostKey = false,
+  }) async {
     final pf = _profile;
     if (pf == null) {
       throw StateError('Load a profile before connecting SSH.');
@@ -122,6 +127,7 @@ class WizardController {
       host: host,
       port: port ?? pf.ssh.defaultPort,
       credentials: creds.cast<SshCredential>(),
+      acceptHostKey: acceptHostKey,
     );
     _session = session;
     // Remember the password of whichever default matched, so sudo
@@ -148,6 +154,7 @@ class WizardController {
     int? port,
     required String user,
     required String password,
+    bool acceptHostKey = false,
   }) async {
     final pf = _profile;
     final p = port ?? pf?.ssh.defaultPort ?? 22;
@@ -155,6 +162,7 @@ class WizardController {
       host: host,
       port: p,
       credential: PasswordCredential(user: user, password: password),
+      acceptHostKey: acceptHostKey,
     );
     _session = session;
     _sshPassword = password;
@@ -637,7 +645,10 @@ class WizardController {
     final commands = ((step['commands'] as List?) ?? const []).cast<String>();
     final ignore = step['ignore_errors'] as bool? ?? false;
     for (final cmd in commands) {
-      final rendered = _render(cmd);
+      // Substituted values (decisions, firmware fields, profile values)
+      // are untrusted input reaching a shell. Render in shell-safe mode
+      // so every substitution is single-quoted for its argument context.
+      final rendered = _render(cmd, shellSafe: true);
       final res = await _runSsh(rendered);
       _log(step, '[ssh] $rendered -> exit ${res.exitCode}');
       if (!res.success && !ignore) {
@@ -661,8 +672,11 @@ class WizardController {
       final snapshotTo = (path.snapshotTo ?? '${path.path}.stock.{{timestamp}}')
           .replaceAll('{{timestamp}}', ts);
       final rendered = _render(snapshotTo);
-      final cmd =
-          'if [ -e "${path.path}" ]; then mv "${path.path}" "$rendered"; fi';
+      // Both source and destination come from untrusted profile/decision
+      // values - quote every interpolation to prevent shell injection.
+      final qSrc = shellSingleQuote(path.path);
+      final qDst = shellSingleQuote(rendered);
+      final cmd = 'if [ -e $qSrc ]; then mv $qSrc $qDst; fi';
       final res = await _runSsh(cmd);
       _log(step, '[snapshot] ${path.path} -> $rendered (exit ${res.exitCode})');
       if (!res.success) {
@@ -680,9 +694,15 @@ class WizardController {
     if (fw == null) throw StepExecutionException('no firmware selected');
     final install = fw.installPath ?? '~/klipper';
     _log(step, '[firmware] cloning ${fw.repo} @ ${fw.ref} -> $install');
+    // Every profile-supplied value is untrusted input. Paths with `~`
+    // need tilde-expansion, so use shellPathEscape; refs and repo URLs
+    // get single-quoted.
+    final qInstall = shellPathEscape(install);
+    final qRef = shellSingleQuote(fw.ref);
+    final qRepo = shellSingleQuote(fw.repo);
     final cloneCmd =
-        'if [ -d "$install/.git" ]; then cd "$install" && git fetch origin && git checkout ${fw.ref} && git pull --ff-only; '
-        'else rm -rf "$install" && git clone --depth 1 -b ${fw.ref} ${fw.repo} "$install"; fi';
+        'if [ -d $qInstall/.git ]; then cd $qInstall && git fetch origin && git checkout $qRef && git pull --ff-only; '
+        'else rm -rf $qInstall && git clone --depth 1 -b $qRef $qRepo $qInstall; fi';
     final cloneRes = await _runSsh(
       cloneCmd,
       timeout: const Duration(minutes: 10),
@@ -692,10 +712,11 @@ class WizardController {
     }
 
     final venv = fw.venvPath ?? '~/klippy-env';
+    final qVenv = shellPathEscape(venv);
     final venvCmd =
-        'PY=\$(command -v python3.11 || command -v python3) && \$PY -m venv $venv && '
-        '$venv/bin/pip install --quiet -U pip setuptools wheel && '
-        '$venv/bin/pip install --quiet -r $install/scripts/klippy-requirements.txt';
+        'PY=\$(command -v python3.11 || command -v python3) && \$PY -m venv $qVenv && '
+        '$qVenv/bin/pip install --quiet -U pip setuptools wheel && '
+        '$qVenv/bin/pip install --quiet -r $qInstall/scripts/klippy-requirements.txt';
     final venvRes = await _runSsh(
       venvCmd,
       timeout: const Duration(minutes: 15),
@@ -746,9 +767,13 @@ class WizardController {
       final ref = cfg['ref'] as String? ?? 'master';
       final install = cfg['install_path'] as String?;
       if (repo != null && install != null) {
+        // Every value here comes from profile YAML - untrusted.
+        final qInstall = shellPathEscape(install);
+        final qRef = shellSingleQuote(ref);
+        final qRepo = shellSingleQuote(repo);
         final cmd =
-            'if [ -d "$install/.git" ]; then cd "$install" && git pull --ff-only; '
-            'else git clone --depth 1 -b $ref $repo "$install"; fi';
+            'if [ -d $qInstall/.git ]; then cd $qInstall && git pull --ff-only; '
+            'else git clone --depth 1 -b $qRef $qRepo $qInstall; fi';
         final res = await _runSsh(cmd, timeout: const Duration(minutes: 10));
         if (!res.success) {
           throw StepExecutionException(
@@ -772,12 +797,18 @@ class WizardController {
         case 'remove':
         case 'disable':
           if (unit != null) {
+            // systemd_unit is profile-supplied; always quote.
+            final qUnit = shellSingleQuote(unit);
             await _runSsh(
-              'sudo systemctl disable --now $unit 2>/dev/null || true',
+              'sudo systemctl disable --now $qUnit 2>/dev/null || true',
             );
           }
           if (proc != null) {
-            await _runSsh('sudo pkill -f "$proc" 2>/dev/null || true');
+            // process_pattern is profile-supplied. Double-quoting is
+            // not enough (it leaves $()/backticks live), so we single-
+            // quote and pass to pkill -f as one argument.
+            final qProc = shellSingleQuote(proc);
+            await _runSsh('sudo pkill -f $qProc 2>/dev/null || true');
           }
           _log(step, '[services] ${svc.id}: disabled');
         case 'stub':
@@ -1237,18 +1268,23 @@ class WizardController {
     final setUpAskpass =
         (step['askpass'] as bool? ?? true) && _sshPassword != null;
 
-    final argStr = extraArgs.map(_shellQuote).join(' ');
+    final argStr = extraArgs.map(shellSingleQuote).join(' ');
     final baseCmd = argStr.isEmpty
         ? '$interpreter $remote'
         : '$interpreter $remote $argStr';
 
-    String envPrefix = '';
+    // Profile-supplied env vars (e.g. PYTHON_SHA256 for the python
+    // rebuild script). Every key/value goes through shell quoting so a
+    // profile can't break out of the VAR=value form.
+    final extraEnvPrefix = _buildEnvPrefix(step['env']);
+
+    String envPrefix = extraEnvPrefix;
     _ScriptSudoHelper? helper;
     if (setUpAskpass) {
       helper = await _installSudoAskpassHelper();
       envPrefix =
-          'SUDO_ASKPASS=${_shellQuote(helper.askpassPath)} '
-          'PATH=${_shellQuote(helper.binDir)}:\$PATH ';
+          '${envPrefix}SUDO_ASKPASS=${shellSingleQuote(helper.askpassPath)} '
+          'PATH=${shellSingleQuote(helper.binDir)}:\$PATH ';
     }
     // If askpass is staged, the outer sudo (if requested) routes
     // through the same helper via `-A`, so the whole command ships
@@ -1752,37 +1788,80 @@ class WizardController {
     return dangerous.contains(path);
   }
 
-  String _shellQuote(String s) {
-    final escaped = s.replaceAll("'", r"'\''");
-    return "'$escaped'";
+  /// Deprecated - use the canonical [shellSingleQuote] from deckhand_core.
+  /// Kept as a thin shim while callers migrate off.
+  String _shellQuote(String s) => shellSingleQuote(s);
+
+  /// Build a `VAR=value VAR2=value2 ` prefix for a script step's
+  /// `env:` map. Keys MUST match `[A-Za-z_][A-Za-z0-9_]*` (the POSIX
+  /// shell identifier grammar) so a profile cannot inject shell syntax
+  /// through a key name; values are single-quoted regardless of
+  /// content.
+  String _buildEnvPrefix(Object? rawEnv) {
+    if (rawEnv == null) return '';
+    if (rawEnv is! Map) {
+      throw StepExecutionException(
+        'script step `env:` must be a map, got ${rawEnv.runtimeType}',
+      );
+    }
+    final validKey = RegExp(r'^[A-Za-z_][A-Za-z0-9_]*$');
+    final buf = StringBuffer();
+    rawEnv.forEach((k, v) {
+      final key = '$k';
+      if (!validKey.hasMatch(key)) {
+        throw StepExecutionException(
+          'env key "$key" is not a valid shell identifier',
+        );
+      }
+      buf
+        ..write(key)
+        ..write('=')
+        ..write(shellSingleQuote('${v ?? ''}'))
+        ..write(' ');
+    });
+    return buf.toString();
   }
 
-  String _render(String template) {
+  /// Expand `{{...}}` templates in [template].
+  ///
+  /// When [shellSafe] is true every substituted value is wrapped with
+  /// [shellSingleQuote] (or [shellPathEscape] for known-path keys) so
+  /// the result can be safely passed to a shell. The `{{timestamp}}`
+  /// value is always safe and needs no quoting.
+  String _render(String template, {bool shellSafe = false}) {
+    String q(String v, {bool isPath = false}) {
+      if (!shellSafe) return v;
+      return isPath ? shellPathEscape(v) : shellSingleQuote(v);
+    }
+
     return template.replaceAllMapped(RegExp(r'\{\{([^}]+)\}\}'), (m) {
       final key = m.group(1)!.trim();
       if (key == 'timestamp') {
+        // Deterministic and safe - no shell metacharacters possible.
         return DateTime.now().toUtc().toIso8601String().replaceAll(':', '-');
       }
       if (key.startsWith('decisions.')) {
-        return '${_state.decisions[key.substring('decisions.'.length)] ?? ''}';
+        final v = '${_state.decisions[key.substring('decisions.'.length)] ?? ''}';
+        return q(v);
       }
       if (key.startsWith('profile.')) {
-        return '${_profile?.raw[key.substring('profile.'.length)] ?? ''}';
+        final v = '${_profile?.raw[key.substring('profile.'.length)] ?? ''}';
+        return q(v);
       }
       if (key.startsWith('firmware.')) {
         final fw = _selectedFirmware();
-        if (fw == null) return '';
+        if (fw == null) return q('');
         switch (key) {
           case 'firmware.install_path':
-            return fw.installPath ?? '';
+            return q(fw.installPath ?? '', isPath: true);
           case 'firmware.venv_path':
-            return fw.venvPath ?? '';
+            return q(fw.venvPath ?? '', isPath: true);
           case 'firmware.id':
-            return fw.id;
+            return q(fw.id);
           case 'firmware.ref':
-            return fw.ref;
+            return q(fw.ref);
           case 'firmware.repo':
-            return fw.repo;
+            return q(fw.repo);
         }
       }
       return m.group(0)!;

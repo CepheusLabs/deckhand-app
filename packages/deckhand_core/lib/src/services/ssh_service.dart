@@ -11,10 +11,17 @@ abstract class SshService {
 
   /// Try [credentials] in order; return the session from the first that
   /// authenticates successfully.
+  ///
+  /// If the printer's SSH host key is unpinned or mismatched the
+  /// implementation MUST propagate the typed exception
+  /// ([HostKeyUnpinnedException] / [HostKeyMismatchException]) rather
+  /// than treating it as a generic auth failure - the UI distinguishes
+  /// these cases.
   Future<SshSession> tryDefaults({
     required String host,
     int port = 22,
     required List<SshCredential> credentials,
+    bool acceptHostKey = false,
   });
 
   Future<SshCommandResult> run(

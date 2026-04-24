@@ -112,6 +112,91 @@ func TestDownload_ShaMismatch_Fails(t *testing.T) {
 	if !strings.Contains(err.Error(), "sha256 mismatch") {
 		t.Fatalf("unexpected error: %v", err)
 	}
+	// After a sha mismatch the destination must not exist - a future
+	// caller must not find a corrupt file masquerading as a complete
+	// download. This is the CRITICAL we are fixing.
+	if _, statErr := os.Stat(dest); !os.IsNotExist(statErr) {
+		t.Fatalf("expected dest to be missing after mismatch, got stat %v", statErr)
+	}
+	// And the .part file must also be gone.
+	if _, statErr := os.Stat(dest + ".part"); !os.IsNotExist(statErr) {
+		t.Fatalf("expected .part to be removed, got stat %v", statErr)
+	}
+}
+
+func TestDownload_RejectsFileScheme(t *testing.T) {
+	dest := filepath.Join(t.TempDir(), "out.img")
+	cases := []string{
+		// POSIX-style path (parses cleanly; must be rejected by the
+		// scheme check).
+		"file:///etc/shadow",
+		// Windows-style path with backslashes (parses poorly; the
+		// rejection comes from url.Parse itself which is still a safe
+		// outcome - this URL never reaches the HTTP client).
+		`file://C:\Windows\System32\drivers\etc\hosts`,
+		// Other dangerous schemes.
+		"ftp://evil.example/image.img",
+		"ssh://root@evil.example/image.img",
+		"javascript:alert(1)",
+	}
+	for _, u := range cases {
+		t.Run(u, func(t *testing.T) {
+			_, err := Download(context.Background(), u, dest, "", nil)
+			if err == nil {
+				t.Fatalf("expected reject for %q, got nil", u)
+			}
+			// Either the URL parser rejects it OR the scheme check
+			// does. Both paths leave the sidecar safe - what we really
+			// want to prove is that NO local or remote fetch occurred.
+			if _, statErr := os.Stat(dest); !os.IsNotExist(statErr) {
+				t.Fatalf("dest existed after reject for %q: %v", u, statErr)
+			}
+		})
+	}
+}
+
+func TestDownload_RejectsEmptyHost(t *testing.T) {
+	dest := filepath.Join(t.TempDir(), "out.img")
+	_, err := Download(context.Background(), "https:///foo", dest, "", nil)
+	if err == nil {
+		t.Fatalf("want error for missing host, got nil")
+	}
+}
+
+func TestDownload_CancelLeavesNoPartFile(t *testing.T) {
+	// Server streams endlessly so we can cancel mid-flight.
+	srv := httptest.NewServer(http.HandlerFunc(
+		func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Length", "1073741824") // 1 GiB
+			w.WriteHeader(http.StatusOK)
+			chunk := make([]byte, 1024)
+			for {
+				if _, err := w.Write(chunk); err != nil {
+					return
+				}
+				if f, ok := w.(http.Flusher); ok {
+					f.Flush()
+				}
+			}
+		},
+	))
+	t.Cleanup(srv.Close)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		cancel()
+	}()
+	dest := filepath.Join(t.TempDir(), "out.img")
+	if _, err := Download(ctx, srv.URL, dest, "", nil); err == nil {
+		t.Fatalf("want cancellation error, got nil")
+	}
+	if _, statErr := os.Stat(dest); !os.IsNotExist(statErr) {
+		t.Fatalf("cancelled download left dest in place: %v", statErr)
+	}
+	if _, statErr := os.Stat(dest + ".part"); !os.IsNotExist(statErr) {
+		t.Fatalf("cancelled download left .part: %v", statErr)
+	}
 }
 
 func TestDownload_Non200Status_Fails(t *testing.T) {

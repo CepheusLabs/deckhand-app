@@ -187,6 +187,7 @@ class _CapturingSsh implements SshService {
     required String host,
     int port = 22,
     required List<SshCredential> credentials,
+    bool acceptHostKey = false,
   }) async => SshSession(id: 'x', host: host, port: port, user: 'u');
   @override
   Future<SshCommandResult> run(

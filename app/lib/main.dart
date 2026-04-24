@@ -47,6 +47,11 @@ Future<void> main() async {
       ? envLocalDir
       : settings.localProfilesDir;
 
+  // SecurityService is constructed first so the SSH client can share
+  // its fingerprint store. Without this shared instance, DartsshService
+  // would fall back to accept-all and MITM attacks would not be caught.
+  final security = DefaultSecurityService();
+
   runApp(
     ProviderScope(
       overrides: [
@@ -58,14 +63,14 @@ Future<void> main() async {
             localProfilesDir: localProfilesDir,
           ),
         ),
-        sshServiceProvider.overrideWithValue(DartsshService()),
+        sshServiceProvider.overrideWithValue(DartsshService(security: security)),
         flashServiceProvider.overrideWithValue(SidecarFlashService(sidecar)),
         discoveryServiceProvider.overrideWithValue(BonsoirDiscoveryService()),
         moonrakerServiceProvider.overrideWithValue(MoonrakerHttpService()),
         upstreamServiceProvider.overrideWithValue(
           SidecarUpstreamService(sidecar: sidecar),
         ),
-        securityServiceProvider.overrideWithValue(DefaultSecurityService()),
+        securityServiceProvider.overrideWithValue(security),
         elevatedHelperServiceProvider.overrideWithValue(
           ProcessElevatedHelperService(helperPath: _resolveElevatedHelperPath()),
         ),
