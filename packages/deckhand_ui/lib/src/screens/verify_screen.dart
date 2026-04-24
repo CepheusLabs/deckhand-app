@@ -105,16 +105,31 @@ class _VerifyScreenState extends ConsumerState<VerifyScreen> {
     );
   }
 
-  /// Prune interval in days. User can pick from a dropdown; defaults
-  /// to 30 for the "old enough to forget, new enough to still be
-  /// plausibly relevant" middle-of-the-road choice.
+  /// Prune interval in days. Hydrated from [DeckhandSettings] on
+  /// first build; changes persist on Prune-click so the next session
+  /// reuses the user's preference.
   int _pruneDays = 30;
   /// When true, the single newest backup per original-path survives
   /// the prune regardless of age. Safety net for "I pruned every
   /// backup and now have no snapshot to roll back to."
   bool _keepLatestPerTarget = true;
+  bool _prunePrefsHydrated = false;
+
+  void _hydratePrunePrefs() {
+    if (_prunePrefsHydrated) return;
+    final settings = ref.read(deckhandSettingsProvider);
+    _pruneDays = settings.pruneOlderThanDays;
+    _keepLatestPerTarget = settings.pruneKeepNewestPerTarget;
+    _prunePrefsHydrated = true;
+  }
 
   Future<void> _pruneOld() async {
+    final settings = ref.read(deckhandSettingsProvider);
+    // Persist the current choice so the next session defaults to it.
+    settings.pruneOlderThanDays = _pruneDays;
+    settings.pruneKeepNewestPerTarget = _keepLatestPerTarget;
+    await settings.save();
+
     final n = await ref.read(wizardControllerProvider).pruneBackups(
           olderThan: Duration(days: _pruneDays),
           keepLatestPerTarget: _keepLatestPerTarget,
@@ -134,6 +149,7 @@ class _VerifyScreenState extends ConsumerState<VerifyScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     ref.watch(wizardStateProvider);
+    _hydratePrunePrefs();
     final controller = ref.watch(wizardControllerProvider);
     final profile = controller.profile;
     final detections = profile?.stockOs.detections ?? const [];
@@ -431,20 +447,34 @@ class _PruneControls extends StatelessWidget {
             ),
           ],
         ),
-        Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Checkbox(
-              value: keepLatestPerTarget,
-              onChanged: (v) => onKeepLatestChanged(v ?? true),
-            ),
-            Flexible(
-              child: Text(
-                'Keep the newest snapshot per target',
-                style: theme.textTheme.bodySmall,
+        Tooltip(
+          message:
+              'For every file Deckhand has backed up, the newest snapshot '
+              'survives the prune - even if it is older than the interval '
+              'above. Keeps you from a "pruned every backup, now have no '
+              'rollback" scenario. Uncheck for a true sweep.',
+          waitDuration: const Duration(milliseconds: 300),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Checkbox(
+                value: keepLatestPerTarget,
+                onChanged: (v) => onKeepLatestChanged(v ?? true),
               ),
-            ),
-          ],
+              Flexible(
+                child: Text(
+                  'Keep the newest snapshot per target',
+                  style: theme.textTheme.bodySmall,
+                ),
+              ),
+              const SizedBox(width: 4),
+              Icon(
+                Icons.help_outline,
+                size: 14,
+                color: theme.colorScheme.outline,
+              ),
+            ],
+          ),
         ),
         FilledButton.tonalIcon(
           icon: const Icon(Icons.cleaning_services, size: 16),

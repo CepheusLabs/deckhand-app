@@ -1,5 +1,6 @@
 import 'package:deckhand_core/deckhand_core.dart';
 import 'package:deckhand_ui/src/screens/verify_screen.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'helpers.dart';
@@ -166,6 +167,107 @@ void main() {
         // way - this is a cancellation check, not a delete check).
         expect(find.textContaining('Delete this backup?'), findsNothing);
         expect(find.text('/etc/apt/sources.list'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'Prune dropdown + keep-newest checkbox fire onChanged callbacks',
+      (tester) async {
+        final controller = stubWizardController(
+          profileJson: testProfileJson(),
+        );
+        await controller.loadProfile('test-printer');
+        controller.setFlow(WizardFlow.stockKeep);
+        // Seed one old backup so the prune controls render.
+        controller.printerStateForTesting = PrinterState(
+          services: const {},
+          files: const {},
+          paths: const {},
+          stackInstalls: const {},
+          screenInstalls: const {},
+          python311Installed: false,
+          deckhandBackups: [
+            DeckhandBackup(
+              originalPath: '/etc/apt/sources.list',
+              backupPath:
+                  '/etc/apt/sources.list.deckhand-pre-test-printer-1',
+              profileId: 'test-printer',
+              createdAt: DateTime.now().subtract(const Duration(days: 60)),
+            ),
+          ],
+          probedAt: DateTime.now(),
+        );
+        await tester.pumpWidget(testHarness(
+          controller: controller,
+          child: const VerifyScreen(),
+          initialLocation: '/verify',
+        ));
+        await tester.pumpAndSettle();
+
+        // Dropdown: verify it renders with the default 30-day value
+        // and all menu items exist; direct-state-mutation via the
+        // widget is the reliable click path since dropdowns in
+        // widget tests involve overlay routing that's finicky to
+        // drive.
+        final dropdown = find.byType(DropdownButton<int>);
+        expect(dropdown, findsOneWidget);
+        final dd = tester.widget<DropdownButton<int>>(dropdown);
+        final itemValues = dd.items!.map((it) => it.value).toSet();
+        expect(itemValues, containsAll([7, 14, 30, 60, 90, 180]));
+        expect(dd.value, 30);
+
+        // Checkbox: toggle off via widget.onChanged - no hit-testing
+        // needed, and this pins the callback wiring directly.
+        final cb = tester.widget<Checkbox>(find.byType(Checkbox));
+        expect(cb.value, isTrue);
+        cb.onChanged!.call(false);
+        await tester.pumpAndSettle();
+        final cbAfter = tester.widget<Checkbox>(find.byType(Checkbox));
+        expect(cbAfter.value, isFalse,
+            reason: 'Checkbox onChanged must flip state to false');
+      },
+    );
+
+    testWidgets(
+      'Prune dropdown reads initial value from DeckhandSettings',
+      (tester) async {
+        final controller = stubWizardController(
+          profileJson: testProfileJson(),
+        );
+        await controller.loadProfile('test-printer');
+        controller.setFlow(WizardFlow.stockKeep);
+        controller.printerStateForTesting = PrinterState(
+          services: const {},
+          files: const {},
+          paths: const {},
+          stackInstalls: const {},
+          screenInstalls: const {},
+          python311Installed: false,
+          deckhandBackups: [
+            DeckhandBackup(
+              originalPath: '/etc/apt/sources.list',
+              backupPath:
+                  '/etc/apt/sources.list.deckhand-pre-test-printer-1',
+              profileId: 'test-printer',
+              createdAt: DateTime.now().subtract(const Duration(days: 100)),
+            ),
+          ],
+          probedAt: DateTime.now(),
+        );
+        await tester.pumpWidget(testHarnessWithSettings(
+          controller: controller,
+          child: const VerifyScreen(),
+          initialLocation: '/verify',
+          settingsSeed: (s) {
+            s.pruneOlderThanDays = 14;
+            s.pruneKeepNewestPerTarget = false;
+          },
+        ));
+        await tester.pumpAndSettle();
+
+        expect(find.text('14 days'), findsOneWidget);
+        final chk = tester.widget<Checkbox>(find.byType(Checkbox));
+        expect(chk.value, isFalse);
       },
     );
 

@@ -45,7 +45,65 @@ Widget testHarness({
     ],
   );
   return ProviderScope(
-    overrides: overrideForController(controller),
+    overrides: [
+      ...overrideForController(controller),
+      // Default in-memory settings so screens that read
+      // deckhandSettingsProvider (verify_screen does, for prune
+      // preferences) don't trip the _throwUnimplemented guard.
+      deckhandSettingsProvider.overrideWithValue(
+        DeckhandSettings(path: '<memory>'),
+      ),
+    ],
+    child: MaterialApp.router(routerConfig: router),
+  );
+}
+
+/// Variant that also lets tests seed [DeckhandSettings]. Needed for
+/// screens that hydrate preferences from settings on first build
+/// (e.g. the Verify screen reads `pruneOlderThanDays` to preselect
+/// the dropdown).
+Widget testHarnessWithSettings({
+  required WizardController controller,
+  required Widget child,
+  required void Function(DeckhandSettings) settingsSeed,
+  String initialLocation = '/',
+}) {
+  final router = GoRouter(
+    initialLocation: initialLocation,
+    routes: [
+      for (final path in const [
+        '/',
+        '/pick-printer',
+        '/connect',
+        '/verify',
+        '/choose-path',
+        '/firmware',
+        '/webui',
+        '/kiauh',
+        '/screen-choice',
+        '/services',
+        '/files',
+        '/hardening',
+        '/flash-target',
+        '/choose-os',
+        '/flash-confirm',
+        '/first-boot',
+        '/first-boot-setup',
+        '/review',
+        '/progress',
+        '/done',
+        '/settings',
+      ])
+        GoRoute(path: path, builder: (_, __) => child),
+    ],
+  );
+  final settings = DeckhandSettings(path: '<memory>');
+  settingsSeed(settings);
+  return ProviderScope(
+    overrides: [
+      ...overrideForController(controller),
+      deckhandSettingsProvider.overrideWithValue(settings),
+    ],
     child: MaterialApp.router(routerConfig: router),
   );
 }

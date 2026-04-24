@@ -263,15 +263,32 @@ class WizardController {
     const maxLines = 200;
     final useSudo = _looksLikeSystemPath(_session!, backup.backupPath);
     final q = _shellQuote(backup.backupPath);
-    // Binary probe first: `file -b --mime` is POSIX and present on
-    // every Debian / Armbian / busybox-with-util-linux we care about.
-    // A `charset=binary` classification means null bytes / non-UTF8
-    // data; we never hand the UI raw bytes in that case.
-    final fileCmd = useSudo
-        ? 'sudo file -b --mime $q 2>/dev/null'
-        : 'file -b --mime $q 2>/dev/null';
-    final probe = await _runSsh(fileCmd);
-    if (probe.stdout.contains('charset=binary')) {
+    // Binary detection is layered so it works across every shell we
+    // care about:
+    //   Layer A - `file -b --mime`: full-fat file(1) on Debian /
+    //             Armbian / most BSDs. Look for both `charset=binary`
+    //             (classic text/plain-vs-binary signal) AND
+    //             `application/` types that we know are binary
+    //             (octet-stream, zip, x-executable, gzip, ...).
+    //   Layer B - `file -b` without --mime: busybox file applet
+    //             doesn't have --mime. Falls back to keyword sniff on
+    //             the legacy human-readable line (ELF, "data",
+    //             "executable", "archive", ...).
+    //   Layer C - null-byte count in the first 512 bytes: belt-and-
+    //             suspenders for distros without file(1) at all
+    //             (stripped Alpine). Uses `od -An -c -N 512` and
+    //             greps for the literal `\0` glyph od emits.
+    // Any layer that fires short-circuits to the binary marker.
+    final fileCmd =
+        useSudo ? 'sudo file -b --mime' : 'file -b --mime';
+    final fileBareCmd = useSudo ? 'sudo file -b' : 'file -b';
+    final odCmd = useSudo ? 'sudo od -An -c -N 512' : 'od -An -c -N 512';
+    final detectCmd =
+        '($fileCmd $q 2>/dev/null) || '
+        '($fileBareCmd $q 2>/dev/null) || '
+        '($odCmd $q 2>/dev/null)';
+    final probe = await _runSsh(detectCmd);
+    if (_looksLikeBinary(probe.stdout)) {
       return '[binary file, ${_humanizeBytes(backup.backupPath)} - '
           'preview unavailable]';
     }
@@ -300,6 +317,67 @@ class WizardController {
   /// but we don't actually fetch it - just use the filename for the
   /// preview label.
   String _humanizeBytes(String path) => path.split('/').last;
+
+  /// Decide if the probe output from the layered binary detector
+  /// indicates a non-text file. See [readBackupContent] for the
+  /// layering; this is the shared judgement function, kept pure so
+  /// the unit test can pin the classification table.
+  @visibleForTesting
+  static bool looksLikeBinary(String probeOutput) =>
+      _looksLikeBinary(probeOutput);
+
+  static bool _looksLikeBinary(String s) {
+    if (s.isEmpty) return false;
+    final lower = s.toLowerCase();
+    // Layer A signals (from `file --mime`).
+    if (lower.contains('charset=binary')) return true;
+    const binaryMimePrefixes = [
+      'application/octet-stream',
+      'application/x-executable',
+      'application/x-sharedlib',
+      'application/x-pie-executable',
+      'application/x-mach-binary',
+      'application/x-dosexec',
+      'application/zip',
+      'application/gzip',
+      'application/x-tar',
+      'application/x-xz',
+      'application/x-bzip2',
+      'application/x-7z-compressed',
+      'application/vnd.ms-cab-compressed',
+      'image/',
+      'video/',
+      'audio/',
+    ];
+    for (final p in binaryMimePrefixes) {
+      if (lower.contains(p)) return true;
+    }
+    // Layer B signals (from plain `file -b`).
+    const binaryKeywords = [
+      'elf ',
+      'executable',
+      'shared object',
+      'archive',
+      'image data',
+      'compiled',
+      'compressed',
+      'binary',
+    ];
+    for (final k in binaryKeywords) {
+      if (lower.contains(k)) return true;
+    }
+    // `data` appears on its own line as busybox's catchall for
+    // "couldn't classify, probably binary" - match it as a word, not a
+    // substring (so "metadata" / "data-driven" in real text don't
+    // falsely trip).
+    if (RegExp(r'(^|\s|,)data(\s|,|$)').hasMatch(lower)) return true;
+    // Layer C: od output contains `\0` glyphs for null bytes. od -An
+    // -c renders NUL as `\0`. Count them - a handful in 512 bytes is
+    // a strong "binary" signal for text-mostly files too.
+    final nulCount = RegExp(r'\\0').allMatches(s).length;
+    if (nulCount >= 3) return true;
+    return false;
+  }
 
   /// Delete a `.deckhand-pre-*` backup + its `.meta.json` sidecar.
   /// Used by the verify_screen after the user has confirmed they

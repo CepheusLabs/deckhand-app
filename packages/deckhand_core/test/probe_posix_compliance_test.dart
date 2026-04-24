@@ -110,8 +110,11 @@ void main() {
         } catch (_) {}
       });
       // Try dash first (strictest POSIX), fall back to sh, fall back
-      // to bash --posix. If none are present on the host, skip.
+      // to bash --posix. The test logs which shell validated so CI
+      // output makes the coverage gap explicit - a green with dash
+      // is stronger than a green with bash.
       final shells = ['dash', 'sh', 'bash'];
+      final tried = <String>[];
       for (final shell in shells) {
         try {
           final res = await Process.run(
@@ -120,7 +123,12 @@ void main() {
                 ? ['--posix', '-n', tmp.path]
                 : ['-n', tmp.path],
           );
-          if (res.exitCode == 0) return; // green
+          tried.add(shell);
+          if (res.exitCode == 0) {
+            // ignore: avoid_print
+            print('probe script: `$shell -n` clean (tried: ${tried.join(",")})');
+            return;
+          }
           fail(
             'Probe script failed `$shell -n`:\n'
             'stdout: ${res.stdout}\nstderr: ${res.stderr}',
@@ -132,7 +140,35 @@ void main() {
       // If we got here, no POSIX shell was available on the runner.
       // That's fine on some CI; the static-analysis tests above cover
       // the common cases. Don't fail on missing tooling.
-      markTestSkipped('No POSIX shell on PATH for syntax check');
+      markTestSkipped(
+        'No POSIX shell on PATH for syntax check. '
+        'Static checks above still apply; install `dash` for the '
+        'strictest coverage.',
+      );
+    });
+
+    test('dash -n passes when dash is installed on the host', () async {
+      // Distinct test so CI can see explicitly when dash coverage
+      // dropped off (vs. hiding the fallback behind the more lenient
+      // multi-shell test). Skips cleanly when dash isn't available.
+      try {
+        final tmp = await File(
+          '${Directory.systemTemp.path}/'
+          'deckhand-probe-dash-${DateTime.now().microsecondsSinceEpoch}.sh',
+        ).writeAsString(script);
+        addTearDown(() async {
+          try {
+            await tmp.delete();
+          } catch (_) {}
+        });
+        final res = await Process.run('dash', ['-n', tmp.path]);
+        if (res.exitCode != 0) {
+          fail('dash -n failed:\nstdout: ${res.stdout}\n'
+              'stderr: ${res.stderr}');
+        }
+      } on ProcessException {
+        markTestSkipped('dash not on PATH - skipping strict POSIX check');
+      }
     });
   });
 }

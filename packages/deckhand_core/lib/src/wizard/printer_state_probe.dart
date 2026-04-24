@@ -305,8 +305,17 @@ class PrinterStateProbe {
       // writing config under root's home by mistake). -maxdepth 8
       // reaches typical deeply-nested `printer_data/config/macros/
       // category/foo.cfg` trees.
-      "find /etc /home /opt /var /srv /root -maxdepth 8 "
-      "-name '*.deckhand-pre-*' -not -name '*.meta.json' 2>/dev/null | "
+      //
+      // `/root` requires elevation to read even with find - otherwise
+      // the non-root SSH user gets EACCES silently and we'd miss any
+      // backups under root's home. Wrap the /root search in a sudo
+      // pass (falling back to empty output if sudo itself fails, so
+      // we don't blow up the whole probe for non-sudoers users).
+      "( find /etc /home /opt /var /srv -maxdepth 8 "
+      "  -name '*.deckhand-pre-*' -not -name '*.meta.json' 2>/dev/null; "
+      "  sudo -n find /root -maxdepth 8 "
+      "  -name '*.deckhand-pre-*' -not -name '*.meta.json' 2>/dev/null "
+      "    || true ) | "
       "while IFS= read -r f; do "
       "  orig=\"\$(printf '%s' \"\$f\" | "
       "    sed 's/\\.deckhand-pre-[A-Za-z0-9_-][A-Za-z0-9_-]*-[0-9][0-9]*\$//' | "

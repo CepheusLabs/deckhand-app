@@ -475,12 +475,15 @@ void main() {
         // Outer `sudo -A -E` so sudo uses askpass, not a pty prompt.
         // The whole command is env-prefixed so _runSsh does NOT strip
         // it and does NOT forward via -S (that would be redundant).
-        final runCmd = ssh.runCalls.firstWhere(
-          (c) => c.contains('bash /tmp/deckhand-rebuild.sh'),
+        // Use stepDetails per-call lookup so the background probe's
+        // overwrite of `lastSudoPassword` can't flake the assertion.
+        final call = ssh.stepDetails.firstWhere(
+          (d) => d.command.contains('bash /tmp/deckhand-rebuild.sh'),
         );
-        expect(runCmd, contains('SUDO_ASKPASS=\'/tmp/deckhand-askpass-'));
-        expect(runCmd, contains('sudo -A -E bash /tmp/deckhand-rebuild.sh'));
-        expect(ssh.lastSudoPassword, isNull);
+        expect(call.command, contains('SUDO_ASKPASS=\'/tmp/deckhand-askpass-'));
+        expect(call.command,
+            contains('sudo -A -E bash /tmp/deckhand-rebuild.sh'));
+        expect(call.sudoPassword, isNull);
       },
     );
 
@@ -544,9 +547,15 @@ void main() {
         // No askpass staging: only the script itself is uploaded.
         expect(ssh.uploadCalls, hasLength(1));
         // `sudo -E bash ...` -> _runSsh strips `sudo ` and forwards
-        // the password via the sudoPassword parameter.
-        expect(ssh.steps.single, startsWith('-E bash /tmp/deckhand-rebuild.sh'));
-        expect(ssh.lastSudoPassword, 'root');
+        // the password via the sudoPassword parameter. Look up per-
+        // call via stepDetails so the background probe can't overwrite
+        // our lastSudoPassword observation.
+        final call = ssh.stepDetails.singleWhere(
+          (d) => d.command.contains('bash /tmp/deckhand-rebuild.sh'),
+        );
+        expect(call.command,
+            startsWith('-E bash /tmp/deckhand-rebuild.sh'));
+        expect(call.sudoPassword, 'root');
       },
     );
   });
@@ -571,8 +580,10 @@ void main() {
       await controller.connectSsh(host: '127.0.0.1');
       await controller.startExecution();
 
-      expect(ssh.steps.single, 'systemctl status klipper');
-      expect(ssh.lastSudoPassword, 'root');
+      final call = ssh.stepDetails.singleWhere(
+        (d) => d.command == 'systemctl status klipper',
+      );
+      expect(call.sudoPassword, 'root');
     });
 
     test('leaves non-sudo commands untouched', () async {
@@ -594,8 +605,10 @@ void main() {
       await controller.connectSsh(host: '127.0.0.1');
       await controller.startExecution();
 
-      expect(ssh.steps.single, 'ls /home/mks');
-      expect(ssh.lastSudoPassword, isNull);
+      final call = ssh.stepDetails.singleWhere(
+        (d) => d.command == 'ls /home/mks',
+      );
+      expect(call.sudoPassword, isNull);
     });
   });
 
@@ -627,13 +640,18 @@ void main() {
       await controller.startExecution();
 
       // One upload (to /tmp), one install command (sudo-wrapped then
-      // sudo-stripped by _runSsh).
+      // sudo-stripped by _runSsh). Look up per-call via stepDetails
+      // so the background state probe can't overwrite lastSudoPassword
+      // mid-flight.
       expect(ssh.uploadCalls, hasLength(1));
       expect(ssh.uploadCalls.single.remote, startsWith('/tmp/deckhand-write-'));
-      expect(ssh.steps.single, startsWith('install -m 644 '));
-      expect(ssh.steps.single, contains("-o 'root' "));
-      expect(ssh.steps.single, contains('/etc/apt/sources.list'));
-      expect(ssh.lastSudoPassword, 'root');
+      final call = ssh.stepDetails.singleWhere(
+        (d) => d.command.contains('/etc/apt/sources.list') &&
+            d.command.startsWith('install '),
+      );
+      expect(call.command, startsWith('install -m 644 '));
+      expect(call.command, contains("-o 'root' "));
+      expect(call.sudoPassword, 'root');
     });
 
     test('home path does not sudo', () async {
@@ -659,9 +677,55 @@ void main() {
       await controller.startExecution();
 
       // Non-system path: plain mv + chmod, no sudo.
-      expect(ssh.steps.single, startsWith('mv '));
-      expect(ssh.steps.single, contains('chmod 755'));
-      expect(ssh.lastSudoPassword, isNull);
+      final call = ssh.stepDetails.singleWhere(
+        (d) => d.command.startsWith('mv ') &&
+            d.command.contains('/home/root/startup.sh'),
+      );
+      expect(call.command, contains('chmod 755'));
+      expect(call.sudoPassword, isNull);
+    });
+
+    test('auto-backup write-probe uses touch+rm to detect RO mounts',
+        () async {
+      final ssh = FakeSsh();
+      final controller = newController(
+        profileJson: baseProfileJson(
+          stockKeepSteps: [
+            {
+              'id': 'apt',
+              'kind': 'write_file',
+              'target': '/etc/apt/sources.list',
+              'content': 'deb http://deb.debian.org/debian trixie main',
+              'mode': '0644',
+            },
+          ],
+        ),
+        ssh: ssh,
+      );
+      await controller.loadProfile('test-printer');
+      controller.setFlow(WizardFlow.stockKeep);
+      await controller.connectSsh(host: '127.0.0.1');
+      await controller.startExecution();
+
+      // The backup shell script must write-probe via touch+rm so we
+      // catch RO bind-mounts whose parent dir reports writable via
+      // `-w` but reject actual writes. Confirm the command uses the
+      // touch+rm sentinel rather than the old `[ ! -w "$(dirname ...)"
+      // ]` shape.
+      final backupCmd = ssh.steps.firstWhere((c) => c.contains('cp -p'));
+      expect(backupCmd, contains('touch '));
+      expect(
+        backupCmd,
+        contains('DECKHAND_BACKUP_RO_FS'),
+        reason: 'the sentinel branch must exist in the generated cmd',
+      );
+      // And the legacy heuristic should be gone.
+      expect(
+        backupCmd,
+        isNot(contains(r'-w "$(dirname')),
+        reason: 'old parent-dir -w heuristic should be replaced by '
+            'the touch+rm real-write test',
+      );
     });
 
     test('auto-backup snapshots existing file before overwriting', () async {
@@ -979,6 +1043,103 @@ void main() {
       expect(n, 0);
       // No new ssh.run calls beyond whatever the probe did.
       expect(ssh.steps.length, beforeCount);
+    });
+
+    group('looksLikeBinary classifier', () {
+      test('file --mime charset=binary => binary', () {
+        expect(
+          WizardController.looksLikeBinary(
+            'application/x-executable; charset=binary',
+          ),
+          isTrue,
+        );
+      });
+
+      test('file --mime application/octet-stream WITHOUT charset => binary',
+          () {
+        expect(
+          WizardController.looksLikeBinary('application/octet-stream'),
+          isTrue,
+        );
+      });
+
+      test('busybox file (no --mime) emits descriptive keywords', () {
+        for (final sample in [
+          'ELF 64-bit LSB pie executable, ARM aarch64',
+          'Zip archive data, at least v2.0 to extract',
+          'gzip compressed data, was "printer.cfg"',
+          'PNG image data, 512 x 512, 8-bit/color RGBA',
+          'data', // busybox fallback label
+        ]) {
+          expect(
+            WizardController.looksLikeBinary(sample),
+            isTrue,
+            reason: 'should classify "$sample" as binary',
+          );
+        }
+      });
+
+      test('od output with null-byte glyphs => binary', () {
+        expect(
+          WizardController.looksLikeBinary(
+            '   \\0   \\0   \\0  a   b   c',
+          ),
+          isTrue,
+        );
+      });
+
+      test('plain text returns false', () {
+        for (final sample in [
+          'text/plain; charset=utf-8',
+          'ASCII text',
+          'UTF-8 Unicode text, with very long lines',
+        ]) {
+          expect(
+            WizardController.looksLikeBinary(sample),
+            isFalse,
+            reason: 'should classify "$sample" as text',
+          );
+        }
+      });
+
+      test('empty probe output returns false (file(1) missing everywhere)',
+          () {
+        expect(WizardController.looksLikeBinary(''), isFalse);
+      });
+    });
+
+    test('readBackupContent caps at maxLines when body is long', () async {
+      final longBody = List<String>.generate(500, (i) => 'line$i').join('\n');
+      final ssh = FakeSsh();
+      // Probe-then-read pattern: first run is the binary probe
+      // (returns text/plain), second is the head -c read. We can't
+      // easily differentiate responses per-run with nextRun alone, so
+      // set both to the body - the text classifier short-circuits on
+      // the text mime and we use the long body for the read result.
+      ssh.nextRun = SshCommandResult(
+        stdout: longBody,
+        stderr: '',
+        exitCode: 0,
+      );
+      final controller = newController(
+        profileJson: baseProfileJson(),
+        ssh: ssh,
+      );
+      await controller.loadProfile('test-printer');
+      await controller.connectSsh(host: '127.0.0.1');
+      // First call: probe returns longBody -> classifier sees no
+      // binary markers -> text-read path. Second call returns same
+      // body -> we cap at 200 lines.
+      final result = await controller.readBackupContent(
+        const DeckhandBackup(
+          originalPath: '/home/mks/x',
+          backupPath: '/home/mks/x.deckhand-pre-1',
+        ),
+      );
+      // The truncation notice fires when lines > 200.
+      expect(result, isNotNull);
+      expect(result, contains('truncated at 200 lines'));
+      expect(result, contains('file has 500 lines total'));
     });
 
     test('readBackupContent runs binary-probe then text-read via sudo',

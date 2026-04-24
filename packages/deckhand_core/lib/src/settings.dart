@@ -71,6 +71,27 @@ class DeckhandSettings {
     }
   }
 
+  /// How many days old a `.deckhand-pre-*` backup has to be before the
+  /// Verify screen's "Prune" action removes it. Default 30.
+  int get pruneOlderThanDays {
+    final v = _values['prune_older_than_days'];
+    if (v is int) return v;
+    if (v is num) return v.toInt();
+    return 30;
+  }
+  set pruneOlderThanDays(int v) =>
+      _values['prune_older_than_days'] = v < 1 ? 1 : v;
+
+  /// When true, prune leaves the newest snapshot per target alone even
+  /// if it's old enough to remove, so a catastrophic mistake always
+  /// has at least one rollback path.
+  bool get pruneKeepNewestPerTarget {
+    final v = _values['prune_keep_newest_per_target'];
+    return v is bool ? v : true; // default: safe (keep one)
+  }
+  set pruneKeepNewestPerTarget(bool v) =>
+      _values['prune_keep_newest_per_target'] = v;
+
   Future<void> save() async {
     final file = File(path);
     await file.parent.create(recursive: true);
