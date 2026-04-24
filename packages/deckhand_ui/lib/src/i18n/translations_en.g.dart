@@ -149,6 +149,9 @@ class TranslationsConnectEn {
 	/// en: 'Rescan'
 	String get action_rescan => 'Rescan';
 
+	/// en: 'Printer found'
+	String get card_printer_found => 'Printer found';
+
 	/// en: 'First time connecting to this printer'
 	String get host_key_title_new => 'First time connecting to this printer';
 
@@ -469,6 +472,45 @@ class TranslationsReviewEn {
 
 	/// en: 'Review your choices'
 	String get title => 'Review your choices';
+
+	/// en: 'Every decision you made is listed below, plus every file Deckhand is about to touch on the printer. Deckhand auto-snapshots each target before overwriting (you can restore from the Verify screen), but it is cheaper to catch a mistake now. '
+	String get helper => 'Every decision you made is listed below, plus every file Deckhand\nis about to touch on the printer. Deckhand auto-snapshots each\ntarget before overwriting (you can restore from the Verify\nscreen), but it is cheaper to catch a mistake now.\n';
+
+	/// en: 'Setup path: $flow'
+	String flow_line({required Object flow}) => 'Setup path: ${flow}';
+
+	/// en: 'Printer: $printer'
+	String printer_line({required Object printer}) => 'Printer: ${printer}';
+
+	/// en: 'SSH host: $host'
+	String host_line({required Object host}) => 'SSH host: ${host}';
+
+	/// en: 'Keep the stock OS'
+	String get flow_stock_keep => 'Keep the stock OS';
+
+	/// en: 'Fresh OS install'
+	String get flow_fresh_flash => 'Fresh OS install';
+
+	/// en: 'Not yet chosen'
+	String get flow_unknown => 'Not yet chosen';
+
+	/// en: 'Your decisions'
+	String get your_decisions => 'Your decisions';
+
+	/// en: 'What this will touch'
+	String get plan_heading => 'What this will touch';
+
+	/// en: 'Generated from the profile's step list for the "$flow" path. Anything written here is backed up before it is overwritten. '
+	String plan_explainer({required Object flow}) => 'Generated from the profile\'s step list for the "${flow}" path.\nAnything written here is backed up before it is overwritten.\n';
+
+	/// en: 'No file-changing steps are queued for this flow.'
+	String get plan_empty => 'No file-changing steps are queued for this flow.';
+
+	/// en: 'I understand and want to proceed.'
+	String get confirm => 'I understand and want to proceed.';
+
+	/// en: 'Start install'
+	String get action_start => 'Start install';
 }
 
 // Path: progress
@@ -605,8 +647,29 @@ class TranslationsDoneEn {
 	/// en: 'Setup complete'
 	String get title => 'Setup complete';
 
+	/// en: 'Your printer is running community firmware with the configuration you picked. Deckhand's job ends here - day-to-day updates happen from the printer's web interface. '
+	String get helper => 'Your printer is running community firmware with the configuration\nyou picked. Deckhand\'s job ends here - day-to-day updates happen\nfrom the printer\'s web interface.\n';
+
+	/// en: 'Setup succeeded'
+	String get a11y_success => 'Setup succeeded';
+
+	/// en: 'Connected to $host'
+	String connected_host({required Object host}) => 'Connected to ${host}';
+
 	/// en: 'Next steps'
-	String get next_steps => 'Next steps';
+	String get next_steps_heading => 'Next steps';
+
+	/// en: 'Open $name in your browser at http://$host:$port'
+	String tip_webui({required Object name, required Object host, required Object port}) => 'Open ${name} in your browser at http://${host}:${port}';
+
+	/// en: 'Updates run from the web interface's Update Manager - you do not need Deckhand for them. '
+	String get tip_updates => 'Updates run from the web interface\'s Update Manager - you do not\nneed Deckhand for them.\n';
+
+	/// en: 'To add, remove, or reinstall pieces later, SSH into the printer and run the KIAUH helper from your home directory. '
+	String get tip_tweaks => 'To add, remove, or reinstall pieces later, SSH into the printer\nand run the KIAUH helper from your home directory.\n';
+
+	/// en: 'Set up another printer'
+	String get action_another => 'Set up another printer';
 }
 
 // Path: settings
@@ -888,6 +951,7 @@ extension on Translations {
 			'connect.action_connect' => 'Connect',
 			'connect.action_connecting' => 'Connecting…',
 			'connect.action_rescan' => 'Rescan',
+			'connect.card_printer_found' => 'Printer found',
 			'connect.host_key_title_new' => 'First time connecting to this printer',
 			'connect.host_key_body_new' => 'Deckhand has not seen this printer before. Compare the fingerprint\nbelow against what the printer reports locally. If it matches,\naccept it and Deckhand will remember it for future connections.\n',
 			'connect.host_key_confirm_new' => 'Accept and connect',
@@ -954,6 +1018,19 @@ extension on Translations {
 			'first_boot.title' => 'Put the eMMC back in the printer',
 			'first_boot_setup.title' => 'First boot setup',
 			'review.title' => 'Review your choices',
+			'review.helper' => 'Every decision you made is listed below, plus every file Deckhand\nis about to touch on the printer. Deckhand auto-snapshots each\ntarget before overwriting (you can restore from the Verify\nscreen), but it is cheaper to catch a mistake now.\n',
+			'review.flow_line' => ({required Object flow}) => 'Setup path: ${flow}',
+			'review.printer_line' => ({required Object printer}) => 'Printer: ${printer}',
+			'review.host_line' => ({required Object host}) => 'SSH host: ${host}',
+			'review.flow_stock_keep' => 'Keep the stock OS',
+			'review.flow_fresh_flash' => 'Fresh OS install',
+			'review.flow_unknown' => 'Not yet chosen',
+			'review.your_decisions' => 'Your decisions',
+			'review.plan_heading' => 'What this will touch',
+			'review.plan_explainer' => ({required Object flow}) => 'Generated from the profile\'s step list for the "${flow}" path.\nAnything written here is backed up before it is overwritten.\n',
+			'review.plan_empty' => 'No file-changing steps are queued for this flow.',
+			'review.confirm' => 'I understand and want to proceed.',
+			'review.action_start' => 'Start install',
 			'progress.title_installing' => 'Installing...',
 			'progress.title_done' => 'All done',
 			'progress.title_failed' => 'Something went wrong',
@@ -993,7 +1070,14 @@ extension on Translations {
 			'progress.semantics_progress_percent' => ({required Object percent}) => '${percent} percent',
 			'progress.semantics_log_label' => 'Step execution log',
 			'done.title' => 'Setup complete',
-			'done.next_steps' => 'Next steps',
+			'done.helper' => 'Your printer is running community firmware with the configuration\nyou picked. Deckhand\'s job ends here - day-to-day updates happen\nfrom the printer\'s web interface.\n',
+			'done.a11y_success' => 'Setup succeeded',
+			'done.connected_host' => ({required Object host}) => 'Connected to ${host}',
+			'done.next_steps_heading' => 'Next steps',
+			'done.tip_webui' => ({required Object name, required Object host, required Object port}) => 'Open ${name} in your browser at http://${host}:${port}',
+			'done.tip_updates' => 'Updates run from the web interface\'s Update Manager - you do not\nneed Deckhand for them.\n',
+			'done.tip_tweaks' => 'To add, remove, or reinstall pieces later, SSH into the printer\nand run the KIAUH helper from your home directory.\n',
+			'done.action_another' => 'Set up another printer',
 			'settings.title' => 'Settings',
 			'settings.section_profiles' => 'Printer profiles',
 			'settings.profiles_local_dir_label' => 'Local profiles directory',

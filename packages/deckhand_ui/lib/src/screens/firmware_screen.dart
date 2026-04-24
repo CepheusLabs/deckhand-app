@@ -59,8 +59,18 @@ class _FirmwareScreenState extends ConsumerState<FirmwareScreen> {
                     ],
                   ),
                   subtitle: Text(
-                    '${_flatten(c.description)}\n${c.repo} @ ${c.ref}',
+                    // Only the profile-authored description lands in
+                    // the user-visible card. The git repo + ref are
+                    // developer details that basic users cannot act
+                    // on - they move to a Tooltip on the card so
+                    // power users can still inspect them without
+                    // leaking into the main copy.
+                    _flatten(c.description),
                     maxLines: 4,
+                  ),
+                  secondary: Tooltip(
+                    message: '${c.repo}\n${c.ref}',
+                    child: const Icon(Icons.info_outline, size: 18),
                   ),
                 ),
               ),

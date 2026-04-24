@@ -423,10 +423,14 @@ class _DiscoveredCard extends StatelessWidget {
     if (enriched != null) {
       final version = enriched.softwareVersion.trim();
       detail = version.isEmpty
-          ? '${printer.host}:${printer.port} * Moonraker'
+          // Previously rendered `"Moonraker"` as a user-facing label.
+          // That's a developer term, so default to a plain status
+          // instead; the full version shows up once the enrichment
+          // probe lands.
+          ? '${printer.host}:${printer.port} * ${t.connect.card_printer_found}'
           : '${printer.host} * $version';
     } else {
-      detail = '${printer.host}:${printer.port} * ${printer.service}';
+      detail = '${printer.host}:${printer.port} * ${t.connect.card_printer_found}';
     }
 
     final stateChip = enriched == null

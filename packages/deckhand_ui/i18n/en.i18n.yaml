@@ -53,6 +53,7 @@ connect:
   action_connect: Connect
   action_connecting: Connecting…
   action_rescan: Rescan
+  card_printer_found: Printer found
   host_key_title_new: First time connecting to this printer
   host_key_body_new: |
     Deckhand has not seen this printer before. Compare the fingerprint
@@ -197,6 +198,25 @@ first_boot_setup:
 
 review:
   title: Review your choices
+  helper: |
+    Every decision you made is listed below, plus every file Deckhand
+    is about to touch on the printer. Deckhand auto-snapshots each
+    target before overwriting (you can restore from the Verify
+    screen), but it is cheaper to catch a mistake now.
+  flow_line: "Setup path: $flow"
+  printer_line: "Printer: $printer"
+  host_line: "SSH host: $host"
+  flow_stock_keep: Keep the stock OS
+  flow_fresh_flash: Fresh OS install
+  flow_unknown: Not yet chosen
+  your_decisions: Your decisions
+  plan_heading: What this will touch
+  plan_explainer: |
+    Generated from the profile's step list for the "$flow" path.
+    Anything written here is backed up before it is overwritten.
+  plan_empty: No file-changing steps are queued for this flow.
+  confirm: I understand and want to proceed.
+  action_start: Start install
 
 progress:
   title_installing: Installing...
@@ -244,7 +264,21 @@ progress:
 
 done:
   title: Setup complete
-  next_steps: Next steps
+  helper: |
+    Your printer is running community firmware with the configuration
+    you picked. Deckhand's job ends here - day-to-day updates happen
+    from the printer's web interface.
+  a11y_success: Setup succeeded
+  connected_host: "Connected to $host"
+  next_steps_heading: Next steps
+  tip_webui: "Open $name in your browser at http://$host:$port"
+  tip_updates: |
+    Updates run from the web interface's Update Manager - you do not
+    need Deckhand for them.
+  tip_tweaks: |
+    To add, remove, or reinstall pieces later, SSH into the printer
+    and run the KIAUH helper from your home directory.
+  action_another: Set up another printer
 
 settings:
   title: Settings

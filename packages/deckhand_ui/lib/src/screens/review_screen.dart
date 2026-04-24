@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../i18n/translations.g.dart';
 import '../providers.dart';
 import '../widgets/wizard_scaffold.dart';
 import '../widgets/deckhand_stepper.dart';
@@ -34,14 +35,21 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
     );
     final theme = Theme.of(context);
 
+    // Human labels for internal enum values. These never leak the
+    // enum name (e.g. `stockKeep`) to the user, who would not know
+    // what it means.
+    final flowLabel = switch (state.flow) {
+      WizardFlow.stockKeep => t.review.flow_stock_keep,
+      WizardFlow.freshFlash => t.review.flow_fresh_flash,
+      WizardFlow.none => t.review.flow_unknown,
+    };
+    final printerLabel =
+        controller.profile?.displayName ?? state.profileId;
+
     return WizardScaffold(
       stepper: const DeckhandStepper(),
-      title: 'Review your choices',
-      helperText:
-          'Every decision you made is listed below, plus every file Deckhand '
-          'is about to touch on the printer. Deckhand auto-snapshots each '
-          'target before overwriting (you can restore from the Verify '
-          'screen), but it is cheaper to catch a mistake now.',
+      title: t.review.title,
+      helperText: t.review.helper,
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -51,23 +59,24 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Flow: ${state.flow.name}'),
-                  Text('Printer: ${state.profileId}'),
+                  Text(t.review.flow_line(flow: flowLabel)),
+                  Text(t.review.printer_line(printer: printerLabel)),
                   if (state.sshHost != null)
-                    Text('SSH host: ${state.sshHost}'),
+                    Text(t.review.host_line(host: state.sshHost!)),
                   const SizedBox(height: 8),
                   const Divider(),
                   const SizedBox(height: 8),
                   Text(
-                    'Your decisions',
+                    t.review.your_decisions,
                     style: theme.textTheme.titleSmall,
                   ),
-                  for (final e in state.decisions.entries)
+                  for (final e in _humanDecisions(
+                    controller.profile,
+                    state.decisions,
+                  ))
                     Padding(
                       padding: const EdgeInsets.symmetric(vertical: 2),
-                      child: Text('${e.key}: ${e.value}',
-                          style: const TextStyle(
-                              fontFamily: 'monospace', fontSize: 12)),
+                      child: Text(e),
                     ),
                 ],
               ),
@@ -86,17 +95,17 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
                       Icon(Icons.preview,
                           color: theme.colorScheme.onTertiaryContainer),
                       const SizedBox(width: 8),
-                      Text('What this will touch',
-                          style: theme.textTheme.titleSmall?.copyWith(
-                            color: theme.colorScheme.onTertiaryContainer,
-                          )),
+                      Text(
+                        t.review.plan_heading,
+                        style: theme.textTheme.titleSmall?.copyWith(
+                          color: theme.colorScheme.onTertiaryContainer,
+                        ),
+                      ),
                     ],
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    'Generated from the profile\'s step list for the '
-                    '"${state.flow.name}" flow. Anything written here is '
-                    'backed up before it is overwritten.',
+                    t.review.plan_explainer(flow: flowLabel),
                     style: theme.textTheme.bodySmall?.copyWith(
                       color: theme.colorScheme.onTertiaryContainer,
                     ),
@@ -106,7 +115,7 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
                     _PlanSectionWidget(section: s),
                   if (plan.sections.isEmpty)
                     Text(
-                      '(no file-mutating steps in this flow)',
+                      t.review.plan_empty,
                       style: theme.textTheme.bodySmall?.copyWith(
                         color: theme.colorScheme.onTertiaryContainer,
                       ),
@@ -119,19 +128,64 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
           CheckboxListTile(
             value: _confirmed,
             onChanged: (v) => setState(() => _confirmed = v ?? false),
-            title: const Text('I understand and want to proceed.'),
+            title: Text(t.review.confirm),
           ),
         ],
       ),
       primaryAction: WizardAction(
-        label: 'Start install',
+        label: t.review.action_start,
         onPressed: _confirmed ? () => context.go('/progress') : null,
       ),
       secondaryActions: [
         WizardAction(
-            label: 'Back', onPressed: () => context.go('/hardening')),
+          label: t.common.action_back,
+          onPressed: () => context.go('/hardening'),
+        ),
       ],
     );
+  }
+
+  /// Convert raw `decisions` map entries into human-readable lines.
+  /// Internal decision keys like `service.makerbase_udp` get mapped
+  /// against the profile's display_name fields where possible, so
+  /// the user sees "Makerbase UDP service: disable" instead of
+  /// "service.makerbase_udp: disable".
+  List<String> _humanDecisions(
+    PrinterProfile? profile,
+    Map<String, Object> decisions,
+  ) {
+    final out = <String>[];
+    for (final e in decisions.entries) {
+      final key = e.key;
+      final val = e.value;
+      String? label;
+      if (key.startsWith('service.') && profile != null) {
+        final id = key.substring('service.'.length);
+        final matches = profile.stockOs.services.where((s) => s.id == id);
+        label = matches.isNotEmpty ? matches.first.displayName : id;
+      } else if (key.startsWith('file.') && profile != null) {
+        final id = key.substring('file.'.length);
+        final matches = profile.stockOs.files.where((f) => f.id == id);
+        label = matches.isNotEmpty ? matches.first.displayName : id;
+      } else if (key.startsWith('hardening.')) {
+        label = key.substring('hardening.'.length).replaceAll('_', ' ');
+      } else if (key == 'webui') {
+        label = 'Web interface';
+      } else if (key == 'firmware') {
+        label = 'Firmware';
+      } else if (key == 'kiauh') {
+        label = 'KIAUH helper';
+      } else if (key == 'screen') {
+        label = 'Touchscreen daemon';
+      }
+      // Never surface `hardening.new_password` content to the UI.
+      if (key == 'hardening.new_password') {
+        continue;
+      }
+      label ??= key; // last-resort fallback - still better than raw id+colon
+      out.add('$label: $val');
+    }
+    return out;
   }
 }
 

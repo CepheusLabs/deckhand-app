@@ -24,6 +24,21 @@ class _ServicesScreenState extends ConsumerState<ServicesScreen> {
   final _expanded = <String>{};
   bool _seeded = false;
 
+  @override
+  void initState() {
+    super.initState();
+    // Seed decisions once, on the first frame after mount. Previously
+    // this ran inside build() via a postFrameCallback, which
+    // accumulated a callback registration on every rebuild - the
+    // _seeded guard stopped actual re-seeding but did not stop the
+    // per-rebuild callback pile-up. initState runs exactly once per
+    // widget lifetime, which is the correct place for a seed action.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      setState(_seedDefaults);
+    });
+  }
+
   List<StockService> _queue() {
     final all =
         ref.read(wizardControllerProvider).profile?.stockOs.services ??
@@ -53,10 +68,6 @@ class _ServicesScreenState extends ConsumerState<ServicesScreen> {
 
   @override
   Widget build(BuildContext context) {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!_seeded) setState(_seedDefaults);
-    });
-
     // Subscribe to wizard events so the list rebuilds when the probe
     // lands fresh data (changes which services show up as absent).
     ref.watch(wizardStateProvider);

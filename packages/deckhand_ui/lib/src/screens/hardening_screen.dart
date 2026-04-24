@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../i18n/translations.g.dart';
 import '../providers.dart';
 import '../widgets/wizard_scaffold.dart';
 import '../widgets/deckhand_stepper.dart';
@@ -79,23 +80,34 @@ class _HardeningScreenState extends ConsumerState<HardeningScreen> {
         ],
       ),
       primaryAction: WizardAction(
-        label: 'Continue',
+        label: t.common.action_continue,
         onPressed: () async {
           final controller = ref.read(wizardControllerProvider);
+          // Snapshot values and the router BEFORE awaits. Previously
+          // this used context.mounted only at the very end, which
+          // left multiple per-await gaps where context could have
+          // been torn down mid-loop.
+          final router = GoRouter.of(context);
           for (final e in _enabled.entries) {
+            if (!mounted) return;
             await controller.setDecision('hardening.${e.key}', e.value);
           }
+          if (!mounted) return;
           if (_enabled['change_password'] == true) {
             await controller.setDecision(
               'hardening.new_password',
               _passwordController.text,
             );
           }
-          if (context.mounted) context.go('/review');
+          if (!mounted) return;
+          router.go('/review');
         },
       ),
       secondaryActions: [
-        WizardAction(label: 'Back', onPressed: () => context.go('/files')),
+        WizardAction(
+          label: t.common.action_back,
+          onPressed: () => context.go('/files'),
+        ),
       ],
     );
   }

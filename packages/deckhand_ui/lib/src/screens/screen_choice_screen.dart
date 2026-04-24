@@ -129,10 +129,10 @@ class _ScreenChoiceScreenState extends ConsumerState<ScreenChoiceScreen> {
 
   Widget _subtitle(BuildContext context, dynamic s) {
     final notes = flattenProfileText(s.raw['notes'] as String?);
-    if (notes.isEmpty) {
-      final kind = s.raw['source_kind'] as String?;
-      return Text(kind == null ? '' : 'source: $kind');
-    }
+    // When the profile has no user-facing notes, render nothing rather
+    // than leaking the internal `source_kind` discriminator. Previous
+    // behavior showed users strings like "source: git" which meant
+    // nothing to them.
     return Text(notes);
   }
 }
