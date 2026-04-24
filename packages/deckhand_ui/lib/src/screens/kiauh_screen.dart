@@ -35,9 +35,11 @@ class _KiauhScreenState extends ConsumerState<KiauhScreen> {
     // On an already-installed system default to "skip" - no point
     // re-cloning. Still let the user pick Install (useful if they
     // want a clean re-clone) but mark it as not-needed.
-    _install ??= alreadyInstalled
-        ? false
-        : (kiauh['default_install'] as bool? ?? true);
+    if (_install == null) {
+      _install = alreadyInstalled
+          ? false
+          : (kiauh['default_install'] as bool? ?? true);
+    }
 
     final theme = Theme.of(context);
 

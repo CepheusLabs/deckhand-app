@@ -21,9 +21,10 @@ class _ChooseOsScreenState extends ConsumerState<ChooseOsScreen> {
     final options =
         ref.watch(wizardControllerProvider).profile?.os.freshInstallOptions ??
         const [];
-    _choice ??=
-        options.where((o) => o.recommended).firstOrNull?.id ??
-        options.firstOrNull?.id;
+    if (_choice == null) {
+      _choice = options.where((o) => o.recommended).firstOrNull?.id ??
+          options.firstOrNull?.id;
+    }
 
     return WizardScaffold(
       stepper: const DeckhandStepper(),

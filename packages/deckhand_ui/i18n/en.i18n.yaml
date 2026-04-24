@@ -88,13 +88,67 @@ connect:
   semantics_unknown: "match status unknown"
 
 verify:
-  title: Verify your printer
+  title: Does this look like your printer?
   helper: |
-    We'll run a few quick checks against your connected printer to
-    confirm this profile matches. Warnings don't block the wizard - you
-    can always proceed.
-  action_continue: Continue
+    A few quick sanity checks so we can confirm the profile you
+    picked matches what is actually on this machine. Required
+    checks need to match for the flow to work. Optional ones are
+    hints that we are talking to the right kind of printer.
+  action_continue: Looks right, continue
   action_back: Back
+  no_detections: No detection rules declared for this profile.
+  backups_heading: Previous Deckhand backups found
+  backups_explainer: |
+    A prior Deckhand run overwrote these files and saved the
+    originals with a timestamped suffix. Restore any that should
+    not have been touched before continuing.
+  legacy_backups_heading: "Older backups without metadata ($count)"
+  legacy_backups_explainer: |
+    These were written by an older Deckhand build that did not
+    record which profile created them. Preview before restoring -
+    content could belong to any profile previously run against
+    this printer.
+  foreign_backups_heading: "Backups from other profiles ($count)"
+  foreign_backups_explainer: |
+    These backups were created by a different printer profile.
+    They are listed for transparency but Restore is disabled
+    because the content is unlikely to apply to this profile.
+  backup_created_at: "backed up $ts"
+  backup_action_preview: Preview
+  backup_action_delete: Delete
+  backup_action_deleting: "Deleting..."
+  backup_action_restore: Restore
+  backup_action_restoring: "Restoring..."
+  delete_confirm_title: Delete this backup?
+  delete_confirm_body: |
+    Removes $path plus its metadata sidecar. Once deleted, the
+    original file before Deckhand rewrote it is gone for good.
+  delete_confirm_action: Delete
+  preview_title: "Preview: $path"
+  preview_unreadable: (could not read backup contents)
+  preview_close: Close
+  prune_older_than: Prune backups older than
+  prune_days: "$n days"
+  prune_keep_latest_label: Keep the newest snapshot per target
+  prune_keep_latest_tooltip: |
+    For every file Deckhand has backed up, the newest snapshot
+    survives the prune - even if it is older than the interval
+    above. Uncheck for a true sweep.
+  prune_now: Prune now
+  check_required: Required check
+  check_optional: Optional hint
+  check_kind_file_exists: looks for a specific file on the printer
+  check_kind_file_contains: looks for expected text inside a file
+  check_kind_process_running: checks for a specific process
+  check_kind_custom: custom check defined by the profile
+  check_title_file_exists: A vendor file we expect to see is present
+  check_title_file_contains: A file contains an expected marker
+  check_title_file_mentions: 'A file mentions "$pattern"'
+  check_title_service_running: $vendor service is running
+  check_title_named_process_running: '"$name" is running'
+  check_title_process_running: A vendor process is running
+  check_title_custom: Custom check
+  check_title_vendor_fallback: Vendor
 
 choose_path:
   title: Which path do you want to take?
@@ -149,9 +203,10 @@ errors:
 firmware:
   title: Pick your firmware
   helper: |
-    Kalico is a community-maintained Klipper fork with weekly rebases
-    and helpful extras (gcode_shell_command, danger_options). Mainline
-    Klipper is upstream/master - more conservative.
+    Kalico is a community-maintained Klipper fork. It tracks upstream
+    fixes quickly and ships a few extras that matter on this printer.
+    Mainline Klipper is the upstream project - more conservative, the
+    same code everyone ships with.
 
 webui:
   title: Which web interface?

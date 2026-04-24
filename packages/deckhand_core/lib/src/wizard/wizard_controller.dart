@@ -948,19 +948,25 @@ class WizardController {
           'created_at_iso': DateTime.now().toUtc().toIso8601String(),
           'deckhand_schema': 1,
         });
-        final qMetaContent = _shellQuote(meta);
-        // Use a test+copy that ECHOES "created" so we can tell
-        // "backup taken" from "no-op (target didn't exist)" from
-        // "filesystem is read-only". Correct RO detection: actually
-        // try to create a touch-file in the target dir and clean it
-        // up. Relying on `-w dirname` is wrong for bind-mounted RO
-        // overlays where `stat` says writable but any actual write
-        // fails. `cp -p` preserves mode/owner/timestamps so a
-        // rollback is byte-exact.
+        // Stage the metadata locally and SFTP-upload it to a temp
+        // path, then mv into place. The earlier inline
+        // `sh -c "printf %s ... > ..."` trick layered a single-quoted
+        // JSON payload inside a double-quoted sh -c argument, which
+        // becomes fragile the moment `qMeta` contains a double quote
+        // (possible when the target path has one). SFTP + sudo-mv is
+        // the same number of round trips and has no nested-quoting
+        // surface at all.
+        final metaTmpLocal = p.join(
+          Directory.systemTemp.path,
+          'deckhand-meta-$ts.json',
+        );
+        await File(metaTmpLocal).writeAsString(meta);
+        final remoteMetaTmp = '/tmp/deckhand-meta-$ts.json';
+        await ssh.upload(s, metaTmpLocal, remoteMetaTmp, mode: 420); // 0o644
         final cp = useSudo ? 'sudo cp -p' : 'cp -p';
         final writeMeta = useSudo
-            ? 'sudo sh -c "printf %s $qMetaContent > $qMeta"'
-            : 'sh -c "printf %s $qMetaContent > $qMeta"';
+            ? 'sudo mv $remoteMetaTmp $qMeta && sudo chmod 0644 $qMeta'
+            : 'mv $remoteMetaTmp $qMeta';
         final writeProbe = useSudo
             ? 'sudo touch "\$(dirname $qTarget0)/.deckhand-wtest-$ts" '
                 '2>/dev/null && '
@@ -1036,6 +1042,17 @@ class WizardController {
     } finally {
       try {
         await File(tmpLocal).delete();
+      } catch (_) {}
+      // Clean up the meta staging file too. It's only written inside
+      // the `if (backup)` branch above, so a FileSystemException here
+      // just means backup was skipped and there's nothing to remove.
+      try {
+        final metaTmpLocal = p.join(
+          Directory.systemTemp.path,
+          'deckhand-meta-$ts.json',
+        );
+        final f = File(metaTmpLocal);
+        if (await f.exists()) await f.delete();
       } catch (_) {}
     }
   }

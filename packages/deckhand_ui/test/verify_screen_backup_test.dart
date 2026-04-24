@@ -45,9 +45,16 @@ void main() {
         await tester.pumpAndSettle();
 
         expect(find.text('/etc/apt/sources.list'), findsOneWidget);
+        // profile-id + step-id moved to a Tooltip on the tile so
+        // they're no longer user-visible by default. What the user
+        // sees is the timestamp. Find any Tooltip whose message
+        // includes the internal profile-id marker.
+        final tooltips = tester.widgetList<Tooltip>(find.byType(Tooltip));
         expect(
-          find.textContaining('profile test-printer'),
-          findsOneWidget,
+          tooltips.any((t) =>
+              (t.message ?? '').contains('profile test-printer')),
+          isTrue,
+          reason: 'Tooltip on backup tile should surface profile-id',
         );
         expect(find.text('Restore'), findsOneWidget);
         expect(find.text('Preview'), findsOneWidget);
@@ -113,7 +120,7 @@ void main() {
         ));
         await tester.pumpAndSettle();
         expect(
-          find.textContaining('Legacy backups without profile metadata'),
+          find.textContaining('Older backups without metadata'),
           findsOneWidget,
         );
         expect(find.text('/etc/fstab'), findsOneWidget);

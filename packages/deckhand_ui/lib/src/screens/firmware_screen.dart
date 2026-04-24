@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../i18n/translations.g.dart';
 import '../providers.dart';
 import '../widgets/wizard_scaffold.dart';
 import '../widgets/deckhand_stepper.dart';
@@ -17,20 +18,30 @@ class _FirmwareScreenState extends ConsumerState<FirmwareScreen> {
   String? _choice;
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Seed the default once the profile is available. Previously this
+    // ran as `_choice ??= ...` inside build() which mutates state
+    // during the build phase - the Flutter linter rightly flags this.
+    // didChangeDependencies runs after the widget is mounted and any
+    // time inherited state changes, so it picks up the profile as
+    // soon as Riverpod has it.
+    if (_choice != null) return;
+    final profile = ref.read(wizardControllerProvider).profile;
+    final choices = profile?.firmware.choices ?? const [];
+    _choice = profile?.firmware.defaultChoice ??
+        (choices.isNotEmpty ? choices.first.id : null);
+  }
+
+  @override
   Widget build(BuildContext context) {
     final profile = ref.watch(wizardControllerProvider).profile;
     final choices = profile?.firmware.choices ?? const [];
-    _choice ??=
-        profile?.firmware.defaultChoice ??
-        (choices.isNotEmpty ? choices.first.id : null);
 
     return WizardScaffold(
       stepper: const DeckhandStepper(),
-      title: 'Pick your firmware',
-      helperText:
-          'Kalico is a community-maintained Klipper fork with weekly '
-          'rebases and some helpful extras (gcode_shell_command, danger_'
-          'options). Mainline Klipper is upstream/master - more conservative.',
+      title: t.firmware.title,
+      helperText: t.firmware.helper,
       body: RadioGroup<String>(
         groupValue: _choice,
         onChanged: (v) => setState(() => _choice = v),

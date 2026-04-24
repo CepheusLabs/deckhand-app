@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../i18n/translations.g.dart';
 import '../providers.dart';
 import '../widgets/profile_text.dart';
 import '../widgets/wizard_scaffold.dart';
@@ -55,20 +56,16 @@ class _VerifyScreenState extends ConsumerState<VerifyScreen> {
   Future<bool?> _confirmDelete(DeckhandBackup b) => showDialog<bool>(
         context: context,
         builder: (ctx) => AlertDialog(
-          title: const Text('Delete this backup?'),
-          content: Text(
-            'Removes ${b.backupPath} plus its metadata sidecar. '
-            'Once deleted, there is no way to undo the original '
-            'write_file that created this backup.',
-          ),
+          title: Text(t.verify.delete_confirm_title),
+          content: Text(t.verify.delete_confirm_body(path: b.backupPath)),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(ctx).pop(false),
-              child: const Text('Cancel'),
+              child: Text(t.common.action_cancel),
             ),
             FilledButton.tonal(
               onPressed: () => Navigator.of(ctx).pop(true),
-              child: const Text('Delete'),
+              child: Text(t.verify.delete_confirm_action),
             ),
           ],
         ),
@@ -81,13 +78,13 @@ class _VerifyScreenState extends ConsumerState<VerifyScreen> {
     await showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text('Preview: ${b.originalPath}'),
+        title: Text(t.verify.preview_title(path: b.originalPath)),
         content: SizedBox(
           width: 720,
           height: 480,
           child: SingleChildScrollView(
             child: SelectableText(
-              content ?? '(could not read backup contents)',
+              content ?? t.verify.preview_unreadable,
               style: const TextStyle(
                 fontFamily: 'monospace',
                 fontSize: 12,
@@ -98,7 +95,7 @@ class _VerifyScreenState extends ConsumerState<VerifyScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Close'),
+            child: Text(t.verify.preview_close),
           ),
         ],
       ),
@@ -177,12 +174,8 @@ class _VerifyScreenState extends ConsumerState<VerifyScreen> {
 
     return WizardScaffold(
       stepper: const DeckhandStepper(),
-      title: 'Does this look like your printer?',
-      helperText:
-          'A few quick sanity checks so we can confirm the profile you '
-          'picked matches what\'s actually on this machine. Required '
-          'checks need to match for the flow to work. Optional ones are '
-          'hints that we\'re talking to the right kind of printer.',
+      title: t.verify.title,
+      helperText: t.verify.helper,
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -200,7 +193,7 @@ class _VerifyScreenState extends ConsumerState<VerifyScreen> {
                             color: theme.colorScheme.onSecondaryContainer),
                         const SizedBox(width: 8),
                         Text(
-                          'Previous Deckhand backups found',
+                          t.verify.backups_heading,
                           style: theme.textTheme.titleSmall?.copyWith(
                             color: theme.colorScheme.onSecondaryContainer,
                           ),
@@ -209,9 +202,7 @@ class _VerifyScreenState extends ConsumerState<VerifyScreen> {
                     ),
                     const SizedBox(height: 6),
                     Text(
-                      'A prior Deckhand run overwrote these files and saved '
-                      'the originals with a timestamped suffix. Restore any '
-                      'that shouldn\'t have been touched before continuing.',
+                      t.verify.backups_explainer,
                       style: theme.textTheme.bodySmall?.copyWith(
                         color: theme.colorScheme.onSecondaryContainer,
                       ),
@@ -258,16 +249,12 @@ class _VerifyScreenState extends ConsumerState<VerifyScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Legacy backups without profile metadata '
-                      '(${legacyBackups.length})',
+                      t.verify.legacy_backups_heading(count: legacyBackups.length),
                       style: theme.textTheme.titleSmall,
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      'These were written by an older Deckhand build that '
-                      'did not record which profile created them. Preview '
-                      'before restoring - content could belong to any '
-                      'profile previously run against this printer.',
+                      t.verify.legacy_backups_explainer,
                       style: theme.textTheme.bodySmall?.copyWith(
                         color: theme.colorScheme.onSurfaceVariant,
                       ),
@@ -297,15 +284,12 @@ class _VerifyScreenState extends ConsumerState<VerifyScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Backups from other profiles (${foreignBackups.length})',
+                      t.verify.foreign_backups_heading(count: foreignBackups.length),
                       style: theme.textTheme.titleSmall,
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      'These backups were created by a different profile. '
-                      'They are listed for transparency but the Restore '
-                      'action is disabled because the content is unlikely '
-                      'to apply to the current profile\'s setup.',
+                      t.verify.foreign_backups_explainer,
                       style: theme.textTheme.bodySmall?.copyWith(
                         color: theme.colorScheme.onSurfaceVariant,
                       ),
@@ -327,7 +311,7 @@ class _VerifyScreenState extends ConsumerState<VerifyScreen> {
             const SizedBox(height: 16),
           ],
           if (detections.isEmpty)
-            const Text('No detection rules declared for this profile.')
+            Text(t.verify.no_detections)
           else
             for (final d in detections)
               Card(
@@ -348,7 +332,7 @@ class _VerifyScreenState extends ConsumerState<VerifyScreen> {
         ],
       ),
       primaryAction: WizardAction(
-        label: 'Looks right, continue',
+        label: t.verify.action_continue,
         onPressed: () => context.go('/choose-path'),
       ),
       secondaryActions: [
@@ -366,41 +350,44 @@ class _VerifyScreenState extends ConsumerState<VerifyScreen> {
 
     switch (kind) {
       case 'file_exists':
-        return 'A vendor file we expect to see is present';
+        return t.verify.check_title_file_exists;
       case 'file_contains':
         final pattern = raw['pattern'] as String? ?? '';
         return pattern.isEmpty
-            ? 'A file contains an expected marker'
-            : 'A file mentions "$pattern"';
+            ? t.verify.check_title_file_contains
+            : t.verify.check_title_file_mentions(pattern: pattern);
       case 'process_running':
         final name = raw['name'] as String? ?? '';
         return name.isEmpty
-            ? '${vendor ?? "Vendor"} service is running'
-            : '"$name" is running';
+            ? t.verify.check_title_service_running(
+                vendor: vendor ?? t.verify.check_title_vendor_fallback,
+              )
+            : t.verify.check_title_named_process_running(name: name);
       case 'process_pattern':
-        return 'A vendor process is running';
+        return t.verify.check_title_process_running;
       default:
-        return 'Custom check';
+        return t.verify.check_title_custom;
     }
   }
 
-  /// Secondary line - the "how we check it" detail plus any note from
-  /// the profile, kept out of the title so non-technical users aren\'t
-  /// confronted with a filesystem path first.
+  /// Secondary line - profile-authored note when present, otherwise a
+  /// plain-English description of the check kind. The concrete file
+  /// path / pattern is kept out of the user-visible subtitle; it's
+  /// available via a tooltip on the card for users who need it.
   String _explain(String kind, Map<String, dynamic> raw, bool required) {
     final note = flattenProfileText(raw['note'] as String?);
-    final label = required ? 'Needs to be present' : 'Optional hint';
-    final detail = switch (kind) {
-      'file_exists' => 'Checks: ${raw['path']}',
-      'file_contains' =>
-        'Checks: ${raw['path']} contains "${raw['pattern']}"',
-      'process_running' => 'Checks: process "${raw['name']}"',
-      _ => raw.toString(),
+    final label = required ? t.verify.check_required : t.verify.check_optional;
+    final kindLabel = switch (kind) {
+      'file_exists' => t.verify.check_kind_file_exists,
+      'file_contains' => t.verify.check_kind_file_contains,
+      'process_running' => t.verify.check_kind_process_running,
+      _ => t.verify.check_kind_custom,
     };
-    return [
-      '$label - $detail',
+    final lines = <String>[
+      '$label - $kindLabel',
       if (note.isNotEmpty) note,
-    ].join('\n');
+    ];
+    return lines.join('\n');
   }
 }
 
@@ -429,17 +416,16 @@ class _PruneControls extends StatelessWidget {
         Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text('Prune backups older than', style: theme.textTheme.bodySmall),
+            Text(t.verify.prune_older_than, style: theme.textTheme.bodySmall),
             const SizedBox(width: 8),
             DropdownButton<int>(
               value: days,
-              items: const [
-                DropdownMenuItem(value: 7, child: Text('7 days')),
-                DropdownMenuItem(value: 14, child: Text('14 days')),
-                DropdownMenuItem(value: 30, child: Text('30 days')),
-                DropdownMenuItem(value: 60, child: Text('60 days')),
-                DropdownMenuItem(value: 90, child: Text('90 days')),
-                DropdownMenuItem(value: 180, child: Text('180 days')),
+              items: [
+                for (final n in const [7, 14, 30, 60, 90, 180])
+                  DropdownMenuItem(
+                    value: n,
+                    child: Text(t.verify.prune_days(n: n)),
+                  ),
               ],
               onChanged: (v) {
                 if (v != null) onDaysChanged(v);
@@ -448,11 +434,7 @@ class _PruneControls extends StatelessWidget {
           ],
         ),
         Tooltip(
-          message:
-              'For every file Deckhand has backed up, the newest snapshot '
-              'survives the prune - even if it is older than the interval '
-              'above. Keeps you from a "pruned every backup, now have no '
-              'rollback" scenario. Uncheck for a true sweep.',
+          message: t.verify.prune_keep_latest_tooltip,
           waitDuration: const Duration(milliseconds: 300),
           child: Row(
             mainAxisSize: MainAxisSize.min,
@@ -463,7 +445,7 @@ class _PruneControls extends StatelessWidget {
               ),
               Flexible(
                 child: Text(
-                  'Keep the newest snapshot per target',
+                  t.verify.prune_keep_latest_label,
                   style: theme.textTheme.bodySmall,
                 ),
               ),
@@ -478,7 +460,7 @@ class _PruneControls extends StatelessWidget {
         ),
         FilledButton.tonalIcon(
           icon: const Icon(Icons.cleaning_services, size: 16),
-          label: const Text('Prune now'),
+          label: Text(t.verify.prune_now),
           onPressed: onPrune,
         ),
       ],
@@ -512,49 +494,58 @@ class _BackupTile extends StatelessWidget {
     // Null-or-empty step_id is common (write_file steps inside a
     // conditional carry no id) - omit those entirely so the line
     // doesn't show "step null" or "step ".
+    // Only surface the timestamp to the user by default. profile_id
+    // and step_id are internal identifiers - useful for debugging but
+    // meaningless to basic users, and surfacing them on every tile
+    // was flagged by the code review. They stay available via the
+    // tile's tooltip so power users can still inspect them.
     final metaBits = <String>[
+      if (backup.createdAt != null)
+        t.verify.backup_created_at(
+          ts: backup.createdAt!.toLocal().toString().substring(0, 19),
+        ),
+    ];
+    final internalMeta = <String>[
       if (backup.profileId != null && backup.profileId!.isNotEmpty)
         'profile ${backup.profileId}',
       if (backup.stepId != null && backup.stepId!.isNotEmpty)
         'step ${backup.stepId}',
-      if (backup.createdAt != null)
-        'at ${backup.createdAt!.toLocal().toString().substring(0, 19)}',
-    ];
+    ].join(' * ');
     return Padding(
       padding: const EdgeInsets.only(top: 6),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  backup.originalPath,
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    fontFamily: 'monospace',
-                  ),
-                ),
-                Text(
-                  'backup: ${backup.backupPath}',
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    fontFamily: 'monospace',
-                  ),
-                ),
-                if (metaBits.isNotEmpty)
+            child: Tooltip(
+              message: internalMeta.isEmpty
+                  ? '${backup.backupPath}\n${backup.originalPath}'
+                  : '${backup.backupPath}\n${backup.originalPath}\n$internalMeta',
+              waitDuration: const Duration(milliseconds: 500),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
                   Text(
-                    metaBits.join(' * '),
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
+                    backup.originalPath,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      fontFamily: 'monospace',
                     ),
                   ),
-              ],
+                  if (metaBits.isNotEmpty)
+                    Text(
+                      metaBits.join(' * '),
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                ],
+              ),
             ),
           ),
           const SizedBox(width: 8),
           TextButton.icon(
             icon: const Icon(Icons.visibility, size: 16),
-            label: const Text('Preview'),
+            label: Text(t.verify.backup_action_preview),
             onPressed: busy ? null : onPreview,
           ),
           const SizedBox(width: 4),
@@ -565,7 +556,9 @@ class _BackupTile extends StatelessWidget {
               color: theme.colorScheme.error,
             ),
             label: Text(
-              deleting ? 'Deleting...' : 'Delete',
+              deleting
+                  ? t.verify.backup_action_deleting
+                  : t.verify.backup_action_delete,
               style: TextStyle(color: theme.colorScheme.error),
             ),
             onPressed: busy ? null : onDelete,
@@ -581,7 +574,11 @@ class _BackupTile extends StatelessWidget {
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
                   : const Icon(Icons.restore, size: 16),
-              label: Text(restoring ? 'Restoring...' : 'Restore'),
+              label: Text(
+                restoring
+                    ? t.verify.backup_action_restoring
+                    : t.verify.backup_action_restore,
+              ),
             ),
           ],
         ],

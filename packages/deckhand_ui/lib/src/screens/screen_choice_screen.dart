@@ -35,20 +35,26 @@ class _ScreenChoiceScreenState extends ConsumerState<ScreenChoiceScreen> {
     final probe = controller.printerState;
     // Pre-select a screen that's already installed + active, so users
     // returning to a partly-configured machine don't silently re-pick
-    // the profile-recommended one over what they're running.
-    _choice ??= screens
-        .firstWhere(
-          (s) => probe.screenInstalls[s.id]?.active == true &&
-              _isSelectable(s),
-          orElse: () => screens.firstWhere(
-            (s) => s.recommended && _isSelectable(s),
+    // the profile-recommended one over what they're running. The
+    // assignment is gated on `_choice == null` (instead of the old
+    // `_choice ??= ...` expression statement) so analyzer + human
+    // readers see it for what it is: a conditional initializer that
+    // is safe to run during build as long as it only ever fires once.
+    if (_choice == null && screens.isNotEmpty) {
+      _choice = screens
+          .firstWhere(
+            (s) => probe.screenInstalls[s.id]?.active == true &&
+                _isSelectable(s),
             orElse: () => screens.firstWhere(
-              _isSelectable,
-              orElse: () => screens.first,
+              (s) => s.recommended && _isSelectable(s),
+              orElse: () => screens.firstWhere(
+                _isSelectable,
+                orElse: () => screens.first,
+              ),
             ),
-          ),
-        )
-        .id;
+          )
+          .id;
+    }
 
     return WizardScaffold(
       stepper: const DeckhandStepper(),

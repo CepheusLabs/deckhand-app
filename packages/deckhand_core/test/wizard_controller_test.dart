@@ -770,9 +770,18 @@ void main() {
       expect(backup, contains('.deckhand-pre-'));
       // New naming: includes the profile id as a tag.
       expect(backup, contains('test-printer'));
-      // Metadata sidecar gets written alongside the backup.
+      // Metadata sidecar gets written alongside the backup. Since we
+      // now SFTP-upload the JSON instead of inlining it into a shell
+      // `printf %s ... > file` command, the backup command itself
+      // references the `.meta.json` target but NOT the JSON body;
+      // the body is on the upload side.
       expect(backup, contains('.meta.json'));
-      expect(backup, contains('"profile_id": "test-printer"'));
+      // The JSON payload itself lives on the upload channel now.
+      final metaUpload = ssh.uploadCalls.firstWhere(
+        (u) => u.remote.contains('deckhand-meta-'),
+      );
+      expect(metaUpload.content, contains('"profile_id": "test-printer"'));
+      expect(metaUpload.content, contains('"deckhand_schema": 1'));
     });
 
     test('write_file require_path gates the write on a live precondition',
@@ -1229,9 +1238,16 @@ void main() {
           c.contains('/deckhand.json')), isTrue);
 
       // The payload must contain the profile id + schema version.
-      final uploadedContent = ssh.uploadCalls.single.content;
-      expect(uploadedContent, contains('"profile_id": "test-printer"'));
-      expect(uploadedContent, contains('"deckhand_schema": 1'));
+      // The install_marker flow may stage a backup metadata sidecar
+      // alongside the main JSON marker; locate the marker specifically
+      // by its remote destination (the sidecar uses a /tmp staging
+      // path, the marker uses the final /tmp/deckhand-write-<ts>
+      // path).
+      final markerUpload = ssh.uploadCalls.firstWhere(
+        (u) => u.remote.contains('/tmp/deckhand-write-'),
+      );
+      expect(markerUpload.content, contains('"profile_id": "test-printer"'));
+      expect(markerUpload.content, contains('"deckhand_schema": 1'));
     });
   });
 }

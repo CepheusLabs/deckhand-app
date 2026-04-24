@@ -221,17 +221,131 @@ class TranslationsVerifyEn {
 
 	// Translations
 
-	/// en: 'Verify your printer'
-	String get title => 'Verify your printer';
+	/// en: 'Does this look like your printer?'
+	String get title => 'Does this look like your printer?';
 
-	/// en: 'We'll run a few quick checks against your connected printer to confirm this profile matches. Warnings don't block the wizard - you can always proceed. '
-	String get helper => 'We\'ll run a few quick checks against your connected printer to\nconfirm this profile matches. Warnings don\'t block the wizard - you\ncan always proceed.\n';
+	/// en: 'A few quick sanity checks so we can confirm the profile you picked matches what is actually on this machine. Required checks need to match for the flow to work. Optional ones are hints that we are talking to the right kind of printer. '
+	String get helper => 'A few quick sanity checks so we can confirm the profile you\npicked matches what is actually on this machine. Required\nchecks need to match for the flow to work. Optional ones are\nhints that we are talking to the right kind of printer.\n';
 
-	/// en: 'Continue'
-	String get action_continue => 'Continue';
+	/// en: 'Looks right, continue'
+	String get action_continue => 'Looks right, continue';
 
 	/// en: 'Back'
 	String get action_back => 'Back';
+
+	/// en: 'No detection rules declared for this profile.'
+	String get no_detections => 'No detection rules declared for this profile.';
+
+	/// en: 'Previous Deckhand backups found'
+	String get backups_heading => 'Previous Deckhand backups found';
+
+	/// en: 'A prior Deckhand run overwrote these files and saved the originals with a timestamped suffix. Restore any that should not have been touched before continuing. '
+	String get backups_explainer => 'A prior Deckhand run overwrote these files and saved the\noriginals with a timestamped suffix. Restore any that should\nnot have been touched before continuing.\n';
+
+	/// en: 'Older backups without metadata ($count)'
+	String legacy_backups_heading({required Object count}) => 'Older backups without metadata (${count})';
+
+	/// en: 'These were written by an older Deckhand build that did not record which profile created them. Preview before restoring - content could belong to any profile previously run against this printer. '
+	String get legacy_backups_explainer => 'These were written by an older Deckhand build that did not\nrecord which profile created them. Preview before restoring -\ncontent could belong to any profile previously run against\nthis printer.\n';
+
+	/// en: 'Backups from other profiles ($count)'
+	String foreign_backups_heading({required Object count}) => 'Backups from other profiles (${count})';
+
+	/// en: 'These backups were created by a different printer profile. They are listed for transparency but Restore is disabled because the content is unlikely to apply to this profile. '
+	String get foreign_backups_explainer => 'These backups were created by a different printer profile.\nThey are listed for transparency but Restore is disabled\nbecause the content is unlikely to apply to this profile.\n';
+
+	/// en: 'backed up $ts'
+	String backup_created_at({required Object ts}) => 'backed up ${ts}';
+
+	/// en: 'Preview'
+	String get backup_action_preview => 'Preview';
+
+	/// en: 'Delete'
+	String get backup_action_delete => 'Delete';
+
+	/// en: 'Deleting...'
+	String get backup_action_deleting => 'Deleting...';
+
+	/// en: 'Restore'
+	String get backup_action_restore => 'Restore';
+
+	/// en: 'Restoring...'
+	String get backup_action_restoring => 'Restoring...';
+
+	/// en: 'Delete this backup?'
+	String get delete_confirm_title => 'Delete this backup?';
+
+	/// en: 'Removes $path plus its metadata sidecar. Once deleted, the original file before Deckhand rewrote it is gone for good. '
+	String delete_confirm_body({required Object path}) => 'Removes ${path} plus its metadata sidecar. Once deleted, the\noriginal file before Deckhand rewrote it is gone for good.\n';
+
+	/// en: 'Delete'
+	String get delete_confirm_action => 'Delete';
+
+	/// en: 'Preview: $path'
+	String preview_title({required Object path}) => 'Preview: ${path}';
+
+	/// en: '(could not read backup contents)'
+	String get preview_unreadable => '(could not read backup contents)';
+
+	/// en: 'Close'
+	String get preview_close => 'Close';
+
+	/// en: 'Prune backups older than'
+	String get prune_older_than => 'Prune backups older than';
+
+	/// en: '$n days'
+	String prune_days({required Object n}) => '${n} days';
+
+	/// en: 'Keep the newest snapshot per target'
+	String get prune_keep_latest_label => 'Keep the newest snapshot per target';
+
+	/// en: 'For every file Deckhand has backed up, the newest snapshot survives the prune - even if it is older than the interval above. Uncheck for a true sweep. '
+	String get prune_keep_latest_tooltip => 'For every file Deckhand has backed up, the newest snapshot\nsurvives the prune - even if it is older than the interval\nabove. Uncheck for a true sweep.\n';
+
+	/// en: 'Prune now'
+	String get prune_now => 'Prune now';
+
+	/// en: 'Required check'
+	String get check_required => 'Required check';
+
+	/// en: 'Optional hint'
+	String get check_optional => 'Optional hint';
+
+	/// en: 'looks for a specific file on the printer'
+	String get check_kind_file_exists => 'looks for a specific file on the printer';
+
+	/// en: 'looks for expected text inside a file'
+	String get check_kind_file_contains => 'looks for expected text inside a file';
+
+	/// en: 'checks for a specific process'
+	String get check_kind_process_running => 'checks for a specific process';
+
+	/// en: 'custom check defined by the profile'
+	String get check_kind_custom => 'custom check defined by the profile';
+
+	/// en: 'A vendor file we expect to see is present'
+	String get check_title_file_exists => 'A vendor file we expect to see is present';
+
+	/// en: 'A file contains an expected marker'
+	String get check_title_file_contains => 'A file contains an expected marker';
+
+	/// en: 'A file mentions "$pattern"'
+	String check_title_file_mentions({required Object pattern}) => 'A file mentions "${pattern}"';
+
+	/// en: '$vendor service is running'
+	String check_title_service_running({required Object vendor}) => '${vendor} service is running';
+
+	/// en: '"$name" is running'
+	String check_title_named_process_running({required Object name}) => '"${name}" is running';
+
+	/// en: 'A vendor process is running'
+	String get check_title_process_running => 'A vendor process is running';
+
+	/// en: 'Custom check'
+	String get check_title_custom => 'Custom check';
+
+	/// en: 'Vendor'
+	String get check_title_vendor_fallback => 'Vendor';
 }
 
 // Path: choose_path
@@ -972,10 +1086,48 @@ extension on Translations {
 			'connect.semantics_probable' => ({required Object profile, required Object reason}) => 'probable match for ${profile}${reason}',
 			'connect.semantics_miss' => ({required Object profile}) => 'does not match ${profile}',
 			'connect.semantics_unknown' => 'match status unknown',
-			'verify.title' => 'Verify your printer',
-			'verify.helper' => 'We\'ll run a few quick checks against your connected printer to\nconfirm this profile matches. Warnings don\'t block the wizard - you\ncan always proceed.\n',
-			'verify.action_continue' => 'Continue',
+			'verify.title' => 'Does this look like your printer?',
+			'verify.helper' => 'A few quick sanity checks so we can confirm the profile you\npicked matches what is actually on this machine. Required\nchecks need to match for the flow to work. Optional ones are\nhints that we are talking to the right kind of printer.\n',
+			'verify.action_continue' => 'Looks right, continue',
 			'verify.action_back' => 'Back',
+			'verify.no_detections' => 'No detection rules declared for this profile.',
+			'verify.backups_heading' => 'Previous Deckhand backups found',
+			'verify.backups_explainer' => 'A prior Deckhand run overwrote these files and saved the\noriginals with a timestamped suffix. Restore any that should\nnot have been touched before continuing.\n',
+			'verify.legacy_backups_heading' => ({required Object count}) => 'Older backups without metadata (${count})',
+			'verify.legacy_backups_explainer' => 'These were written by an older Deckhand build that did not\nrecord which profile created them. Preview before restoring -\ncontent could belong to any profile previously run against\nthis printer.\n',
+			'verify.foreign_backups_heading' => ({required Object count}) => 'Backups from other profiles (${count})',
+			'verify.foreign_backups_explainer' => 'These backups were created by a different printer profile.\nThey are listed for transparency but Restore is disabled\nbecause the content is unlikely to apply to this profile.\n',
+			'verify.backup_created_at' => ({required Object ts}) => 'backed up ${ts}',
+			'verify.backup_action_preview' => 'Preview',
+			'verify.backup_action_delete' => 'Delete',
+			'verify.backup_action_deleting' => 'Deleting...',
+			'verify.backup_action_restore' => 'Restore',
+			'verify.backup_action_restoring' => 'Restoring...',
+			'verify.delete_confirm_title' => 'Delete this backup?',
+			'verify.delete_confirm_body' => ({required Object path}) => 'Removes ${path} plus its metadata sidecar. Once deleted, the\noriginal file before Deckhand rewrote it is gone for good.\n',
+			'verify.delete_confirm_action' => 'Delete',
+			'verify.preview_title' => ({required Object path}) => 'Preview: ${path}',
+			'verify.preview_unreadable' => '(could not read backup contents)',
+			'verify.preview_close' => 'Close',
+			'verify.prune_older_than' => 'Prune backups older than',
+			'verify.prune_days' => ({required Object n}) => '${n} days',
+			'verify.prune_keep_latest_label' => 'Keep the newest snapshot per target',
+			'verify.prune_keep_latest_tooltip' => 'For every file Deckhand has backed up, the newest snapshot\nsurvives the prune - even if it is older than the interval\nabove. Uncheck for a true sweep.\n',
+			'verify.prune_now' => 'Prune now',
+			'verify.check_required' => 'Required check',
+			'verify.check_optional' => 'Optional hint',
+			'verify.check_kind_file_exists' => 'looks for a specific file on the printer',
+			'verify.check_kind_file_contains' => 'looks for expected text inside a file',
+			'verify.check_kind_process_running' => 'checks for a specific process',
+			'verify.check_kind_custom' => 'custom check defined by the profile',
+			'verify.check_title_file_exists' => 'A vendor file we expect to see is present',
+			'verify.check_title_file_contains' => 'A file contains an expected marker',
+			'verify.check_title_file_mentions' => ({required Object pattern}) => 'A file mentions "${pattern}"',
+			'verify.check_title_service_running' => ({required Object vendor}) => '${vendor} service is running',
+			'verify.check_title_named_process_running' => ({required Object name}) => '"${name}" is running',
+			'verify.check_title_process_running' => 'A vendor process is running',
+			'verify.check_title_custom' => 'Custom check',
+			'verify.check_title_vendor_fallback' => 'Vendor',
 			'choose_path.title' => 'Which path do you want to take?',
 			'choose_path.helper' => 'Choose whether to reuse the OS already on your printer or wipe the\neMMC and install a fresh Armbian image. Both lead to the same final\nstate (Kalico or Klipper + your chosen web UI); they differ in blast\nradius and in what you have to manage yourself.\n',
 			'choose_path.stock.title' => 'Keep my current OS',
