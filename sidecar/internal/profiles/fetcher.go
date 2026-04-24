@@ -3,6 +3,7 @@ package profiles
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -62,7 +63,10 @@ func Fetch(ctx context.Context, repoURL, ref, destDir string, force bool) (Fetch
 		Depth:         1,
 		SingleBranch:  true,
 	})
-	if err != nil && err != git.ErrRepositoryAlreadyExists {
+	// errors.Is + sentinel match so the branch-vs-tag retry fires
+	// correctly even if go-git begins wrapping ErrRepositoryAlreadyExists
+	// in a future release.
+	if err != nil && !errors.Is(err, git.ErrRepositoryAlreadyExists) {
 		// Ref might be a tag, not a branch. Retry.
 		repo, err = git.PlainCloneContext(ctx, absDest, false, &git.CloneOptions{
 			URL:           repoURL,

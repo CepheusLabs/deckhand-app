@@ -43,7 +43,15 @@ func List(ctx context.Context) ([]DiskInfo, error) {
 
 	results := make([]DiskInfo, 0, len(disks))
 	for _, d := range disks {
-		parts, _ := listPartitions(ctx, d.Number)
+		parts, perr := listPartitions(ctx, d.Number)
+		if perr != nil {
+			// Partition enumeration can fail for dynamic disks or
+			// disks with no partition table. Surface an empty slice
+			// rather than failing the whole list - the UI prefers
+			// "disk visible, partitions unknown" to "disks.list
+			// errored".
+			parts = nil
+		}
 		results = append(results, DiskInfo{
 			ID:         "PhysicalDrive" + strconv.Itoa(d.Number),
 			Path:       `\\.\PHYSICALDRIVE` + strconv.Itoa(d.Number),
@@ -58,11 +66,19 @@ func List(ctx context.Context) ([]DiskInfo, error) {
 }
 
 func listPartitions(ctx context.Context, diskNumber int) ([]Partition, error) {
+	// diskNumber is an int from a previously-parsed JSON integer (the
+	// caller pulls it from Get-Disk output), so string interpolation
+	// is safe here - there is no possible metacharacter path. Still,
+	// assert >= 0 so a future caller passing a negative value via a
+	// different path fails fast rather than producing weird PowerShell.
+	if diskNumber < 0 {
+		return nil, fmt.Errorf("invalid disk number %d", diskNumber)
+	}
 	cmd := exec.CommandContext(ctx, "powershell.exe", "-NoProfile", "-Command",
 		fmt.Sprintf(`Get-Partition -DiskNumber %d | Select-Object PartitionNumber,Size,Type,DriveLetter | ConvertTo-Json -Compress`, diskNumber))
 	out, err := cmd.Output()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("Get-Partition disk %d: %w", diskNumber, err)
 	}
 	type raw struct {
 		PartitionNumber int    `json:"PartitionNumber"`

@@ -11,10 +11,28 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"sync"
 )
+
+// Error is a typed handler error that carries a JSON-RPC error code.
+// Handlers return `&rpc.Error{Code: CodeDisk+1, Message: "..."}` and the
+// server maps it to a proper response without flattening everything to
+// codeInternalError.
+type Error struct {
+	Code    int
+	Message string
+	Data    any
+}
+
+func (e *Error) Error() string { return e.Message }
+
+// NewError is sugar for constructing typed errors at the call site.
+func NewError(code int, format string, args ...any) *Error {
+	return &Error{Code: code, Message: fmt.Sprintf(format, args...)}
+}
 
 // Notifier is how handlers push progress notifications back to the UI.
 // Implementations serialize writes to avoid interleaving with responses.
@@ -45,16 +63,20 @@ func (s *Server) Register(method string, h Handler) {
 }
 
 // Serve runs the read/dispatch/respond loop until [ctx] is cancelled or
-// the input stream closes.
+// the input stream closes. In-flight handler goroutines are waited on
+// before Serve returns so the output stream never closes with pending
+// responses still buffered.
 func (s *Server) Serve(ctx context.Context, in io.Reader, out io.Writer) error {
 	scanner := bufio.NewScanner(in)
 	scanner.Buffer(make([]byte, 1<<16), 1<<24)
 
 	w := &outputWriter{w: bufio.NewWriter(out)}
 
+	var inflight sync.WaitGroup
+
 	for scanner.Scan() {
 		if ctx.Err() != nil {
-			return ctx.Err()
+			break
 		}
 
 		line := append([]byte(nil), scanner.Bytes()...)
@@ -81,7 +103,9 @@ func (s *Server) Serve(ctx context.Context, in io.Reader, out io.Writer) error {
 		// Dispatch in a goroutine so long-running handlers don't block
 		// the read loop. Each request gets its own notifier that scopes
 		// notifications to its operation id.
+		inflight.Add(1)
 		go func(req request, h Handler) {
+			defer inflight.Done()
 			opID := unquoteID(req.ID)
 			note := &methodNotifier{writer: w, operationID: opID}
 			defer func() {
@@ -91,11 +115,18 @@ func (s *Server) Serve(ctx context.Context, in io.Reader, out io.Writer) error {
 			}()
 			result, err := h(ctx, req.Params, note)
 			if err != nil {
-				w.writeResponse(errorResponse(req.ID, codeInternalError, err.Error(), nil))
+				code, data := mapError(err)
+				w.writeResponse(errorResponse(req.ID, code, err.Error(), data))
 				return
 			}
 			w.writeResponse(successResponse(req.ID, result))
 		}(req, h)
+	}
+	// Drain in-flight handlers before returning so the caller's output
+	// stream does not close with pending writes still queued.
+	inflight.Wait()
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 	return scanner.Err()
 }
@@ -212,4 +243,17 @@ func errorResponse(id json.RawMessage, code int, msg string, data any) response 
 		ID:      id,
 		Error:   &responseError{Code: code, Message: msg, Data: data},
 	}
+}
+
+// mapError turns a handler error into a JSON-RPC code + optional data.
+// Typed *rpc.Error carries its own code (handler's explicit choice);
+// everything else falls back to codeInternalError. Domain packages
+// wrap their sentinel errors in *rpc.Error at the handler boundary
+// so the server here never needs to import domain packages.
+func mapError(err error) (int, any) {
+	var rpcErr *Error
+	if errors.As(err, &rpcErr) {
+		return rpcErr.Code, rpcErr.Data
+	}
+	return codeInternalError, nil
 }

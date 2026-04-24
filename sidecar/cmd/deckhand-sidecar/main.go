@@ -11,6 +11,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -100,7 +101,7 @@ func registerHandlers(s *rpc.Server, cancel context.CancelFunc) {
 	s.Register("disks.list", func(ctx context.Context, _ json.RawMessage, _ rpc.Notifier) (any, error) {
 		infos, err := disks.List(ctx)
 		if err != nil {
-			return nil, err
+			return nil, rpc.NewError(rpc.CodeDisk, "disks.list failed: %v", err)
 		}
 		return map[string]any{"disks": infos}, nil
 	})
@@ -110,18 +111,18 @@ func registerHandlers(s *rpc.Server, cancel context.CancelFunc) {
 			Path string `json:"path"`
 		}
 		if err := json.Unmarshal(raw, &req); err != nil {
-			return nil, fmt.Errorf("decode params: %w", err)
+			return nil, rpc.NewError(rpc.CodeGeneric, "decode params: %v", err)
 		}
 		// disks.hash is intended for image files Deckhand itself wrote
 		// or downloaded (post-download verification), not arbitrary
 		// paths. Enforce a safe subset to keep this from being a
 		// generic "read file existence/contents" oracle.
 		if err := validateHashPath(req.Path); err != nil {
-			return nil, err
+			return nil, rpc.NewError(rpc.CodeGeneric, "%v", err)
 		}
 		h, err := hash.SHA256(req.Path)
 		if err != nil {
-			return nil, err
+			return nil, rpc.NewError(rpc.CodeDisk, "hash failed: %v", err)
 		}
 		return map[string]any{"sha256": h, "path": req.Path}, nil
 	})
@@ -133,15 +134,15 @@ func registerHandlers(s *rpc.Server, cancel context.CancelFunc) {
 			Output   string `json:"output"`
 		}
 		if err := json.Unmarshal(raw, &req); err != nil {
-			return nil, fmt.Errorf("decode params: %w", err)
+			return nil, rpc.NewError(rpc.CodeGeneric, "decode params: %v", err)
 		}
-		dev := req.Path
-		if dev == "" {
-			dev = `\\.\` + req.DeviceID
+		dev, err := disks.ResolveDevicePath(req.Path, req.DeviceID)
+		if err != nil {
+			return nil, rpc.NewError(rpc.CodeDisk, "resolve device: %v", err)
 		}
 		sha, err := disks.ReadImage(ctx, dev, req.Output, note)
 		if err != nil {
-			return nil, err
+			return nil, rpc.NewError(rpc.CodeDisk, "read_image: %v", err)
 		}
 		return map[string]any{"sha256": sha, "output": req.Output}, nil
 	})
@@ -153,10 +154,20 @@ func registerHandlers(s *rpc.Server, cancel context.CancelFunc) {
 			ConfirmationToken string `json:"confirmation_token"`
 		}
 		if err := json.Unmarshal(raw, &req); err != nil {
-			return nil, fmt.Errorf("decode params: %w", err)
+			return nil, rpc.NewError(rpc.CodeGeneric, "decode params: %v", err)
 		}
 		if err := disks.WriteImage(ctx, req.ImagePath, req.DiskID, req.ConfirmationToken); err != nil {
-			return nil, err
+			if errors.Is(err, disks.ErrElevationRequired) {
+				// Domain-specific code so the UI can branch to an
+				// elevation prompt rather than treating this as a
+				// generic failure.
+				return nil, &rpc.Error{
+					Code:    rpc.CodeDisk + 1,
+					Message: err.Error(),
+					Data:    map[string]any{"reason": "elevation_required"},
+				}
+			}
+			return nil, rpc.NewError(rpc.CodeDisk, "write_image: %v", err)
 		}
 		return map[string]any{"ok": true}, nil
 	})

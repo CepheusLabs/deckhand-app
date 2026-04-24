@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -70,7 +71,7 @@ func ReadImage(ctx context.Context, devicePath, outputPath string, note rpc.Noti
 				lastNotified = done
 			}
 		}
-		if rerr == io.EOF {
+		if errors.Is(rerr, io.EOF) {
 			break
 		}
 		if rerr != nil {
