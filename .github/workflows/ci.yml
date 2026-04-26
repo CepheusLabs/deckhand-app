@@ -37,13 +37,26 @@ jobs:
     defaults:
       run:
         working-directory: sidecar
+        # Force bash on every OS so arg parsing (especially the
+        # `-coverprofile=...` form below) is consistent. Without
+        # this, Windows defaults to pwsh, which mangles native-
+        # command argument syntax containing `=` and `./...`.
+        # Self-hosted Windows runner: bash auto-resolves to Git
+        # Bash if it's on PATH first; otherwise this expects the
+        # runner setup to put `C:\Program Files\Git\bin` ahead of
+        # `C:\Windows\System32` (where the WSL `bash.exe` stub
+        # lives).
+        shell: bash
     steps:
       - uses: actions/checkout@v5
 
-      - uses: actions/setup-go@v6
-        with:
-          go-version: "1.22"
-          cache-dependency-path: sidecar/go.sum
+      # Toolchain is pre-installed on every self-hosted runner the
+      # org operates. Verify visibility instead of installing on
+      # top — the install path drifted from dev box state and
+      # produced subtle issues (e.g. macOS LC_UUID-stripped test
+      # binaries from the action's downloaded Go).
+      - name: Verify go
+        run: go version
 
       - name: go mod download
         run: go mod download

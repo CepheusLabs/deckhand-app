@@ -64,26 +64,21 @@ jobs:
           echo "version=$v" >> "$GITHUB_OUTPUT"
           echo "::notice::Building macOS with DECKHAND_VERSION=$v"
 
-      # Install Flutter + Go via actions. On a self-hosted runner
-      # the toolchain caches persist between runs, so first-time
-      # runs are slow (~3 min) and subsequent runs are near-instant.
-      # Pinned versions match `release.yml` so dev builds stay
-      # binary-compatible with what gets cut for tagged releases.
-      - uses: subosito/flutter-action@v2
-        with:
-          flutter-version: "3.38.9"
-          channel: stable
-          cache: true
-
-      - uses: actions/setup-go@v6
-        with:
-          go-version: "1.22"
-          cache-dependency-path: sidecar/go.sum
-
+      # Verify the runner-side pre-installed toolchain. The org's
+      # self-hosted Mac runner ships with Flutter + Go provisioned
+      # at the OS level — this workflow refuses to install over it
+      # to avoid drift between dev-loop builds and what's on the
+      # box (and to skip the multi-minute first-run install). If
+      # any of these checks fail, fix the runner, not the workflow.
+      #
+      # Note: do NOT pipe `flutter --version` through `head` here.
+      # Flutter writes more lines than head consumes, takes SIGPIPE
+      # when the pipe closes, and exits 255 — which `pipefail` (set
+      # by the bash shell directive) propagates as a step failure.
       - name: Verify toolchain
         shell: bash
         run: |
-          flutter --version | head -3
+          flutter --version
           dart --version
           go version
 

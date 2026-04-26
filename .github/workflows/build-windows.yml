@@ -13,6 +13,12 @@ name: Build Windows (self-hosted)
 #
 # Trigger: workflow_dispatch only. Manual on-demand from the
 # Actions tab or via `gh workflow run build-windows.yml`.
+#
+# Shell choice: every step that does anything beyond a single command
+# is `shell: pwsh`. We deliberately avoid `shell: bash` on this
+# Windows runner — `bash.exe` resolves to the WSL stub
+# (`C:\WINDOWS\system32\bash.EXE`) which has no installed distribution,
+# rather than Git Bash. Forcing pwsh sidesteps the PATH ordering trap.
 
 on:
   workflow_dispatch:
@@ -29,10 +35,6 @@ on:
 permissions:
   contents: read
 
-# One Windows build at a time on the runner. The label `[self-hosted,
-# windows]` matches the org-level runner. cl-windowsdesktop-primary
-# is currently the only Windows runner; if/when we add more, leaving
-# this broad lets any qualifying runner pick up the job.
 jobs:
   build:
     name: Windows zip
@@ -41,6 +43,9 @@ jobs:
     concurrency:
       group: build-windows
       cancel-in-progress: false
+    defaults:
+      run:
+        shell: pwsh
 
     steps:
       - uses: actions/checkout@v5
@@ -53,36 +58,27 @@ jobs:
       # short-sha label so the resulting binary is correlatable.
       - name: Resolve version
         id: v
-        shell: bash
         run: |
-          if [ -n "${{ inputs.version }}" ]; then
-            v="${{ inputs.version }}"
-          else
-            v="dev-$(git rev-parse --short HEAD)"
-          fi
-          echo "version=$v" >> "$GITHUB_OUTPUT"
-          echo "::notice::Building Windows with DECKHAND_VERSION=$v"
+          $explicit = "${{ inputs.version }}"
+          if ($explicit) {
+            $v = $explicit
+          } else {
+            $sha = (& git rev-parse --short HEAD).Trim()
+            $v = "dev-$sha"
+          }
+          "version=$v" | Out-File -Append -Encoding utf8 $env:GITHUB_OUTPUT
+          Write-Host "::notice::Building Windows with DECKHAND_VERSION=$v"
 
-      # Install Flutter + Go via actions. On a self-hosted runner the
-      # toolchain caches persist between runs, so first-time runs are
-      # slow (~3 min) and subsequent runs are near-instant. Pinned
-      # versions match `release.yml` so dev builds stay
-      # binary-compatible with what gets cut for tagged releases.
-      - uses: subosito/flutter-action@v2
-        with:
-          flutter-version: "3.38.9"
-          channel: stable
-          cache: true
-
-      - uses: actions/setup-go@v6
-        with:
-          go-version: "1.22"
-          cache-dependency-path: sidecar/go.sum
-
+      # Verify the runner-side pre-installed toolchain. The org's
+      # self-hosted Windows runner ships with Flutter + Go
+      # provisioned at the OS level — this workflow refuses to
+      # install over it to avoid drift between dev-loop builds and
+      # what's on the box (and to skip the multi-minute first-run
+      # install). If any of these checks fail, fix the runner, not
+      # the workflow.
       - name: Verify toolchain
-        shell: bash
         run: |
-          flutter --version | head -3
+          flutter --version
           dart --version
           go version
 
@@ -94,16 +90,17 @@ jobs:
         env:
           CGO_ENABLED: "0"
           STAMP: ${{ steps.v.outputs.version }}
-        shell: bash
         run: |
-          mkdir -p dist
-          for cmd in deckhand-sidecar deckhand-elevated-helper; do
-            go build -trimpath \
-              -ldflags "-s -w -X main.Version=${STAMP}" \
-              -o "dist/${cmd}.exe" \
-              "./cmd/${cmd}"
-          done
-          ls -la dist/
+          $ErrorActionPreference = "Stop"
+          New-Item -ItemType Directory -Path dist -Force | Out-Null
+          foreach ($cmd in @("deckhand-sidecar", "deckhand-elevated-helper")) {
+            & go build -trimpath `
+              -ldflags "-s -w -X main.Version=$env:STAMP" `
+              -o "dist/$cmd.exe" `
+              "./cmd/$cmd"
+            if ($LASTEXITCODE -ne 0) { throw "go build $cmd failed" }
+          }
+          Get-ChildItem dist
 
       - name: Pub get
         working-directory: app
@@ -117,68 +114,67 @@ jobs:
         working-directory: app
         env:
           DH_VERSION: ${{ steps.v.outputs.version }}
-        shell: bash
         run: |
-          flutter build windows \
-            --release \
-            --dart-define=DECKHAND_VERSION="$DH_VERSION"
+          $ErrorActionPreference = "Stop"
+          & flutter build windows `
+            --release `
+            "--dart-define=DECKHAND_VERSION=$env:DH_VERSION"
+          if ($LASTEXITCODE -ne 0) { throw "flutter build windows failed" }
 
       # Drop the Go binaries next to deckhand.exe so the produced
       # artifact is a self-contained directory the user can run
       # directly. Production releases use the codesigned MSIX path
       # in release.yml; this is a smoke artifact.
       - name: Stage Go binaries next to deckhand.exe
-        shell: bash
         run: |
-          set -euo pipefail
-          REL="app/build/windows/x64/runner/Release"
-          if [ ! -d "$REL" ]; then
-            echo "::error ::no Release dir produced by flutter build at $REL"
-            ls -la app/build/windows/x64/runner/ || true
+          $ErrorActionPreference = "Stop"
+          $rel = "app/build/windows/x64/runner/Release"
+          if (-not (Test-Path $rel)) {
+            Write-Host "::error ::no Release dir produced by flutter build at $rel"
+            if (Test-Path "app/build/windows/x64/runner") {
+              Get-ChildItem "app/build/windows/x64/runner"
+            }
             exit 1
-          fi
-          cp sidecar/dist/deckhand-sidecar.exe "$REL/"
-          cp sidecar/dist/deckhand-elevated-helper.exe "$REL/"
-          ls -la "$REL/"
+          }
+          Copy-Item "sidecar/dist/deckhand-sidecar.exe" -Destination $rel
+          Copy-Item "sidecar/dist/deckhand-elevated-helper.exe" -Destination $rel
+          Get-ChildItem $rel
 
       - name: Sanity-check sidecar from inside the Release dir
-        shell: bash
         run: |
-          set -euo pipefail
-          REL="app/build/windows/x64/runner/Release"
+          $ErrorActionPreference = "Stop"
+          $rel = "app/build/windows/x64/runner/Release"
+          $sidecar = Join-Path $rel "deckhand-sidecar.exe"
           # Spawn the sidecar; ping; shutdown. If any of this fails
           # the binary is broken — fail the run.
-          (
-            echo '{"jsonrpc":"2.0","id":"1","method":"ping","params":{}}'
-            sleep 1
-            echo '{"jsonrpc":"2.0","id":"2","method":"shutdown","params":{}}'
-          ) | "$REL/deckhand-sidecar.exe" 2>/dev/null \
-            | tee /tmp/sidecar.out
-          grep -q '"sidecar_version"' /tmp/sidecar.out
+          $rpcInput = @(
+            '{"jsonrpc":"2.0","id":"1","method":"ping","params":{}}',
+            '{"jsonrpc":"2.0","id":"2","method":"shutdown","params":{}}'
+          ) -join "`n"
+          $out = $rpcInput | & $sidecar 2>$null
+          $out | Out-File -Encoding utf8 "$env:RUNNER_TEMP\sidecar.out"
+          Write-Host $out
+          if (-not ($out -match '"sidecar_version"')) {
+            throw "sidecar smoke test failed: no sidecar_version in output"
+          }
 
-      # Zip the Release directory into a single artifact. Unlike a
-      # macOS .app bundle, Windows Release/ is a flat directory tree
-      # of DLLs + the .exe; upload-artifact's auto-zip is fine here,
-      # but we zip explicitly so the artifact has a stable filename
-      # that includes the version stamp.
+      # Zip the Release directory into a single artifact. Windows
+      # Release/ is a flat directory tree of DLLs + the .exe;
+      # Compress-Archive produces a stable filename that includes
+      # the version stamp.
       - name: Package Release
-        shell: bash
+        env:
+          STAMP: ${{ steps.v.outputs.version }}
         run: |
-          set -euo pipefail
-          REL="app/build/windows/x64/runner/Release"
-          mkdir -p dist
-          # Use PowerShell's Compress-Archive equivalent via 7-Zip if
-          # available; otherwise fall back to a tar.gz (Windows 10+
-          # ships bsdtar). zip is preferred for Windows-native UX.
-          OUT="dist/deckhand-windows-x64-${{ steps.v.outputs.version }}.zip"
-          if command -v 7z >/dev/null 2>&1; then
-            7z a -tzip "$OUT" "./$REL/*" >/dev/null
-          else
-            powershell -NoProfile -Command \
-              "Compress-Archive -Path '$REL\\*' -DestinationPath '$OUT' -Force"
-          fi
-          ls -la dist/
-          du -sh dist/*.zip
+          $ErrorActionPreference = "Stop"
+          $rel = "app/build/windows/x64/runner/Release"
+          New-Item -ItemType Directory -Path dist -Force | Out-Null
+          $out = "dist/deckhand-windows-x64-$env:STAMP.zip"
+          if (Test-Path $out) { Remove-Item $out }
+          Compress-Archive -Path "$rel/*" -DestinationPath $out -Force
+          Get-ChildItem dist
+          $size = (Get-Item $out).Length / 1MB
+          Write-Host ("zip size: {0:N1} MB" -f $size)
 
       - uses: actions/upload-artifact@v4
         with:
