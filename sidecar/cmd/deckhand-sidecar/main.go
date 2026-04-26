@@ -10,6 +10,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -105,7 +106,18 @@ func main() {
 	// Hand os.Stdout directly to Serve; the server owns its own
 	// buffered writer + output mutex. Wrapping stdout twice at this
 	// layer was dead code and could hide partial writes.
+	//
+	// The `shutdown` RPC handler calls our `cancel` so the server's
+	// context is Done, which causes Serve to return context.Canceled.
+	// That's the documented graceful-exit path — treat it as success
+	// so callers (smoke tests, the Flutter parent process) see a
+	// clean exit code instead of conflating graceful shutdown with
+	// internal failure.
 	if err := server.Serve(ctx, reader, os.Stdout); err != nil {
+		if errors.Is(err, context.Canceled) {
+			logger.Info("sidecar.shutdown")
+			return
+		}
 		logger.Error("sidecar.serve_error", "error", err.Error())
 		os.Exit(1)
 	}
