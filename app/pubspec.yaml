@@ -17,7 +17,7 @@ dependencies:
   path_provider: ^2.1.0
   path: ^1.9.0
   cupertino_icons: ^1.0.8
-  window_manager: ^0.4.3
+  window_manager: ^0.5.1
 
   deckhand_core:
     path: ../packages/deckhand_core
