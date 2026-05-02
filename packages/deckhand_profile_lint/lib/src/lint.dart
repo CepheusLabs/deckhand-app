@@ -279,12 +279,20 @@ void _walkIdempotency(Map<String, dynamic> profile, List<LintFinding> out) {
 
 void _walkUrlsAndHashes(Object? node, String path, List<LintFinding> out) {
   if (node is Map<String, dynamic>) {
+    // Only flag `url` as needing https:// when this same node ALSO carries
+    // a `sha256` — i.e. when it's a download we're going to integrity-check
+    // (fresh_install_options, firmware-blob fetches, etc.). Verifier URLs
+    // that hit Moonraker / Klippy on the printer's LAN are http:// by
+    // design (Moonraker doesn't ship TLS, the trusted_clients list bounds
+    // the access scope, the endpoint is templated against {{host}}).
+    final hasSha = node['sha256'] is String;
     node.forEach((key, value) {
       final child = path.isEmpty ? key : '$path.$key';
-      if (key == 'url' && value is String) {
+      if (key == 'url' && value is String && hasSha) {
         if (!value.startsWith('https://')) {
           out.add(LintFinding(LintSeverity.error, child,
-              'url must be https://, got "$value"'));
+              'url must be https:// (this node has a sha256 — '
+              'it\'s a download), got "$value"'));
         }
       }
       if (key == 'sha256' && value is String) {
