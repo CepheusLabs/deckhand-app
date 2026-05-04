@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:crypto/crypto.dart';
 import 'package:deckhand_core/deckhand_core.dart';
 import 'package:meta/meta.dart';
 import 'package:path/path.dart' as p;
@@ -353,11 +354,10 @@ class ProcessElevatedHelperService implements ElevatedHelperService {
     );
     await stdoutFile.writeAsString('');
 
-    final argsWithEventsFile = <String>[
-      ...helperArgs,
-      '--events-file',
+    final argsWithEventsFile = _injectHelperEventsFile(
+      helperArgs,
       stdoutFile.path,
-    ];
+    );
     final argList = argsWithEventsFile.map(powerShellQuoteArg).join(',');
 
     // Two launch paths depending on whether we already have admin:
@@ -480,6 +480,7 @@ class ProcessElevatedHelperService implements ElevatedHelperService {
       }
     }
 
+    var keepDebugFiles = false;
     try {
       while (!processExited) {
         await Future<void>.delayed(const Duration(milliseconds: 150));
@@ -635,6 +636,11 @@ class ProcessElevatedHelperService implements ElevatedHelperService {
         throw ElevatedHelperException(helperError);
       }
       if (!sawStartedEvent) {
+        final recovered = await _recoverCompletedReadImage(helperArgs);
+        if (recovered != null) {
+          yield recovered;
+          return;
+        }
         // No "started" sentinel + exit 0 = the helper was NEVER
         // launched. With ErrorActionPreference=Stop + try/catch in
         // the PowerShell wrapper, this should now only happen if
@@ -650,6 +656,11 @@ class ProcessElevatedHelperService implements ElevatedHelperService {
         );
       }
       if (!sawDoneEvent) {
+        final recovered = await _recoverCompletedReadImage(helperArgs);
+        if (recovered != null) {
+          yield recovered;
+          return;
+        }
         // Started but didn't reach done. The op body failed mid-flight
         // without going through fatalf — surface whatever events we
         // did see + any stderr.
@@ -659,11 +670,16 @@ class ProcessElevatedHelperService implements ElevatedHelperService {
           'powershell stderr: ${errTail ?? "(empty)"}',
         );
       }
+    } catch (_) {
+      keepDebugFiles = true;
+      rethrow;
     } finally {
-      for (final f in [stdoutFile, File('${stdoutFile.path}.openerr')]) {
-        try {
-          if (await f.exists()) await f.delete();
-        } catch (_) {}
+      if (!keepDebugFiles) {
+        for (final f in [stdoutFile, File('${stdoutFile.path}.openerr')]) {
+          try {
+            if (await f.exists()) await f.delete();
+          } catch (_) {}
+        }
       }
     }
   }
@@ -819,6 +835,12 @@ Stream<FlashProgress> _dryRunHelperProgress({
 FlashProgress? parseHelperLineForTesting(String line) => _parseHelperLine(line);
 
 @visibleForTesting
+List<String> injectHelperEventsFileForTesting(
+  List<String> helperArgs,
+  String eventsPath,
+) => _injectHelperEventsFile(helperArgs, eventsPath);
+
+@visibleForTesting
 bool helperEventsContainDoneForTesting(String? events) =>
     _helperEventsContainDone(events);
 
@@ -829,6 +851,21 @@ bool helperEventsContainStartedForTesting(String? events) =>
 @visibleForTesting
 String? lastHelperErrorMessageForTesting(String? events) =>
     _lastHelperErrorMessage(events);
+
+@visibleForTesting
+Future<FlashProgress?> recoverCompletedReadImageForTesting(
+  List<String> helperArgs,
+) => _recoverCompletedReadImage(helperArgs);
+
+List<String> _injectHelperEventsFile(
+  List<String> helperArgs,
+  String eventsPath,
+) {
+  if (helperArgs.isEmpty) {
+    return ['--events-file', eventsPath];
+  }
+  return [helperArgs.first, '--events-file', eventsPath, ...helperArgs.skip(1)];
+}
 
 FlashProgress? _parseHelperLine(String line) {
   if (line.trim().isEmpty) return null;
@@ -905,6 +942,37 @@ String? _lastHelperErrorMessage(String? events) {
     }
   }
   return last;
+}
+
+Future<FlashProgress?> _recoverCompletedReadImage(
+  List<String> helperArgs,
+) async {
+  if (helperArgs.isEmpty || helperArgs.first != 'read-image') return null;
+  final outputPath = _argAfter(helperArgs, '--output');
+  final totalText = _argAfter(helperArgs, '--total-bytes');
+  final total = int.tryParse(totalText ?? '') ?? 0;
+  if (outputPath == null || outputPath.trim().isEmpty || total <= 0) {
+    return null;
+  }
+
+  final file = File(outputPath);
+  if (!await file.exists()) return null;
+  final length = await file.length();
+  if (length != total) return null;
+
+  final digest = await sha256.bind(file.openRead()).first;
+  return FlashProgress(
+    bytesDone: length,
+    bytesTotal: total,
+    phase: FlashPhase.done,
+    message: digest.toString(),
+  );
+}
+
+String? _argAfter(List<String> args, String flag) {
+  final i = args.indexOf(flag);
+  if (i < 0 || i + 1 >= args.length) return null;
+  return args[i + 1];
 }
 
 Iterable<Map<String, dynamic>> _decodeHelperEvents(String events) sync* {

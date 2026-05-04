@@ -11,6 +11,7 @@ import (
 	"bufio"
 	"context"
 	"errors"
+	"flag"
 	"fmt"
 	"log/slog"
 	"os"
@@ -34,6 +35,9 @@ Usage:
                                0 means healthy, 1 means a blocking issue
                                was found. Prints a human-readable report
                                to stdout.
+  deckhand-sidecar helper-smoke [--helper PATH] [--long-args]
+                               Launch the elevated helper with a harmless
+                               version probe and verify helper events work.
   deckhand-sidecar -h|--help   Show this message and exit 0.
   deckhand-sidecar --version   Print the sidecar version and exit 0.
 `
@@ -54,6 +58,28 @@ func main() {
 			passed, err := doctor.Run(ctx, os.Stdout, Version)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "[deckhand-sidecar] doctor: %v\n", err)
+				os.Exit(1)
+			}
+			if !passed {
+				os.Exit(1)
+			}
+			return
+		case "helper-smoke":
+			fs := flag.NewFlagSet("helper-smoke", flag.ExitOnError)
+			helperPath := fs.String("helper", "", "path to deckhand-elevated-helper; default is sibling of sidecar")
+			longArgs := fs.Bool("long-args", false, "include read-image-like extra args after the version op")
+			if err := fs.Parse(os.Args[2:]); err != nil {
+				fmt.Fprintf(os.Stderr, "[deckhand-sidecar] helper-smoke: %v\n", err)
+				os.Exit(2)
+			}
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			passed, err := doctor.RunHelperSmoke(ctx, os.Stdout, doctor.HelperSmokeOptions{
+				HelperPath: *helperPath,
+				LongArgs:   *longArgs,
+			})
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "[deckhand-sidecar] helper-smoke: %v\n", err)
 				os.Exit(1)
 			}
 			if !passed {

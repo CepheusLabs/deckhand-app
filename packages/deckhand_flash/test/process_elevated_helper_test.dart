@@ -184,6 +184,24 @@ void main() {
   });
 
   group('powerShellQuoteArg', () {
+    test('events-file is injected immediately after the operation', () {
+      final args = injectHelperEventsFileForTesting([
+        'read-image',
+        '--target',
+        'PhysicalDrive3',
+        '--output',
+        r'C:\tmp\backup.img',
+      ], r'C:\tmp\events.log');
+
+      expect(args.take(3), [
+        'read-image',
+        '--events-file',
+        r'C:\tmp\events.log',
+      ]);
+      expect(args, containsAllInOrder(['--target', 'PhysicalDrive3']));
+      expect(args, containsAllInOrder(['--output', r'C:\tmp\backup.img']));
+    });
+
     test('plain token is wrapped in double quotes', () {
       expect(powerShellQuoteArg('write-image'), '"write-image"');
       expect(powerShellQuoteArg('PhysicalDrive3'), '"PhysicalDrive3"');
@@ -229,6 +247,56 @@ void main() {
       expect(argList, contains('"--image"'));
       expect(argList, contains(r'"C:\Users\eknof\AppData\Local\Temp\img.iso"'));
       expect(argList.split(',').length, args.length);
+    });
+  });
+
+  group('completed read recovery', () {
+    test(
+      'hashes a full-size read-image output when helper events are lost',
+      () async {
+        final dir = await Directory.systemTemp.createTemp('deckhand-recover-');
+        addTearDown(() async {
+          if (await dir.exists()) await dir.delete(recursive: true);
+        });
+        final file = File('${dir.path}/backup.img');
+        await file.writeAsBytes([1, 2, 3, 4]);
+
+        final recovered = await recoverCompletedReadImageForTesting([
+          'read-image',
+          '--output',
+          file.path,
+          '--total-bytes',
+          '4',
+        ]);
+
+        expect(recovered, isNotNull);
+        expect(recovered!.phase, FlashPhase.done);
+        expect(recovered.bytesDone, 4);
+        expect(recovered.bytesTotal, 4);
+        expect(
+          recovered.message,
+          '9f64a747e1b97f131fabb6b447296c9b6f0201e79fb3c5356e6c77e89b6a806a',
+        );
+      },
+    );
+
+    test('does not recover partial read-image outputs', () async {
+      final dir = await Directory.systemTemp.createTemp('deckhand-recover-');
+      addTearDown(() async {
+        if (await dir.exists()) await dir.delete(recursive: true);
+      });
+      final file = File('${dir.path}/backup.img');
+      await file.writeAsBytes([1, 2, 3]);
+
+      final recovered = await recoverCompletedReadImageForTesting([
+        'read-image',
+        '--output',
+        file.path,
+        '--total-bytes',
+        '4',
+      ]);
+
+      expect(recovered, isNull);
     });
   });
 }
