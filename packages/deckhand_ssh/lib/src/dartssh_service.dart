@@ -27,6 +27,7 @@ class DartsshService implements SshService {
     int port = 22,
     required SshCredential credential,
     bool acceptHostKey = false,
+    String? acceptedHostFingerprint,
   }) async {
     final socket = await SSHSocket.connect(host, port);
 
@@ -39,6 +40,10 @@ class DartsshService implements SshService {
     var unpinned = false;
 
     Future<bool> verifier(String type, Uint8List fingerprint) async {
+      // The verifier must compare against the key fingerprint from
+      // dartssh2's actual SSH connection. A pre-scan from ssh-keyscan
+      // would be a separate, unauthenticated network observation and
+      // cannot prove the server presented the same key here.
       final fpHex = _formatFingerprint(type, fingerprint);
       seenFingerprint = fpHex;
 
@@ -50,6 +55,11 @@ class DartsshService implements SshService {
       pinnedFingerprint = await _security.pinnedHostFingerprint(host);
       if (pinnedFingerprint == null) {
         if (acceptHostKey) {
+          if (acceptedHostFingerprint == null ||
+              !_constantTimeEquals(acceptedHostFingerprint, fpHex)) {
+            mismatch = true;
+            return false;
+          }
           await _security.pinHostFingerprint(host: host, fingerprint: fpHex);
           return true;
         }
@@ -111,13 +121,11 @@ class DartsshService implements SshService {
     );
   }
 
-  /// Format a fingerprint as `type SHA256:<hex-pairs>`. The MD5 form
-  /// dartssh2 hands us is historically weak, so we pair it with the
-  /// algorithm type and a hex rendering - enough for the user to
-  /// compare against `ssh-keygen -l -E sha256 -f ...` output on the
-  /// printer.
+  /// Format dartssh2's connection fingerprint as `type MD5:<hex>`.
+  /// This is the only value used for trust decisions because it is
+  /// the fingerprint of the key presented on this SSH connection.
   String _formatFingerprint(String type, Uint8List fingerprint) {
-    final buf = StringBuffer(type)..write(' ');
+    final buf = StringBuffer(type)..write(' MD5:');
     for (var i = 0; i < fingerprint.length; i++) {
       if (i > 0) buf.write(':');
       buf.write(fingerprint[i].toRadixString(16).padLeft(2, '0'));
@@ -143,6 +151,7 @@ class DartsshService implements SshService {
     int port = 22,
     required List<SshCredential> credentials,
     bool acceptHostKey = false,
+    String? acceptedHostFingerprint,
   }) async {
     Object? lastError;
     for (final cred in credentials) {
@@ -152,6 +161,7 @@ class DartsshService implements SshService {
           port: port,
           credential: cred,
           acceptHostKey: acceptHostKey,
+          acceptedHostFingerprint: acceptedHostFingerprint,
         );
       } on HostKeyMismatchException {
         // Host-key errors are not credential-failure - don't silently
@@ -201,21 +211,40 @@ class DartsshService implements SshService {
       ssh.stdin.add(utf8.encode('$sudoPassword\n'));
       await ssh.stdin.close();
     }
-    final stdoutBytes = <int>[];
-    final stderrBytes = <int>[];
-    final stdoutSub = ssh.stdout.listen(stdoutBytes.addAll);
-    final stderrSub = ssh.stderr.listen(stderrBytes.addAll);
-
-    await ssh.done.timeout(
-      timeout,
-      onTimeout: () {
-        ssh.close();
-        throw TimeoutException('ssh.run timed out after $timeout');
-      },
+    // Drain stdout/stderr to completion BEFORE returning. The previous
+    // implementation `await`ed `ssh.done` and then immediately
+    // cancelled the listeners — which dropped any bytes buffered
+    // between `done` firing and the next event-loop turn that would
+    // have pumped them through. For payloads small enough to fit in a
+    // single SSH packet (a 23-byte file via `cat`, a `pwd` result),
+    // this manifested as silently empty `stdout` even though `cat`
+    // exited 0 and the underlying file was perfectly fine.
+    //
+    // `fold` over each stream returns a future that only completes
+    // when the stream is closed (which happens when the channel
+    // closes). Wrapping the wait in `Future.wait` with `ssh.done`
+    // means we wait for ALL THREE: command exit, stdout drain, and
+    // stderr drain. The timeout still fires if anything hangs.
+    final stdoutFuture = ssh.stdout.fold<List<int>>(
+      <int>[],
+      (acc, chunk) => acc..addAll(chunk),
     );
-
-    await stdoutSub.cancel();
-    await stderrSub.cancel();
+    final stderrFuture = ssh.stderr.fold<List<int>>(
+      <int>[],
+      (acc, chunk) => acc..addAll(chunk),
+    );
+    try {
+      await Future.wait([
+        ssh.done,
+        stdoutFuture,
+        stderrFuture,
+      ]).timeout(timeout);
+    } on TimeoutException {
+      ssh.close();
+      throw TimeoutException('ssh.run timed out after $timeout');
+    }
+    final stdoutBytes = await stdoutFuture;
+    final stderrBytes = await stderrFuture;
 
     return SshCommandResult(
       stdout: utf8.decode(stdoutBytes, allowMalformed: true),
@@ -234,6 +263,47 @@ class DartsshService implements SshService {
         yield line;
       }
     }
+  }
+
+  @override
+  Stream<String> runStreamMerged(SshSession session, String command) {
+    final client = _requireClient(session);
+    final controller = StreamController<String>();
+    () async {
+      final ssh = await client.execute(command);
+      // Carriage-return-aware splitter: git clone (and many other
+      // progress-aware tools) overwrites a single line via \r without
+      // terminating it with \n. LineSplitter would buffer those
+      // updates indefinitely. Yield on either \r or \n instead so the
+      // UI sees progress as it lands.
+      final pending = StringBuffer();
+      void emit(List<int> chunk) {
+        if (chunk.isEmpty) return;
+        final s = utf8.decode(chunk, allowMalformed: true);
+        for (var i = 0; i < s.length; i++) {
+          final ch = s[i];
+          if (ch == '\n' || ch == '\r') {
+            if (pending.isNotEmpty) {
+              controller.add(pending.toString());
+              pending.clear();
+            }
+          } else {
+            pending.write(ch);
+          }
+        }
+      }
+
+      final out = ssh.stdout.listen(emit);
+      final err = ssh.stderr.listen(emit);
+      await ssh.done;
+      await out.cancel();
+      await err.cancel();
+      if (pending.isNotEmpty) {
+        controller.add(pending.toString());
+      }
+      await controller.close();
+    }();
+    return controller.stream;
   }
 
   @override
@@ -301,10 +371,17 @@ class DartsshService implements SshService {
     // path exists. The shell quote pattern matches every other
     // SSH command in the codebase (shellSingleQuote in deckhand_core).
     final lines = paths
-        .map((p) => "du -sb ${shellSingleQuote(p)} 2>/dev/null || "
-            "printf '0\\t%s\\n' ${shellSingleQuote(p)}")
+        .map(
+          (p) =>
+              "du -sb ${shellSingleQuote(p)} 2>/dev/null || "
+              "printf '0\\t%s\\n' ${shellSingleQuote(p)}",
+        )
         .join(' ; ');
-    final result = await run(session, lines, timeout: const Duration(seconds: 30));
+    final result = await run(
+      session,
+      lines,
+      timeout: const Duration(seconds: 30),
+    );
     final sizes = <String, int>{};
     for (final line in result.stdout.split('\n')) {
       final trimmed = line.trim();
@@ -342,7 +419,6 @@ class DartsshService implements SshService {
     PasswordCredential(:final user) => user,
     KeyCredential(:final user) => user,
   };
-
 }
 
 // SshAuthException was duplicated here and in deckhand_core/errors.dart.

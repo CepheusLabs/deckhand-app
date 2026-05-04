@@ -18,6 +18,11 @@ import 'package:yaml/yaml.dart';
 /// directly), the service reads `registry.yaml` and `printers/<id>/` from
 /// that directory and skips all network fetches. Intended for profile
 /// authoring and local testing before a deckhand-profiles release is cut.
+///
+/// The local-dir override is **dev-only**: in AOT-compiled release builds
+/// (`dart.vm.product` = true) both the env var and direct
+/// [localProfilesDir] parameter are ignored, so a hostile environment
+/// or settings file cannot bypass the signed-tag chain.
 class SidecarProfileService implements ProfileService {
   SidecarProfileService({
     required this.sidecar,
@@ -30,12 +35,23 @@ class SidecarProfileService implements ProfileService {
     Dio? dio,
     TrustKeyring? trustKeyring,
     bool requireSignedTag = false,
-  })  : _security = security,
-        _dio = (dio ?? Dio())..interceptors.add(EgressLogInterceptor(security)),
-        _trustKeyring = trustKeyring,
-        _requireSignedTag = requireSignedTag,
-        localProfilesDir =
-            localProfilesDir ?? Platform.environment['DECKHAND_PROFILES_LOCAL'];
+  }) : _security = security,
+       _dio = (dio ?? Dio())..interceptors.add(EgressLogInterceptor(security)),
+       _trustKeyring = trustKeyring,
+       _requireSignedTag = requireSignedTag,
+       localProfilesDir = _effectiveLocalProfilesDir(localProfilesDir);
+
+  /// Reads local profile overrides only in non-release builds. Release
+  /// builds (`dart compile exe`, `flutter build --release`) compile out
+  /// to `null` regardless of env vars or constructor arguments.
+  static String? _effectiveLocalProfilesDir(String? explicit) {
+    const isRelease = bool.fromEnvironment(
+      'dart.vm.product',
+      defaultValue: false,
+    );
+    if (isRelease) return null;
+    return explicit ?? Platform.environment['DECKHAND_PROFILES_LOCAL'];
+  }
 
   final SidecarConnection sidecar;
   final DeckhandPaths paths;
@@ -80,6 +96,14 @@ class SidecarProfileService implements ProfileService {
             status: e['status'] as String? ?? 'alpha',
             directory: e['directory'] as String? ?? 'printers/${e['id']}',
             latestTag: e['latest_tag'] as String?,
+            // Optional spec-card fields written by the registry
+            // generator from each profile.yaml's hardware block. May
+            // be absent on older registries — the picker tolerates
+            // null and renders "—" in the corresponding spec cell.
+            sbc: e['sbc'] as String?,
+            kinematics: e['kinematics'] as String?,
+            mcu: e['mcu'] as String?,
+            extras: e['extras'] as String?,
           ),
         )
         .toList();
@@ -90,7 +114,9 @@ class SidecarProfileService implements ProfileService {
   Future<ProfileCacheEntry> ensureCached({
     required String profileId,
     String? ref,
+    bool force = false,
   }) async {
+    _validateProfileId(profileId);
     final local = localProfilesDir;
     if (local != null) {
       final printerDir = p.join(local, 'printers', profileId);
@@ -109,16 +135,22 @@ class SidecarProfileService implements ProfileService {
     }
 
     final resolvedRef = ref ?? 'main';
+    _validateGitRef(resolvedRef);
     final dest = p.join(paths.cacheDir, 'profiles', resolvedRef);
 
     // Semver-tagged refs (v1.2.3, v26.4.18-1247) are immutable - a tag
     // pointing at a given commit never moves, so caching by ref name is
     // safe. Branch refs like `main` ARE mutable; caching them by name
     // causes users to see whatever snapshot was pulled first, forever.
-    // Invalidate those before every fetch.
+    // Invalidate those before every fetch. `force` overrides immutable
+    // caching too, for the "I just pushed a profile fix and need it
+    // NOW" case.
     final isImmutableRef = _looksLikeTag(resolvedRef);
+    final keyring = _trustKeyring;
+    final mustVerifyCachedRef =
+        isImmutableRef && !force && keyring != null && !keyring.isPlaceholder;
     if (await Directory(dest).exists()) {
-      if (isImmutableRef) {
+      if (isImmutableRef && !force && !mustVerifyCachedRef) {
         return ProfileCacheEntry(
           profileId: profileId,
           ref: resolvedRef,
@@ -126,11 +158,13 @@ class SidecarProfileService implements ProfileService {
           resolvedSha: '',
         );
       }
-      try {
-        await Directory(dest).delete(recursive: true);
-      } catch (_) {
-        // Best-effort - if the directory is locked, the sidecar clone
-        // will fail anyway and surface a clearer error.
+      if (!mustVerifyCachedRef) {
+        try {
+          await Directory(dest).delete(recursive: true);
+        } catch (_) {
+          // Best-effort - if the directory is locked, the sidecar clone
+          // will fail anyway and surface a clearer error.
+        }
       }
     }
 
@@ -140,7 +174,6 @@ class SidecarProfileService implements ProfileService {
       'ref': resolvedRef,
       'dest': dest,
     };
-    final keyring = _trustKeyring;
     if (keyring != null && !keyring.isPlaceholder) {
       // Production wiring path: the bundled keyring is real, so we
       // forward it on every fetch. The sidecar verifies signed tags
@@ -172,6 +205,23 @@ class SidecarProfileService implements ProfileService {
     final text = await file.readAsString();
     return parseProfileYaml(text);
   }
+
+  void _validateProfileId(String profileId) {
+    if (!RegExp(r'^[a-z0-9-]+$').hasMatch(profileId)) {
+      throw ProfileFormatException('unsafe profile id "$profileId"');
+    }
+  }
+
+  void _validateGitRef(String ref) {
+    if (ref.isEmpty ||
+        ref.startsWith('-') ||
+        ref.startsWith('/') ||
+        ref.contains('..') ||
+        ref.contains('\\') ||
+        !RegExp(r'^[A-Za-z0-9._/-]+$').hasMatch(ref)) {
+      throw ProfileFormatException('unsafe profile ref "$ref"');
+    }
+  }
 }
 
 /// Thrown when a profile.yaml is missing the fields the wizard treats
@@ -201,9 +251,7 @@ class ProfileFormatException implements Exception {
 PrinterProfile parseProfileYaml(String yamlText) {
   final yaml = loadYaml(yamlText);
   if (yaml is! YamlMap) {
-    throw const ProfileFormatException(
-      'profile.yaml root must be a mapping',
-    );
+    throw const ProfileFormatException('profile.yaml root must be a mapping');
   }
   final raw = _deepConvert(yaml) as Map<String, dynamic>;
   if (!raw.containsKey('schema_version')) {

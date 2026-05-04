@@ -1,6 +1,10 @@
+import 'dart:io';
+
 import 'package:deckhand_core/deckhand_core.dart';
+import 'package:deckhand_flash/deckhand_flash.dart';
 import 'package:deckhand_profiles/src/sidecar_profile_service.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:path/path.dart' as p;
 
 /// Tests for [parseProfileYaml], the pure-string seam for
 /// [SidecarProfileService.load]. We exercise it directly instead of
@@ -72,11 +76,9 @@ nested_future_block:
       final profile = parseProfileYaml(withUnknown);
       expect(profile.id, 'future-printer');
       expect(profile.raw['brand_new_key'], 'some-value');
-      expect(profile.raw['nested_future_block'],
-          isA<Map<String, dynamic>>());
+      expect(profile.raw['nested_future_block'], isA<Map<String, dynamic>>());
       expect(
-        (profile.raw['nested_future_block']
-            as Map<String, dynamic>)['color'],
+        (profile.raw['nested_future_block'] as Map<String, dynamic>)['color'],
         'orange',
       );
     });
@@ -91,79 +93,139 @@ display_name: WIP
 status: stub
 ''';
       final profile = parseProfileYaml(stubProfile);
-      expect(profile.status, ProfileStatus.stub,
-          reason: 'status=stub must survive the parse round-trip');
+      expect(
+        profile.status,
+        ProfileStatus.stub,
+        reason: 'status=stub must survive the parse round-trip',
+      );
     });
   });
 
-  group('parseProfileYaml rejects malformed profiles with a clean exception',
-      () {
-    test('missing schema_version throws ProfileFormatException '
-        '(not a cast/null error)', () {
-      const noSchema = '''
+  group(
+    'parseProfileYaml rejects malformed profiles with a clean exception',
+    () {
+      test('missing schema_version throws ProfileFormatException '
+          '(not a cast/null error)', () {
+        const noSchema = '''
 profile_id: test
 profile_version: 0.1.0
 display_name: Test
 status: alpha
 ''';
-      expect(
-        () => parseProfileYaml(noSchema),
-        throwsA(
-          isA<ProfileFormatException>().having(
-            (e) => e.message,
-            'message',
-            contains('schema_version'),
+        expect(
+          () => parseProfileYaml(noSchema),
+          throwsA(
+            isA<ProfileFormatException>().having(
+              (e) => e.message,
+              'message',
+              contains('schema_version'),
+            ),
           ),
-        ),
-      );
-    });
+        );
+      });
 
-    test('missing profile_id throws ProfileFormatException', () {
-      const noId = '''
+      test('missing profile_id throws ProfileFormatException', () {
+        const noId = '''
 schema_version: 1
 profile_version: 0.1.0
 display_name: Test
 status: alpha
 ''';
-      expect(
-        () => parseProfileYaml(noId),
-        throwsA(
-          isA<ProfileFormatException>().having(
-            (e) => e.message,
-            'message',
-            contains('profile_id'),
+        expect(
+          () => parseProfileYaml(noId),
+          throwsA(
+            isA<ProfileFormatException>().having(
+              (e) => e.message,
+              'message',
+              contains('profile_id'),
+            ),
           ),
-        ),
-      );
-    });
+        );
+      });
 
-    test('empty profile_id throws ProfileFormatException', () {
-      const emptyId = '''
+      test('empty profile_id throws ProfileFormatException', () {
+        const emptyId = '''
 schema_version: 1
 profile_id: ""
 profile_version: 0.1.0
 display_name: Test
 status: alpha
 ''';
-      expect(() => parseProfileYaml(emptyId),
-          throwsA(isA<ProfileFormatException>()));
-    });
+        expect(
+          () => parseProfileYaml(emptyId),
+          throwsA(isA<ProfileFormatException>()),
+        );
+      });
 
-    test('non-mapping root throws ProfileFormatException', () {
-      // A YAML list at the root (a common copy-paste mistake when
-      // authors paste fragment content) must fail cleanly.
-      const listRoot = '''
+      test('non-mapping root throws ProfileFormatException', () {
+        // A YAML list at the root (a common copy-paste mistake when
+        // authors paste fragment content) must fail cleanly.
+        const listRoot = '''
 - one
 - two
 - three
 ''';
-      expect(() => parseProfileYaml(listRoot),
-          throwsA(isA<ProfileFormatException>()));
+        expect(
+          () => parseProfileYaml(listRoot),
+          throwsA(isA<ProfileFormatException>()),
+        );
+      });
+
+      test('ProfileFormatException.toString includes the message', () {
+        const e = ProfileFormatException('missing field `foo`');
+        expect(e.toString(), contains('missing field `foo`'));
+      });
+    },
+  );
+
+  group('SidecarProfileService.ensureCached path policy', () {
+    test('rejects traversal refs before touching cache or sidecar', () async {
+      final tmp = await Directory.systemTemp.createTemp(
+        'deckhand-profile-service-',
+      );
+      addTearDown(() async => tmp.delete(recursive: true));
+      final sidecar = _FakeSidecar();
+      final svc = SidecarProfileService(
+        sidecar: sidecar,
+        paths: DeckhandPaths(
+          cacheDir: p.join(tmp.path, 'cache'),
+          stateDir: p.join(tmp.path, 'state'),
+          logsDir: p.join(tmp.path, 'logs'),
+          settingsFile: p.join(tmp.path, 'settings.json'),
+        ),
+        security: _AllowAllSecurity(),
+      );
+
+      await expectLater(
+        svc.ensureCached(profileId: 'test-printer', ref: '../../outside'),
+        throwsA(isA<ProfileFormatException>()),
+      );
+      expect(sidecar.calls, isEmpty);
     });
 
-    test('ProfileFormatException.toString includes the message', () {
-      const e = ProfileFormatException('missing field `foo`');
-      expect(e.toString(), contains('missing field `foo`'));
+    test('rejects unsafe profile ids before local path construction', () async {
+      final tmp = await Directory.systemTemp.createTemp(
+        'deckhand-profile-service-',
+      );
+      addTearDown(() async => tmp.delete(recursive: true));
+      final sidecar = _FakeSidecar();
+      final svc = SidecarProfileService(
+        sidecar: sidecar,
+        paths: DeckhandPaths(
+          cacheDir: p.join(tmp.path, 'cache'),
+          stateDir: p.join(tmp.path, 'state'),
+          logsDir: p.join(tmp.path, 'logs'),
+          settingsFile: p.join(tmp.path, 'settings.json'),
+        ),
+        security: _AllowAllSecurity(),
+        localProfilesDir: tmp.path,
+      );
+
+      await expectLater(
+        svc.ensureCached(profileId: '../escape'),
+        throwsA(isA<ProfileFormatException>()),
+      );
+      expect(sidecar.calls, isEmpty);
     });
   });
 
@@ -171,4 +233,93 @@ status: alpha
   // through File I/O + an actual sidecar process for `ensureCached`.
   // That's covered in the wizard-level integration harness. The pure
   // parsing contract is fully covered here.
+}
+
+class _FakeSidecar implements SidecarConnection {
+  final calls = <({String method, Map<String, dynamic> params})>[];
+
+  @override
+  Future<Map<String, dynamic>> call(
+    String method,
+    Map<String, dynamic> params,
+  ) async {
+    calls.add((method: method, params: params));
+    return const <String, dynamic>{};
+  }
+
+  @override
+  Stream<SidecarEvent> callStreaming(
+    String method,
+    Map<String, dynamic> params,
+  ) => const Stream.empty();
+
+  @override
+  Stream<SidecarNotification> get notifications => const Stream.empty();
+
+  @override
+  Stream<SidecarNotification> subscribeToOperation(String operationId) =>
+      const Stream.empty();
+
+  @override
+  Future<void> shutdown() async {}
+}
+
+class _AllowAllSecurity implements SecurityService {
+  @override
+  Future<ConfirmationToken> issueConfirmationToken({
+    required String operation,
+    required String target,
+    Duration ttl = const Duration(seconds: 60),
+  }) async => ConfirmationToken(
+    value: 'token-0123456789abcdef',
+    expiresAt: DateTime.now().add(ttl),
+    operation: operation,
+  );
+
+  @override
+  bool consumeToken(String value, String operation) => true;
+
+  @override
+  Future<Map<String, bool>> requestHostApprovals(List<String> hosts) async => {
+    for (final host in hosts) host: true,
+  };
+
+  @override
+  Future<bool> isHostAllowed(String host) async => true;
+
+  @override
+  Future<void> approveHost(String host) async {}
+
+  @override
+  Future<void> revokeHost(String host) async {}
+
+  @override
+  Future<List<String>> listApprovedHosts() async => const [];
+
+  @override
+  Future<void> pinHostFingerprint({
+    required String host,
+    required String fingerprint,
+  }) async {}
+
+  @override
+  Future<String?> pinnedHostFingerprint(String host) async => null;
+
+  @override
+  Future<void> forgetHostFingerprint(String host) async {}
+
+  @override
+  Future<Map<String, String>> listPinnedFingerprints() async => const {};
+
+  @override
+  Future<String?> getGitHubToken() async => null;
+
+  @override
+  Future<void> setGitHubToken(String? token) async {}
+
+  @override
+  Stream<EgressEvent> get egressEvents => const Stream.empty();
+
+  @override
+  void recordEgress(EgressEvent event) {}
 }

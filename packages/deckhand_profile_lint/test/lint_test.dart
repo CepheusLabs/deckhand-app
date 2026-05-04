@@ -13,22 +13,28 @@ void main() {
   });
 
   tearDown(() {
-    try { tmp.deleteSync(recursive: true); } catch (_) {}
+    try {
+      tmp.deleteSync(recursive: true);
+    } catch (_) {}
   });
 
   test('accepts a minimal valid profile', () async {
     _writeRegistry(tmp, ['good-printer']);
     _writeProfile(tmp, 'good-printer', _minimalValidProfile('good-printer'));
     final report = await runProfileLint(['--root', tmp.path]);
-    expect(report.hasErrors, isFalse,
-        reason: report.results
-            .expand((r) => r.findings.map((f) => '${r.file}: ${f.message}'))
-            .join('\n'));
+    expect(
+      report.hasErrors,
+      isFalse,
+      reason: report.results
+          .expand((r) => r.findings.map((f) => '${r.file}: ${f.message}'))
+          .join('\n'),
+    );
   });
 
   test('flags http:// urls as an error', () async {
     _writeRegistry(tmp, ['bad-url']);
-    final profile = '${_minimalValidProfile('bad-url')}'
+    final profile =
+        '${_minimalValidProfile('bad-url')}'
         '\nflows:\n  fresh_flash:\n    enabled: true\n    images:\n      - id: test\n        display_name: Test\n        url: "http://insecure.example/img.xz"\n        sha256: "${"a" * 64}"\n';
     _writeProfile(tmp, 'bad-url', profile);
     final report = await runProfileLint(['--root', tmp.path]);
@@ -37,11 +43,117 @@ void main() {
 
   test('flags malformed sha256', () async {
     _writeRegistry(tmp, ['bad-hash']);
-    final profile = '${_minimalValidProfile('bad-hash')}'
+    final profile =
+        '${_minimalValidProfile('bad-hash')}'
         '\nflows:\n  fresh_flash:\n    images:\n      - id: test\n        display_name: Test\n        url: "https://example/img.xz"\n        sha256: "not-a-hash"\n';
     _writeProfile(tmp, 'bad-hash', profile);
     final report = await runProfileLint(['--root', tmp.path]);
     expect(report.hasErrors, isTrue);
+  });
+
+  test('flags release assets missing sha256', () async {
+    _writeRegistry(tmp, ['release-no-hash']);
+    final profile =
+        '${_minimalValidProfile('release-no-hash')}'
+        '\nstack:\n  webui:\n    release_repo: fluidd-core/fluidd\n'
+        '    asset_pattern: fluidd.zip\n'
+        '    install_path: ~/fluidd\n';
+    _writeProfile(tmp, 'release-no-hash', profile);
+    final report = await runProfileLint(['--root', tmp.path]);
+    expect(report.hasErrors, isTrue);
+    final messages = report.results
+        .expand((r) => r.findings.map((f) => f.message))
+        .join('\n');
+    expect(messages, contains('release asset'));
+  });
+
+  test('flags OS image downloads missing sha256', () async {
+    _writeRegistry(tmp, ['os-no-hash']);
+    final profile =
+        '${_minimalValidProfile('os-no-hash')}'
+        '\nos:\n  fresh_install_options:\n'
+        '    - id: debian\n'
+        '      display_name: Debian\n'
+        '      url: "https://example.com/debian.img"\n';
+    _writeProfile(tmp, 'os-no-hash', profile);
+    final report = await runProfileLint(['--root', tmp.path]);
+    expect(report.hasErrors, isTrue);
+    final messages = report.results
+        .expand((r) => r.findings.map((f) => f.message))
+        .join('\n');
+    expect(messages, contains('OS image'));
+  });
+
+  test('flags snapshot paths that look like tar options', () async {
+    _writeRegistry(tmp, ['tar-option-path']);
+    final profile =
+        '${_minimalValidProfile('tar-option-path')}'
+        '\nstock_os:\n  snapshot_paths:\n'
+        '    - id: bad\n'
+        '      display_name: Bad\n'
+        '      paths:\n'
+        '        - "--checkpoint-action=exec=touch /tmp/pwned"\n';
+    _writeProfile(tmp, 'tar-option-path', profile);
+    final report = await runProfileLint(['--root', tmp.path]);
+    expect(report.hasErrors, isTrue);
+    final messages = report.results
+        .expand((r) => r.findings.map((f) => f.message))
+        .join('\n');
+    expect(messages, contains('snapshot path'));
+  });
+
+  test('flags unsafe script interpreters', () async {
+    _writeRegistry(tmp, ['bad-interpreter']);
+    final profile =
+        '${_minimalValidProfile('bad-interpreter')}'
+        '\nflows:\n  stock_keep:\n    enabled: true\n    steps:\n'
+        '      - id: injected\n'
+        '        kind: script\n'
+        '        path: ./scripts/noop.sh\n'
+        '        interpreter: "bash; touch /tmp/pwned"\n';
+    _writeProfile(tmp, 'bad-interpreter', profile);
+    final report = await runProfileLint(['--root', tmp.path]);
+    expect(report.hasErrors, isTrue);
+    final messages = report.results
+        .expand((r) => r.findings.map((f) => f.message))
+        .join('\n');
+    expect(messages, contains('script interpreter'));
+  });
+
+  test('flags unsafe git repo and ref values', () async {
+    _writeRegistry(tmp, ['bad-git']);
+    final profile =
+        '${_minimalValidProfile('bad-git')}'
+        '\nfirmware:\n  choices:\n'
+        '    - id: fw\n'
+        '      display_name: Firmware\n'
+        '      repo: "https://token@example.com/repo.git"\n'
+        '      ref: "--upload-pack=touch-pwned"\n';
+    _writeProfile(tmp, 'bad-git', profile);
+    final report = await runProfileLint(['--root', tmp.path]);
+    expect(report.hasErrors, isTrue);
+    final messages = report.results
+        .expand((r) => r.findings.map((f) => f.message))
+        .join('\n');
+    expect(messages, contains('git repo'));
+    expect(messages, contains('git ref'));
+  });
+
+  test('flags release asset patterns with path separators', () async {
+    _writeRegistry(tmp, ['bad-asset-pattern']);
+    final profile =
+        '${_minimalValidProfile('bad-asset-pattern')}'
+        '\nstack:\n  webui:\n    release_repo: fluidd-core/fluidd\n'
+        '    asset_pattern: "../fluidd.zip"\n'
+        '    sha256: "${"a" * 64}"\n'
+        '    install_path: ~/fluidd\n';
+    _writeProfile(tmp, 'bad-asset-pattern', profile);
+    final report = await runProfileLint(['--root', tmp.path]);
+    expect(report.hasErrors, isTrue);
+    final messages = report.results
+        .expand((r) => r.findings.map((f) => f.message))
+        .join('\n');
+    expect(messages, contains('asset_pattern'));
   });
 
   test('flags folder/profile_id mismatch', () async {
@@ -59,11 +171,12 @@ void main() {
   });
 
   test('status=stub is a warning that --strict escalates to error', () async {
-    _writeRegistry(tmp, ['still-stub']);
-    final stub = _minimalValidProfile('still-stub').replaceAll(
-      'status: stable',
-      'status: stub',
-    );
+    // Mirror the stub status in the registry too — the drift check
+    // would otherwise fire and contaminate the assertion.
+    _writeRegistryWithStatus(tmp, 'still-stub', 'stub');
+    final stub = _minimalValidProfile(
+      'still-stub',
+    ).replaceAll('status: stable', 'status: stub');
     _writeProfile(tmp, 'still-stub', stub);
     final lenient = await runProfileLint(['--root', tmp.path]);
     expect(lenient.hasErrors, isFalse);
@@ -71,10 +184,78 @@ void main() {
     expect(strict.hasErrors, isTrue);
   });
 
+  group('registry-drift detection', () {
+    test('flags status drift between registry and profile', () async {
+      // Reproduces the production bug: registry says alpha, profile
+      // says beta. Picker reads from registry and shows stale state.
+      _writeRegistryWithStatus(tmp, 'arco', 'alpha');
+      final profile = _minimalValidProfile(
+        'arco',
+      ).replaceAll('status: stable', 'status: beta');
+      _writeProfile(tmp, 'arco', profile);
+      final report = await runProfileLint(['--root', tmp.path]);
+      expect(
+        report.hasErrors,
+        isTrue,
+        reason: 'lint should flag status drift between registry and profile',
+      );
+      final messages = report.results
+          .expand((r) => r.findings.map((f) => f.message))
+          .toList();
+      expect(
+        messages.any((m) => m.contains('alpha') && m.contains('beta')),
+        isTrue,
+        reason:
+            'finding should call out both the registry and profile values, '
+            'got: ${messages.join(' | ')}',
+      );
+    });
+
+    test('passes when registry mirrors profile metadata exactly', () async {
+      _writeRegistry(tmp, ['matched']);
+      _writeProfile(tmp, 'matched', _minimalValidProfile('matched'));
+      final report = await runProfileLint(['--root', tmp.path]);
+      expect(report.hasErrors, isFalse);
+    });
+
+    test('--regenerate-registry rewrites registry from profile', () async {
+      _writeRegistryWithStatus(tmp, 'arco', 'alpha');
+      final profile = _minimalValidProfile(
+        'arco',
+      ).replaceAll('status: stable', 'status: beta');
+      _writeProfile(tmp, 'arco', profile);
+
+      final regen = await runProfileLint([
+        '--root',
+        tmp.path,
+        '--regenerate-registry',
+      ]);
+      expect(regen.hasErrors, isFalse);
+      final regenContent = File(
+        p.join(tmp.path, 'registry.yaml'),
+      ).readAsStringSync();
+      expect(
+        regenContent,
+        contains('status: beta'),
+        reason: 'regenerated registry should reflect the profile',
+      );
+      expect(
+        regenContent,
+        isNot(contains('status: alpha')),
+        reason: 'regenerated registry should drop the stale alpha',
+      );
+
+      // Subsequent lint pass should be clean.
+      final lint = await runProfileLint(['--root', tmp.path]);
+      expect(lint.hasErrors, isFalse);
+    });
+  });
+
   group('idempotency contract', () {
     test('warns on a step missing the idempotency block', () async {
       _writeRegistry(tmp, ['missing-idem']);
-      final profile = '${_minimalValidProfile('missing-idem')}'
+      final profile =
+          '${_minimalValidProfile('missing-idem')}'
           '\nflows:\n  stock_keep:\n    enabled: true\n    steps:\n'
           '      - id: install_klipper\n'
           '        kind: install_firmware\n';
@@ -88,21 +269,25 @@ void main() {
       expect(allMessages, contains('idempotency'));
     });
 
-    test('--strict turns the missing-idempotency warning into an error',
-        () async {
-      _writeRegistry(tmp, ['strict-idem']);
-      final profile = '${_minimalValidProfile('strict-idem')}'
-          '\nflows:\n  stock_keep:\n    enabled: true\n    steps:\n'
-          '      - id: install_klipper\n'
-          '        kind: install_firmware\n';
-      _writeProfile(tmp, 'strict-idem', profile);
-      final strict = await runProfileLint(['--root', tmp.path, '--strict']);
-      expect(strict.hasErrors, isTrue);
-    });
+    test(
+      '--strict turns the missing-idempotency warning into an error',
+      () async {
+        _writeRegistry(tmp, ['strict-idem']);
+        final profile =
+            '${_minimalValidProfile('strict-idem')}'
+            '\nflows:\n  stock_keep:\n    enabled: true\n    steps:\n'
+            '      - id: install_klipper\n'
+            '        kind: install_firmware\n';
+        _writeProfile(tmp, 'strict-idem', profile);
+        final strict = await runProfileLint(['--root', tmp.path, '--strict']);
+        expect(strict.hasErrors, isTrue);
+      },
+    );
 
     test('safe_to_rerun: true silences the warning', () async {
       _writeRegistry(tmp, ['safe-rerun']);
-      final profile = '${_minimalValidProfile('safe-rerun')}'
+      final profile =
+          '${_minimalValidProfile('safe-rerun')}'
           '\nflows:\n  stock_keep:\n    enabled: true\n    steps:\n'
           '      - id: install_klipper\n'
           '        kind: install_firmware\n'
@@ -112,21 +297,25 @@ void main() {
       expect(strict.hasErrors, isFalse);
     });
 
-    test('built-in idempotent kinds (snapshot_archive) need no block',
-        () async {
-      _writeRegistry(tmp, ['builtin-idem']);
-      final profile = '${_minimalValidProfile('builtin-idem')}'
-          '\nflows:\n  stock_keep:\n    enabled: true\n    steps:\n'
-          '      - id: snap\n'
-          '        kind: snapshot_archive\n';
-      _writeProfile(tmp, 'builtin-idem', profile);
-      final strict = await runProfileLint(['--root', tmp.path, '--strict']);
-      expect(strict.hasErrors, isFalse);
-    });
+    test(
+      'built-in idempotent kinds (snapshot_archive) need no block',
+      () async {
+        _writeRegistry(tmp, ['builtin-idem']);
+        final profile =
+            '${_minimalValidProfile('builtin-idem')}'
+            '\nflows:\n  stock_keep:\n    enabled: true\n    steps:\n'
+            '      - id: snap\n'
+            '        kind: snapshot_archive\n';
+        _writeProfile(tmp, 'builtin-idem', profile);
+        final strict = await runProfileLint(['--root', tmp.path, '--strict']);
+        expect(strict.hasErrors, isFalse);
+      },
+    );
 
     test('declared idempotency block satisfies the rule', () async {
       _writeRegistry(tmp, ['declared-idem']);
-      final profile = '${_minimalValidProfile('declared-idem')}'
+      final profile =
+          '${_minimalValidProfile('declared-idem')}'
           '\nflows:\n  stock_keep:\n    enabled: true\n    steps:\n'
           '      - id: install_klipper\n'
           '        kind: install_firmware\n'
@@ -141,7 +330,8 @@ void main() {
 }
 
 void _writeSchema(Directory root) {
-  final schemaDir = Directory(p.join(root.path, 'schema'))..createSync(recursive: true);
+  final schemaDir = Directory(p.join(root.path, 'schema'))
+    ..createSync(recursive: true);
   // Minimal subset of the real schema — enough for these tests.
   File(p.join(schemaDir.path, 'profile.schema.json')).writeAsStringSync(r'''
 {
@@ -160,9 +350,44 @@ void _writeSchema(Directory root) {
 }
 
 void _writeRegistry(Directory root, List<String> profileIds) {
-  final entries = profileIds.map((id) => '  - profile_id: $id').join('\n');
+  // The real registry mirrors a handful of fields from each
+  // profile.yaml so the picker can render printer cards without
+  // fetching every full profile. The minimal-valid-profile helper
+  // sets display_name / status, so we reflect those here too — the
+  // drift check would otherwise fire on every test that uses these
+  // helpers naively.
+  final entries = profileIds
+      .map(
+        (id) =>
+            '  - id: $id\n'
+            '    display_name: "$id"\n'
+            '    manufacturer: ""\n'
+            '    model: ""\n'
+            '    status: stable\n'
+            '    directory: printers/$id\n'
+            '    latest_tag: null',
+      )
+      .join('\n');
+  File(
+    p.join(root.path, 'registry.yaml'),
+  ).writeAsStringSync('schema_version: 1\nprofiles:\n$entries\n');
+}
+
+/// Variant for drift tests: write a registry whose mirrored fields
+/// disagree with what the profile.yaml will say. Lets a test prove
+/// the drift detector catches the exact `status: alpha`/`status: beta`
+/// case that bit Arco in production.
+void _writeRegistryWithStatus(Directory root, String id, String status) {
   File(p.join(root.path, 'registry.yaml')).writeAsStringSync(
-    'profiles:\n$entries\n',
+    'schema_version: 1\n'
+    'profiles:\n'
+    '  - id: $id\n'
+    '    display_name: "$id"\n'
+    '    manufacturer: ""\n'
+    '    model: ""\n'
+    '    status: $status\n'
+    '    directory: printers/$id\n'
+    '    latest_tag: null\n',
   );
 }
 
@@ -172,10 +397,13 @@ void _writeProfile(Directory root, String folder, String contents) {
   File(p.join(dir.path, 'profile.yaml')).writeAsStringSync(contents);
 }
 
-String _minimalValidProfile(String id) => '''
+String _minimalValidProfile(String id) =>
+    '''
 schema_version: 1
 profile_id: $id
 profile_version: 0.0.1
 display_name: "$id"
+manufacturer: ""
+model: ""
 status: stable
 ''';

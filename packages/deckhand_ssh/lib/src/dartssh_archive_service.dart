@@ -49,14 +49,15 @@ class DartsshArchiveService implements ArchiveService {
     }
 
     // Quote each path for the shell. The printer-side command is:
-    //   tar -czf - --ignore-failed-read <paths>
+    //   tar -czf - --ignore-failed-read -- <paths>
     // which streams a tarball to stdout. --ignore-failed-read makes
     // a missing path a warning rather than a hard error so a
     // user-deselected path that no longer exists doesn't fail the
     // snapshot.
-    final quoted =
-        paths.map((p) => "'${p.replaceAll("'", r"'\''")}'").join(' ');
-    final cmd = 'tar -czf - --ignore-failed-read $quoted';
+    final quoted = paths
+        .map((p) => "'${p.replaceAll("'", r"'\''")}'")
+        .join(' ');
+    final cmd = 'tar -czf - --ignore-failed-read -- $quoted';
 
     // Wrap the binary stream in chunked base64. See the class doc
     // comment for the rationale; in short, runStream is line-
@@ -100,7 +101,9 @@ class DartsshArchiveService implements ArchiveService {
         // .tar.gz must never look like a valid snapshot.
         try {
           await File(archivePath).delete();
-        } on Object {/* best-effort */}
+        } on Object {
+          /* best-effort */
+        }
       }
     }
     yield SnapshotProgress(bytesCaptured: bytes, bytesEstimated: bytes);
@@ -119,6 +122,10 @@ class DartsshArchiveService implements ArchiveService {
         errors: ['archive missing'],
       );
     }
+    final validationErrors = await _validateRestoreArchive(archivePath);
+    if (validationErrors.isNotEmpty) {
+      return RestoreResult(restoredFiles: const [], errors: validationErrors);
+    }
     // The previous implementation embedded the entire base64-
     // encoded archive in a single shell command line. That
     // exceeds POSIX `ARG_MAX` (~128 KB on Linux) for any archive
@@ -126,7 +133,8 @@ class DartsshArchiveService implements ArchiveService {
     // printer-config snapshot. Fix: upload the archive to a tmp
     // path on the printer via SFTP, then run a small fixed-size
     // tar command against the uploaded file.
-    final remoteTmp = '/tmp/deckhand-restore-'
+    final remoteTmp =
+        '/tmp/deckhand-restore-'
         '${DateTime.now().toUtc().microsecondsSinceEpoch}.tar.gz';
     final qTmp = _shQuote(remoteTmp);
     final qDest = _shQuote(destDir);
@@ -135,7 +143,8 @@ class DartsshArchiveService implements ArchiveService {
 
       final res = await _ssh.run(
         session,
-        'mkdir -p $qDest && tar -xzf $qTmp -C $qDest --no-same-owner',
+        'mkdir -p $qDest && tar -xzf $qTmp -C $qDest '
+        '--no-same-owner --delay-directory-restore',
         timeout: const Duration(minutes: 5),
       );
       if (!res.success) {
@@ -153,24 +162,76 @@ class DartsshArchiveService implements ArchiveService {
       );
       final restored = list.success
           ? list.stdout
-              .split('\n')
-              .map((s) => s.trim())
-              .where((s) => s.isNotEmpty)
-              .toList()
+                .split('\n')
+                .map((s) => s.trim())
+                .where((s) => s.isNotEmpty)
+                .toList()
           : <String>[];
       return RestoreResult(restoredFiles: restored, errors: const []);
     } finally {
       // Best-effort tmp cleanup; a failed cleanup is not worth
       // failing the restore over.
       try {
-        await _ssh.run(session, 'rm -f $qTmp',
-            timeout: const Duration(seconds: 10));
-      } on Object {/* swallow */}
+        await _ssh.run(
+          session,
+          'rm -f $qTmp',
+          timeout: const Duration(seconds: 10),
+        );
+      } on Object {
+        /* swallow */
+      }
     }
   }
 
-  static String _shQuote(String s) =>
-      "'${s.replaceAll("'", r"'\''")}'";
+  static String _shQuote(String s) => "'${s.replaceAll("'", r"'\''")}'";
+
+  Future<List<String>> _validateRestoreArchive(String archivePath) async {
+    final list = await Process.run('tar', ['-tzf', archivePath]);
+    if (list.exitCode != 0) {
+      return ['tar -tzf failed (exit ${list.exitCode}): ${list.stderr}'];
+    }
+    final errors = <String>[];
+    final names = list.stdout
+        .toString()
+        .split('\n')
+        .map((s) => s.trim())
+        .where((s) => s.isNotEmpty);
+    for (final name in names) {
+      if (!_isSafeArchiveMemberPath(name)) {
+        errors.add('unsafe archive entry path: $name');
+      }
+    }
+
+    final verbose = await Process.run('tar', ['-tvzf', archivePath]);
+    if (verbose.exitCode != 0) {
+      return ['tar -tvzf failed (exit ${verbose.exitCode}): ${verbose.stderr}'];
+    }
+    for (final line
+        in verbose.stdout
+            .toString()
+            .split('\n')
+            .where((s) => s.trim().isNotEmpty)) {
+      final type = line[0];
+      if (type == 'l' || type == 'h') {
+        errors.add('unsafe archive entry link: $line');
+      }
+    }
+    return errors;
+  }
+
+  bool _isSafeArchiveMemberPath(String raw) {
+    final name = raw.replaceAll('\\', '/').trim();
+    if (name.isEmpty || name.startsWith('/')) return false;
+    if (RegExp(r'^[A-Za-z]:').hasMatch(name)) return false;
+    final parts = name.split('/');
+    for (var i = 0; i < parts.length; i++) {
+      final part = parts[i];
+      final isTrailingDirectoryMarker = i == parts.length - 1 && part.isEmpty;
+      if (isTrailingDirectoryMarker) continue;
+      if (part.isEmpty || part == '..') return false;
+    }
+    return true;
+  }
 
   @override
   Future<String> archiveSha256(String archivePath) async {
