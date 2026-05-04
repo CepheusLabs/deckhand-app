@@ -43,6 +43,9 @@ part 'wizard_controller_backup.dart';
 // os_download, flash_disk, script + askpass) live in a separate file
 // for the same reason. Same `part of` scope-sharing applies.
 part 'wizard_controller_steps.dart';
+part 'wizard_controller_install.dart';
+part 'wizard_controller_helpers.dart';
+part 'wizard_controller_runtime.dart';
 
 /// Wizard state machine - profile-driven, UI-agnostic.
 class WizardController {
@@ -130,6 +133,18 @@ class WizardController {
   PrinterState get printerState => _printerState;
   Stream<WizardEvent> get events => _eventsController.stream;
 
+  /// Session values to feed [Redactor.sessionValues] when generating
+  /// debug bundles. Includes the SSH password (when cached) so a
+  /// short user-chosen password that wouldn't trip the entropy
+  /// heuristic is still substituted out by exact-match. Callers from
+  /// the UI shouldn't read these fields directly — go through this
+  /// method so the surface stays narrow.
+  Map<String, String?> redactionSessionValues() => {
+    'printer_host': _state.sshHost,
+    'ssh_user': _session?.user,
+    'ssh_password': _sshPassword,
+  };
+
   /// Live SSH session, if any. Set by [connectSsh] / [connectSshWithPassword]
   /// and cleared on disconnect. Screens that need to probe the printer
   /// outside of a step (e.g. the S145 snapshot size estimate) read this
@@ -153,6 +168,20 @@ class WizardController {
     assert(() {
       _printerState = value;
       _emit(PrinterStateRefreshed(value));
+      return true;
+    }());
+  }
+
+  /// Test-only: install a fake [SshSession] without going through the
+  /// real `connectSsh` / `tryDefaults` path. Lets unit tests exercise
+  /// install steps that require an active session without a real SSH
+  /// stack. Same `assert(() {})` gating as
+  /// [printerStateForTesting] so it's a silent no-op in release.
+  @visibleForTesting
+  void setSession(SshSession session) {
+    assert(() {
+      _session = session;
+      _state = _state.copyWith(sshHost: session.host);
       return true;
     }());
   }
@@ -183,17 +212,39 @@ class WizardController {
       // wins — the user lands where they left off.
       _state = snapshot;
     } catch (e, st) {
-      throw ResumeFailedException(
-        snapshot: snapshot,
-        cause: e,
-        stackTrace: st,
-      );
+      throw ResumeFailedException(snapshot: snapshot, cause: e, stackTrace: st);
     }
     _emit(FlowChanged(_state.flow));
   }
 
-  Future<void> loadProfile(String profileId, {String? ref}) async {
-    final cache = await profiles.ensureCached(profileId: profileId, ref: ref);
+  /// Update the persisted `currentStep` (the wizard's nav cursor).
+  /// Wired into the router so every navigation through GoRouter
+  /// records where the user is, which keeps the on-disk snapshot's
+  /// `currentStep` in sync with the screen actually showing. Without
+  /// this the controller never updated `currentStep` past `'welcome'`
+  /// and the resume panel always rendered "S10 · welcome" regardless
+  /// of how deep the user got.
+  ///
+  /// No-ops when the new step matches the current value to avoid
+  /// emitting redundant save events on rebuilds. Emits
+  /// [FlowChanged] (the existing "wizard moved" event) so the
+  /// `wizardStateProvider` stream picks it up and persists.
+  void setCurrentStep(String step) {
+    if (step.isEmpty || step == _state.currentStep) return;
+    _state = _state.copyWith(currentStep: step);
+    _emit(FlowChanged(_state.flow));
+  }
+
+  Future<void> loadProfile(
+    String profileId, {
+    String? ref,
+    bool force = false,
+  }) async {
+    final cache = await profiles.ensureCached(
+      profileId: profileId,
+      ref: ref,
+      force: force,
+    );
     final profile = await profiles.load(cache);
     _profile = profile;
     _profileCache = cache;
@@ -205,6 +256,7 @@ class WizardController {
     required String host,
     int? port,
     bool acceptHostKey = false,
+    String? acceptedHostFingerprint,
   }) async {
     final pf = _profile;
     if (pf == null) {
@@ -220,6 +272,7 @@ class WizardController {
       port: port ?? pf.ssh.defaultPort,
       credentials: creds.cast<SshCredential>(),
       acceptHostKey: acceptHostKey,
+      acceptedHostFingerprint: acceptedHostFingerprint,
     );
     _session = session;
     // Remember the password of whichever default matched, so sudo
@@ -250,6 +303,7 @@ class WizardController {
     required String user,
     required String password,
     bool acceptHostKey = false,
+    String? acceptedHostFingerprint,
   }) async {
     final pf = _profile;
     final p = port ?? pf?.ssh.defaultPort ?? 22;
@@ -258,6 +312,7 @@ class WizardController {
       port: p,
       credential: PasswordCredential(user: user, password: password),
       acceptHostKey: acceptHostKey,
+      acceptedHostFingerprint: acceptedHostFingerprint,
     );
     _session = session;
     _sshPassword = password;
@@ -282,34 +337,10 @@ class WizardController {
   /// would otherwise re-probe every time, wasting bandwidth and the
   /// printer's CPU.
   static const _probeFreshness = Duration(seconds: 30);
-  Future<void> _refreshPrinterState({bool force = false}) async {
-    final s = _session;
-    final pf = _profile;
-    if (s == null || pf == null) return;
-    if (!force) {
-      final last = _printerState.probedAt;
-      if (last != null &&
-          DateTime.now().difference(last) < _probeFreshness) {
-        return;
-      }
-    }
-    try {
-      final probe = PrinterStateProbe(ssh: ssh);
-      final report = await probe.probe(session: s, profile: pf);
-      _printerState = report;
-      _emit(PrinterStateRefreshed(report));
-    } catch (e) {
-      // Probe is best-effort. If it fails (network blip, missing
-      // systemctl, etc.) screens simply render the full abstract
-      // option list like they did before probing existed.
-      _emit(
-        StepWarning(
-          stepId: 'printer_state_probe',
-          message: 'Could not probe printer state: $e',
-        ),
-      );
-    }
-  }
+
+  /// _refreshPrinterState dispatcher. Body in wizard_controller_runtime.dart.
+  Future<void> _refreshPrinterState({bool force = false}) =>
+      _refreshPrinterStateImpl(this, force: force);
 
   /// Public entry point for screens that want to trigger a re-probe.
   /// Pass `force: true` to bypass the freshness gate (e.g. after a
@@ -352,58 +383,8 @@ class WizardController {
   static bool looksLikeBinary(String probeOutput) =>
       _looksLikeBinary(probeOutput);
 
-  static bool _looksLikeBinary(String s) {
-    if (s.isEmpty) return false;
-    final lower = s.toLowerCase();
-    // Layer A signals (from `file --mime`).
-    if (lower.contains('charset=binary')) return true;
-    const binaryMimePrefixes = [
-      'application/octet-stream',
-      'application/x-executable',
-      'application/x-sharedlib',
-      'application/x-pie-executable',
-      'application/x-mach-binary',
-      'application/x-dosexec',
-      'application/zip',
-      'application/gzip',
-      'application/x-tar',
-      'application/x-xz',
-      'application/x-bzip2',
-      'application/x-7z-compressed',
-      'application/vnd.ms-cab-compressed',
-      'image/',
-      'video/',
-      'audio/',
-    ];
-    for (final p in binaryMimePrefixes) {
-      if (lower.contains(p)) return true;
-    }
-    // Layer B signals (from plain `file -b`).
-    const binaryKeywords = [
-      'elf ',
-      'executable',
-      'shared object',
-      'archive',
-      'image data',
-      'compiled',
-      'compressed',
-      'binary',
-    ];
-    for (final k in binaryKeywords) {
-      if (lower.contains(k)) return true;
-    }
-    // `data` appears on its own line as busybox's catchall for
-    // "couldn't classify, probably binary" - match it as a word, not a
-    // substring (so "metadata" / "data-driven" in real text don't
-    // falsely trip).
-    if (RegExp(r'(^|\s|,)data(\s|,|$)').hasMatch(lower)) return true;
-    // Layer C: od output contains `\0` glyphs for null bytes. od -An
-    // -c renders NUL as `\0`. Count them - a handful in 512 bytes is
-    // a strong "binary" signal for text-mostly files too.
-    final nulCount = RegExp(r'\\0').allMatches(s).length;
-    if (nulCount >= 3) return true;
-    return false;
-  }
+  /// _looksLikeBinary dispatcher. Body in wizard_controller_runtime.dart.
+  static bool _looksLikeBinary(String s) => _looksLikeBinaryImpl(s);
 
   /// Delete a `.deckhand-pre-*` backup + its `.meta.json` sidecar.
   /// Used by the verify_screen after the user has confirmed they
@@ -425,20 +406,17 @@ class WizardController {
   Future<int> pruneBackups({
     Duration olderThan = const Duration(days: 30),
     bool keepLatestPerTarget = false,
-  }) =>
-      _pruneBackupsImpl(
-        this,
-        olderThan: olderThan,
-        keepLatestPerTarget: keepLatestPerTarget,
-      );
+  }) => _pruneBackupsImpl(
+    this,
+    olderThan: olderThan,
+    keepLatestPerTarget: keepLatestPerTarget,
+  );
 
   Future<void> setDecision(String path, Object value) async {
     // Immutable map merge rather than Map.from() + mutate. Avoids any
     // possibility of two concurrent calls racing on the same temporary
     // mutable map while the copyWith is scheduled.
-    _state = _state.copyWith(
-      decisions: {..._state.decisions, path: value},
-    );
+    _state = _state.copyWith(decisions: {..._state.decisions, path: value});
     _emit(DecisionRecorded(path: path, value: value));
   }
 
@@ -491,10 +469,7 @@ class WizardController {
       decisions['probe.os_python_below.3.10'] = false;
       decisions['probe.os_python_below.3.11'] = false;
     }
-    return DslEnv(
-      decisions: decisions,
-      profile: _profile?.raw ?? const {},
-    );
+    return DslEnv(decisions: decisions, profile: _profile?.raw ?? const {});
   }
 
   void setFlow(WizardFlow flow) {
@@ -522,159 +497,24 @@ class WizardController {
     if (_cancelled) return;
     _cancelled = true;
     _cancelReason = reason;
+    _pendingInput.clear();
   }
 
-  Future<void> startExecution() async {
-    final pf = _profile;
-    if (pf == null) throw StateError('No profile loaded.');
-    final flow = _state.flow == WizardFlow.stockKeep
-        ? pf.flows.stockKeep
-        : pf.flows.freshFlash;
-    if (flow == null || !flow.enabled) {
-      throw StateError('Flow ${_state.flow} is not enabled for this profile.');
-    }
-
-    // Bootstrap run-state. Loading first lets a re-run on the same
-    // printer pick up the prior history; if there's no SSH session
-    // yet (some flows reach startExecution before connect — e.g.
-    // fresh_flash, where connect happens mid-flow at S240), we'll
-    // start an empty state in memory and writes are a no-op until
-    // a session arrives via [_runStateAttachSession]. The store
-    // itself is tolerant of "no file yet" as well.
-    await _runStateBootstrap();
-
-    for (final step in flow.steps) {
-      if (_cancelled) {
-        throw WizardCancelledException(_cancelReason ?? 'cancelled');
-      }
-      final id = step['id'] as String? ?? 'unnamed';
-      final kind = step['kind'] as String? ?? '';
-      _currentStepKind = kind;
-      _emit(StepStarted(id));
-      final hash = canonicalInputHash(_canonicalStepInputs(step));
-      await _runStateRecord(
-        RunStateStep(
-          id: id,
-          status: RunStateStatus.inProgress,
-          startedAt: DateTime.now().toUtc(),
-          inputHash: hash,
-        ),
-      );
-      try {
-        await _runStep(step);
-        _emit(StepCompleted(id));
-        await _runStateRecord(
-          RunStateStep(
-            id: id,
-            status: RunStateStatus.completed,
-            startedAt: _runState?.lastFor(id)?.startedAt ?? DateTime.now().toUtc(),
-            finishedAt: DateTime.now().toUtc(),
-            inputHash: hash,
-          ),
-        );
-      } catch (e) {
-        _emit(StepFailed(stepId: id, error: '$e'));
-        await _runStateRecord(
-          RunStateStep(
-            id: id,
-            status: RunStateStatus.failed,
-            startedAt: _runState?.lastFor(id)?.startedAt ?? DateTime.now().toUtc(),
-            finishedAt: DateTime.now().toUtc(),
-            inputHash: hash,
-            error: '$e',
-          ),
-        );
-        rethrow;
-      } finally {
-        _currentStepKind = null;
-      }
-    }
-    _emit(const ExecutionCompleted());
-  }
+  /// Public entrypoint - walks the active flow. Body in
+  /// wizard_controller_runtime.dart so the controller stays under
+  /// the project's line-count ceiling.
+  Future<void> startExecution() => _startExecutionImpl(this);
 
   /// Initialise [_runState] for the active session. Best-effort:
   /// tolerates "no SSH yet", "file missing", "file unparseable".
-  Future<void> _runStateBootstrap() async {
-    final pf = _profile;
-    final cache = _profileCache;
-    final session = _session;
-    final fresh = RunState.empty(
-      deckhandVersion: deckhandVersion,
-      profileId: pf?.id ?? '',
-      profileCommit: cache?.resolvedSha ?? '',
-    );
-    if (session == null) {
-      _runState = fresh;
-      return;
-    }
-    try {
-      _runState = await _runStateStore.load(session) ?? fresh;
-    } on Object {
-      _runState = fresh;
-    }
-  }
+  /// Run-state dispatchers. Bodies in wizard_controller_runtime.dart.
+  Future<void> _runStateBootstrap() => _runStateBootstrapImpl(this);
+  Future<void> _runStateRecord(RunStateStep step) =>
+      _runStateRecordImpl(this, step);
 
-  /// Persist [step] into the run-state file. Errors are swallowed
-  /// (logged via StepWarning) — a transient SSH glitch must not
-  /// abort the install. The next successful write replays the full
-  /// state, so a missed write is recoverable.
-  Future<void> _runStateRecord(RunStateStep step) async {
-    final state = _runState;
-    final session = _session;
-    if (state == null || session == null) return;
-    final next = state.upsertingLast(step);
-    _runState = next;
-    try {
-      await _runStateStore.save(session, next);
-    } on Object catch (e) {
-      _emit(StepWarning(
-        stepId: step.id,
-        message: 'run-state write failed (continuing): $e',
-      ));
-    }
-  }
-
-  /// Build the canonical-input map for a step. Used to compute the
-  /// input hash that distinguishes "user changed their mind, re-run"
-  /// from "user is just retrying with the same inputs."
-  ///
-  /// Resolution order (most specific first):
-  ///   1. The step declares `idempotency.inputs` — use that
-  ///      verbatim. Profile authors fully own the contract.
-  ///   2. The step declares `decision_keys: [a, b, c]` — hash
-  ///      `kind + id + the listed decisions`.
-  ///   3. Default — hash `kind + id + the entire decision graph`.
-  ///      The full graph is the conservative choice: any decision
-  ///      change anywhere will invalidate every downstream step's
-  ///      hash, which is loud but safe (resume will re-run, not
-  ///      silently skip stale work). Profiles that want a tighter
-  ///      contract opt into one of the more-specific paths above.
-  ///
-  /// The previous default (`{kind, id}`) was constant across
-  /// attempts of the same step, making the input-hash comparison
-  /// useless. See `docs/STEP-IDEMPOTENCY.md` for the rationale.
-  Map<String, Object?> _canonicalStepInputs(Map<String, dynamic> step) {
-    final declared = step['idempotency'];
-    if (declared is Map && declared['inputs'] is Map) {
-      return (declared['inputs'] as Map).cast<String, Object?>();
-    }
-    final base = <String, Object?>{
-      'kind': step['kind'],
-      'id': step['id'],
-    };
-    if (step['decision_keys'] is List) {
-      for (final key in (step['decision_keys'] as List)) {
-        base['decision.$key'] = _state.decisions[key.toString()];
-      }
-      return base;
-    }
-    // Fall through: include the entire decision graph. Sorted
-    // canonicalisation (in canonicalInputBytes) makes the order
-    // irrelevant, so two runs with identical decisions produce
-    // identical hashes.
-    base['decisions'] = _state.decisions;
-    return base;
-  }
+  /// _canonicalStepInputs dispatcher. Body in wizard_controller_runtime.dart.
+  Map<String, Object?> _canonicalStepInputs(Map<String, dynamic> step) =>
+      _canonicalStepInputsImpl(this, step);
 
   Future<void> _runStep(Map<String, dynamic> step) async {
     final kind = step['kind'] as String? ?? '';
@@ -713,6 +553,27 @@ class WizardController {
       case 'conditional':
         await _runConditional(step);
       case 'prompt':
+        // `backup_prompt` historically asked the user mid-install
+        // whether they had a full eMMC backup, but the dialog never
+        // triggered an actual backup — it just recorded the answer.
+        // The eMMC-backup acknowledgement now lives at S145-snapshot
+        // (one consolidated decision), so suppressing this step here
+        // keeps the backstop in place for older cached profiles that
+        // still carry the legacy `backup_prompt` declaration. Logged
+        // at WARN level so a profile author who genuinely needs a
+        // mid-install prompt notices.
+        if (id == 'backup_prompt') {
+          _emit(
+            StepWarning(
+              stepId: id,
+              message:
+                  'backup_prompt suppressed (consolidated into S145 '
+                  'snapshot screen). Update the profile to remove this '
+                  'step.',
+            ),
+          );
+          break;
+        }
         await _awaitUserInput(id, step);
       case 'choose_one':
       case 'disk_picker':
@@ -731,53 +592,11 @@ class WizardController {
     }
   }
 
-  Future<void> _runSshCommands(Map<String, dynamic> step) async {
-    _requireSession();
-    final commands = ((step['commands'] as List?) ?? const []).cast<String>();
-    final ignore = step['ignore_errors'] as bool? ?? false;
-    for (final cmd in commands) {
-      // Substituted values (decisions, firmware fields, profile values)
-      // are untrusted input reaching a shell. Render in shell-safe mode
-      // so every substitution is single-quoted for its argument context.
-      final rendered = _render(cmd, shellSafe: true);
-      final res = await _runSsh(rendered);
-      _log(step, '[ssh] $rendered -> exit ${res.exitCode}');
-      if (!res.success && !ignore) {
-        throw StepExecutionException(
-          'Command failed: $rendered',
-          stderr: res.stderr,
-        );
-      }
-    }
-  }
-
-  Future<void> _runSnapshotPaths(Map<String, dynamic> step) async {
-    _requireSession();
-    final pathIds = ((step['paths'] as List?) ?? const []).cast<String>();
-    final ts = DateTime.now().toUtc().toIso8601String().replaceAll(':', '-');
-    for (final id in pathIds) {
-      final path = _profile!.stockOs.paths.firstWhere(
-        (x) => x.id == id,
-        orElse: () => throw StepExecutionException('path "$id" not in profile'),
-      );
-      final snapshotTo = (path.snapshotTo ?? '${path.path}.stock.{{timestamp}}')
-          .replaceAll('{{timestamp}}', ts);
-      final rendered = _render(snapshotTo);
-      // Both source and destination come from untrusted profile/decision
-      // values - quote every interpolation to prevent shell injection.
-      final qSrc = shellSingleQuote(path.path);
-      final qDst = shellSingleQuote(rendered);
-      final cmd = 'if [ -e $qSrc ]; then mv $qSrc $qDst; fi';
-      final res = await _runSsh(cmd);
-      _log(step, '[snapshot] ${path.path} -> $rendered (exit ${res.exitCode})');
-      if (!res.success) {
-        throw StepExecutionException(
-          'snapshot failed for ${path.path}',
-          stderr: res.stderr,
-        );
-      }
-    }
-  }
+  /// Step dispatchers. Bodies in wizard_controller_runtime.dart.
+  Future<void> _runSshCommands(Map<String, dynamic> step) =>
+      _runSshCommandsImpl(this, step);
+  Future<void> _runSnapshotPaths(Map<String, dynamic> step) =>
+      _runSnapshotPathsImpl(this, step);
 
   /// Capture the user's S145-selected paths into a host-local
   /// `.tar.gz`. The user's selection lives at
@@ -792,260 +611,29 @@ class WizardController {
   ///   - No paths declared / no IDs selected: warn + skip.
   ///   - Capture fails: hard error so the user sees it before the
   ///     install rewrites their config.
-  Future<void> _runSnapshotArchive(Map<String, dynamic> step) async {
-    _requireSession();
-    final svc = archive;
-    final dir = snapshotsDir;
-    if (svc == null || dir == null) {
-      _emit(StepWarning(
-        stepId: step['id'] as String? ?? 'snapshot_archive',
-        message: 'archive service not wired; skipping snapshot capture '
-            '(install will proceed but config backup is your problem)',
-      ));
-      return;
-    }
-    final pf = _profile;
-    if (pf == null) throw StateError('no profile loaded');
-    final selectedRaw = _state.decisions['snapshot.paths'];
-    final selectedIds = <String>[];
-    if (selectedRaw is List) {
-      for (final v in selectedRaw) {
-        selectedIds.add(v.toString());
-      }
-    }
-    if (selectedIds.isEmpty) {
-      _emit(StepWarning(
-        stepId: step['id'] as String? ?? 'snapshot_archive',
-        message: 'no snapshot paths selected; nothing to archive',
-      ));
-      return;
-    }
-    final byId = {for (final p in pf.stockOs.snapshotPaths) p.id: p};
-    final paths = <String>[];
-    for (final id in selectedIds) {
-      final p = byId[id];
-      if (p == null) {
-        _emit(StepWarning(
-          stepId: step['id'] as String? ?? 'snapshot_archive',
-          message: 'snapshot id "$id" not in profile; ignoring',
-        ));
-        continue;
-      }
-      paths.add(p.path);
-    }
-    if (paths.isEmpty) return;
+  /// snapshot_archive step dispatcher. Body in wizard_controller_runtime.dart.
+  Future<void> _runSnapshotArchive(Map<String, dynamic> step) =>
+      _runSnapshotArchiveImpl(this, step);
 
-    final tsLabel = DateTime.now()
-        .toUtc()
-        .toIso8601String()
-        .replaceAll(':', '-')
-        .split('.')
-        .first;
-    final session = _session!;
-    final archivePath = p.join(
-      dir,
-      '${pf.id}-$tsLabel.tar.gz',
-    );
+  /// install_firmware step dispatcher. Body in wizard_controller_install.dart.
+  Future<void> _runInstallFirmware(Map<String, dynamic> step) =>
+      _runInstallFirmwareImpl(this, step);
 
-    var totalBytes = 0;
-    await for (final progress in svc.captureRemote(
-      session: session,
-      paths: paths,
-      archivePath: archivePath,
-    )) {
-      totalBytes = progress.bytesCaptured;
-      _emit(StepProgress(
-        stepId: step['id'] as String? ?? 'snapshot_archive',
-        percent: 0,
-        message: '${(progress.bytesCaptured / 1024).toStringAsFixed(0)} KiB captured',
-      ));
-    }
-    final sha = await svc.archiveSha256(archivePath);
-    _log(step,
-        '[snapshot_archive] wrote $archivePath ($totalBytes bytes, sha256=$sha)');
-    // Surface the archive path back into wizard state so the
-    // post-install restore step (and the debug-bundle assembler)
-    // can reference it.
-    _state = _state.copyWith(
-      decisions: {
-        ..._state.decisions,
-        'snapshot.archive_path': archivePath,
-        'snapshot.archive_sha256': sha,
-      },
-    );
-  }
+  /// link_extras step dispatcher. Body in wizard_controller_install.dart.
+  Future<void> _runLinkExtras(Map<String, dynamic> step) =>
+      _runLinkExtrasImpl(this, step);
 
-  Future<void> _runInstallFirmware(Map<String, dynamic> step) async {
-    _requireSession();
-    final fw = _selectedFirmware();
-    if (fw == null) throw StepExecutionException('no firmware selected');
-    final install = fw.installPath ?? '~/klipper';
-    _log(step, '[firmware] cloning ${fw.repo} @ ${fw.ref} -> $install');
-    // Every profile-supplied value is untrusted input. Paths with `~`
-    // need tilde-expansion, so use shellPathEscape; refs and repo URLs
-    // get single-quoted.
-    final qInstall = shellPathEscape(install);
-    final qRef = shellSingleQuote(fw.ref);
-    final qRepo = shellSingleQuote(fw.repo);
-    final cloneCmd =
-        'if [ -d $qInstall/.git ]; then cd $qInstall && git fetch origin && git checkout $qRef && git pull --ff-only; '
-        'else rm -rf $qInstall && git clone --depth 1 -b $qRef $qRepo $qInstall; fi';
-    final cloneRes = await _runSsh(
-      cloneCmd,
-      timeout: const Duration(minutes: 10),
-    );
-    if (!cloneRes.success) {
-      throw StepExecutionException('clone failed', stderr: cloneRes.stderr);
-    }
+  /// install_stack step dispatcher. Body in wizard_controller_install.dart.
+  Future<void> _runInstallStack(Map<String, dynamic> step) =>
+      _runInstallStackImpl(this, step);
 
-    final venv = fw.venvPath ?? '~/klippy-env';
-    final qVenv = shellPathEscape(venv);
-    final venvCmd =
-        'PY=\$(command -v python3.11 || command -v python3) && \$PY -m venv $qVenv && '
-        '$qVenv/bin/pip install --quiet -U pip setuptools wheel && '
-        '$qVenv/bin/pip install --quiet -r $qInstall/scripts/klippy-requirements.txt';
-    final venvRes = await _runSsh(
-      venvCmd,
-      timeout: const Duration(minutes: 15),
-    );
-    if (!venvRes.success) {
-      throw StepExecutionException('venv setup failed', stderr: venvRes.stderr);
-    }
-    _log(step, '[firmware] venv ready at $venv');
-  }
+  /// apply_services step dispatcher. Body in wizard_controller_install.dart.
+  Future<void> _runApplyServices(Map<String, dynamic> step) =>
+      _runApplyServicesImpl(this, step);
 
-  Future<void> _runLinkExtras(Map<String, dynamic> step) async {
-    final s = _requireSession();
-    final fw = _selectedFirmware();
-    if (fw == null) throw StepExecutionException('no firmware selected');
-    final install = fw.installPath ?? '~/klipper';
-    final sources = ((step['sources'] as List?) ?? const []).cast<String>();
-    for (final src in sources) {
-      final localPath = _resolveProfilePath(src);
-      final basename = p.basename(localPath);
-      final remote = '$install/klippy/extras/$basename';
-      if (await Directory(localPath).exists()) {
-        await _uploadDir(localPath, remote);
-      } else {
-        await ssh.upload(s, localPath, remote);
-      }
-      _log(step, '[link_extras] installed $basename');
-    }
-  }
-
-  Future<void> _runInstallStack(Map<String, dynamic> step) async {
-    _requireSession();
-    final components = ((step['components'] as List?) ?? const [])
-        .cast<String>();
-    final stack = _profile!.stack;
-    for (final c in components) {
-      final name = c.replaceAll('?', '');
-      final optional = c.endsWith('?');
-      final cfg = _stackComponent(stack, name);
-      if (cfg == null) {
-        if (optional) continue;
-        throw StepExecutionException('unknown stack component $name');
-      }
-      if (name == 'kiauh' && _state.decisions['kiauh'] == false) {
-        _log(step, '[stack] kiauh skipped by user');
-        continue;
-      }
-      final repo = cfg['repo'] as String?;
-      final ref = cfg['ref'] as String? ?? 'master';
-      final install = cfg['install_path'] as String?;
-      if (repo != null && install != null) {
-        // Every value here comes from profile YAML - untrusted.
-        final qInstall = shellPathEscape(install);
-        final qRef = shellSingleQuote(ref);
-        final qRepo = shellSingleQuote(repo);
-        final cmd =
-            'if [ -d $qInstall/.git ]; then cd $qInstall && git pull --ff-only; '
-            'else git clone --depth 1 -b $qRef $qRepo $qInstall; fi';
-        final res = await _runSsh(cmd, timeout: const Duration(minutes: 10));
-        if (!res.success) {
-          throw StepExecutionException(
-            '$name clone failed',
-            stderr: res.stderr,
-          );
-        }
-      }
-      _log(step, '[stack] $name installed');
-    }
-  }
-
-  Future<void> _runApplyServices(Map<String, dynamic> step) async {
-    _requireSession();
-    for (final svc in _profile!.stockOs.services) {
-      final action =
-          _state.decisions['service.${svc.id}'] as String? ?? svc.defaultAction;
-      final unit = svc.raw['systemd_unit'] as String?;
-      final proc = svc.raw['process_pattern'] as String?;
-      switch (action) {
-        case 'remove':
-        case 'disable':
-          if (unit != null) {
-            // systemd_unit is profile-supplied; always quote.
-            final qUnit = shellSingleQuote(unit);
-            await _runSsh(
-              'sudo systemctl disable --now $qUnit 2>/dev/null || true',
-            );
-          }
-          if (proc != null) {
-            // process_pattern is profile-supplied. Double-quoting is
-            // not enough (it leaves $()/backticks live), so we single-
-            // quote and pass to pkill -f as one argument.
-            final qProc = shellSingleQuote(proc);
-            await _runSsh('sudo pkill -f $qProc 2>/dev/null || true');
-          }
-          _log(step, '[services] ${svc.id}: disabled');
-        case 'stub':
-          _log(step, '[services] ${svc.id}: left as stub');
-        default:
-          _log(step, '[services] ${svc.id}: keeping');
-      }
-    }
-  }
-
-  Future<void> _runApplyFiles(Map<String, dynamic> step) async {
-    _requireSession();
-    for (final f in _profile!.stockOs.files) {
-      final decision =
-          _state.decisions['file.${f.id}'] as String? ?? f.defaultAction;
-      if (decision != 'delete') continue;
-      for (final path in f.paths) {
-        if (_isDangerousPath(path)) {
-          _log(step, '[files] SKIPPING dangerous path: $path');
-          continue;
-        }
-        final String cmd;
-        if (_hasGlob(path)) {
-          // Glob path: `find <dir> -maxdepth 1 -name <pattern> -delete`
-          // handles the expansion itself (so the shell doesn't need to)
-          // and cleanly no-ops when the pattern matches nothing. Only
-          // the trailing segment is allowed to contain wildcards; the
-          // parent directory must be a concrete path so we refuse to
-          // recurse into anything unexpected.
-          final dir = p.posix.dirname(path);
-          final pattern = p.posix.basename(path);
-          if (_hasGlob(dir) || _isDangerousPath(dir)) {
-            _log(step, '[files] SKIPPING unsafe glob directory: $dir');
-            continue;
-          }
-          cmd =
-              'sudo find ${_shellQuote(dir)} -maxdepth 1 -name ${_shellQuote(pattern)} -print -exec rm -rf {} +';
-        } else {
-          cmd = 'sudo rm -rf ${_shellQuote(path)}';
-        }
-        final res = await _runSsh(cmd);
-        _log(step, '[files] rm ${f.id}: $path (exit ${res.exitCode})');
-        if (res.stdout.trim().isNotEmpty) {
-          for (final line in res.stdout.trim().split('\n')) {
-            _log(step, '[files]   removed: $line');
-          }
-        }
-      }
-    }
-  }
+  /// apply_files step dispatcher. Body in wizard_controller_install.dart.
+  Future<void> _runApplyFiles(Map<String, dynamic> step) =>
+      _runApplyFilesImpl(this, step);
 
   bool _hasGlob(String path) => RegExp(r'[*?\[]').hasMatch(path);
 
@@ -1084,190 +672,25 @@ class WizardController {
   Future<void> _runScript(Map<String, dynamic> step) =>
       _runScriptImpl(this, step);
 
-  /// Writes `~/printer_data/config/<filename>` (default `deckhand.json`)
-  /// so the connect screen can recognise this printer as one Deckhand
-  /// has already processed - even after the user strips out the stock
-  /// vendor artefacts (`phrozen_dev`, MKS bloat, etc.) we were keying
-  /// on before. Moonraker serves the file under the `config` root, so
-  /// no Klipper restart or printer.cfg surgery is needed.
-  Future<void> _runInstallMarker(Map<String, dynamic> step) async {
-    _requireSession();
-    final pf = _profile;
-    if (pf == null) throw StepExecutionException('no profile loaded');
-    final filename = step['filename'] as String? ?? 'deckhand.json';
-    final targetDir =
-        step['target_dir'] as String? ??
-        '/home/${_session!.user}/printer_data/config';
-    final extra = (step['extra'] as Map?)?.cast<String, dynamic>() ?? const {};
+  /// install_marker step dispatcher. Body in wizard_controller_runtime.dart.
+  Future<void> _runInstallMarker(Map<String, dynamic> step) =>
+      _runInstallMarkerImpl(this, step);
 
-    final payload = <String, dynamic>{
-      'profile_id': pf.id,
-      'profile_version': pf.version,
-      'display_name': pf.displayName,
-      'installed_at': DateTime.now().toUtc().toIso8601String(),
-      'deckhand_schema': 1,
-      ...extra,
-    };
-    final json = const JsonEncoder.withIndent('  ').convert(payload);
-    final target = '$targetDir/$filename';
+  /// Resolve-or-await input dispatcher. Body in wizard_controller_runtime.dart.
+  Future<void> _resolveOrAwaitInput(String id, Map<String, dynamic> step) =>
+      _resolveOrAwaitInputImpl(this, id, step);
 
-    // Ensure the config dir exists (fresh installs may not have laid
-    // out printer_data yet). Use plain ssh.run, not _runSsh - we don't
-    // want sudo wrapping.
-    final mkdir = await ssh.run(_requireSession(), 'mkdir -p ${_shellQuote(targetDir)}');
-    if (!mkdir.success) {
-      throw StepExecutionException(
-        'could not create $targetDir',
-        stderr: mkdir.stderr,
-      );
-    }
+  /// wait_for_ssh step dispatcher. Body in wizard_controller_runtime.dart.
+  Future<void> _runWaitForSsh(Map<String, dynamic> step) =>
+      _runWaitForSshImpl(this, step);
 
-    // Route through _runWriteFile so `deckhand.json` gets the same
-    // auto-backup + metadata-sidecar treatment as every other
-    // destructive write. Users who hand-edited the marker (to add
-    // notes, pin a specific deckhand_schema, etc.) get a byte-exact
-    // rollback.
-    final syntheticStep = <String, dynamic>{
-      'id': step['id'] as String? ?? 'install_marker',
-      'kind': 'write_file',
-      'target': target,
-      'content': json,
-      'mode': '0644',
-      'backup': step['backup'] as bool? ?? true,
-    };
-    await _runWriteFile(syntheticStep);
-    _log(step, '[marker] wrote $target (${json.length} bytes)');
-  }
+  /// verify step dispatcher. Body in wizard_controller_runtime.dart.
+  Future<void> _runVerify(Map<String, dynamic> step) =>
+      _runVerifyImpl(this, step);
 
-  /// For `choose_one` / `disk_picker` steps: if a pre-wizard screen
-  /// already recorded the decision, emit the resolution and move on;
-  /// otherwise fall back to awaiting user input.
-  Future<void> _resolveOrAwaitInput(
-    String id,
-    Map<String, dynamic> step,
-  ) async {
-    final existing = _lookupExistingDecision(step);
-    if (existing != null) {
-      _log(step, '[input] using existing decision: $existing');
-      _emit(DecisionRecorded(path: id, value: existing));
-      return;
-    }
-    await _awaitUserInput(id, step);
-  }
-
-  /// Checks known decision keys that may already hold the answer for
-  /// this step. Keeps the controller in sync with the pre-wizard
-  /// screens (flash_target_screen, choose_os_screen) without hardcoding
-  /// their step ids in the profile.
-  Object? _lookupExistingDecision(Map<String, dynamic> step) {
-    final kind = step['kind'] as String? ?? '';
-    final optionsFrom = step['options_from'] as String?;
-    final id = step['id'] as String? ?? '';
-
-    // Most specific first: step id.
-    final byId = _state.decisions[id];
-    if (byId != null) return byId;
-
-    if (kind == 'disk_picker') {
-      return _state.decisions['flash.disk'];
-    }
-    if (kind == 'choose_one' && optionsFrom == 'os.fresh_install_options') {
-      return _state.decisions['flash.os'];
-    }
-    return null;
-  }
-
-  Future<void> _runWaitForSsh(Map<String, dynamic> step) async {
-    final host = _state.sshHost;
-    if (host == null) throw StepExecutionException('no ssh host set');
-    final timeoutSecs = (step['timeout_seconds'] as num?)?.toInt() ?? 600;
-    final ok = await discovery.waitForSsh(
-      host: host,
-      timeout: Duration(seconds: timeoutSecs),
-    );
-    if (!ok) {
-      throw StepExecutionException(
-        'ssh did not come up within $timeoutSecs seconds',
-      );
-    }
-    _log(step, '[ssh] up at $host');
-  }
-
-  Future<void> _runVerify(Map<String, dynamic> step) async {
-    final s = _requireSession();
-    for (final v in _profile!.verifiers) {
-      final kind = v.raw['kind'] as String? ?? '';
-      switch (kind) {
-        case 'ssh_command':
-          final cmd = v.raw['command'] as String;
-          // Verifiers are supposed to be read-only checks. If a
-          // profile author writes `sudo foo` inside a verify step,
-          // that is either a mistake or a privilege-escalation
-          // sneaking in through the back door - neither is what we
-          // want. Run via ssh.run directly (no sudo-injection strip)
-          // so any `sudo` inside the command prompts for a password
-          // and fails fast, rather than silently picking up the
-          // cached session password.
-          final res = await ssh.run(s, cmd);
-          final contains = v.raw['expect_stdout_contains'] as String?;
-          final equals = v.raw['expect_stdout_equals'] as String?;
-          var passed = res.success;
-          if (contains != null) {
-            passed = passed && res.stdout.contains(contains);
-          }
-          if (equals != null) {
-            passed = passed && res.stdout.trim() == equals.trim();
-          }
-          _log(step, '[verify] ${v.id}: ${passed ? "PASS" : "FAIL"}');
-          if (!passed && !(v.raw['optional'] as bool? ?? false)) {
-            throw StepExecutionException('verifier ${v.id} failed');
-          }
-        case 'http_get':
-          final host = _state.sshHost;
-          if (host == null) {
-            _log(step, '[verify] ${v.id}: no host - skipping');
-            continue;
-          }
-          final url = (v.raw['url'] as String? ?? '').replaceAll(
-            '{{host}}',
-            host,
-          );
-          try {
-            final info = await moonraker.info(host: host);
-            _log(
-              step,
-              '[verify] ${v.id}: $url → klippy_state=${info.klippyState}',
-            );
-          } catch (e) {
-            _log(step, '[verify] ${v.id}: $e');
-            if (!(v.raw['optional'] as bool? ?? false)) {
-              throw StepExecutionException('verifier ${v.id} failed: $e');
-            }
-          }
-        case 'moonraker_gcode':
-          _log(step, '[verify] ${v.id}: moonraker_gcode not yet wired');
-        default:
-          _log(step, '[verify] ${v.id}: unknown kind $kind');
-      }
-    }
-  }
-
-  Future<void> _runConditional(Map<String, dynamic> step) async {
-    final when = step['when'] as String?;
-    if (when == null) return;
-    final env = _buildDslEnv();
-    final matches = _dsl.evaluate(when, env);
-    if (!matches) {
-      _log(step, '[conditional] skipping - condition false');
-      return;
-    }
-    final thenSteps = ((step['then'] as List?) ?? const [])
-        .whereType<Map>()
-        .toList();
-    for (final sub in thenSteps) {
-      await _runStep(sub.cast<String, dynamic>());
-    }
-  }
+  /// conditional step dispatcher. Body in wizard_controller_runtime.dart.
+  Future<void> _runConditional(Map<String, dynamic> step) =>
+      _runConditionalImpl(this, step);
 
   Future<Object?> _awaitUserInput(String id, Map<String, dynamic> step) =>
       _pendingInput.awaitInput(id, step, _emit);
@@ -1284,39 +707,11 @@ class WizardController {
   /// `_runScript`) are intentionally NOT stripped: we already routed
   /// auth through askpass, and combining `-S` with `-A` varies by sudo
   /// version. Anything without a sudo at position zero runs as-is.
+  /// _runSsh dispatcher. Body in wizard_controller_helpers.dart.
   Future<SshCommandResult> _runSsh(
     String command, {
     Duration timeout = const Duration(seconds: 30),
-  }) {
-    final s = _requireSession();
-    final stripped = _stripSudoPrefix(command);
-    if (stripped != null && _sshPassword != null) {
-      return ssh.run(
-        s,
-        stripped,
-        timeout: timeout,
-        sudoPassword: _sshPassword,
-      );
-    }
-    return ssh.run(s, command, timeout: timeout);
-  }
-
-  /// Returns the command with the `sudo` token removed if [command]
-  /// begins with sudo / /usr/bin/sudo / /bin/sudo. Returns null for
-  /// everything else (subshells, env-prefixed commands, commands that
-  /// start with any other word).
-  ///
-  /// Compound commands (`sudo X && rm Y`, `sudo X | grep Y`) are
-  /// matched - the outer `sudo -S` replacement still produces the
-  /// right behaviour because we only authenticate sudo and let the
-  /// rest of the shell line run unchanged.
-  String? _stripSudoPrefix(String command) {
-    final m = RegExp(
-      r'^(?<sudo>sudo|/usr/bin/sudo|/bin/sudo)(?:\s+(?<rest>.*))?$',
-    ).firstMatch(command);
-    if (m == null) return null;
-    return m.namedGroup('rest') ?? '';
-  }
+  }) => _runSshImpl(this, command, timeout: timeout);
 
   SshSession _requireSession() {
     final s = _session;
@@ -1351,199 +746,17 @@ class WizardController {
     }
   }
 
-  /// Turn a profile-declared relative path into an absolute local path.
-  ///
-  /// Three conventions, in priority order:
-  ///   - absolute (`/etc/foo`): returned as-is.
-  ///   - profile-local (`./scripts/foo.sh`): resolved against the
-  ///     profile's directory (where profile.yaml lives).
-  ///   - repo-root-relative (`shared/scripts/build-python.sh`): resolved
-  ///     against the deckhand-profiles repo root. Profile dirs live at
-  ///     `<root>/printers/<id>/`, so the repo root is two levels up.
-  ///
-  /// Bare paths without a prefix default to profile-local (the legacy
-  /// behaviour) - add `./` for new profiles to make the intent loud.
-  String _resolveProfilePath(String ref) {
-    final profileDir = _profileCache?.localPath ?? '.';
-    if (ref.startsWith('/')) return ref;
-    if (ref.startsWith('./')) return p.join(profileDir, ref.substring(2));
-    // `shared/` is the repo-level tree of scripts and templates reused
-    // across printers. Resolve it against the repo root.
-    if (ref.startsWith('shared/') || ref.startsWith('shared\\')) {
-      final repoRoot = p.dirname(p.dirname(profileDir));
-      return p.join(repoRoot, ref);
-    }
-    return p.join(profileDir, ref);
-  }
-
-  Future<void> _uploadDir(String localDir, String remote) async {
-    final s = _requireSession();
-    final tmpTar = p.join(
-      Directory.systemTemp.path,
-      'deckhand-upload-${DateTime.now().millisecondsSinceEpoch}.tar',
-    );
-    final result = await Process.run('tar', [
-      '-cf',
-      tmpTar,
-      '-C',
-      p.dirname(localDir),
-      p.basename(localDir),
-    ]);
-    if (result.exitCode != 0) {
-      throw StepExecutionException('local tar failed: ${result.stderr}');
-    }
-    try {
-      final remoteTar =
-          '/tmp/deckhand-upload-${DateTime.now().millisecondsSinceEpoch}.tar';
-      await ssh.upload(s, tmpTar, remoteTar);
-      final extract =
-          'mkdir -p "$remote" && tar -xf "$remoteTar" -C "\$(dirname "$remote")" && rm -f "$remoteTar"';
-      final res = await _runSsh(extract);
-      if (!res.success) {
-        throw StepExecutionException(
-          'remote extract failed',
-          stderr: res.stderr,
-        );
-      }
-    } finally {
-      try {
-        await File(tmpTar).delete();
-      } catch (_) {}
-    }
-  }
-
-  String _mcuConfig(Map<String, dynamic> mcu) {
-    final chip = mcu['chip'] as String? ?? '';
-    final clock = mcu['clock_hz'] as num? ?? 0;
-    final clockRef = mcu['clock_ref_hz'] as num? ?? 0;
-    final flashOffset = mcu['application_offset'] as String? ?? '';
-    final transport = (mcu['transport'] as Map?)?.cast<String, dynamic>() ?? {};
-    final selectKey = transport['select'] as String? ?? '';
-    final baud = transport['baud'] as num?;
-    final lines = [
-      'CONFIG_MACH_STM32=y',
-      'CONFIG_MCU="$chip"',
-      'CONFIG_CLOCK_FREQ=$clock',
-      'CONFIG_CLOCK_REF_FREQ=$clockRef',
-      if (flashOffset.isNotEmpty)
-        'CONFIG_FLASH_APPLICATION_ADDRESS=$flashOffset',
-      'CONFIG_${selectKey.toUpperCase()}=y',
-      if (baud != null) 'CONFIG_SERIAL_BAUD=$baud',
-    ];
-    return lines.join('\n');
-  }
-
-  bool _isDangerousPath(String path) {
-    const dangerous = {
-      '/',
-      '/bin',
-      '/boot',
-      '/etc',
-      '/home',
-      '/lib',
-      '/lib64',
-      '/opt',
-      '/root',
-      '/run',
-      '/sbin',
-      '/srv',
-      '/sys',
-      '/usr',
-      '/var',
-    };
-    return dangerous.contains(path);
-  }
-
-  /// Deprecated - use the canonical [shellSingleQuote] from deckhand_core.
-  /// Kept as a thin shim while callers migrate off.
+  /// Helper dispatchers. Bodies in wizard_controller_helpers.dart.
+  String _resolveProfilePath(String ref) => _resolveProfilePathImpl(this, ref);
+  Future<void> _uploadDir(String localDir, String remote) =>
+      _uploadDirImpl(this, localDir, remote);
+  String _mcuConfig(Map<String, dynamic> mcu) => _mcuConfigImpl(mcu);
+  bool _isDangerousPath(String path) => _isDangerousPathImpl(path);
   String _shellQuote(String s) => shellSingleQuote(s);
-
-  /// 16 hex chars from Random.secure(). Good enough to make a `/tmp`
-  /// path unguessable for the duration of a session; cheaper than
-  /// pulling a uuid package for a single call site.
-  String _randomSuffix() {
-    final rng = Random.secure();
-    final bytes = List<int>.generate(8, (_) => rng.nextInt(256));
-    return bytes
-        .map((b) => b.toRadixString(16).padLeft(2, '0'))
-        .join();
-  }
-
-  /// Build a `VAR=value VAR2=value2 ` prefix for a script step's
-  /// `env:` map. Keys MUST match `[A-Za-z_][A-Za-z0-9_]*` (the POSIX
-  /// shell identifier grammar) so a profile cannot inject shell syntax
-  /// through a key name; values are single-quoted regardless of
-  /// content.
-  String _buildEnvPrefix(Object? rawEnv) {
-    if (rawEnv == null) return '';
-    if (rawEnv is! Map) {
-      throw StepExecutionException(
-        'script step `env:` must be a map, got ${rawEnv.runtimeType}',
-      );
-    }
-    final validKey = RegExp(r'^[A-Za-z_][A-Za-z0-9_]*$');
-    final buf = StringBuffer();
-    rawEnv.forEach((k, v) {
-      final key = '$k';
-      if (!validKey.hasMatch(key)) {
-        throw StepExecutionException(
-          'env key "$key" is not a valid shell identifier',
-        );
-      }
-      buf
-        ..write(key)
-        ..write('=')
-        ..write(shellSingleQuote('${v ?? ''}'))
-        ..write(' ');
-    });
-    return buf.toString();
-  }
-
-  /// Expand `{{...}}` templates in [template].
-  ///
-  /// When [shellSafe] is true every substituted value is wrapped with
-  /// [shellSingleQuote] (or [shellPathEscape] for known-path keys) so
-  /// the result can be safely passed to a shell. The `{{timestamp}}`
-  /// value is always safe and needs no quoting.
-  String _render(String template, {bool shellSafe = false}) {
-    String q(String v, {bool isPath = false}) {
-      if (!shellSafe) return v;
-      return isPath ? shellPathEscape(v) : shellSingleQuote(v);
-    }
-
-    return template.replaceAllMapped(RegExp(r'\{\{([^}]+)\}\}'), (m) {
-      final key = m.group(1)!.trim();
-      if (key == 'timestamp') {
-        // Deterministic and safe - no shell metacharacters possible.
-        return DateTime.now().toUtc().toIso8601String().replaceAll(':', '-');
-      }
-      if (key.startsWith('decisions.')) {
-        final v = '${_state.decisions[key.substring('decisions.'.length)] ?? ''}';
-        return q(v);
-      }
-      if (key.startsWith('profile.')) {
-        final v = '${_profile?.raw[key.substring('profile.'.length)] ?? ''}';
-        return q(v);
-      }
-      if (key.startsWith('firmware.')) {
-        final fw = _selectedFirmware();
-        if (fw == null) return q('');
-        switch (key) {
-          case 'firmware.install_path':
-            return q(fw.installPath ?? '', isPath: true);
-          case 'firmware.venv_path':
-            return q(fw.venvPath ?? '', isPath: true);
-          case 'firmware.id':
-            return q(fw.id);
-          case 'firmware.ref':
-            return q(fw.ref);
-          case 'firmware.repo':
-            return q(fw.repo);
-        }
-      }
-      return m.group(0)!;
-    });
-  }
+  String _randomSuffix() => _randomSuffixImpl();
+  String _buildEnvPrefix(Object? rawEnv) => _buildEnvPrefixImpl(rawEnv);
+  String _render(String template, {bool shellSafe = false}) =>
+      _renderImpl(this, template, shellSafe: shellSafe);
 
   void _log(Map<String, dynamic> step, String line) {
     _emit(StepLog(stepId: step['id'] as String? ?? '', line: line));

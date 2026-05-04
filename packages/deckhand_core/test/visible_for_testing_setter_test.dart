@@ -13,8 +13,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// moves logic outside the assert, this test fails its debug-mode
 /// path for reasons we can spot in review).
 void main() {
-  test('printerStateForTesting applies state + emits refresh event',
-      () async {
+  test('printerStateForTesting applies state + emits refresh event', () async {
     final controller = _fakeController();
     await controller.loadProfile('test-printer');
     final gotEvents = <WizardEvent>[];
@@ -82,20 +81,21 @@ void main() {
 // Minimal stubs, inline to avoid coupling with the wizard_controller
 // test harness's internals.
 WizardController _fakeController() => WizardController(
-      profiles: _StubProfiles(),
-      ssh: _StubSsh(),
-      flash: _StubFlash(),
-      discovery: _StubDiscovery(),
-      moonraker: _StubMoonraker(),
-      upstream: _StubUpstream(),
-      security: _StubSecurity(),
-    );
+  profiles: _StubProfiles(),
+  ssh: _StubSsh(),
+  flash: _StubFlash(),
+  discovery: _StubDiscovery(),
+  moonraker: _StubMoonraker(),
+  upstream: _StubUpstream(),
+  security: _StubSecurity(),
+);
 
 class _StubProfiles implements ProfileService {
   @override
   Future<ProfileCacheEntry> ensureCached({
     required String profileId,
     String? ref,
+    bool force = false,
   }) async => ProfileCacheEntry(
     profileId: profileId,
     ref: ref ?? 'main',
@@ -120,6 +120,7 @@ class _StubSsh implements SshService {
     int port = 22,
     required SshCredential credential,
     bool acceptHostKey = false,
+    String? acceptedHostFingerprint,
   }) async => SshSession(id: 's', host: host, port: port, user: 'mks');
   @override
   Future<SshSession> tryDefaults({
@@ -127,6 +128,7 @@ class _StubSsh implements SshService {
     int port = 22,
     required List<SshCredential> credentials,
     bool acceptHostKey = false,
+    String? acceptedHostFingerprint,
   }) async => SshSession(id: 's', host: host, port: port, user: 'mks');
   @override
   Future<SshCommandResult> run(
@@ -137,6 +139,9 @@ class _StubSsh implements SshService {
   }) async => const SshCommandResult(stdout: '', stderr: '', exitCode: 0);
   @override
   Stream<String> runStream(SshSession session, String command) =>
+      const Stream.empty();
+  @override
+  Stream<String> runStreamMerged(SshSession session, String command) =>
       const Stream.empty();
   @override
   Future<int> upload(
@@ -152,8 +157,10 @@ class _StubSsh implements SshService {
     String localPath,
   ) async => 0;
   @override
-  Future<Map<String, int>> duPaths(SshSession session, List<String> paths) async =>
-      {for (final p in paths) p: 0};
+  Future<Map<String, int>> duPaths(
+    SshSession session,
+    List<String> paths,
+  ) async => {for (final p in paths) p: 0};
   @override
   Future<void> disconnect(SshSession session) async {}
 }
@@ -161,6 +168,9 @@ class _StubSsh implements SshService {
 class _StubFlash implements FlashService {
   @override
   Future<List<DiskInfo>> listDisks() async => const [];
+  @override
+  Future<FlashSafetyVerdict> safetyCheck({required String diskId}) async =>
+      FlashSafetyVerdict(diskId: diskId, allowed: true);
   @override
   Stream<FlashProgress> readImage({
     required String diskId,
@@ -240,11 +250,10 @@ class _StubUpstream implements UpstreamService {
     required String repoSlug,
     required String assetPattern,
     required String destPath,
+    required String expectedSha256,
     String? tag,
-  }) async => UpstreamFetchResult(
-    localPath: destPath,
-    resolvedRef: tag ?? 'latest',
-  );
+  }) async =>
+      UpstreamFetchResult(localPath: destPath, resolvedRef: tag ?? 'latest');
 }
 
 class _StubSecurity implements SecurityService {
@@ -258,6 +267,8 @@ class _StubSecurity implements SecurityService {
     expiresAt: DateTime.now().add(ttl),
     operation: operation,
   );
+  @override
+  bool consumeToken(String value, String operation) => true;
   @override
   Future<bool> isHostAllowed(String host) async => true;
   @override
@@ -274,8 +285,19 @@ class _StubSecurity implements SecurityService {
   @override
   Future<String?> pinnedHostFingerprint(String host) async => null;
   @override
-  Future<Map<String, bool>> requestHostApprovals(List<String> hosts) async =>
-      {for (final h in hosts) h: true};
+  Future<void> forgetHostFingerprint(String host) async {}
+  @override
+  Future<Map<String, String>> listPinnedFingerprints() async => const {};
+  @override
+  Future<List<String>> listApprovedHosts() async => const [];
+  @override
+  Future<String?> getGitHubToken() async => null;
+  @override
+  Future<void> setGitHubToken(String? token) async {}
+  @override
+  Future<Map<String, bool>> requestHostApprovals(List<String> hosts) async => {
+    for (final h in hosts) h: true,
+  };
   @override
   Stream<EgressEvent> get egressEvents => const Stream.empty();
   @override

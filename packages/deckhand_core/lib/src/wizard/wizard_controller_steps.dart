@@ -24,8 +24,7 @@ Future<void> _runWriteFileImpl(
   final requirePath = step['require_path'] as String?;
   if (requirePath != null) {
     final qReq = c._shellQuote(requirePath);
-    final check =
-        await c.ssh.run(s, '[ -e $qReq ] && echo y || echo n');
+    final check = await c.ssh.run(s, '[ -e $qReq ] && echo y || echo n');
     if (!check.stdout.contains('y')) {
       c._log(
         step,
@@ -92,19 +91,18 @@ Future<void> _runWriteFileImpl(
       );
       await File(metaTmpLocal).writeAsString(meta);
       final remoteMetaTmp = '/tmp/deckhand-meta-$ts.json';
-      await c.ssh
-          .upload(s, metaTmpLocal, remoteMetaTmp, mode: 420); // 0o644
-      final cp = useSudo ? 'sudo cp -p' : 'cp -p';
+      await c.ssh.upload(s, metaTmpLocal, remoteMetaTmp, mode: 420); // 0o644
+      final cp = useSudo ? 'sudo cp -p --' : 'cp -p --';
       final writeMeta = useSudo
-          ? 'sudo mv $remoteMetaTmp $qMeta && sudo chmod 0644 $qMeta'
-          : 'mv $remoteMetaTmp $qMeta';
+          ? 'sudo mv -- $remoteMetaTmp $qMeta && sudo chmod 0644 -- $qMeta'
+          : 'mv -- $remoteMetaTmp $qMeta';
       final writeProbe = useSudo
-          ? 'sudo touch "\$(dirname $qTarget0)/.deckhand-wtest-$ts" '
-              '2>/dev/null && '
-              'sudo rm -f "\$(dirname $qTarget0)/.deckhand-wtest-$ts"'
-          : 'touch "\$(dirname $qTarget0)/.deckhand-wtest-$ts" '
-              '2>/dev/null && '
-              'rm -f "\$(dirname $qTarget0)/.deckhand-wtest-$ts"';
+          ? 'sudo touch -- "\$(dirname $qTarget0)/.deckhand-wtest-$ts" '
+                '2>/dev/null && '
+                'sudo rm -f -- "\$(dirname $qTarget0)/.deckhand-wtest-$ts"'
+          : 'touch -- "\$(dirname $qTarget0)/.deckhand-wtest-$ts" '
+                '2>/dev/null && '
+                'rm -f -- "\$(dirname $qTarget0)/.deckhand-wtest-$ts"';
       final snapCmd =
           'if [ ! -e $qTarget0 ]; then echo DECKHAND_BACKUP_NOOP; '
           'elif ! ( $writeProbe ); then '
@@ -118,7 +116,8 @@ Future<void> _runWriteFileImpl(
         c._emit(
           StepWarning(
             stepId: step['id'] as String? ?? 'write_file',
-            message: 'Could not snapshot existing $target before '
+            message:
+                'Could not snapshot existing $target before '
                 'overwrite: ${snapRes.stderr.trim()}',
           ),
         );
@@ -145,12 +144,12 @@ Future<void> _runWriteFileImpl(
     final ownerArg = owner != null ? '-o ${c._shellQuote(owner)} ' : '';
     final String cmd;
     if (useSudo) {
-      cmd = 'sudo install $modeArg$ownerArg$qTmp $qTarget && rm -f $qTmp';
+      cmd = 'sudo install $modeArg$ownerArg-- $qTmp $qTarget && rm -f -- $qTmp';
     } else {
       final chmod = mode != null
-          ? ' && chmod ${mode.toRadixString(8)} $qTarget'
+          ? ' && chmod ${mode.toRadixString(8)} -- $qTarget'
           : '';
-      cmd = 'mv $qTmp $qTarget$chmod';
+      cmd = 'mv -- $qTmp $qTarget$chmod';
     }
     final res = await c._runSsh(cmd);
     c._log(
@@ -159,7 +158,7 @@ Future<void> _runWriteFileImpl(
       '${useSudo ? ', via sudo' : ''})',
     );
     if (!res.success) {
-      await c._runSsh('rm -f $qTmp');
+      await c._runSsh('rm -f -- $qTmp');
       throw StepExecutionException(
         'write_file $target failed',
         stderr: res.stderr,
@@ -192,7 +191,17 @@ int? _parseFileModeImpl(Object? v) {
     if (raw.startsWith('0o') || raw.startsWith('0O')) {
       raw = raw.substring(2);
     }
-    return int.parse(raw, radix: 8);
+    try {
+      return int.parse(raw, radix: 8);
+    } on FormatException {
+      // Surface profile YAML mistakes ("nine", "0o999", "0xFF") as
+      // a clean step error rather than letting a raw FormatException
+      // bubble through with a Dart stack trace.
+      throw StepExecutionException(
+        'invalid mode "$v": expected an integer or octal string '
+        '(e.g. 0644, "755", "0o600")',
+      );
+    }
   }
   return null;
 }
@@ -277,8 +286,7 @@ Future<void> _runFlashMcusImpl(
     }
     c._log(step, '[mcu] built $id');
 
-    final transport =
-        (raw['transport'] as Map?)?.cast<String, dynamic>() ?? {};
+    final transport = (raw['transport'] as Map?)?.cast<String, dynamic>() ?? {};
     if (transport['requires_physical_access'] == true) {
       await c._awaitUserInput('${mcu.id}_physical_prompt', {
         'id': '${mcu.id}_physical_prompt',
@@ -305,19 +313,32 @@ Future<void> _runOsDownloadImpl(
     (o) => o.id == osId,
     orElse: () => throw StepExecutionException('unknown OS option $osId'),
   );
-  final dest = step['dest'] as String? ??
-      p.join(Directory.systemTemp.path, 'deckhand-${opt.id}.img');
+  final imageUrl = Uri.tryParse(opt.url);
+  if (imageUrl == null || imageUrl.scheme != 'https' || imageUrl.host.isEmpty) {
+    throw StepExecutionException('OS image "$osId" must use an https:// URL');
+  }
+  final expectedSha = opt.sha256?.trim().toLowerCase();
+  if (expectedSha == null || !_isSha256HexImpl(expectedSha)) {
+    throw StepExecutionException(
+      'OS image "$osId" must declare a 64-hex sha256 before download',
+    );
+  }
+  final dest =
+      step['dest'] as String? ??
+      p.join(Directory.systemTemp.path, 'deckhand-os-images', '${opt.id}.img');
   c._log(step, '[os] downloading ${opt.url} -> $dest');
 
   final stepId = step['id'] as String? ?? 'os_download';
   String? sha;
+  var actualPath = dest;
   await for (final ev in c.upstream.osDownload(
     url: opt.url,
     destPath: dest,
-    expectedSha256: opt.sha256,
+    expectedSha256: expectedSha,
   )) {
     if (ev.phase == OsDownloadPhase.done) {
       sha = ev.sha256;
+      actualPath = ev.path ?? actualPath;
       c._emit(
         StepProgress(
           stepId: stepId,
@@ -340,12 +361,18 @@ Future<void> _runOsDownloadImpl(
     }
   }
 
-  await c.setDecision('flash.image_path', dest);
+  await c.setDecision('flash.image_path', actualPath);
   if (sha != null) {
     await c.setDecision('flash.image_sha256', sha);
   }
-  c._log(step, '[os] ready at $dest${sha != null ? " (sha256 $sha)" : ""}');
+  c._log(
+    step,
+    '[os] ready at $actualPath${sha != null ? " (sha256 $sha)" : ""}',
+  );
 }
+
+bool _isSha256HexImpl(String value) =>
+    RegExp(r'^[0-9a-f]{64}$').hasMatch(value);
 
 Future<void> _runFlashDiskImpl(
   WizardController c,
@@ -365,10 +392,45 @@ Future<void> _runFlashDiskImpl(
       'elevated helper not configured - cannot write raw disk',
     );
   }
+  final verdict = await c.flash.safetyCheck(diskId: diskId);
+  if (!verdict.allowed) {
+    final reasons = verdict.blockingReasons.isEmpty
+        ? 'no blocking reason returned'
+        : verdict.blockingReasons.join('; ');
+    throw StepExecutionException('disk safety check refused $diskId: $reasons');
+  }
+  if (verdict.warnings.isNotEmpty) {
+    final acknowledged =
+        c._state.decisions['flash.safety_warnings_acknowledged'] == true ||
+        c._state.decisions['flash.safety_warnings_acknowledged.$diskId'] ==
+            true;
+    if (!acknowledged) {
+      throw StepExecutionException(
+        'disk safety check returned warnings for $diskId: '
+        '${verdict.warnings.join('; ')}',
+      );
+    }
+    c._log(
+      step,
+      '[flash] safety warning acknowledged: ${verdict.warnings.join('; ')}',
+    );
+  }
   final token = await c.security.issueConfirmationToken(
     operation: 'write_image',
     target: diskId,
   );
+  // Mark the token consumed immediately. The UI flow has done its
+  // job - a hostile or replayed call to a SecurityService method using
+  // the same value now fails, even though the value will live briefly
+  // in the helper invocation. This pairs with the elevated helper's
+  // --token-file mechanism, which keeps the value off the process
+  // table and out of /proc/<pid>/cmdline.
+  final consumed = c.security.consumeToken(token.value, 'write_image');
+  if (!consumed) {
+    throw StepExecutionException(
+      'confirmation token was rejected before helper launch',
+    );
+  }
   final verify = step['verify_after_write'] as bool? ?? true;
   final expectedSha = c._state.decisions['flash.image_sha256'] as String?;
   final stepId = step['id'] as String? ?? 'flash_disk';
@@ -382,9 +444,7 @@ Future<void> _runFlashDiskImpl(
     expectedSha256: expectedSha,
   )) {
     final pct = ev.fraction;
-    c._emit(
-      StepProgress(stepId: stepId, percent: pct, message: ev.message),
-    );
+    c._emit(StepProgress(stepId: stepId, percent: pct, message: ev.message));
     if (ev.phase == FlashPhase.failed) {
       throw StepExecutionException(ev.message ?? 'flash failed');
     }
@@ -405,6 +465,7 @@ Future<void> _runScriptImpl(
   if (!await File(local).exists()) {
     throw StepExecutionException('script not found: $rel');
   }
+  final interpreter = _validatedScriptInterpreterImpl(step['interpreter']);
   // A random suffix makes the remote path unguessable so a non-root
   // attacker on the printer cannot read (or race-overwrite) the
   // staged script while it is still on disk. mode 0o700 - only
@@ -412,7 +473,6 @@ Future<void> _runScriptImpl(
   final basename = p.basename(rel);
   final remote = '/tmp/deckhand-${c._randomSuffix()}-$basename';
   await c.ssh.upload(s, local, remote, mode: 448); // 0o700
-  final interpreter = step['interpreter'] as String? ?? 'bash';
   final extraArgs = ((step['args'] as List?) ?? const []).cast<String>();
   final ignoreErrors = step['ignore_errors'] as bool? ?? false;
   final timeoutSecs = (step['timeout_seconds'] as num?)?.toInt() ?? 600;
@@ -524,8 +584,7 @@ Future<_ScriptSudoHelper> _installSudoAskpassHelperImpl(
   await File(wrapperLocal).writeAsString(wrapperBody);
   try {
     await c.ssh.run(s, 'mkdir -p ${c._shellQuote(binDir)}');
-    await c.ssh
-        .upload(s, wrapperLocal, '$binDir/sudo', mode: 493); // 0o755
+    await c.ssh.upload(s, wrapperLocal, '$binDir/sudo', mode: 493); // 0o755
   } finally {
     try {
       await File(wrapperLocal).delete();
@@ -533,10 +592,7 @@ Future<_ScriptSudoHelper> _installSudoAskpassHelperImpl(
   }
   await c.ssh.run(s, 'chmod 755 ${c._shellQuote('$binDir/sudo')}');
 
-  final helper = _ScriptSudoHelper(
-    askpassPath: askpassPath,
-    binDir: binDir,
-  );
+  final helper = _ScriptSudoHelper(askpassPath: askpassPath, binDir: binDir);
   c._sessionAskpass = helper;
   return helper;
 }

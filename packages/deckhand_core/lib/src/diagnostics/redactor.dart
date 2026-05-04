@@ -27,6 +27,12 @@ class Redactor {
       'printer_host': '<PRINTER_HOST>',
       'printer_user': '<SSH_USER>',
       'printer_ip': '<PRINTER_IP>',
+      // SSH passwords below the 32-char generic-secret threshold (any
+      // user-chosen 8-31 char password) are not caught by the entropy
+      // regex; explicit substring redaction here closes that gap.
+      // Callers populate sessionValues['ssh_password'] from the
+      // controller's redactionSessionValues() helper.
+      'ssh_password': '<SSH_PASSWORD>',
     },
   });
 

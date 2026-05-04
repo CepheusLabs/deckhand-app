@@ -113,6 +113,7 @@ class HeadlessSecurityService implements SecurityService {
   /// Validate + consume a token. Mirrors DefaultSecurityService's
   /// helper of the same name; the elevated-helper path expects the
   /// token to be invalid after one use.
+  @override
   bool consumeToken(String value, String operation) {
     final t = _tokens.remove(value);
     if (t == null) return false;
@@ -165,6 +166,34 @@ class HeadlessSecurityService implements SecurityService {
   @override
   Future<String?> pinnedHostFingerprint(String host) async =>
       _fingerprints[host];
+
+  @override
+  Future<void> forgetHostFingerprint(String host) async {
+    _fingerprints.remove(host);
+    _persistFingerprints();
+  }
+
+  @override
+  Future<Map<String, String>> listPinnedFingerprints() async =>
+      Map<String, String>.from(_fingerprints);
+
+  @override
+  Future<List<String>> listApprovedHosts() async {
+    final hosts = _allowedHosts.toList()..sort();
+    return hosts;
+  }
+
+  @override
+  Future<String?> getGitHubToken() async => _githubToken;
+
+  @override
+  Future<void> setGitHubToken(String? token) async {
+    _githubToken = (token == null || token.trim().isEmpty)
+        ? null
+        : token.trim();
+  }
+
+  String? _githubToken;
 
   @override
   Stream<EgressEvent> get egressEvents => _egressController.stream;

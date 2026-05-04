@@ -15,7 +15,9 @@ void main() {
     tearDown(() async {
       try {
         await tmp.delete(recursive: true);
-      } on Object {/* best-effort */}
+      } on Object {
+        /* best-effort */
+      }
     });
 
     test('warns and skips when no archive service is wired', () async {
@@ -87,10 +89,7 @@ void main() {
       await controller.startExecution();
       await sub.cancel();
 
-      expect(
-        warnings.any((m) => m.contains('phantom-id')),
-        isTrue,
-      );
+      expect(warnings.any((m) => m.contains('phantom-id')), isTrue);
       // Archive ran with only the resolvable path.
       expect(archive.captureCalls, hasLength(1));
       expect(archive.captureCalls.single.paths, ['~/printer_data/config']);
@@ -98,7 +97,9 @@ void main() {
 
     test('records archive_path + archive_sha256 into wizard state', () async {
       final archive = _FakeArchive(
-        progress: const [SnapshotProgress(bytesCaptured: 42, bytesEstimated: 42)],
+        progress: const [
+          SnapshotProgress(bytesCaptured: 42, bytesEstimated: 42),
+        ],
         sha: 'feedface',
       );
       final controller = _build(
@@ -153,14 +154,14 @@ final Map<String, dynamic> _profileWithSnapshot = {
   'model': 'Robo',
   'os': {
     'fresh_install_options': [
-      {'id': 'x', 'display_name': 'x', 'url': 'https://e/x'}
-    ]
+      {'id': 'x', 'display_name': 'x', 'url': 'https://e/x'},
+    ],
   },
   'ssh': {
     'default_port': 22,
     'default_credentials': [
-      {'user': 'root', 'password': 'r'}
-    ]
+      {'user': 'root', 'password': 'r'},
+    ],
   },
   'stock_os': {
     'snapshot_paths': [
@@ -182,10 +183,7 @@ final Map<String, dynamic> _profileWithSnapshot = {
     'stock_keep': {
       'enabled': true,
       'steps': [
-        {
-          'id': 'snap',
-          'kind': 'snapshot_archive',
-        },
+        {'id': 'snap', 'kind': 'snapshot_archive'},
       ],
     },
   },
@@ -232,33 +230,54 @@ class _FakeSsh implements SshService {
 
   @override
   Future<SshSession> connect({
-    required String host, int port = 22,
-    required SshCredential credential, bool acceptHostKey = false,
+    required String host,
+    int port = 22,
+    required SshCredential credential,
+    bool acceptHostKey = false,
+    String? acceptedHostFingerprint,
   }) async => SshSession(id: 's', host: host, port: port, user: 'u');
   @override
   Future<SshSession> tryDefaults({
-    required String host, int port = 22,
-    required List<SshCredential> credentials, bool acceptHostKey = false,
+    required String host,
+    int port = 22,
+    required List<SshCredential> credentials,
+    bool acceptHostKey = false,
+    String? acceptedHostFingerprint,
   }) async => SshSession(id: 's', host: host, port: port, user: 'u');
   @override
-  Future<SshCommandResult> run(SshSession session, String command, {
-    Duration timeout = const Duration(seconds: 30), String? sudoPassword,
+  Future<SshCommandResult> run(
+    SshSession session,
+    String command, {
+    Duration timeout = const Duration(seconds: 30),
+    String? sudoPassword,
   }) async => const SshCommandResult(stdout: '', stderr: '', exitCode: 0);
   @override
   Stream<String> runStream(SshSession session, String command) async* {
     streamCommands.add(command);
   }
+
+  @override
+  Stream<String> runStreamMerged(SshSession session, String command) async* {
+    streamCommands.add(command);
+  }
+
   @override
   Future<int> upload(
-    SshSession session, String localPath, String remotePath, {int? mode,
+    SshSession session,
+    String localPath,
+    String remotePath, {
+    int? mode,
   }) async => 0;
   @override
   Future<int> download(
-    SshSession session, String remotePath, String localPath,
+    SshSession session,
+    String remotePath,
+    String localPath,
   ) async => 0;
   @override
   Future<Map<String, int>> duPaths(
-    SshSession session, List<String> paths,
+    SshSession session,
+    List<String> paths,
   ) async => {for (final p in paths) p: 0};
   @override
   Future<void> disconnect(SshSession session) async {}
@@ -269,10 +288,14 @@ class _StubProfileService implements ProfileService {
   final PrinterProfile profile;
   @override
   Future<ProfileCacheEntry> ensureCached({
-    required String profileId, String? ref,
+    required String profileId,
+    String? ref,
+    bool force = false,
   }) async => ProfileCacheEntry(
-    profileId: profileId, ref: ref ?? 'main',
-    localPath: '.', resolvedSha: '',
+    profileId: profileId,
+    ref: ref ?? 'main',
+    localPath: '.',
+    resolvedSha: '',
   );
   @override
   Future<PrinterProfile> load(ProfileCacheEntry cacheEntry) async => profile;
@@ -285,13 +308,19 @@ class _StubFlash implements FlashService {
   @override
   Future<List<DiskInfo>> listDisks() async => const [];
   @override
+  Future<FlashSafetyVerdict> safetyCheck({required String diskId}) async =>
+      FlashSafetyVerdict(diskId: diskId, allowed: true);
+  @override
   Stream<FlashProgress> writeImage({
-    required String imagePath, required String diskId,
-    required String confirmationToken, bool verifyAfterWrite = true,
+    required String imagePath,
+    required String diskId,
+    required String confirmationToken,
+    bool verifyAfterWrite = true,
   }) => const Stream.empty();
   @override
   Stream<FlashProgress> readImage({
-    required String diskId, required String outputPath,
+    required String diskId,
+    required String outputPath,
   }) => const Stream.empty();
   @override
   Future<String> sha256(String path) async => '';
@@ -304,12 +333,14 @@ class _StubDiscovery implements DiscoveryService {
   }) async => const [];
   @override
   Future<List<DiscoveredPrinter>> scanCidr({
-    required String cidr, int port = 7125,
+    required String cidr,
+    int port = 7125,
     Duration timeout = const Duration(seconds: 5),
   }) async => const [];
   @override
   Future<bool> waitForSsh({
-    required String host, int port = 22,
+    required String host,
+    int port = 22,
     Duration timeout = const Duration(minutes: 10),
   }) async => true;
 }
@@ -319,49 +350,65 @@ class _StubMoonraker implements MoonrakerService {
   @override
   Future<KlippyInfo> info({required String host, int port = 7125}) async =>
       const KlippyInfo(
-        state: 'ready', hostname: 'h',
-        softwareVersion: '0', klippyState: 'ready',
+        state: 'ready',
+        hostname: 'h',
+        softwareVersion: '0',
+        klippyState: 'ready',
       );
   @override
   Future<bool> isPrinting({required String host, int port = 7125}) async =>
       false;
   @override
   Future<List<String>> listObjects({
-    required String host, int port = 7125,
+    required String host,
+    int port = 7125,
   }) async => const [];
   @override
   Future<String?> fetchConfigFile({
-    required String host, int port = 7125, required String filename,
+    required String host,
+    int port = 7125,
+    required String filename,
   }) async => null;
 }
 
 class _StubUpstream implements UpstreamService {
   @override
   Future<UpstreamFetchResult> gitFetch({
-    required String repoUrl, required String ref,
-    required String destPath, int depth = 1,
+    required String repoUrl,
+    required String ref,
+    required String destPath,
+    int depth = 1,
   }) async => UpstreamFetchResult(localPath: destPath, resolvedRef: ref);
   @override
   Stream<OsDownloadProgress> osDownload({
-    required String url, required String destPath, String? expectedSha256,
+    required String url,
+    required String destPath,
+    String? expectedSha256,
   }) => const Stream.empty();
   @override
   Future<UpstreamFetchResult> releaseFetch({
-    required String repoSlug, required String assetPattern,
-    required String destPath, String? tag,
-  }) async => UpstreamFetchResult(
-    localPath: destPath, resolvedRef: tag ?? 'latest',
-  );
+    required String repoSlug,
+    required String assetPattern,
+    required String destPath,
+    required String expectedSha256,
+    String? tag,
+  }) async =>
+      UpstreamFetchResult(localPath: destPath, resolvedRef: tag ?? 'latest');
 }
 
 class _StubSecurity implements SecurityService {
   @override
   Future<ConfirmationToken> issueConfirmationToken({
-    required String operation, required String target,
+    required String operation,
+    required String target,
     Duration ttl = const Duration(seconds: 60),
   }) async => ConfirmationToken(
-    value: 'tok', expiresAt: DateTime.now().add(ttl), operation: operation,
+    value: 'tok',
+    expiresAt: DateTime.now().add(ttl),
+    operation: operation,
   );
+  @override
+  bool consumeToken(String value, String operation) => true;
   @override
   Future<bool> isHostAllowed(String host) async => true;
   @override
@@ -370,13 +417,25 @@ class _StubSecurity implements SecurityService {
   Future<void> revokeHost(String host) async {}
   @override
   Future<void> pinHostFingerprint({
-    required String host, required String fingerprint,
+    required String host,
+    required String fingerprint,
   }) async {}
   @override
   Future<String?> pinnedHostFingerprint(String host) async => null;
   @override
-  Future<Map<String, bool>> requestHostApprovals(List<String> hosts) async =>
-      {for (final h in hosts) h: true};
+  Future<void> forgetHostFingerprint(String host) async {}
+  @override
+  Future<Map<String, String>> listPinnedFingerprints() async => const {};
+  @override
+  Future<List<String>> listApprovedHosts() async => const [];
+  @override
+  Future<String?> getGitHubToken() async => null;
+  @override
+  Future<void> setGitHubToken(String? token) async {}
+  @override
+  Future<Map<String, bool>> requestHostApprovals(List<String> hosts) async => {
+    for (final h in hosts) h: true,
+  };
   @override
   Stream<EgressEvent> get egressEvents => const Stream.empty();
   @override

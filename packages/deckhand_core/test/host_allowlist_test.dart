@@ -65,6 +65,9 @@ class _StubSecurity implements SecurityService {
   }) async => throw UnimplementedError();
 
   @override
+  bool consumeToken(String value, String operation) => true;
+
+  @override
   Future<void> approveHost(String host) async {}
 
   @override
@@ -77,6 +80,21 @@ class _StubSecurity implements SecurityService {
 
   @override
   Future<String?> pinnedHostFingerprint(String host) async => null;
+
+  @override
+  Future<void> forgetHostFingerprint(String host) async {}
+
+  @override
+  Future<Map<String, String>> listPinnedFingerprints() async => const {};
+
+  @override
+  Future<List<String>> listApprovedHosts() async => allowed.toList()..sort();
+
+  @override
+  Future<String?> getGitHubToken() async => null;
+
+  @override
+  Future<void> setGitHubToken(String? token) async {}
 
   @override
   Stream<EgressEvent> get egressEvents => const Stream.empty();

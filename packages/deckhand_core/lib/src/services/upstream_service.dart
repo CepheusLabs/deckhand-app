@@ -11,10 +11,13 @@ abstract class UpstreamService {
 
   /// Download a GitHub Releases asset matching [assetPattern] from
   /// [repoSlug] (e.g. `fluidd-core/fluidd`), optionally pinned to [tag].
+  /// [expectedSha256] is required so release assets get the same
+  /// artifact-integrity guarantee as OS images.
   Future<UpstreamFetchResult> releaseFetch({
     required String repoSlug,
     required String assetPattern,
     required String destPath,
+    required String expectedSha256,
     String? tag,
   });
 

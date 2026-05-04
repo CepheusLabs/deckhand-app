@@ -2,13 +2,27 @@
 /// management, and known-host fingerprints.
 abstract class SecurityService {
   /// Issue a single-use token for [operation] targeting [target].
-  /// Caller passes the token back to the adapter; sidecar rejects
-  /// expired or reused tokens.
+  /// The controller consumes the token immediately before launching
+  /// the privileged helper, after the live disk safety check passes.
+  /// The helper treats the value as a launch nonce only; it cannot
+  /// independently enforce SecurityService TTL/reuse semantics.
   Future<ConfirmationToken> issueConfirmationToken({
     required String operation,
     required String target,
     Duration ttl = const Duration(seconds: 60),
   });
+
+  /// Mark [value] as consumed, removing it from the live-token set so
+  /// any subsequent attempt to use the same value fails. Callers
+  /// invoke this immediately after handing the token to a privileged
+  /// helper — by that point the UI flow has done its job and the
+  /// token's reuse window should close to zero.
+  ///
+  /// Returns true when a live token matching [value] and [operation]
+  /// was found and removed; false otherwise (already consumed,
+  /// expired, never issued, or operation mismatch). Callers may treat
+  /// false as a security signal and refuse to launch privileged work.
+  bool consumeToken(String value, String operation);
 
   /// Batch-prompt the user to allow-list [hosts] before any network
   /// traffic reaches them.
@@ -27,6 +41,11 @@ abstract class SecurityService {
   /// screen so users can revoke a previously-approved host.
   Future<void> revokeHost(String host);
 
+  /// Enumerate every host currently on the allow-list. Used by the
+  /// Settings screen to render the "Network allow-list" section so
+  /// users can audit + revoke approvals after the fact.
+  Future<List<String>> listApprovedHosts();
+
   /// Persist [fingerprint] for [host]. Called on first successful SSH
   /// connect once the user accepts the fingerprint.
   Future<void> pinHostFingerprint({
@@ -36,6 +55,29 @@ abstract class SecurityService {
 
   /// Returns the pinned fingerprint for [host], or null if none pinned.
   Future<String?> pinnedHostFingerprint(String host);
+
+  /// Forget the pinned fingerprint for [host]. Lets the user revoke a
+  /// trusted printer and force the next connect to re-prompt. Without
+  /// this the only way to clear a fingerprint was deleting the secure
+  /// storage by hand.
+  Future<void> forgetHostFingerprint(String host);
+
+  /// Enumerate every (host → fingerprint) pinned in the keystore.
+  /// The Settings "Saved connections" panel renders this list so
+  /// users can audit which printers Deckhand will silently trust on
+  /// next launch.
+  Future<Map<String, String>> listPinnedFingerprints();
+
+  /// Returns the persisted GitHub Personal Access Token, or null if
+  /// the user hasn't set one. Read by the upstream HTTP layer
+  /// immediately before issuing a request to api.github.com to lift
+  /// the unauthenticated rate-limit ceiling.
+  Future<String?> getGitHubToken();
+
+  /// Persist a GitHub PAT. Pass null/empty to clear. The token is
+  /// kept in the platform secure store, never written to
+  /// settings.json. Idempotent.
+  Future<void> setGitHubToken(String? token);
 
   /// Stream of every outbound network request Deckhand makes during
   /// the session, after allow-list approval has passed. The S900
@@ -139,10 +181,7 @@ class ConfirmationToken {
 /// single concrete user-visible surface of the trust model — making
 /// it loud is the whole point.
 class HostNotApprovedException implements Exception {
-  const HostNotApprovedException({
-    required this.host,
-    required this.reason,
-  });
+  const HostNotApprovedException({required this.host, required this.reason});
   final String host;
   final String reason;
   @override

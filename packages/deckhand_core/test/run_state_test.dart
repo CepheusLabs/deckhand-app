@@ -26,7 +26,9 @@ void main() {
 
     test('appending preserves history of repeated step ids', () {
       final s0 = RunState.empty(
-        deckhandVersion: '1', profileId: 'p', profileCommit: 'c',
+        deckhandVersion: '1',
+        profileId: 'p',
+        profileCommit: 'c',
       );
       final firstAttempt = RunStateStep(
         id: 'firmware_clone',
@@ -51,7 +53,9 @@ void main() {
 
     test('upsertingLast replaces in-progress with terminal state', () {
       final s0 = RunState.empty(
-        deckhandVersion: '1', profileId: 'p', profileCommit: 'c',
+        deckhandVersion: '1',
+        profileId: 'p',
+        profileCommit: 'c',
       );
       final pending = RunStateStep(
         id: 'apt_install',
@@ -87,8 +91,12 @@ void main() {
     });
 
     test('list order is significant', () {
-      final a = canonicalInputBytes({'paths': const ['x', 'y']});
-      final b = canonicalInputBytes({'paths': const ['y', 'x']});
+      final a = canonicalInputBytes({
+        'paths': const ['x', 'y'],
+      });
+      final b = canonicalInputBytes({
+        'paths': const ['y', 'x'],
+      });
       expect(a, isNot(equals(b)));
     });
 
@@ -105,10 +113,12 @@ void main() {
 
   group('RunStateStore', () {
     test('load returns null when the remote file is empty', () async {
-      final ssh = _CapturingSsh(stdoutReplies: [
-        // `cat ... 2>/dev/null || true` → empty stdout when missing.
-        const SshCommandResult(stdout: '', stderr: '', exitCode: 0),
-      ]);
+      final ssh = _CapturingSsh(
+        stdoutReplies: [
+          // `cat ... 2>/dev/null || true` → empty stdout when missing.
+          const SshCommandResult(stdout: '', stderr: '', exitCode: 0),
+        ],
+      );
       final store = RunStateStore(ssh: ssh);
       final got = await store.load(_testSession);
       expect(got, isNull);
@@ -119,36 +129,58 @@ void main() {
     });
 
     test('load tolerates malformed JSON by returning null', () async {
-      final ssh = _CapturingSsh(stdoutReplies: [
-        const SshCommandResult(
-          stdout: 'not valid json',
-          stderr: '',
-          exitCode: 0,
-        ),
-      ]);
+      final ssh = _CapturingSsh(
+        stdoutReplies: [
+          const SshCommandResult(
+            stdout: 'not valid json',
+            stderr: '',
+            exitCode: 0,
+          ),
+        ],
+      );
+      final store = RunStateStore(ssh: ssh);
+      expect(await store.load(_testSession), isNull);
+    });
+
+    test('load tolerates wrong-shaped JSON by returning null', () async {
+      final ssh = _CapturingSsh(
+        stdoutReplies: [
+          const SshCommandResult(
+            stdout:
+                '{"schema":"deckhand.run_state/1","started_at":false,"steps":[]}',
+            stderr: '',
+            exitCode: 0,
+          ),
+        ],
+      );
       final store = RunStateStore(ssh: ssh);
       expect(await store.load(_testSession), isNull);
     });
 
     test('load round-trips a real RunState', () async {
-      final original = RunState.empty(
-        deckhandVersion: '26.4.25-1731',
-        profileId: 'sovol_zero',
-        profileCommit: 'abc',
-      ).appending(RunStateStep(
-        id: 'firmware_clone',
-        status: RunStateStatus.completed,
-        startedAt: DateTime.utc(2026, 4, 25),
-        finishedAt: DateTime.utc(2026, 4, 25, 0, 5),
-        inputHash: 'sha256:1',
-      ));
-      final ssh = _CapturingSsh(stdoutReplies: [
-        SshCommandResult(
-          stdout: const JsonEncoder().convert(original.toJson()),
-          stderr: '',
-          exitCode: 0,
-        ),
-      ]);
+      final original =
+          RunState.empty(
+            deckhandVersion: '26.4.25-1731',
+            profileId: 'sovol_zero',
+            profileCommit: 'abc',
+          ).appending(
+            RunStateStep(
+              id: 'firmware_clone',
+              status: RunStateStatus.completed,
+              startedAt: DateTime.utc(2026, 4, 25),
+              finishedAt: DateTime.utc(2026, 4, 25, 0, 5),
+              inputHash: 'sha256:1',
+            ),
+          );
+      final ssh = _CapturingSsh(
+        stdoutReplies: [
+          SshCommandResult(
+            stdout: const JsonEncoder().convert(original.toJson()),
+            stderr: '',
+            exitCode: 0,
+          ),
+        ],
+      );
       final store = RunStateStore(ssh: ssh);
       final got = await store.load(_testSession);
       expect(got, isNotNull);
@@ -158,9 +190,11 @@ void main() {
     });
 
     test('save issues mkdir + base64-decode + atomic mv', () async {
-      final ssh = _CapturingSsh(stdoutReplies: [
-        const SshCommandResult(stdout: '', stderr: '', exitCode: 0),
-      ]);
+      final ssh = _CapturingSsh(
+        stdoutReplies: [
+          const SshCommandResult(stdout: '', stderr: '', exitCode: 0),
+        ],
+      );
       final store = RunStateStore(ssh: ssh);
       final state = RunState.empty(
         deckhandVersion: 'v',
@@ -175,47 +209,60 @@ void main() {
       expect(cmd, contains('base64 -d'));
       expect(cmd, contains('.tmp'));
       expect(cmd, contains('mv'));
+      expect(cmd, contains('rm -f'));
       expect(cmd, contains('run-state.json'));
     });
 
     test('save throws RunStateWriteException on non-zero exit', () async {
-      final ssh = _CapturingSsh(stdoutReplies: [
-        const SshCommandResult(
-          stdout: '',
-          stderr: 'mv: permission denied',
-          exitCode: 1,
-        ),
-      ]);
+      final ssh = _CapturingSsh(
+        stdoutReplies: [
+          const SshCommandResult(
+            stdout: '',
+            stderr: 'mv: permission denied',
+            exitCode: 1,
+          ),
+        ],
+      );
       final store = RunStateStore(ssh: ssh);
       final state = RunState.empty(
-        deckhandVersion: 'v', profileId: 'p', profileCommit: 'c',
+        deckhandVersion: 'v',
+        profileId: 'p',
+        profileCommit: 'c',
       );
       await expectLater(
         store.save(_testSession, state),
-        throwsA(isA<RunStateWriteException>()
-            .having((e) => e.exitCode, 'exitCode', 1)
-            .having((e) => e.stderr, 'stderr', contains('permission denied'))),
+        throwsA(
+          isA<RunStateWriteException>()
+              .having((e) => e.exitCode, 'exitCode', 1)
+              .having((e) => e.stderr, 'stderr', contains('permission denied')),
+        ),
       );
     });
 
-    test('save embeds the JSON via base64 (no shell-quoting bugs)',
-        () async {
+    test('save embeds the JSON via base64 (no shell-quoting bugs)', () async {
       // The JSON includes characters that would break naive shell
       // single-quoting if the encoder didn't go through base64.
-      final ssh = _CapturingSsh(stdoutReplies: [
-        const SshCommandResult(stdout: '', stderr: '', exitCode: 0),
-      ]);
+      final ssh = _CapturingSsh(
+        stdoutReplies: [
+          const SshCommandResult(stdout: '', stderr: '', exitCode: 0),
+        ],
+      );
       final store = RunStateStore(ssh: ssh);
-      final state = RunState.empty(
-        deckhandVersion: '1', profileId: 'p', profileCommit: 'c',
-      ).appending(RunStateStep(
-        id: 'tricky',
-        status: RunStateStatus.completed,
-        startedAt: DateTime.utc(2026, 4, 25),
-        inputHash: 'sha256:1',
-        // Embed a single quote and a newline.
-        error: "got 'undefined' on\nthe second line",
-      ));
+      final state =
+          RunState.empty(
+            deckhandVersion: '1',
+            profileId: 'p',
+            profileCommit: 'c',
+          ).appending(
+            RunStateStep(
+              id: 'tricky',
+              status: RunStateStatus.completed,
+              startedAt: DateTime.utc(2026, 4, 25),
+              inputHash: 'sha256:1',
+              // Embed a single quote and a newline.
+              error: "got 'undefined' on\nthe second line",
+            ),
+          );
       await store.save(_testSession, state);
       final cmd = ssh.commands.single;
       // The command embeds an `printf %s 'BASE64...' | base64 -d` —
@@ -238,14 +285,20 @@ class _CapturingSsh implements SshService {
 
   @override
   Future<SshSession> connect({
-    required String host, int port = 22,
-    required SshCredential credential, bool acceptHostKey = false,
+    required String host,
+    int port = 22,
+    required SshCredential credential,
+    bool acceptHostKey = false,
+    String? acceptedHostFingerprint,
   }) async => SshSession(id: 's', host: host, port: port, user: 'x');
 
   @override
   Future<SshSession> tryDefaults({
-    required String host, int port = 22,
-    required List<SshCredential> credentials, bool acceptHostKey = false,
+    required String host,
+    int port = 22,
+    required List<SshCredential> credentials,
+    bool acceptHostKey = false,
+    String? acceptedHostFingerprint,
   }) async => SshSession(id: 's', host: host, port: port, user: 'x');
 
   @override
@@ -267,18 +320,28 @@ class _CapturingSsh implements SshService {
       const Stream.empty();
 
   @override
+  Stream<String> runStreamMerged(SshSession session, String command) =>
+      const Stream.empty();
+
+  @override
   Future<int> upload(
-    SshSession session, String localPath, String remotePath, {int? mode,
+    SshSession session,
+    String localPath,
+    String remotePath, {
+    int? mode,
   }) async => 0;
 
   @override
   Future<int> download(
-    SshSession session, String remotePath, String localPath,
+    SshSession session,
+    String remotePath,
+    String localPath,
   ) async => 0;
 
   @override
   Future<Map<String, int>> duPaths(
-    SshSession session, List<String> paths,
+    SshSession session,
+    List<String> paths,
   ) async => {for (final p in paths) p: 0};
 
   @override

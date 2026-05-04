@@ -30,23 +30,20 @@ void main() {
             },
           ],
           'files': [
-            {'id': 'f', 'paths': ['/tmp/f']},
+            {
+              'id': 'f',
+              'paths': ['/tmp/f'],
+            },
           ],
           'paths': [
             {'id': 'p', 'path': '/tmp/p', 'action': ''},
           ],
         },
         'stack': {
-          'moonraker': {
-            'repo': 'x', 'ref': 'y', 'install_path': '~/moonraker',
-          },
+          'moonraker': {'repo': 'x', 'ref': 'y', 'install_path': '~/moonraker'},
         },
         'screens': [
-          {
-            'id': 's',
-            'install_path': '~/s',
-            'systemd_unit': 's.service',
-          },
+          {'id': 's', 'install_path': '~/s', 'systemd_unit': 's.service'},
         ],
       });
       await probe.probe(
@@ -117,16 +114,17 @@ void main() {
       final tried = <String>[];
       for (final shell in shells) {
         try {
+          final shellPath = await _pathForPosixShell(tmp.path, shell);
           final res = await Process.run(
             shell,
-            shell == 'bash'
-                ? ['--posix', '-n', tmp.path]
-                : ['-n', tmp.path],
+            shell == 'bash' ? ['--posix', '-n', shellPath] : ['-n', shellPath],
           );
           tried.add(shell);
           if (res.exitCode == 0) {
             // ignore: avoid_print
-            print('probe script: `$shell -n` clean (tried: ${tried.join(",")})');
+            print(
+              'probe script: `$shell -n` clean (tried: ${tried.join(",")})',
+            );
             return;
           }
           fail(
@@ -161,16 +159,73 @@ void main() {
             await tmp.delete();
           } catch (_) {}
         });
-        final res = await Process.run('dash', ['-n', tmp.path]);
+        final shellPath = await _pathForPosixShell(tmp.path, 'dash');
+        final res = await Process.run('dash', ['-n', shellPath]);
         if (res.exitCode != 0) {
-          fail('dash -n failed:\nstdout: ${res.stdout}\n'
-              'stderr: ${res.stderr}');
+          fail(
+            'dash -n failed:\nstdout: ${res.stdout}\n'
+            'stderr: ${res.stderr}',
+          );
         }
       } on ProcessException {
         markTestSkipped('dash not on PATH - skipping strict POSIX check');
       }
     });
   });
+}
+
+Future<String> _pathForPosixShell(String path, String shell) async {
+  if (!Platform.isWindows) return path;
+  final candidates = <String>[];
+  try {
+    final res = await Process.run('cygpath', ['-u', path]);
+    if (res.exitCode == 0) {
+      final converted = (res.stdout as String).trim();
+      if (converted.isNotEmpty) candidates.add(converted);
+    }
+  } on ProcessException {
+    // Fall back below; Git Bash/MSYS accept /c/... paths.
+  }
+
+  final normalized = path.replaceAll('\\', '/');
+  final drive = RegExp(r'^([A-Za-z]):/(.*)$').firstMatch(normalized);
+  if (drive == null) return normalized;
+  final letter = drive.group(1)!.toLowerCase();
+  final rest = drive.group(2)!;
+  if (shell == 'bash' && await _isWindowsWslBash()) {
+    return '/mnt/$letter/$rest';
+  }
+  candidates
+    ..add('/$letter/$rest')
+    ..add('/mnt/$letter/$rest');
+
+  for (final candidate in candidates.toSet()) {
+    try {
+      final args = shell == 'bash'
+          ? ['--posix', '-c', 'test -f "\$DECKHAND_PROBE_PATH"']
+          : ['-c', 'test -f "\$DECKHAND_PROBE_PATH"'];
+      final res = await Process.run(
+        shell,
+        args,
+        environment: {'DECKHAND_PROBE_PATH': candidate},
+      );
+      if (res.exitCode == 0) return candidate;
+    } on ProcessException {
+      break;
+    }
+  }
+  return candidates.first;
+}
+
+Future<bool> _isWindowsWslBash() async {
+  try {
+    final res = await Process.run('where.exe', ['bash']);
+    if (res.exitCode != 0) return false;
+    final first = (res.stdout as String).split('\n').first.trim().toLowerCase();
+    return first.endsWith(r'\system32\bash.exe');
+  } on ProcessException {
+    return false;
+  }
 }
 
 class _CapturingSsh implements SshService {
@@ -181,6 +236,7 @@ class _CapturingSsh implements SshService {
     int port = 22,
     required SshCredential credential,
     bool acceptHostKey = false,
+    String? acceptedHostFingerprint,
   }) async => SshSession(id: 'x', host: host, port: port, user: 'u');
   @override
   Future<SshSession> tryDefaults({
@@ -188,6 +244,7 @@ class _CapturingSsh implements SshService {
     int port = 22,
     required List<SshCredential> credentials,
     bool acceptHostKey = false,
+    String? acceptedHostFingerprint,
   }) async => SshSession(id: 'x', host: host, port: port, user: 'u');
   @override
   Future<SshCommandResult> run(
@@ -204,6 +261,9 @@ class _CapturingSsh implements SshService {
   Stream<String> runStream(SshSession session, String command) =>
       const Stream.empty();
   @override
+  Stream<String> runStreamMerged(SshSession session, String command) =>
+      const Stream.empty();
+  @override
   Future<int> upload(
     SshSession session,
     String localPath,
@@ -217,8 +277,10 @@ class _CapturingSsh implements SshService {
     String localPath,
   ) async => 0;
   @override
-  Future<Map<String, int>> duPaths(SshSession session, List<String> paths) async =>
-      {for (final p in paths) p: 0};
+  Future<Map<String, int>> duPaths(
+    SshSession session,
+    List<String> paths,
+  ) async => {for (final p in paths) p: 0};
   @override
   Future<void> disconnect(SshSession session) async {}
 }

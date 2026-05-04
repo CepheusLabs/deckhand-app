@@ -20,9 +20,9 @@ Future<void> _restoreBackupImpl(
   // (shouldn't happen because cp -p preserves), this explicitly
   // copies ownership off the backup file. Silently continues when
   // chown fails (e.g. chown not in PATH on busybox).
-  final cp = useSudo ? 'sudo cp -p' : 'cp -p';
+  final cp = useSudo ? 'sudo cp -p --' : 'cp -p --';
   final fixOwn = useSudo
-      ? ' && sudo chown --reference=$qSrc $qDst 2>/dev/null || true'
+      ? ' && sudo chown --reference=$qSrc -- $qDst 2>/dev/null || true'
       : '';
   final cmd = '$cp $qSrc $qDst$fixOwn';
   final res = await c._runSsh(cmd);
@@ -61,8 +61,7 @@ Future<String?> _readBackupContentImpl(
   //             (stripped Alpine). Uses `od -An -c -N 512` and
   //             greps for the literal `\0` glyph od emits.
   // Any layer that fires short-circuits to the binary marker.
-  final fileCmd =
-      useSudo ? 'sudo file -b --mime' : 'file -b --mime';
+  final fileCmd = useSudo ? 'sudo file -b --mime' : 'file -b --mime';
   final fileBareCmd = useSudo ? 'sudo file -b' : 'file -b';
   final odCmd = useSudo ? 'sudo od -An -c -N 512' : 'od -An -c -N 512';
   final detectCmd =
@@ -101,7 +100,7 @@ Future<void> _deleteBackupImpl(
 ) async {
   c._requireSession();
   final useSudo = c._looksLikeSystemPath(c._session!, backup.backupPath);
-  final rm = useSudo ? 'sudo rm -f' : 'rm -f';
+  final rm = useSudo ? 'sudo rm -f --' : 'rm -f --';
   final qBackup = c._shellQuote(backup.backupPath);
   final qMeta = c._shellQuote('${backup.backupPath}.meta.json');
   final res = await c._runSsh('$rm $qBackup $qMeta');
@@ -140,8 +139,7 @@ Future<int> _pruneBackupsImpl(
       }
     }
     final spared = newest.values.map((b) => b.backupPath).toSet();
-    victims =
-        victims.where((b) => !spared.contains(b.backupPath)).toList();
+    victims = victims.where((b) => !spared.contains(b.backupPath)).toList();
   }
   if (victims.isEmpty) return 0;
   // Split into sudo-required and plain batches so we don't escalate
@@ -160,7 +158,7 @@ Future<int> _pruneBackupsImpl(
     }
   }
   if (plainBatch.isNotEmpty) {
-    final res = await c._runSsh('rm -f ${plainBatch.join(" ")}');
+    final res = await c._runSsh('rm -f -- ${plainBatch.join(" ")}');
     if (!res.success) {
       throw StepExecutionException(
         'Could not prune user-owned backups',
@@ -169,7 +167,7 @@ Future<int> _pruneBackupsImpl(
     }
   }
   if (sudoBatch.isNotEmpty) {
-    final res = await c._runSsh('sudo rm -f ${sudoBatch.join(" ")}');
+    final res = await c._runSsh('sudo rm -f -- ${sudoBatch.join(" ")}');
     if (!res.success) {
       throw StepExecutionException(
         'Could not prune root-owned backups',

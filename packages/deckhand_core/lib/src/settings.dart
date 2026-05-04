@@ -48,6 +48,58 @@ class DeckhandSettings {
     _values['allowed_hosts'] = hosts.toList();
   }
 
+  /// Recently-used SSH connection targets, surfaced on the Connect
+  /// screen's Saved tab so the user doesn't have to retype an IP for
+  /// every relaunch. Stored as a list (NOT a set) because order
+  /// matters — `recordSavedHost` MRU-bumps the entry, and the UI
+  /// renders them in that order.
+  List<SavedHost> get savedHosts {
+    final raw = _values['saved_hosts'];
+    if (raw is! List) return const [];
+    final out = <SavedHost>[];
+    for (final entry in raw) {
+      if (entry is Map) {
+        try {
+          out.add(SavedHost.fromJson(entry.cast<String, dynamic>()));
+        } catch (_) {
+          // Skip malformed entries silently — a single bad row
+          // shouldn't blank the whole list. The next save() pass
+          // rewrites the file with only the valid rows.
+        }
+      }
+    }
+    return out;
+  }
+
+  set savedHosts(List<SavedHost> hosts) {
+    _values['saved_hosts'] = [for (final h in hosts) h.toJson()];
+  }
+
+  /// Insert-or-update [h] at the head of [savedHosts] (MRU). Entries
+  /// are deduped by `(host, user)` so reconnecting to the same
+  /// printer with the same login bumps the row rather than
+  /// duplicating it. Capped at 10 to keep the Saved tab scannable;
+  /// older rows roll off.
+  void recordSavedHost(SavedHost h) {
+    final list = savedHosts.toList();
+    list.removeWhere((e) =>
+        e.host.toLowerCase() == h.host.toLowerCase() &&
+        e.user.toLowerCase() == h.user.toLowerCase());
+    list.insert(0, h);
+    while (list.length > 10) {
+      list.removeLast();
+    }
+    savedHosts = list;
+  }
+
+  void forgetSavedHost({required String host, required String user}) {
+    final list = savedHosts.toList()
+      ..removeWhere((e) =>
+          e.host.toLowerCase() == host.toLowerCase() &&
+          e.user.toLowerCase() == user.toLowerCase());
+    savedHosts = list;
+  }
+
   bool get showStubProfiles => _values['show_stub_profiles'] == true;
   set showStubProfiles(bool v) => _values['show_stub_profiles'] = v;
 
@@ -106,6 +158,51 @@ class DeckhandSettings {
   }
   set dryRun(bool v) => _values['dry_run'] = v;
 
+  /// When true, every flash run reads the disk back after writing and
+  /// compares the SHA256 against the source image. Adds 30-90 seconds
+  /// per gigabyte of image size to the flash phase but catches
+  /// silently-bad writes (cheap USB adapters, marginal eMMCs). Default
+  /// true — opting out is a performance/risk trade-off the user makes
+  /// explicitly in Settings.
+  bool get verifyAfterWrite {
+    final v = _values['verify_after_write'];
+    return v is bool ? v : true;
+  }
+  set verifyAfterWrite(bool v) => _values['verify_after_write'] = v;
+
+  /// Days to retain downloaded OS images and profile checkouts in the
+  /// cache directory before the wizard's idle-cleanup pass evicts
+  /// them. 0 disables cleanup (keep forever). Default 30, which keeps
+  /// a typical reinstall fast without letting the cache grow
+  /// unboundedly.
+  int get cacheRetentionDays {
+    final v = _values['cache_retention_days'];
+    if (v is int) return v;
+    if (v is num) return v.toInt();
+    return 30;
+  }
+  set cacheRetentionDays(int v) =>
+      _values['cache_retention_days'] = v < 0 ? 0 : v;
+
+  /// Persisted UI theme mode. Stored as a string so the settings
+  /// file stays Flutter-free (`deckhand_core` is pure Dart so the
+  /// HITL driver can compile against it without pulling in
+  /// `package:flutter`). Valid values are `'system' | 'light' |
+  /// 'dark'`; anything else (including null/missing) is treated as
+  /// `'system'` by the consumer.
+  String get themeModeName {
+    final v = _values['theme_mode'];
+    if (v is String && (v == 'system' || v == 'light' || v == 'dark')) {
+      return v;
+    }
+    return 'system';
+  }
+  set themeModeName(String v) {
+    if (v == 'system' || v == 'light' || v == 'dark') {
+      _values['theme_mode'] = v;
+    }
+  }
+
   /// Preferred UI locale as a BCP-47 code (e.g. `en`, `es`). Null
   /// means "follow the OS locale, falling back to English". The
   /// settings screen exposes a picker; main.dart applies the choice
@@ -150,6 +247,26 @@ class DeckhandSettings {
     };
   }
 
+  /// Last successful preflight (`doctor.run`) report, persisted so a
+  /// fresh launch can paint the cached pass/fail state instantly while
+  /// a fresh probe runs in the background. The shape mirrors what the
+  /// sidecar returns: `{passed, results: [{name, status, detail}], report,
+  /// at}`. `at` is the wall-clock time the cache was written, used to
+  /// gate "is this fresh enough to skip the live probe?" decisions in
+  /// the future. Untyped Map so deckhand_core stays flutter-free.
+  Map<String, dynamic>? get lastPreflight {
+    final raw = _values['last_preflight'];
+    if (raw is Map) return raw.cast<String, dynamic>();
+    return null;
+  }
+  set lastPreflight(Map<String, dynamic>? v) {
+    if (v == null) {
+      _values.remove('last_preflight');
+    } else {
+      _values['last_preflight'] = v;
+    }
+  }
+
   Future<void> save() async {
     final file = File(path);
     await file.parent.create(recursive: true);
@@ -178,4 +295,55 @@ class WindowGeometry {
   @override
   String toString() =>
       'WindowGeometry(${width}x$height @ ${x ?? "?"},${y ?? "?"})';
+}
+
+/// One row of the Connect screen's "Saved" tab. Captures the (host,
+/// port, user) tuple the user successfully connected to plus the
+/// timestamp of that connect, so the UI can render "last used 3d
+/// ago" against each entry.
+///
+/// Persisted via [DeckhandSettings.savedHosts]. NOT a credentials
+/// store — passwords and SSH keys live in the OS secure store via
+/// [SecurityService], not here.
+class SavedHost {
+  const SavedHost({
+    required this.host,
+    required this.port,
+    required this.user,
+    this.lastUsed,
+  });
+
+  final String host;
+  final int port;
+  final String user;
+  final DateTime? lastUsed;
+
+  Map<String, dynamic> toJson() => <String, dynamic>{
+        'host': host,
+        'port': port,
+        'user': user,
+        if (lastUsed != null) 'last_used': lastUsed!.toIso8601String(),
+      };
+
+  factory SavedHost.fromJson(Map<String, dynamic> j) {
+    final lastUsedRaw = j['last_used'];
+    DateTime? lastUsed;
+    if (lastUsedRaw is String) {
+      try {
+        lastUsed = DateTime.parse(lastUsedRaw);
+      } catch (_) {
+        lastUsed = null;
+      }
+    }
+    final port = (j['port'] is num) ? (j['port'] as num).toInt() : 22;
+    return SavedHost(
+      host: (j['host'] as String?) ?? '',
+      port: port,
+      user: (j['user'] as String?) ?? '',
+      lastUsed: lastUsed,
+    );
+  }
+
+  @override
+  String toString() => '$user@$host:$port';
 }

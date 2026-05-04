@@ -6,8 +6,13 @@ abstract class FlashService {
   /// Enumerate local disks. USB/removable first.
   Future<List<DiskInfo>> listDisks();
 
+  /// Re-probe [diskId] and return the sidecar's destructive-write
+  /// safety verdict for the live disk currently attached at that id.
+  Future<FlashSafetyVerdict> safetyCheck({required String diskId});
+
   /// Stream progress events while writing [imagePath] to [diskId].
-  /// [confirmationToken] must be a live token issued by [SecurityService].
+  /// [confirmationToken] is the UI-flow nonce issued by [SecurityService].
+  /// Callers must run [safetyCheck] immediately before invoking this path.
   Stream<FlashProgress> writeImage({
     required String imagePath,
     required String diskId,
@@ -43,6 +48,20 @@ class DiskInfo {
   final String model;
   final bool removable;
   final List<PartitionInfo> partitions;
+}
+
+class FlashSafetyVerdict {
+  const FlashSafetyVerdict({
+    required this.diskId,
+    required this.allowed,
+    this.blockingReasons = const [],
+    this.warnings = const [],
+  });
+
+  final String diskId;
+  final bool allowed;
+  final List<String> blockingReasons;
+  final List<String> warnings;
 }
 
 class PartitionInfo {

@@ -7,6 +7,7 @@ abstract class SshService {
     int port = 22,
     required SshCredential credential,
     bool acceptHostKey = false,
+    String? acceptedHostFingerprint,
   });
 
   /// Try [credentials] in order; return the session from the first that
@@ -22,6 +23,7 @@ abstract class SshService {
     int port = 22,
     required List<SshCredential> credentials,
     bool acceptHostKey = false,
+    String? acceptedHostFingerprint,
   });
 
   Future<SshCommandResult> run(
@@ -32,6 +34,14 @@ abstract class SshService {
   });
 
   Stream<String> runStream(SshSession session, String command);
+
+  /// Like [runStream] but yields lines from BOTH stdout and stderr,
+  /// and splits on either `\r` or `\n` so progress-style output (git
+  /// clone, dd's status=progress, etc.) shows updates live instead of
+  /// only when a final newline arrives. Use this for any command
+  /// whose progress matters mid-run; ordinary commands should keep
+  /// using [runStream] or [run] for their cleaner contracts.
+  Stream<String> runStreamMerged(SshSession session, String command);
 
   Future<int> upload(
     SshSession session,

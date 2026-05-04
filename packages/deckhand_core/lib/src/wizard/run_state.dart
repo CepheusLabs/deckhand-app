@@ -250,7 +250,7 @@ class RunStateStore {
       final json = jsonDecode(body);
       if (json is! Map<String, dynamic>) return null;
       return RunState.fromJson(json);
-    } on FormatException {
+    } on Object {
       return null;
     }
   }
@@ -268,10 +268,12 @@ class RunStateStore {
         ? _remotePath.substring(0, _remotePath.lastIndexOf('/'))
         : '.';
     final tmp = '$_remotePath.tmp';
-    final cmd = 'mkdir -p ${shellSingleQuote(remoteDir)} && '
-        'printf %s ${shellSingleQuote(encoded)} | base64 -d > '
-        '${shellSingleQuote(tmp)} && '
-        'mv ${shellSingleQuote(tmp)} ${shellSingleQuote(_remotePath)}';
+    final qTmp = shellSingleQuote(tmp);
+    final cmd =
+        'mkdir -p ${shellSingleQuote(remoteDir)} && '
+        '(printf %s ${shellSingleQuote(encoded)} | base64 -d > '
+        '$qTmp && mv $qTmp ${shellSingleQuote(_remotePath)} || '
+        '{ rc=\$?; rm -f $qTmp; exit \$rc; })';
     final result = await _ssh.run(session, cmd, timeout: _writeTimeout);
     if (!result.success) {
       throw RunStateWriteException(

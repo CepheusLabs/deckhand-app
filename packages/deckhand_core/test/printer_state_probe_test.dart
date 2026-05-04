@@ -40,8 +40,7 @@ void main() {
       expect(state.probedAt, isNotNull);
     });
 
-    test('parses service facets into a combined ServiceRuntimeState',
-        () async {
+    test('parses service facets into a combined ServiceRuntimeState', () async {
       ssh.nextStdout = [
         'svc:frpc:unit_exists\t1',
         'svc:frpc:unit_active\t1',
@@ -140,8 +139,7 @@ void main() {
       expect(state.probedAt, isNotNull);
     });
 
-    test('parses .deckhand-pre-* backup entries sorted newest-first',
-        () async {
+    test('parses .deckhand-pre-* backup entries sorted newest-first', () async {
       ssh.nextStdout = [
         // Older
         'backup\t/etc/apt/sources.list:::/etc/apt/sources.list.deckhand-pre-1776910000000:::',
@@ -154,31 +152,28 @@ void main() {
       );
       expect(state.deckhandBackups, hasLength(2));
       // Newest-first: /home/mks/printer.cfg comes before /etc/apt.
-      expect(
-        state.deckhandBackups.first.originalPath,
-        '/home/mks/printer.cfg',
-      );
-      expect(
-        state.deckhandBackups.last.originalPath,
-        '/etc/apt/sources.list',
-      );
+      expect(state.deckhandBackups.first.originalPath, '/home/mks/printer.cfg');
+      expect(state.deckhandBackups.last.originalPath, '/etc/apt/sources.list');
     });
 
-    test('parses new profile-tagged .deckhand-pre-<profile>-<ts> naming',
-        () async {
-      ssh.nextStdout = [
-        'backup\t/etc/apt/sources.list:::/etc/apt/sources.list.deckhand-pre-phrozen-arco-1776910000000:::',
-      ].join('\n');
-      final state = await probe.probe(
-        session: _fakeSession,
-        profile: _minimalProfile,
-      );
-      expect(state.deckhandBackups, hasLength(1));
-      expect(state.deckhandBackups.single.createdAt, isNotNull);
-    });
+    test(
+      'parses new profile-tagged .deckhand-pre-<profile>-<ts> naming',
+      () async {
+        ssh.nextStdout = [
+          'backup\t/etc/apt/sources.list:::/etc/apt/sources.list.deckhand-pre-phrozen-arco-1776910000000:::',
+        ].join('\n');
+        final state = await probe.probe(
+          session: _fakeSession,
+          profile: _minimalProfile,
+        );
+        expect(state.deckhandBackups, hasLength(1));
+        expect(state.deckhandBackups.single.createdAt, isNotNull);
+      },
+    );
 
     test('parses backup metadata sidecar when present', () async {
-      final meta = '{"profile_id":"phrozen-arco","profile_version":"1.0.0",'
+      final meta =
+          '{"profile_id":"phrozen-arco","profile_version":"1.0.0",'
           '"step_id":"fix_apt_sources","created_at_ms":1776910000000,'
           '"created_at_iso":"2026-04-22T00:00:00.000Z"}';
       ssh.nextStdout = [
@@ -197,20 +192,22 @@ void main() {
       expect(b.createdAt, isNotNull);
     });
 
-    test('malformed meta sidecar JSON is tolerated, backup still usable',
-        () async {
-      ssh.nextStdout = [
-        'backup\t/etc/apt/sources.list:::'
-            '/etc/apt/sources.list.deckhand-pre-1776910000000:::'
-            '{not valid json',
-      ].join('\n');
-      final state = await probe.probe(
-        session: _fakeSession,
-        profile: _minimalProfile,
-      );
-      expect(state.deckhandBackups, hasLength(1));
-      expect(state.deckhandBackups.single.profileId, isNull);
-    });
+    test(
+      'malformed meta sidecar JSON is tolerated, backup still usable',
+      () async {
+        ssh.nextStdout = [
+          'backup\t/etc/apt/sources.list:::'
+              '/etc/apt/sources.list.deckhand-pre-1776910000000:::'
+              '{not valid json',
+        ].join('\n');
+        final state = await probe.probe(
+          session: _fakeSession,
+          profile: _minimalProfile,
+        );
+        expect(state.deckhandBackups, hasLength(1));
+        expect(state.deckhandBackups.single.profileId, isNull);
+      },
+    );
 
     test('malformed lines are silently skipped', () async {
       ssh.nextStdout = [
@@ -228,74 +225,93 @@ void main() {
   });
 
   group('PrinterStateProbe script generation', () {
-    test('includes probes for every service, file, path declared in profile',
-        () async {
-      final ssh = _StubSsh();
-      final probe = PrinterStateProbe(ssh: ssh);
+    test(
+      'includes probes for every service, file, path declared in profile',
+      () async {
+        final ssh = _StubSsh();
+        final probe = PrinterStateProbe(ssh: ssh);
 
-      final profile = PrinterProfile.fromJson({
-        'profile_id': 'p',
-        'stock_os': {
-          'services': [
-            {
-              'id': 'frpc',
-              'systemd_unit': 'frpc.service',
-              'process_pattern': 'frpc',
-              'launched_by': {
-                'kind': 'script',
-                'path': '/home/mks/klipper/extras/frp/frpc_script',
+        final profile = PrinterProfile.fromJson({
+          'profile_id': 'p',
+          'stock_os': {
+            'services': [
+              {
+                'id': 'frpc',
+                'systemd_unit': 'frpc.service',
+                'process_pattern': 'frpc',
+                'launched_by': {
+                  'kind': 'script',
+                  'path': '/home/mks/klipper/extras/frp/frpc_script',
+                },
               },
-            },
-          ],
-          'files': [
-            {'id': 'notes', 'paths': ['/home/mks/notes.txt']},
-          ],
-          'paths': [
-            {
-              'id': 'klipper',
-              'path': '/home/mks/klipper',
-              'action': 'snapshot',
-            },
-          ],
-        },
-      });
-      await probe.probe(session: _fakeSession, profile: profile);
-
-      final script = ssh.lastCommand!;
-      expect(script, contains('systemctl is-active'));
-      expect(script, contains('pgrep -f'));
-      expect(script, contains('say svc:frpc:unit_exists'));
-      expect(script, contains('say file:notes'));
-      expect(script, contains('say path:klipper'));
-      expect(script, contains('/etc/os-release'));
-    });
-
-    test('tilde-prefixed install paths become "\$HOME/..." not quoted "~"',
-        () async {
-      final ssh = _StubSsh();
-      final probe = PrinterStateProbe(ssh: ssh);
-      final profile = PrinterProfile.fromJson({
-        'profile_id': 'p',
-        'stack': {
-          'moonraker': {
-            'repo': 'x', 'ref': 'y', 'install_path': '~/moonraker',
+            ],
+            'files': [
+              {
+                'id': 'notes',
+                'paths': ['/home/mks/notes.txt'],
+              },
+            ],
+            'paths': [
+              {
+                'id': 'klipper',
+                'path': '/home/mks/klipper',
+                'action': 'snapshot',
+              },
+            ],
           },
-          'kiauh': {
-            'repo': 'x', 'ref': 'y', 'install_path': '~/kiauh',
-          },
-        },
-      });
-      await probe.probe(session: _fakeSession, profile: profile);
+        });
+        await probe.probe(session: _fakeSession, profile: profile);
 
-      final script = ssh.lastCommand!;
-      // $HOME must expand (double-quoted or unquoted context) AND the
-      // path suffix must be single-quoted so shell metacharacters in
-      // it cannot be interpreted. Plain `'~/...'` would be a bug
-      // because single-quoting stops tilde expansion.
-      expect(script, contains(r'"$HOME"/' "'moonraker'"));
-      expect(script, contains(r'"$HOME"/' "'kiauh'"));
-      expect(script, isNot(contains("'~/moonraker'")));
-    });
+        final script = ssh.lastCommand!;
+        expect(script, contains('systemctl is-active'));
+        expect(script, contains('pgrep -f'));
+        expect(script, contains('say svc:frpc:unit_exists'));
+        expect(script, contains('say file:notes'));
+        expect(script, contains('say path:klipper'));
+        expect(script, contains('/etc/os-release'));
+      },
+    );
+
+    test(
+      'tilde-prefixed install paths become "\$HOME/..." not quoted "~"',
+      () async {
+        final ssh = _StubSsh();
+        final probe = PrinterStateProbe(ssh: ssh);
+        final profile = PrinterProfile.fromJson({
+          'profile_id': 'p',
+          'stack': {
+            'moonraker': {
+              'repo': 'x',
+              'ref': 'y',
+              'install_path': '~/moonraker',
+            },
+            'kiauh': {'repo': 'x', 'ref': 'y', 'install_path': '~/kiauh'},
+          },
+        });
+        await probe.probe(session: _fakeSession, profile: profile);
+
+        final script = ssh.lastCommand!;
+        // $HOME must expand (double-quoted or unquoted context) AND the
+        // path suffix must be single-quoted so shell metacharacters in
+        // it cannot be interpreted. Plain `'~/...'` would be a bug
+        // because single-quoting stops tilde expansion.
+        expect(
+          script,
+          contains(
+            r'"$HOME"/'
+            "'moonraker'",
+          ),
+        );
+        expect(
+          script,
+          contains(
+            r'"$HOME"/'
+            "'kiauh'",
+          ),
+        );
+        expect(script, isNot(contains("'~/moonraker'")));
+      },
+    );
 
     test('tilde-prefixed paths with shell metachars stay inert', () async {
       final ssh = _StubSsh();
@@ -343,6 +359,7 @@ class _StubSsh implements SshService {
     int port = 22,
     required SshCredential credential,
     bool acceptHostKey = false,
+    String? acceptedHostFingerprint,
   }) async => SshSession(id: 's', host: host, port: port, user: 'mks');
   @override
   Future<SshSession> tryDefaults({
@@ -350,6 +367,7 @@ class _StubSsh implements SshService {
     int port = 22,
     required List<SshCredential> credentials,
     bool acceptHostKey = false,
+    String? acceptedHostFingerprint,
   }) async => SshSession(id: 's', host: host, port: port, user: 'mks');
   @override
   Future<SshCommandResult> run(
@@ -366,6 +384,9 @@ class _StubSsh implements SshService {
   Stream<String> runStream(SshSession session, String command) =>
       const Stream.empty();
   @override
+  Stream<String> runStreamMerged(SshSession session, String command) =>
+      const Stream.empty();
+  @override
   Future<int> upload(
     SshSession session,
     String localPath,
@@ -379,8 +400,10 @@ class _StubSsh implements SshService {
     String localPath,
   ) async => 0;
   @override
-  Future<Map<String, int>> duPaths(SshSession session, List<String> paths) async =>
-      {for (final p in paths) p: 0};
+  Future<Map<String, int>> duPaths(
+    SshSession session,
+    List<String> paths,
+  ) async => {for (final p in paths) p: 0};
   @override
   Future<void> disconnect(SshSession session) async {}
 }

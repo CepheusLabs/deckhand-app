@@ -83,7 +83,8 @@ class HostKeyMismatchException extends DeckhandException {
 /// Thrown on the first SSH connect to a host whose fingerprint Deckhand
 /// has never seen. The UI should show the fingerprint to the user and
 /// offer a "connect and pin" action that retries with `acceptHostKey:
-/// true`.
+/// true` and passes this exact fingerprint as
+/// `acceptedHostFingerprint`.
 class HostKeyUnpinnedException extends DeckhandException {
   const HostKeyUnpinnedException({
     required String host,

@@ -17,4 +17,25 @@ abstract class ElevatedHelperService {
     bool verifyAfterWrite = true,
     String? expectedSha256,
   });
+
+  /// Spawn the helper with elevation and read [diskId] (raw block
+  /// device) into [outputPath], hashing as it goes. Counterpart to
+  /// [writeImage] for the "back up the eMMC before the install
+  /// rewrites it" flow on platforms where the unprivileged sidecar
+  /// can't open raw devices (Windows).
+  ///
+  /// [totalBytes] is an optional size hint. Windows raw devices
+  /// (\\.\PhysicalDriveN) report 0 from both `Stat()` and
+  /// `Seek(0, SeekEnd)` — without a hint the helper emits
+  /// `bytes_total: 0` for every progress event and the UI can't
+  /// render a percentage or a meaningful "X of Y" label. Pass the
+  /// `DiskInfo.sizeBytes` you already showed the user on the
+  /// upstream picker. Zero (default) means "no hint, helper guesses
+  /// from the device handle."
+  Stream<FlashProgress> readImage({
+    required String diskId,
+    required String outputPath,
+    required String confirmationToken,
+    int totalBytes = 0,
+  });
 }
