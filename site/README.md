@@ -1,4 +1,4 @@
-# Deckhand landing page
+# Deckhand site
 
 Static site served at `https://dh.printdeck.io` via Cloudflare Pages.
 
@@ -35,15 +35,21 @@ python3 -m http.server -d site 8080
 | File | Purpose |
 |------|---------|
 | `index.html` | Landing page |
+| `wiki.html` | Wiki home |
+| `getting-started.html` | Install walkthrough |
+| `usage.html` | App usage guide |
+| `manual.html` | Manual shell playbook |
+| `cli.html` | CLI and IPC reference |
+| `examples.html` | Recipes |
+| `faq.html` | FAQ |
 | `404.html` | Fallback for missing paths |
 | `styles.css` | All styling, no build step |
-| `app.js` | Tiny JS that highlights the OS-matching download card |
+| `app.js` | Shared navigation, table-of-contents, search modal, and OS highlighting |
 | `favicon.svg` | Inline SVG favicon |
 | `_headers` | Cloudflare Pages security headers |
-| `_redirects` | Short URLs (e.g., `/docs/*` → GitHub) |
+| `_redirects` | Extensionless page routes and short URLs |
 
 ## Updating download links
 
-The download cards point at GitHub's `releases/latest` URL, which always
-resolves to the newest release. When we cut a tagged release, the links
-work without any changes here.
+Download links should point at GitHub's `releases/latest` URL where possible,
+which resolves to the newest release without site changes after a tagged build.

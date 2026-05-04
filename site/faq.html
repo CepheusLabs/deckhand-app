@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>FAQ: Deckhand</title>
+<link rel="icon" type="image/svg+xml" href="favicon.svg" />
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body data-screen-label="FAQ">
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="brand" href="index.html"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><rect x="3" y="14" width="26" height="4" fill="currentColor" opacity=".4"/><g stroke="currentColor" stroke-width="2" stroke-linecap="square" fill="none"><line x1="6" y1="9" x2="6" y2="14"/><line x1="11" y1="11" x2="11" y2="14"/><line x1="16" y1="7" x2="16" y2="14"/><line x1="21" y1="11" x2="21" y2="14"/><line x1="26" y1="9" x2="26" y2="14"/><line x1="6" y1="18" x2="6" y2="23"/><line x1="11" y1="18" x2="11" y2="21"/><line x1="16" y1="18" x2="16" y2="25"/><line x1="21" y1="18" x2="21" y2="21"/><line x1="26" y1="18" x2="26" y2="23"/></g></svg> Deckhand <span class="brand-tag">v0.4 · alpha</span></a>
+    <nav class="topnav">
+      <a href="index.html" data-nav="index.html">Home</a>
+      <a href="wiki.html" data-nav="wiki.html">Wiki</a>
+      <a href="getting-started.html" data-nav="getting-started.html">Get started</a>
+      <a href="manual.html" data-nav="manual.html">Manual steps</a>
+      <a href="faq.html" data-nav="faq.html">FAQ</a>
+    </nav>
+    <div class="topbar-spacer"></div>
+    <button class="topbar-search" data-search><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg> Search docs… <span class="kbd-shortcut">⌘K</span></button>
+  </div>
+</header>
+
+<div class="wiki-shell">
+  <aside class="sidebar">
+    <div class="sidebar-section"><div class="sidebar-section-title">Overview</div><a href="wiki.html" data-page="wiki.html">Wiki home</a></div>
+    <div class="sidebar-section"><div class="sidebar-section-title">Use it</div><a href="getting-started.html" data-page="getting-started.html">Getting started</a><a href="usage.html" data-page="usage.html">Usage guide</a><a href="examples.html" data-page="examples.html">Recipes</a></div>
+    <div class="sidebar-section"><div class="sidebar-section-title">Under the hood</div><a href="manual.html" data-page="manual.html">Manual playbook</a><a href="cli.html" data-page="cli.html">CLI &amp; IPC</a></div>
+    <div class="sidebar-section"><div class="sidebar-section-title">Reference</div><a href="faq.html" data-page="faq.html">FAQ</a></div>
+  </aside>
+
+  <main class="wiki-content">
+    <div class="crumbs"><a href="index.html">Home</a><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg><a href="wiki.html">Wiki</a><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg><span>FAQ</span></div>
+
+    <span class="lede-pill">FAQ</span>
+    <h1 class="page-h">Things people ask.</h1>
+    <p class="page-lede">If your question isn't here, try <a href="https://github.com/CepheusLabs/deckhand/discussions">discussions</a> or open an <a href="https://github.com/CepheusLabs/deckhand/issues">issue</a>. Bug reports go a lot faster with a <a href="examples.html#debug">debug bundle</a> attached.</p>
+
+    <h2 id="general">General</h2>
+
+    <h3 id="why-not-kiauh">Why not just use KIAUH?</h3>
+    <p>KIAUH is great. Deckhand installs it for you on the way out. The thing is, KIAUH assumes you've already got a Klipper-friendly OS to work on, which is exactly the part the vendor took away from you. Deckhand handles that part: kicking out vendor services, snapshotting your config, optionally re-flashing the eMMC. Then KIAUH takes it from there.</p>
+
+    <h3 id="kalico-vs-klipper">Kalico or Klipper?</h3>
+    <p>If you don't have a strong opinion: Kalico. Better input shaping, more boards work out of the box, and the few extra features are opt-in. Pick mainline Klipper if you want the option every guide on the internet assumes, or if you're nervous about running a fork. Either way you can swap later, both store config in <code>~/printer_data/</code> and the snapshot survives the change.</p>
+
+    <h3 id="brick">Will this brick my printer?</h3>
+    <p>Path A (stock keep) won't. The snapshot puts you back if anything goes wrong. Path B (fresh flash) can, if power cuts mid-write the eMMC ends up in a bad state. Plug into a UPS, or pop the card and flash it on your laptop instead (see <a href="examples.html#sv08-fresh">SV08 fresh flash</a>). I haven't bricked one yet, but I also haven't tested every printer.</p>
+
+    <h2 id="discovery">Connection &amp; discovery</h2>
+
+    <h3>It can't find my printer.</h3>
+    <p>Almost always mDNS, your router or firewall is dropping it. Doctor's <code>mdns_resolvable</code> check confirms. Easiest fix: hit "Add manually" on S20 and paste the IP. You can grab it from your router's DHCP leases page or with <code>arp -a</code> after pinging.</p>
+
+    <h3>"Connection refused" when I enter SSH credentials.</h3>
+    <p>Two usual suspects:</p>
+    <ul>
+      <li>Vendor SSH is on a weird port. Some Sovol firmware uses 2222. Try <code>user@host:2222</code>.</li>
+      <li>Vendor SSH is off by default. Turn it on from the touchscreen settings or the vendor app first.</li>
+    </ul>
+
+    <h3>Profile match is "ambiguous."</h3>
+    <p>Two profiles think they're yours. Pick the more specific one from the shortlist. If neither is right, the generic profile works for path B (fresh flash). It won't help much with path A because it doesn't know your specific vendor service mess.</p>
+
+    <h2 id="install-issues">Install issues</h2>
+
+    <h3>"Will build Python 3.11 from source (~20 min)."</h3>
+    <p>Your stock OS ships an older Python than the firmware project needs (3.10 or 3.11 minimum, depending). Deckhand builds a new one in a side directory. The system Python doesn't get touched. The 20 minutes is unattended, go do something else.</p>
+
+    <h3>A step failed mid-run.</h3>
+    <p>The wizard pauses and offers Retry / Skip / Cancel. Steps are idempotent (<a href="https://github.com/CepheusLabs/deckhand/blob/main/docs/STEP-IDEMPOTENCY.md">how</a>), so retrying is safe. Skip moves past it. Cancel leaves everything done so far in place so you can come back to it.</p>
+
+    <h3>My laptop went to sleep halfway through.</h3>
+    <p>That's fine. The run-state file on the printer survives. Open Deckhand again and click the "Resume session" banner.</p>
+
+    <h2 id="privacy">Privacy &amp; security</h2>
+
+    <h3>Does Deckhand send anything to your servers?</h3>
+    <p>I don't have any servers. The app talks to your printer, GitHub (for the firmware), and Armbian's CDN (for OS images on fresh flash). That's the whole list, and you can read it in <code>config/network.yaml</code>.</p>
+
+    <h3>Are debug bundles safe to share?</h3>
+    <p>The redaction pipeline strips IPs, hostnames, MACs, SSH keys, and whatever else matches the configurable secret regex. <strong>You see the redacted preview before the zip gets written.</strong> If something looks like it shouldn't go out, it doesn't. The bundle never leaves your laptop on its own. Details in <a href="https://github.com/CepheusLabs/deckhand/blob/main/docs/DEBUG-BUNDLES.md">DEBUG-BUNDLES.md</a>.</p>
+
+    <h3>How do you verify profile updates?</h3>
+    <p>Profiles are signed. The bundled keyring verifies the signature before installing. If a signature doesn't check out, the update is rejected with a banner, never silently. Key rotation is in <a href="https://github.com/CepheusLabs/deckhand/blob/main/docs/PROFILE-TRUST.md">PROFILE-TRUST.md</a>.</p>
+
+    <h2 id="advanced">Advanced</h2>
+
+    <h3>Can I script it?</h3>
+    <p>Yes. The <a href="cli.html">CLI</a> wraps the same operations the GUI uses, and the sidecar's JSON-RPC API is open. The HITL test rig drives Deckhand entirely headlessly using exactly that, so the path is well-trodden.</p>
+
+    <h3>Can I run it offline?</h3>
+    <p>Mostly. Path A works with cached profiles, but the Klipper/Kalico clones still need GitHub. For a fully offline install, mirror the firmware repos locally and point Deckhand at them with <code>--mirror</code>. See <a href="https://github.com/CepheusLabs/deckhand/blob/main/docs/RELEASING.md#offline-rebuild">Offline rebuild</a>.</p>
+
+    <h3>Can I add my printer?</h3>
+    <p>Please do. Profiles are YAML in <a href="https://github.com/CepheusLabs/deckhand-profiles">deckhand-profiles</a>. The <a href="https://github.com/CepheusLabs/deckhand-profiles/blob/main/AUTHORING.md">authoring guide</a> covers the schema and the step DSL. PRs welcome, and so are issues if the schema gets in your way.</p>
+
+    <h2 id="contact">Still stuck?</h2>
+    <ul>
+      <li><a href="https://github.com/CepheusLabs/deckhand/discussions">GitHub Discussions</a>: questions, ideas, show-and-tell.</li>
+      <li><a href="https://github.com/CepheusLabs/deckhand/issues">GitHub Issues</a>: bugs. Please attach a debug bundle, it makes a huge difference.</li>
+      <li><a href="https://printdeck.io">Printdeck</a>: the companion app for once you have more than one printer running.</li>
+    </ul>
+
+    <div class="pager">
+      <a href="examples.html"><span>← Back</span><strong>Recipes</strong></a>
+      <a class="next" href="wiki.html"><span>Next →</span><strong>Wiki home</strong></a>
+    </div>
+  </main>
+
+  <aside class="toc"><h4>On this page</h4><ul></ul></aside>
+</div>
+
+<div class="search-modal" id="search-modal"><div class="search-panel"><div class="search-input"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg><input placeholder="Search…" /></div><div class="search-results"></div><div class="search-foot"><span><kbd>esc</kbd> close</span></div></div></div>
+
+<script src="app.js"></script>
+
+</body>
+</html>

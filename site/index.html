@@ -1,197 +1,279 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Deckhand — open-source setup for Klipper 3D printers</title>
-    <meta name="description" content="Deckhand replaces vendor firmware on Klipper 3D printers with Kalico or mainline Klipper. Cross-platform desktop tool from Cepheus Labs. Pairs with Printdeck." />
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Deckhand: get your printer off vendor firmware</title>
+<meta name="description" content="A desktop app that flashes Klipper or Kalico to your 3D printer, kicks the vendor stack off, and leaves you with Mainsail or Fluidd. Free, local, no telemetry." />
+<link rel="icon" type="image/svg+xml" href="favicon.svg" />
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body data-screen-label="Landing">
 
-    <!-- Open Graph / social -->
-    <meta property="og:title" content="Deckhand" />
-    <meta property="og:description" content="OSS setup for Klipper 3D printers. Replace vendor firmware without surprises." />
-    <meta property="og:url" content="https://dh.printdeck.io" />
-    <meta property="og:type" content="website" />
-    <meta name="twitter:card" content="summary_large_image" />
+<!-- ==================== Top bar ==================== -->
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="brand" href="index.html">
+      <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><rect x="3" y="14" width="26" height="4" fill="currentColor" opacity=".4"/><g stroke="currentColor" stroke-width="2" stroke-linecap="square" fill="none"><line x1="6" y1="9" x2="6" y2="14"/><line x1="11" y1="11" x2="11" y2="14"/><line x1="16" y1="7" x2="16" y2="14"/><line x1="21" y1="11" x2="21" y2="14"/><line x1="26" y1="9" x2="26" y2="14"/><line x1="6" y1="18" x2="6" y2="23"/><line x1="11" y1="18" x2="11" y2="21"/><line x1="16" y1="18" x2="16" y2="25"/><line x1="21" y1="18" x2="21" y2="21"/><line x1="26" y1="18" x2="26" y2="23"/></g></svg>
+      Deckhand
+      <span class="brand-tag">v0.4 · alpha</span>
+    </a>
+    <nav class="topnav">
+      <a href="index.html" data-nav="index.html">Home</a>
+      <a href="wiki.html" data-nav="wiki.html">Wiki</a>
+      <a href="getting-started.html" data-nav="getting-started.html">Get started</a>
+      <a href="manual.html" data-nav="manual.html">Manual steps</a>
+      <a href="faq.html" data-nav="faq.html">FAQ</a>
+    </nav>
+    <div class="topbar-spacer"></div>
+    <button class="topbar-search" data-search aria-label="Search docs">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+      Search docs…
+      <span class="kbd-shortcut">⌘K</span>
+    </button>
+    <a class="topbar-icon" href="https://github.com/CepheusLabs/deckhand" aria-label="GitHub">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 .3a12 12 0 0 0-3.8 23.4c.6.1.8-.3.8-.6v-2.1c-3.3.7-4-1.6-4-1.6-.5-1.4-1.3-1.7-1.3-1.7-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.8-1.6-2.7-.3-5.5-1.3-5.5-6 0-1.3.5-2.4 1.2-3.2-.1-.3-.5-1.5.1-3.2 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0c2.3-1.5 3.3-1.2 3.3-1.2.6 1.7.2 2.9.1 3.2.7.8 1.2 1.9 1.2 3.2 0 4.7-2.8 5.7-5.5 6 .4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6A12 12 0 0 0 12 .3"/></svg>
+    </a>
+  </div>
+</header>
 
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <link rel="stylesheet" href="/styles.css" />
-  </head>
-  <body>
-    <header class="nav">
-      <div class="container nav-inner">
-        <a class="brand" href="/">
-          <svg viewBox="0 0 32 32" class="brand-mark" aria-hidden="true">
-            <rect x="4" y="10" width="24" height="14" rx="2" fill="currentColor" />
-            <rect x="10" y="4" width="12" height="8" rx="1" fill="currentColor" opacity=".6" />
-          </svg>
-          Deckhand
-        </a>
-        <nav class="nav-links">
-          <a href="#what">What it does</a>
-          <a href="#printers">Supported printers</a>
-          <a href="#download">Download</a>
-          <a href="https://github.com/CepheusLabs/deckhand">Source</a>
-        </nav>
+<!-- ==================== Hero ==================== -->
+<section class="hero">
+  <div class="hero-grid"></div>
+  <div class="hero-inner">
+    <span class="eyebrow"><span class="dot"></span> Open source · local-only · no telemetry</span>
+    <h1>
+      Get your printer off <span class="accent">vendor firmware</span>.
+    </h1>
+    <p class="hero-sub">
+      I have printers from four different brands and I'm tired of each one shipping its own locked-down OS, its own half-broken Klipper fork, and its own services that exist mostly to phone home. Deckhand swaps that for the real thing: stock <strong>Klipper</strong> or <strong>Kalico</strong>, Mainsail or Fluidd, your configs backed up. Runs on your laptop. Talks to your printer. That's it.
+    </p>
+    <div class="cta-row">
+      <a class="btn btn-primary" href="getting-started.html">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0 4-4m-4 4-4-4M5 21h14"/></svg>
+        Download for your OS
+      </a>
+      <a class="btn btn-ghost" href="wiki.html">Browse the wiki</a>
+      <a class="btn btn-ghost" href="manual.html">Prefer the shell? →</a>
+    </div>
+    <div class="hero-meta">
+      <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6 9 17l-5-5"/></svg> Windows · macOS · Linux</span>
+      <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg> Signed installers</span>
+      <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-12V5l-8-3-8 3v5c0 8 8 12 8 12Z"/></svg> AGPL-3.0</span>
+    </div>
+
+    <!-- Demo window -->
+    <div class="hero-demo-wrap">
+      <div class="demo-window">
+        <div class="demo-titlebar">
+          <div class="demo-tl-dots"><span></span><span></span><span></span></div>
+          <div class="demo-tl-title">Deckhand, Phrozen Arco · 192.168.4.21</div>
+        </div>
+        <div style="display:grid;grid-template-columns:200px 1fr;min-height:360px;">
+          <!-- left rail -->
+          <div style="background:var(--bg-alt);border-right:1px solid var(--border);padding:18px 14px;font-size:12px;">
+            <div style="font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--text-dim);font-weight:600;margin:0 0 10px;">Install · Stock keep</div>
+            <div style="display:grid;gap:3px;">
+              <div style="padding:6px 10px;border-radius:6px;color:var(--text-muted);">✓ Detect printer</div>
+              <div style="padding:6px 10px;border-radius:6px;color:var(--text-muted);">✓ Doctor preflight</div>
+              <div style="padding:6px 10px;border-radius:6px;color:var(--text-muted);">✓ Snapshot configs</div>
+              <div style="padding:6px 10px;border-radius:6px;background:var(--accent-soft);color:var(--text);box-shadow:inset 2px 0 0 var(--accent);">→ Choose firmware</div>
+              <div style="padding:6px 10px;border-radius:6px;color:var(--text-dim);">Web UI</div>
+              <div style="padding:6px 10px;border-radius:6px;color:var(--text-dim);">Cleanup</div>
+              <div style="padding:6px 10px;border-radius:6px;color:var(--text-dim);">Run</div>
+              <div style="padding:6px 10px;border-radius:6px;color:var(--text-dim);">Done</div>
+            </div>
+          </div>
+          <!-- right body -->
+          <div style="padding:24px 28px;">
+            <div style="font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);">S100 · Step 4 of 8</div>
+            <h3 style="font-size:22px;margin:6px 0 6px;letter-spacing:-.01em;">Pick your firmware.</h3>
+            <p style="color:var(--text-muted);margin:0 0 20px;font-size:13.5px;">Both are forks of Klipper. Swap any time. You're not committing to anything.</p>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+              <div style="border:1px solid var(--accent);background:var(--accent-soft);border-radius:10px;padding:14px;">
+                <div style="display:flex;align-items:center;justify-content:space-between;">
+                  <div style="font-weight:600;">Kalico</div>
+                  <span class="tag tag--accent" style="font-size:10px;">Recommended</span>
+                </div>
+                <div style="font-size:12px;color:var(--text-muted);margin-top:4px;">Performance fork. Better input shaping, more boards.</div>
+                <div style="font-size:11px;color:var(--text-dim);margin-top:8px;font-family:var(--font-mono);">KalicoCrew/kalico@v0.13.0</div>
+              </div>
+              <div style="border:1px solid var(--border);background:var(--card);border-radius:10px;padding:14px;">
+                <div style="font-weight:600;">Klipper</div>
+                <div style="font-size:12px;color:var(--text-muted);margin-top:4px;">Mainline. Boring in a good way; what guides assume.</div>
+                <div style="font-size:11px;color:var(--text-dim);margin-top:8px;font-family:var(--font-mono);">Klipper3d/klipper@v0.12.0</div>
+              </div>
+            </div>
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-top:24px;padding-top:16px;border-top:1px solid var(--border);">
+              <span style="font-size:12px;color:var(--text-muted);">Estimated remaining: <span style="color:var(--text);">~12 min</span></span>
+              <div style="display:flex;gap:8px;">
+                <button class="btn btn-ghost btn-sm">Back</button>
+                <button class="btn btn-primary btn-sm">Continue →</button>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
-    </header>
+    </div>
+  </div>
+</section>
 
-    <main>
-      <section class="hero">
-        <div class="container hero-inner">
-          <h1>Install <strong>open firmware</strong> on your 3D printer.</h1>
-          <p class="hero-sub">
-            Deckhand replaces vendor firmware with community-maintained
-            <a href="https://github.com/KalicoCrew/kalico">Kalico</a> or
-            <a href="https://github.com/Klipper3d/klipper">Klipper</a>,
-            without surprises. Cross-platform desktop app. No hosted
-            backend — it runs entirely on your machine.
-          </p>
-          <div class="hero-ctas">
-            <a class="btn btn-primary" href="#download">Download for your OS</a>
-            <a class="btn btn-ghost" href="https://github.com/CepheusLabs/deckhand/blob/main/docs/WIZARD-FLOW.md">See the wizard walkthrough</a>
-          </div>
-          <p class="hero-pair">
-            Pair with <a href="https://printdeck.io">Printdeck</a> for fleet management once the printer is up.
-          </p>
-        </div>
-      </section>
+<!-- ==================== What it does ==================== -->
+<section class="section">
+  <div class="container">
+    <div class="section-eyebrow">What it does</div>
+    <h2>Two ways to get there.</h2>
+    <p class="section-lede">Both end the same way: a printer running real Klipper, the web UI you actually like, and a backup you can roll back to if you change your mind.</p>
 
-      <section id="what" class="section">
-        <div class="container">
-          <h2>What Deckhand does</h2>
-          <div class="cards">
-            <div class="card">
-              <h3>Two safe paths</h3>
-              <p>
-                Transform a stock install in place (snapshotted, reversible)
-                or wipe the eMMC and flash a clean Armbian image. Either
-                way you end up on Kalico or Klipper with Moonraker and the
-                web UI you picked.
-              </p>
-            </div>
-            <div class="card">
-              <h3>Every decision is yours</h3>
-              <p>
-                Wizard walks through firmware, web UI, screen daemon,
-                vendor-service removal, and cleanup — one question at a
-                time. No bundled opinions; the profile tells you what each
-                choice does.
-              </p>
-            </div>
-            <div class="card">
-              <h3>Nothing phones home</h3>
-              <p>
-                Deckhand talks to your printer on LAN and fetches public
-                upstreams (GitHub, Armbian) over HTTPS. Strict per-host
-                allow-list. No hosted backend, no telemetry, no
-                subscriptions.
-              </p>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section id="printers" class="section alt">
-        <div class="container">
-          <h2>Supported printers</h2>
-          <p class="section-sub">
-            Printer profiles live in
-            <a href="https://github.com/CepheusLabs/deckhand-profiles">deckhand-profiles</a>.
-            Community contributions welcome.
-          </p>
-          <ul class="printer-list">
-            <li>
-              <strong>Phrozen Arco</strong>
-              <span class="badge status-alpha">alpha</span>
-              <span class="meta">RK3328 · CoreXY · ChromaKit AMS</span>
-            </li>
-            <li>
-              <strong>Sovol Zero</strong>
-              <span class="badge status-stub">stub</span>
-              <span class="meta">waiting for a contributor to populate</span>
-            </li>
-            <li>
-              <strong>Sovol SV08 Max</strong>
-              <span class="badge status-stub">stub</span>
-              <span class="meta">waiting for a contributor to populate</span>
-            </li>
-            <li class="add-your-printer">
-              <a href="https://github.com/CepheusLabs/deckhand-profiles/blob/main/AUTHORING.md">Add yours →</a>
-            </li>
-          </ul>
-        </div>
-      </section>
-
-      <section id="download" class="section">
-        <div class="container">
-          <h2>Download</h2>
-          <p class="section-sub">
-            Pre-release builds land on GitHub. Pick the installer for your
-            operating system — signing is in progress.
-          </p>
-          <div class="downloads">
-            <a class="download-card" href="https://github.com/CepheusLabs/deckhand/releases/latest" data-os="windows">
-              <span class="dl-os">Windows</span>
-              <span class="dl-file">Deckhand-…-win-x64.exe</span>
-            </a>
-            <a class="download-card" href="https://github.com/CepheusLabs/deckhand/releases/latest" data-os="macos">
-              <span class="dl-os">macOS</span>
-              <span class="dl-file">Deckhand-…-macos.dmg</span>
-            </a>
-            <a class="download-card" href="https://github.com/CepheusLabs/deckhand/releases/latest" data-os="linux">
-              <span class="dl-os">Linux</span>
-              <span class="dl-file">Deckhand-…-linux-x86_64.AppImage</span>
-            </a>
-          </div>
-          <p class="verify-note" id="download-verify-note"></p>
-          <p class="build-hint">
-            Want to build from source? <code>git clone</code> the repo
-            and follow <a href="https://github.com/CepheusLabs/deckhand/blob/main/docs/ARCHITECTURE.md#build-prerequisites-contributor">the build prerequisites</a>.
-          </p>
-        </div>
-      </section>
-
-      <section class="section alt">
-        <div class="container">
-          <h2>For the curious</h2>
-          <div class="docs-grid">
-            <a class="doc-card" href="https://github.com/CepheusLabs/deckhand/blob/main/docs/ARCHITECTURE.md">
-              <h3>Architecture</h3>
-              <p>Flutter UI + Go sidecar, package layout, IPC protocol, data directories, packaging.</p>
-            </a>
-            <a class="doc-card" href="https://github.com/CepheusLabs/deckhand/blob/main/docs/WIZARD-FLOW.md">
-              <h3>Wizard flow</h3>
-              <p>Every screen the wizard shows, mapped to the profile fields that drive it.</p>
-            </a>
-            <a class="doc-card" href="https://github.com/CepheusLabs/deckhand/blob/main/docs/IPC.md">
-              <h3>Sidecar IPC</h3>
-              <p>JSON-RPC 2.0 method catalog for the Go sidecar.</p>
-            </a>
-            <a class="doc-card" href="https://github.com/CepheusLabs/deckhand-profiles/blob/main/AUTHORING.md">
-              <h3>Profile authoring</h3>
-              <p>How to add or modify a printer profile. Full schema, examples, DSL reference.</p>
-            </a>
-          </div>
-        </div>
-      </section>
-    </main>
-
-    <footer class="footer">
-      <div class="container footer-inner">
-        <p>
-          Deckhand is an <a href="https://github.com/CepheusLabs/deckhand/blob/main/LICENSE">AGPL-3.0</a>
-          project by <a href="https://cepheuslabs.com">Cepheus Labs</a>.
-        </p>
-        <p>
-          <a href="https://github.com/CepheusLabs/deckhand">Source</a>
-          ·
-          <a href="https://github.com/CepheusLabs/deckhand-profiles">Printer profiles</a>
-          ·
-          <a href="https://printdeck.io">Printdeck</a>
-        </p>
+    <div class="card-grid">
+      <div class="card">
+        <span class="tag tag--accent">Path A · Stock keep</span>
+        <h3 style="margin:14px 0 8px;font-size:18px;">Keep the OS, swap the stack</h3>
+        <p style="color:var(--text-muted);margin:0;font-size:13.5px;">Snapshots what's there, kills the vendor services you don't want, drops in Kalico or Klipper, puts your printer.cfg back. If something goes sideways, the snapshot rolls you back. This is the safe one.</p>
       </div>
-    </footer>
+      <div class="card">
+        <span class="tag tag--accent">Path B · Fresh flash</span>
+        <h3 style="margin:14px 0 8px;font-size:18px;">Wipe and start clean</h3>
+        <p style="color:var(--text-muted);margin:0;font-size:13.5px;">Writes a fresh Armbian image to the eMMC and builds the stack from scratch. You lose the vendor mess and any weird config drift. Restore your printer.cfg from a backup at the end if you want.</p>
+      </div>
+      <div class="card">
+        <span class="tag">After install</span>
+        <h3 style="margin:14px 0 8px;font-size:18px;">Stays useful</h3>
+        <p style="color:var(--text-muted);margin:0;font-size:13.5px;">Snapshots, KIAUH launcher, debug bundles with a redaction preview before you send anything. When you're past needing a GUI for everything, you can just SSH in. Nothing here will fight you.</p>
+      </div>
+    </div>
+  </div>
+</section>
 
-    <script src="/app.js" defer></script>
-  </body>
+<!-- ==================== GUI vs Manual ==================== -->
+<section class="section alt">
+  <div class="container">
+    <div class="section-eyebrow">GUI ↔ shell</div>
+    <h2>Nothing happens that you can't see.</h2>
+    <p class="section-lede">Every wizard screen lists the exact commands it's about to run. Copy them, audit them, paste them somewhere else, or just hit Continue. Your call.</p>
+
+    <div class="parallel">
+      <div class="parallel--gui">
+        <div class="parallel-head">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+          In Deckhand
+        </div>
+        <ol>
+          <li>Pick the printer on <strong>S20</strong></li>
+          <li>Stock keep on <strong>S40</strong></li>
+          <li>Tick what to evict on <strong>S120</strong></li>
+          <li>Hit run on <strong>S900</strong> and go make coffee</li>
+        </ol>
+        <div style="font-size:12px;color:var(--text-muted);margin-top:10px;">~15 minutes. Most of it is the printer doing things, not you.</div>
+      </div>
+      <div class="parallel--manual">
+        <div class="parallel-head">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m4 17 6-6-6-6m8 14h8"/></svg>
+          Equivalent shell
+        </div>
+<pre><code>ssh user@printer.local
+sudo systemctl disable --now makerbase-net-mods.service
+sudo apt remove --purge phrozen-screen-svc
+git clone https://github.com/KalicoCrew/kalico.git ~/klipper
+cd ~/klipper && ./scripts/install-debian.sh
+sudo systemctl enable --now klipper moonraker</code></pre>
+      </div>
+    </div>
+
+    <div style="text-align:center;margin-top:24px;">
+      <a class="btn btn-ghost" href="manual.html">Full shell playbook →</a>
+    </div>
+  </div>
+</section>
+
+<!-- ==================== Privacy ==================== -->
+<section class="section">
+  <div class="container" style="max-width:760px;text-align:center;">
+    <div class="section-eyebrow">Where the data goes</div>
+    <h2 style="text-align:left;">Nowhere it doesn't have to.</h2>
+    <p class="section-lede" style="text-align:left;max-width:none;">There's no Deckhand server. No login. The app talks to your printer on the LAN and once a run grabs firmware tarballs from GitHub and Armbian. Three hosts total. If you don't trust me on that, the allow-list lives in <code>config/network.yaml</code> and the Doctor screen prints every URL before anything connects.</p>
+
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-top:24px;text-align:left;">
+      <div class="card" style="padding:16px;">
+        <div style="font-family:var(--font-mono);font-size:12px;color:var(--accent);">github.com</div>
+        <div style="font-size:12px;color:var(--text-muted);margin-top:3px;">Klipper / Kalico / Moonraker / Mainsail / Fluidd / KIAUH</div>
+      </div>
+      <div class="card" style="padding:16px;">
+        <div style="font-family:var(--font-mono);font-size:12px;color:var(--accent);">dl.armbian.com</div>
+        <div style="font-size:12px;color:var(--text-muted);margin-top:3px;">Base OS images for fresh-flash mode</div>
+      </div>
+      <div class="card" style="padding:16px;">
+        <div style="font-family:var(--font-mono);font-size:12px;color:var(--accent);">192.168.x.x</div>
+        <div style="font-size:12px;color:var(--text-muted);margin-top:3px;">Your printer, over SSH/SFTP</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ==================== Supported printers ==================== -->
+<section class="section alt" id="printers">
+  <div class="container">
+    <div class="section-eyebrow">Profiles</div>
+    <h2>Printers it knows about</h2>
+    <p class="section-lede">Profiles are just YAML, written by whoever owns the printer. They live in <a href="https://github.com/CepheusLabs/deckhand-profiles">deckhand-profiles</a>. If your printer isn't here, an afternoon and an SSH session is roughly what it takes.</p>
+    <div style="display:grid;gap:10px;">
+      <div class="card" style="display:flex;align-items:center;gap:14px;padding:16px 20px;">
+        <strong style="font-size:15px;">Phrozen Arco</strong>
+        <span class="tag tag--amber">alpha</span>
+        <span style="margin-left:auto;color:var(--text-muted);font-size:13px;">RK3328 · CoreXY · ChromaKit AMS</span>
+      </div>
+      <div class="card" style="display:flex;align-items:center;gap:14px;padding:16px 20px;">
+        <strong style="font-size:15px;">Sovol Zero</strong>
+        <span class="tag">stub</span>
+        <span style="margin-left:auto;color:var(--text-muted);font-size:13px;">someone with one, please</span>
+      </div>
+      <div class="card" style="display:flex;align-items:center;gap:14px;padding:16px 20px;">
+        <strong style="font-size:15px;">Sovol SV08 Max</strong>
+        <span class="tag">stub</span>
+        <span style="margin-left:auto;color:var(--text-muted);font-size:13px;">someone with one, please</span>
+      </div>
+      <div class="card" style="border-style:dashed;background:transparent;display:flex;justify-content:center;padding:14px;">
+        <a href="https://github.com/CepheusLabs/deckhand-profiles/blob/main/AUTHORING.md">Add your printer →</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ==================== Footer ==================== -->
+<footer class="footer">
+  <div class="container footer-inner">
+    <div>Deckhand is <a href="https://github.com/CepheusLabs/deckhand/blob/main/LICENSE">AGPL-3.0</a> · built by <a href="https://cepheuslabs.com">Cepheus Labs</a></div>
+    <div>
+      <a href="https://github.com/CepheusLabs/deckhand">Source</a> ·
+      <a href="https://github.com/CepheusLabs/deckhand-profiles">Profiles</a> ·
+      <a href="https://printdeck.io">Printdeck</a>
+    </div>
+  </div>
+</footer>
+
+<!-- Search modal -->
+<div class="search-modal" id="search-modal">
+  <div class="search-panel">
+    <div class="search-input">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+      <input placeholder="Search the wiki…" />
+    </div>
+    <div class="search-results">
+      <div class="search-result is-selected">Getting started · Install <span class="sr-where">getting-started.html</span></div>
+      <div class="search-result">Manual playbook · Stock keep <span class="sr-where">manual.html#stock-keep</span></div>
+      <div class="search-result">🛠 CLI reference · deckhand doctor <span class="sr-where">cli.html#doctor</span></div>
+      <div class="search-result">🔧 FAQ · "It can't find my printer" <span class="sr-where">faq.html#discovery</span></div>
+      <div class="search-result">📡 IPC · disks.list <span class="sr-where">cli.html#disks-list</span></div>
+    </div>
+    <div class="search-foot">
+      <span><kbd>↑</kbd><kbd>↓</kbd> navigate</span>
+      <span><kbd>↵</kbd> open</span>
+      <span><kbd>esc</kbd> close</span>
+    </div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+
+</body>
 </html>
