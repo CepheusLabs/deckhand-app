@@ -223,6 +223,12 @@ Future<void> _runInstallStackImpl(
     final releaseRepo = cfg['release_repo'] as String?;
     final assetPattern = cfg['asset_pattern'] as String?;
     final assetSha256 = cfg['sha256'] as String?;
+    final rawReleaseTag =
+        cfg['tag'] as String? ?? cfg['release_tag'] as String?;
+    final releaseTag = rawReleaseTag?.trim();
+    final releaseTagOrNull = releaseTag == null || releaseTag.isEmpty
+        ? null
+        : releaseTag;
 
     if (repo != null && install != null) {
       _validateHttpsGitRepoImpl(repo, '$name repo');
@@ -244,6 +250,9 @@ Future<void> _runInstallStackImpl(
           '$name release asset is missing required sha256',
         );
       }
+      if (releaseTagOrNull != null) {
+        _validateGitRefImpl(releaseTagOrNull, '$name release tag');
+      }
       // Release-asset install (Fluidd/Mainsail/etc.): pull the zip
       // from GitHub Releases on the host, push it to the printer,
       // and unzip in place. Direct on-printer downloads aren't
@@ -258,6 +267,7 @@ Future<void> _runInstallStackImpl(
         assetPattern: assetPattern,
         destPath: hostTmp,
         expectedSha256: assetSha256,
+        tag: releaseTagOrNull,
       );
       // SFTP cwd defaults to home on OpenSSH; absolute /tmp/ avoids
       // tilde-expansion concerns and ensures predictable cleanup.

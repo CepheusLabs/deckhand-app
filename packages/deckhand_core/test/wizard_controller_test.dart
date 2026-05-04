@@ -1513,6 +1513,7 @@ void main() {
     // halfway through an install on a real printer.
     test('expands {{stack.webui.selected}} from the webui decision', () async {
       final ssh = FakeSsh();
+      final upstream = FakeUpstream();
       final controller = newController(
         profileJson: {
           ...baseProfileJson(
@@ -1542,6 +1543,7 @@ void main() {
                 {
                   'id': 'fluidd',
                   'release_repo': 'fluidd-core/fluidd',
+                  'tag': 'v1.34.3',
                   'asset_pattern': 'fluidd.zip',
                   'sha256':
                       'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
@@ -1562,6 +1564,7 @@ void main() {
           },
         },
         ssh: ssh,
+        upstream: upstream,
       );
       await controller.loadProfile('test-printer');
       controller.setFlow(WizardFlow.stockKeep);
@@ -1611,6 +1614,7 @@ void main() {
         isTrue,
         reason: 'git clone must terminate option parsing before repo URLs',
       );
+      expect(upstream.releaseCalls.single.tag, 'v1.34.3');
     });
 
     test('rejects option-looking git refs before cloning', () async {
@@ -2122,6 +2126,16 @@ Future<String> _stageLocalScript(String basename) async {
 class FakeUpstream implements UpstreamService {
   final _events = <OsDownloadProgress>[];
   final downloadCalls = <({String url, String destPath, String? sha256})>[];
+  final releaseCalls =
+      <
+        ({
+          String repoSlug,
+          String assetPattern,
+          String destPath,
+          String expectedSha256,
+          String? tag,
+        })
+      >[];
   void addDownloadEvent(OsDownloadProgress e) => _events.add(e);
   @override
   Future<UpstreamFetchResult> gitFetch({
@@ -2149,8 +2163,19 @@ class FakeUpstream implements UpstreamService {
     required String destPath,
     required String expectedSha256,
     String? tag,
-  }) async =>
-      UpstreamFetchResult(localPath: destPath, resolvedRef: tag ?? 'latest');
+  }) async {
+    releaseCalls.add((
+      repoSlug: repoSlug,
+      assetPattern: assetPattern,
+      destPath: destPath,
+      expectedSha256: expectedSha256,
+      tag: tag,
+    ));
+    return UpstreamFetchResult(
+      localPath: destPath,
+      resolvedRef: tag ?? 'latest',
+    );
+  }
 }
 
 class FakeElevatedHelperCall {
