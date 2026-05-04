@@ -14,3 +14,20 @@ const String deckhandVersion = String.fromEnvironment(
   'DECKHAND_VERSION',
   defaultValue: 'dev',
 );
+
+/// Local-only escape hatch for optimized smoke testing when the repo still
+/// contains the placeholder profile-trust keyring.
+///
+/// Production release workflows must never set this flag. It exists so a
+/// maintainer can exercise Release-mode rendering/performance against a local
+/// profile checkout without weakening the normal packaged artifact.
+const bool localSmokeRelease = bool.fromEnvironment(
+  'DECKHAND_LOCAL_SMOKE_RELEASE',
+  defaultValue: false,
+);
+
+String describeBuildMode({required bool isReleaseBuild}) {
+  if (isReleaseBuild && localSmokeRelease) return 'local-smoke-release';
+  if (isReleaseBuild) return 'release';
+  return 'development';
+}

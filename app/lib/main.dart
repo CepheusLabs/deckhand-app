@@ -11,6 +11,7 @@ import 'package:deckhand_ui/trust_keyring_asset.dart';
 import 'build_info.dart' as build_info;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:window_manager/window_manager.dart';
@@ -19,6 +20,10 @@ import 'window_geometry_observer.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  const isReleaseBuild = bool.fromEnvironment(
+    'dart.vm.product',
+    defaultValue: false,
+  );
   String? startupLogsDir;
   SidecarSupervisor? startedSidecar;
 
@@ -118,6 +123,7 @@ Future<void> main() async {
         phase: 'sidecar.start failed',
         error: e,
         stackTrace: st,
+        metadata: startupDiagnosticMetadata(isReleaseBuild: isReleaseBuild),
       );
       try {
         await sidecar.shutdown();
@@ -145,17 +151,17 @@ Future<void> main() async {
     // sibling dir on a user's machine could otherwise silently override
     // their pinned profile registry).
     String? autoDetectedDir;
-    const isReleaseBuild = bool.fromEnvironment(
-      'dart.vm.product',
-      defaultValue: false,
+    final productionTrustEnforced = isProductionTrustEnforcedBuild(
+      isReleaseBuild: isReleaseBuild,
+      isLocalSmokeRelease: build_info.localSmokeRelease,
     );
-    final envLocalDir = !isReleaseBuild
+    final envLocalDir = !productionTrustEnforced
         ? Platform.environment['DECKHAND_PROFILES_LOCAL']
         : null;
-    if (!isReleaseBuild) {
+    if (!productionTrustEnforced) {
       autoDetectedDir = await _autoDetectLocalProfilesDir();
     }
-    final localProfilesDir = !isReleaseBuild
+    final localProfilesDir = !productionTrustEnforced
         ? (envLocalDir != null && envLocalDir.trim().isNotEmpty
               ? envLocalDir
               : (settings.localProfilesDir ?? autoDetectedDir))
@@ -192,7 +198,7 @@ Future<void> main() async {
     // execution.
     final trustKeyring = await loadBundledTrustKeyring();
     enforceProfileTrustKeyringForBuild(
-      isReleaseBuild: isReleaseBuild,
+      isReleaseBuild: productionTrustEnforced,
       trustKeyring: trustKeyring,
     );
     final requireSignedTag = !trustKeyring.isPlaceholder;
@@ -280,6 +286,7 @@ Future<void> main() async {
       phase: 'app.start failed',
       error: e,
       stackTrace: st,
+      metadata: startupDiagnosticMetadata(isReleaseBuild: isReleaseBuild),
     );
     runApp(
       _FatalErrorApp(
@@ -356,16 +363,40 @@ Future<void> writeStartupFailureLog({
   required String phase,
   required Object error,
   required StackTrace stackTrace,
+  Map<String, String> metadata = const {},
 }) async {
   try {
     await Directory(logsDir).create(recursive: true);
     final crashFile = File(p.join(logsDir, 'startup_crash.log'));
+    final metadataLines = metadata.entries
+        .map((entry) => '${entry.key}: ${entry.value}')
+        .join('\n');
     await crashFile.writeAsString(
-      '${DateTime.now().toIso8601String()} $phase\n$error\n$stackTrace\n',
+      '${DateTime.now().toIso8601String()} $phase\n'
+      '${metadataLines.isEmpty ? '' : '$metadataLines\n'}'
+      '$error\n$stackTrace\n',
       mode: FileMode.append,
       flush: true,
     );
   } catch (_) {}
+}
+
+Map<String, String> startupDiagnosticMetadata({
+  required bool isReleaseBuild,
+}) => {
+  'deckhand_version': build_info.deckhandVersion,
+  'build_mode': build_info.describeBuildMode(isReleaseBuild: isReleaseBuild),
+  'executable': Platform.resolvedExecutable,
+  'sidecar_path': _resolveSidecarPath(),
+  'elevated_helper_path': _resolveElevatedHelperPath(),
+  'os': '${Platform.operatingSystem} ${Platform.operatingSystemVersion}',
+};
+
+bool isProductionTrustEnforcedBuild({
+  required bool isReleaseBuild,
+  required bool isLocalSmokeRelease,
+}) {
+  return isReleaseBuild && !isLocalSmokeRelease;
 }
 
 void enforceProfileTrustKeyringForBuild({
@@ -439,10 +470,35 @@ class _FatalErrorApp extends StatelessWidget {
                     SelectableText(sidecarPath),
                     const SizedBox(height: 12),
                     Text(
+                      'Elevated helper expected at:',
+                      style: Theme.of(context).textTheme.labelLarge,
+                    ),
+                    SelectableText(_resolveElevatedHelperPath()),
+                    const SizedBox(height: 12),
+                    Text(
                       'Startup log:',
                       style: Theme.of(context).textTheme.labelLarge,
                     ),
                     SelectableText(p.join(logsDir, 'startup_crash.log')),
+                    const SizedBox(height: 24),
+                    Wrap(
+                      spacing: 12,
+                      runSpacing: 12,
+                      children: [
+                        OutlinedButton.icon(
+                          onPressed: () => _openLogsDir(logsDir),
+                          icon: const Icon(Icons.folder_open),
+                          label: const Text('Open logs'),
+                        ),
+                        OutlinedButton.icon(
+                          onPressed: () => Clipboard.setData(
+                            ClipboardData(text: diagnosticText),
+                          ),
+                          icon: const Icon(Icons.copy),
+                          label: const Text('Copy diagnostics'),
+                        ),
+                      ],
+                    ),
                   ],
                 ),
               ),
@@ -451,5 +507,29 @@ class _FatalErrorApp extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  String get diagnosticText => [
+    title,
+    '',
+    body,
+    '',
+    'Deckhand version: ${build_info.deckhandVersion}',
+    'Sidecar expected at: $sidecarPath',
+    'Elevated helper expected at: ${_resolveElevatedHelperPath()}',
+    'Startup log: ${p.join(logsDir, 'startup_crash.log')}',
+  ].join('\n');
+
+  Future<void> _openLogsDir(String logsDir) async {
+    try {
+      await Directory(logsDir).create(recursive: true);
+      if (Platform.isWindows) {
+        await Process.start('explorer.exe', [logsDir]);
+      } else if (Platform.isMacOS) {
+        await Process.start('open', [logsDir]);
+      } else {
+        await Process.start('xdg-open', [logsDir]);
+      }
+    } catch (_) {}
   }
 }

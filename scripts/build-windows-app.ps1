@@ -3,6 +3,8 @@ param(
     [ValidateSet('Debug', 'Profile', 'Release')]
     [string]$Configuration = 'Debug',
 
+    [switch]$LocalSmokeRelease,
+
     [switch]$ForceReconfigure
 )
 
@@ -38,6 +40,7 @@ function Remove-BuildTree {
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $appDir = Join-Path $repoRoot 'app'
+$keyringPath = Join-Path $appDir 'assets\keyring.asc'
 $buildDir = Join-Path $appDir 'build\windows\x64'
 $windowsDir = Join-Path $appDir 'windows'
 
@@ -71,9 +74,35 @@ $flutterMode = switch ($Configuration) {
     'Release' { '--release' }
 }
 
+$flutterArgs = @('build', 'windows', $flutterMode)
+if ($Configuration -eq 'Release') {
+    if (-not (Test-Path -LiteralPath $keyringPath)) {
+        throw "Profile trust keyring is missing at $keyringPath"
+    }
+    $keyringText = Get-Content -LiteralPath $keyringPath -Raw
+    $isPlaceholderKeyring = $keyringText -match 'BEGIN DECKHAND PROFILE TRUST PLACEHOLDER'
+    if ($isPlaceholderKeyring -and -not $LocalSmokeRelease) {
+        throw @"
+Refusing to build a production Release with the placeholder profile-trust keyring.
+
+Replace app\assets\keyring.asc with production profile-signing public keys, or rerun:
+  .\scripts\build-windows-app.ps1 -Configuration Release -LocalSmokeRelease
+
+Local smoke releases are optimized test artifacts only. They are marked with
+DECKHAND_LOCAL_SMOKE_RELEASE and must not be packaged or shipped.
+"@
+    }
+    if ($LocalSmokeRelease) {
+        $flutterArgs += '--dart-define=DECKHAND_LOCAL_SMOKE_RELEASE=true'
+        if (-not $env:DECKHAND_PROFILES_LOCAL) {
+            Write-Warning "Local smoke release has no DECKHAND_PROFILES_LOCAL override; remote profile fetches may still be rejected without a production keyring."
+        }
+    }
+}
+
 Push-Location $appDir
 try {
-    Invoke-Checked 'flutter' @('build', 'windows', $flutterMode)
+    Invoke-Checked 'flutter' $flutterArgs
 } finally {
     Pop-Location
 }

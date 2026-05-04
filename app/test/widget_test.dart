@@ -36,6 +36,30 @@ void main() {
     );
   });
 
+  test('local smoke release does not enforce production profile trust', () {
+    expect(
+      app.isProductionTrustEnforcedBuild(
+        isReleaseBuild: true,
+        isLocalSmokeRelease: false,
+      ),
+      isTrue,
+    );
+    expect(
+      app.isProductionTrustEnforcedBuild(
+        isReleaseBuild: true,
+        isLocalSmokeRelease: true,
+      ),
+      isFalse,
+    );
+    expect(
+      app.isProductionTrustEnforcedBuild(
+        isReleaseBuild: false,
+        isLocalSmokeRelease: false,
+      ),
+      isFalse,
+    );
+  });
+
   test('startup failures are written to the startup crash log', () async {
     final tempDir = await Directory.systemTemp.createTemp(
       'deckhand_startup_test_',
@@ -51,11 +75,13 @@ void main() {
       phase: 'test phase',
       error: StateError('boom'),
       stackTrace: StackTrace.current,
+      metadata: const {'build_mode': 'test'},
     );
 
     final logFile = File(p.join(tempDir.path, 'startup_crash.log'));
     final contents = await logFile.readAsString();
     expect(contents, contains('test phase'));
     expect(contents, contains('Bad state: boom'));
+    expect(contents, contains('build_mode: test'));
   });
 }
