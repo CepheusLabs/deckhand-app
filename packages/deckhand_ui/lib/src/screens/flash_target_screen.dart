@@ -224,17 +224,42 @@ class _DiskRow extends StatelessWidget {
               radio: _RadioDot(selected: selected, tokens: tokens),
               disk: Row(
                 children: [
-                  Icon(Icons.album_outlined, size: 16, color: tokens.text3),
+                  Icon(
+                    disk.interruptedFlash == null
+                        ? Icons.album_outlined
+                        : Icons.warning_amber_outlined,
+                    size: 16,
+                    color: disk.interruptedFlash == null
+                        ? tokens.text3
+                        : tokens.bad,
+                  ),
                   const SizedBox(width: 8),
                   Expanded(
-                    child: Text(
-                      diskDisplayName(disk),
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontFamily: DeckhandTokens.fontMono,
-                        fontSize: DeckhandTokens.tSm,
-                        color: tokens.text,
-                      ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          diskDisplayName(disk),
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontFamily: DeckhandTokens.fontMono,
+                            fontSize: DeckhandTokens.tSm,
+                            color: tokens.text,
+                          ),
+                        ),
+                        if (disk.interruptedFlash != null) ...[
+                          const SizedBox(height: 3),
+                          Text(
+                            _interruptedFlashLabel(disk.interruptedFlash!),
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontFamily: DeckhandTokens.fontSans,
+                              fontSize: DeckhandTokens.tXs,
+                              color: tokens.bad,
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
                   ),
                 ],
@@ -297,6 +322,18 @@ class _DiskRow extends StatelessWidget {
     final n = disk.partitions.length;
     if (n == 0) return 'no partitions';
     return '$n partition${n == 1 ? '' : 's'}';
+  }
+
+  String _interruptedFlashLabel(InterruptedFlashInfo info) {
+    return 'Previous Deckhand flash did not finish · '
+        '${_formatLocalTimestamp(info.startedAt)}';
+  }
+
+  String _formatLocalTimestamp(DateTime utc) {
+    final local = utc.toLocal();
+    String two(int value) => value.toString().padLeft(2, '0');
+    return '${local.year}-${two(local.month)}-${two(local.day)} '
+        '${two(local.hour)}:${two(local.minute)}';
   }
 }
 
@@ -382,7 +419,9 @@ class _MatchPill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final (label, color) = !disk.removable
+    final (label, color) = disk.interruptedFlash != null
+        ? ('interrupted', tokens.bad)
+        : !disk.removable
         ? ('system', tokens.bad)
         : ('removable', tokens.ok);
     return Align(

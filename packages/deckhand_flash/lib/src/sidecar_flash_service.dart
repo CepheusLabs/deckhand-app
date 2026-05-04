@@ -157,6 +157,7 @@ DiskInfo _diskFromJson(Map raw) {
     model: raw['model'] as String? ?? 'Unknown disk',
     removable: raw['removable'] as bool? ?? false,
     partitions: parts.map(_partFromJson).toList(),
+    interruptedFlash: _interruptedFlashFromJson(raw['interrupted_flash']),
   );
 }
 
@@ -166,6 +167,21 @@ PartitionInfo _partFromJson(Map raw) => PartitionInfo(
   sizeBytes: (raw['size_bytes'] as num?)?.toInt() ?? 0,
   mountpoint: raw['mountpoint'] as String?,
 );
+
+InterruptedFlashInfo? _interruptedFlashFromJson(Object? raw) {
+  if (raw is! Map) return null;
+  final startedRaw = raw['started_at'];
+  final imageRaw = raw['image_path'];
+  if (startedRaw is! String || imageRaw is! String) return null;
+  final startedAt = DateTime.tryParse(startedRaw)?.toUtc();
+  if (startedAt == null) return null;
+  final shaRaw = raw['image_sha256'];
+  return InterruptedFlashInfo(
+    startedAt: startedAt,
+    imagePath: imageRaw,
+    imageSha256: shaRaw is String && shaRaw.isNotEmpty ? shaRaw : null,
+  );
+}
 
 final _flashEventTransformer =
     StreamTransformer<SidecarEvent, FlashProgress>.fromHandlers(

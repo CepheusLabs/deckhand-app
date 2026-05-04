@@ -39,6 +39,7 @@ class DiskInfo {
     required this.model,
     required this.removable,
     required this.partitions,
+    this.interruptedFlash,
   });
 
   final String id;
@@ -48,6 +49,19 @@ class DiskInfo {
   final String model;
   final bool removable;
   final List<PartitionInfo> partitions;
+  final InterruptedFlashInfo? interruptedFlash;
+}
+
+class InterruptedFlashInfo {
+  const InterruptedFlashInfo({
+    required this.startedAt,
+    required this.imagePath,
+    this.imageSha256,
+  });
+
+  final DateTime startedAt;
+  final String imagePath;
+  final String? imageSha256;
 }
 
 class FlashSafetyVerdict {
