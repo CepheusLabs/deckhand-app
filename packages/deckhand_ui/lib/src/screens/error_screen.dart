@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../widgets/wizard_scaffold.dart';
-import '../widgets/deckhand_stepper.dart';
 
 class ErrorScreen extends StatelessWidget {
   const ErrorScreen({
@@ -18,7 +17,7 @@ class ErrorScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return WizardScaffold(
-      stepper: const DeckhandStepper(),
+      screenId: 'E-error',
       title: title,
       helperText: message,
       body: Icon(

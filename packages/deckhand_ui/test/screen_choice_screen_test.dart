@@ -47,11 +47,12 @@ void main() {
       expect(find.text('Open Arco Screen'), findsOneWidget);
       expect(find.text('No touchscreen'), findsOneWidget);
 
-      // Status pills render via the shared StatusPill widget - the
-      // "alpha" label appears on one card.
+      // Status pills render via the shared StatusPill widget. Pills
+      // visually uppercase the label per the design spec — search for
+      // the rendered (uppercase) form.
       expect(find.byType(StatusPill), findsWidgets);
-      expect(find.text('alpha'), findsOneWidget);
-      expect(find.text('stable'), findsWidgets);
+      expect(find.text('ALPHA'), findsOneWidget);
+      expect(find.text('STABLE'), findsWidgets);
     });
 
     testWidgets(

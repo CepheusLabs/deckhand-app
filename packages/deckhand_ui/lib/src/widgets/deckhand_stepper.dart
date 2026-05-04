@@ -3,119 +3,80 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../i18n/translations.g.dart';
 import '../providers.dart';
-import 'wizard_stepper.dart';
+import 'deckhand_wizard_stepper.dart';
+import 'wizard_nav_map.dart';
 
-/// Context-aware stepper that derives its step list + current index from
-/// the active wizard state and GoRouter location. Every [WizardScaffold]
-/// gets one of these via `DeckhandStepper()` in its `stepper` slot.
+/// Wizard-state-aware adapter around [DeckhandWizardStepper]. Reads
+/// the active wizard state + current route, maps them to a screen-ID
+/// (`S15`, `S40`, …) plus a phase, and delegates rendering to the
+/// underlying compressed-phase stepper.
+///
+/// Used as `const DeckhandStepper()` in every [WizardScaffold].
 class DeckhandStepper extends ConsumerWidget {
   const DeckhandStepper({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // Watch events so the stepper rebuilds when the controller's
-    // currentStepKind changes mid-execution. Without this the
-    // phase-aware label on /progress would stay frozen at whatever
-    // was active when the route first mounted.
-    ref.watch(wizardStateProvider);
-    final controller = ref.watch(wizardControllerProvider);
-    final flow = controller.state.flow;
-    final currentLocation = GoRouterState.of(context).uri.path;
-    final steps = _stepsForFlow(flow);
-    final currentIndex = steps.indexWhere(
-      (s) => s.routes.contains(currentLocation),
-    );
-
-    // Phase-aware override: when the active card is the unified
-    // /progress screen, ask the controller for its currentStepKind
-    // and swap the generic "Install" label for something specific.
-    final resolvedSteps = [
-      for (var i = 0; i < steps.length; i++)
-        if (i == currentIndex && steps[i].routes.contains('/progress'))
-          _StepEntry(
-            label: _phaseLabel(controller.currentStepKind) ?? steps[i].label,
-            routes: steps[i].routes,
-          )
-        else
-          steps[i],
-    ];
-
-    return WizardStepper(
-      steps: resolvedSteps
-          .map((s) => WizardStepperItem(label: s.label))
-          .toList(),
-      currentIndex: currentIndex < 0 ? 0 : currentIndex,
-      onStepTap: (i) => context.go(steps[i].routes.first),
-    );
-  }
-
-  /// Map a wizard step kind to a short stepper-label. Returns null to
-  /// fall back to the default label for this entry.
-  String? _phaseLabel(String? kind) => switch (kind) {
-        'os_download' => t.progress.phase_os_download,
-        'flash_disk' => t.progress.phase_flash_disk,
-        'wait_for_ssh' => t.progress.phase_wait_for_ssh,
-        'install_firmware' => t.progress.phase_install_firmware,
-        'install_stack' => t.progress.phase_install_stack,
-        'flash_mcus' => t.progress.phase_flash_mcus,
-        'install_marker' => t.progress.phase_install_marker,
-        'verify' => t.progress.phase_verify,
-        _ => null,
-      };
-
-  List<_StepEntry> _stepsForFlow(WizardFlow flow) {
-    final base = [
-      const _StepEntry(label: 'Welcome', routes: ['/']),
-      const _StepEntry(label: 'Pick', routes: ['/pick-printer']),
-      const _StepEntry(label: 'Connect', routes: ['/connect']),
-      const _StepEntry(label: 'Verify', routes: ['/verify']),
-      const _StepEntry(label: 'Path', routes: ['/choose-path']),
-    ];
-    switch (flow) {
-      case WizardFlow.stockKeep:
-        return [
-          ...base,
-          const _StepEntry(label: 'Firmware', routes: ['/firmware']),
-          const _StepEntry(label: 'Web UI', routes: ['/webui']),
-          const _StepEntry(label: 'KIAUH', routes: ['/kiauh']),
-          const _StepEntry(label: 'Screen', routes: ['/screen-choice']),
-          const _StepEntry(label: 'Services', routes: ['/services']),
-          const _StepEntry(label: 'Files', routes: ['/files']),
-          const _StepEntry(label: 'Harden', routes: ['/hardening']),
-          const _StepEntry(label: 'Review', routes: ['/review']),
-          const _StepEntry(label: 'Install', routes: ['/progress']),
-          const _StepEntry(label: 'Done', routes: ['/done']),
-        ];
-      case WizardFlow.freshFlash:
-        return [
-          ...base,
-          const _StepEntry(label: 'Disk', routes: ['/flash-target']),
-          const _StepEntry(label: 'Image', routes: ['/choose-os']),
-          const _StepEntry(label: 'Confirm', routes: ['/flash-confirm']),
-          // Single unified progress screen owns write, reboot wait, and
-          // post-boot setup steps. Older routes kept as aliases below.
-          const _StepEntry(
-            label: 'Install',
-            routes: ['/progress', '/flash-progress', '/first-boot'],
-          ),
-          const _StepEntry(label: 'User', routes: ['/first-boot-setup']),
-          const _StepEntry(label: 'Firmware', routes: ['/firmware']),
-          const _StepEntry(label: 'Web UI', routes: ['/webui']),
-          const _StepEntry(label: 'KIAUH', routes: ['/kiauh']),
-          const _StepEntry(label: 'Screen', routes: ['/screen-choice']),
-          const _StepEntry(label: 'Review', routes: ['/review']),
-          const _StepEntry(label: 'Done', routes: ['/done']),
-        ];
-      case WizardFlow.none:
-        return base;
+    // Watch wizard state so the chip + popover redraw when the
+    // controller advances or the user picks a flow. Tests that pump
+    // a bare WizardScaffold (e.g. wizard_scaffold_shortcuts_test)
+    // don't wire the wizard controller — degrade to an empty
+    // placeholder rather than throwing UnimplementedProvider so
+    // the scaffold remains testable in isolation.
+    final WizardController controller;
+    try {
+      ref.watch(wizardStateProvider);
+      controller = ref.watch(wizardControllerProvider);
+    } on UnimplementedError {
+      return const SizedBox.shrink();
     }
-  }
-}
+    final flow = controller.state.flow;
+    // Orthogonal pages (Settings, Error) reuse [WizardScaffold] for
+    // chrome but aren't part of the wizard flow. Showing a stepper
+    // there would mislabel them as "Entry · Welcome". Same defense
+    // for tests where there's no GoRouter ancestor.
+    final GoRouterState routerState;
+    try {
+      routerState = GoRouterState.of(context);
+    } catch (_) {
+      return const SizedBox.shrink();
+    }
+    final location = routerState.uri.path;
+    if (!WizardNavMap.isWizardRoute(location)) {
+      return const SizedBox.shrink();
+    }
+    final currentSid = WizardNavMap.routeToSid(
+      location: location,
+      flow: flow,
+      stepKind: controller.currentStepKind,
+    );
 
-class _StepEntry {
-  const _StepEntry({required this.label, required this.routes});
-  final String label;
-  final List<String> routes;
+    final order = WizardNavMap.orderForFlow(flow);
+    final currentIdx = order.indexOf(currentSid);
+    // Visited = everything up to and including the current step in
+    // the canonical order. Jump-back via popover stays scoped to
+    // steps the user has already passed through.
+    final visited = currentIdx < 0
+        ? <String>{}
+        : order.take(currentIdx + 1).toSet();
+
+    // The 24px bottom margin is part of the stepper's contract (the
+    // design language puts a fixed gap between stepper and screen
+    // head). Folding it in here means the host scaffold doesn't have
+    // to distinguish wizard-route screens from orthogonal ones.
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 24),
+      child: DeckhandWizardStepper(
+        phases: WizardNavMap.phasesForFlow(flow),
+        currentStepId: currentSid,
+        stepLabels: WizardNavMap.stepLabels,
+        visitedIds: visited,
+        onJumpTo: (sid) {
+          final route = WizardNavMap.sidToRoute(sid);
+          if (route != null) context.go(route);
+        },
+      ),
+    );
+  }
 }

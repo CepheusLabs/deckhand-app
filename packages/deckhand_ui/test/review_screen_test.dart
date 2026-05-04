@@ -28,19 +28,23 @@ void main() {
     }
 
     testWidgets('renders write_file target paths', (tester) async {
-      final controller = await buildController(steps: [
-        {
-          'id': 'apt',
-          'kind': 'write_file',
-          'target': '/etc/apt/sources.list',
-          'content': '',
-        },
-      ]);
-      await tester.pumpWidget(testHarness(
-        controller: controller,
-        child: const ReviewScreen(),
-        initialLocation: '/review',
-      ));
+      final controller = await buildController(
+        steps: [
+          {
+            'id': 'apt',
+            'kind': 'write_file',
+            'target': '/etc/apt/sources.list',
+            'content': '',
+          },
+        ],
+      );
+      await tester.pumpWidget(
+        testHarness(
+          controller: controller,
+          child: const ReviewScreen(),
+          initialLocation: '/review',
+        ),
+      );
       await tester.pumpAndSettle();
       expect(find.text('/etc/apt/sources.list'), findsOneWidget);
       expect(find.textContaining('Files to write'), findsOneWidget);
@@ -75,11 +79,13 @@ void main() {
             'file.delete_this': 'delete',
           },
         );
-        await tester.pumpWidget(testHarness(
-          controller: controller,
-          child: const ReviewScreen(),
-          initialLocation: '/review',
-        ));
+        await tester.pumpWidget(
+          testHarness(
+            controller: controller,
+            child: const ReviewScreen(),
+            initialLocation: '/review',
+          ),
+        );
         await tester.pumpAndSettle();
         // Preview should include `delete_this` but NOT `keep_this`.
         expect(find.textContaining('/delete/me'), findsOneWidget);
@@ -87,8 +93,9 @@ void main() {
       },
     );
 
-    testWidgets('resolves firmware.install_path in template targets',
-        (tester) async {
+    testWidgets('resolves firmware.install_path in template targets', (
+      tester,
+    ) async {
       final controller = await buildController(
         extraProfile: {
           'firmware': {
@@ -113,51 +120,84 @@ void main() {
         ],
         decisions: {'firmware': 'kalico'},
       );
-      await tester.pumpWidget(testHarness(
-        controller: controller,
-        child: const ReviewScreen(),
-        initialLocation: '/review',
-      ));
+      await tester.pumpWidget(
+        testHarness(
+          controller: controller,
+          child: const ReviewScreen(),
+          initialLocation: '/review',
+        ),
+      );
       await tester.pumpAndSettle();
       // Template resolved at preview time, not rendered literally.
       expect(find.textContaining('~/klipper/klippy.cfg'), findsOneWidget);
-      expect(
-        find.textContaining('{{firmware.install_path}}'),
-        findsNothing,
-      );
+      expect(find.textContaining('{{firmware.install_path}}'), findsNothing);
     });
 
-    testWidgets('conditional-wrapped steps get a "(maybe)" tag',
-        (tester) async {
-      final controller = await buildController(steps: [
-        {
-          'id': 'gate',
-          'kind': 'conditional',
-          'when': 'os_codename_is("buster")',
-          'then': [
+    testWidgets('conditional-wrapped steps get a "(maybe)" tag', (
+      tester,
+    ) async {
+      final controller = await buildController(
+        steps: [
+          {
+            'id': 'gate',
+            'kind': 'conditional',
+            'when': 'os_codename_is("buster")',
+            'then': [
+              {
+                'id': 'inner',
+                'kind': 'write_file',
+                'target': '/etc/apt/sources.list',
+                'content': '',
+              },
+            ],
+          },
+        ],
+      );
+      await tester.pumpWidget(
+        testHarness(
+          controller: controller,
+          child: const ReviewScreen(),
+          initialLocation: '/review',
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.textContaining('(maybe, conditional)'), findsOneWidget);
+      expect(find.textContaining('[gate: when os_codename_is'), findsOneWidget);
+    });
+
+    testWidgets(
+      'start install action is exposed as destructive after confirmation',
+      (tester) async {
+        final controller = await buildController(
+          steps: [
             {
-              'id': 'inner',
+              'id': 'write_cfg',
               'kind': 'write_file',
               'target': '/etc/apt/sources.list',
               'content': '',
             },
           ],
-        },
-      ]);
-      await tester.pumpWidget(testHarness(
-        controller: controller,
-        child: const ReviewScreen(),
-        initialLocation: '/review',
-      ));
-      await tester.pumpAndSettle();
-      expect(
-        find.textContaining('(maybe, conditional)'),
-        findsOneWidget,
-      );
-      expect(
-        find.textContaining('[gate: when os_codename_is'),
-        findsOneWidget,
-      );
-    });
+        );
+        final semantics = tester.ensureSemantics();
+
+        await tester.pumpWidget(
+          testHarness(
+            controller: controller,
+            child: const ReviewScreen(),
+            initialLocation: '/review',
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.text('I understand and want to proceed.'));
+        await tester.pumpAndSettle();
+
+        expect(
+          find.bySemanticsLabel('Start install, destructive'),
+          findsOneWidget,
+        );
+        semantics.dispose();
+      },
+    );
   });
 }

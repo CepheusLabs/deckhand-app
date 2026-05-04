@@ -5,9 +5,10 @@ import 'package:go_router/go_router.dart';
 
 import '../i18n/translations.g.dart';
 import '../providers.dart';
+import '../theming/deckhand_tokens.dart';
 import '../widgets/profile_text.dart';
+import '../widgets/status_pill.dart';
 import '../widgets/wizard_scaffold.dart';
-import '../widgets/deckhand_stepper.dart';
 
 class VerifyScreen extends ConsumerStatefulWidget {
   const VerifyScreen({super.key});
@@ -173,7 +174,7 @@ class _VerifyScreenState extends ConsumerState<VerifyScreen> {
     final backups = relevantBackups;
 
     return WizardScaffold(
-      stepper: const DeckhandStepper(),
+      screenId: 'S30-verify',
       title: t.verify.title,
       helperText: t.verify.helper,
       body: Column(
@@ -313,27 +314,26 @@ class _VerifyScreenState extends ConsumerState<VerifyScreen> {
           if (detections.isEmpty)
             Text(t.verify.no_detections)
           else
-            for (final d in detections)
-              Card(
-                child: ListTile(
-                  leading: Icon(
-                    d.required
-                        ? Icons.check_circle_outline
-                        : Icons.info_outline,
-                    color: d.required
-                        ? theme.colorScheme.primary
-                        : theme.colorScheme.onSurfaceVariant,
-                  ),
-                  title: Text(_title(d.kind, d.raw, profile?.manufacturer)),
-                  subtitle: Text(_explain(d.kind, d.raw, d.required)),
-                  isThreeLine: true,
-                ),
-              ),
+            _ProbesPanel(
+              detections: detections,
+              vendor: profile?.manufacturer,
+              titleFor: _title,
+              explainFor: _explain,
+            ),
         ],
       ),
       primaryAction: WizardAction(
         label: t.verify.action_continue,
-        onPressed: () => context.go('/choose-path'),
+        // Choose-path now happens BEFORE Connect/Verify, so this
+        // step exits straight into the configure phase. Pre-warm the
+        // snapshot probe here — we have a live SSH session and the
+        // user is about to walk through 5+ Configure screens before
+        // landing on S145, so the size estimate will be cached by
+        // the time they get there.
+        onPressed: () {
+          ref.read(snapshotProbeProvider);
+          context.go('/firmware');
+        },
       ),
       secondaryActions: [
         WizardAction(label: t.common.action_back, onPressed: () => context.go('/connect'), isBack: true),
@@ -581,6 +581,270 @@ class _BackupTile extends StatelessWidget {
               ),
             ),
           ],
+        ],
+      ),
+    );
+  }
+}
+
+/// Renders the profile's [DetectionRule] list as a panel matching the
+/// design's S30 PROBES treatment: header strip, one row per rule
+/// showing icon · label · `$ command` · detail (+ optional pill),
+/// and a footer banner once all required probes are accounted for.
+///
+/// Source data is the static rule set from the profile, NOT live
+/// probe outcomes — the wizard hasn't actually run them at the point
+/// this screen renders. The panel still adds value because it tells
+/// the user concretely WHAT will be checked, in the design's
+/// machine-shaped vocabulary, instead of generic "we'll verify the
+/// printer" copy.
+class _ProbesPanel extends StatelessWidget {
+  const _ProbesPanel({
+    required this.detections,
+    required this.vendor,
+    required this.titleFor,
+    required this.explainFor,
+  });
+
+  final List<DetectionRule> detections;
+  final String? vendor;
+  final String Function(String kind, Map<String, dynamic> raw, String? vendor)
+      titleFor;
+  final String Function(String kind, Map<String, dynamic> raw, bool required)
+      explainFor;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = DeckhandTokens.of(context);
+    final requiredCount = detections.where((d) => d.required).length;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Container(
+          decoration: BoxDecoration(
+            color: tokens.ink1,
+            border: Border.all(color: tokens.line),
+            borderRadius: BorderRadius.circular(DeckhandTokens.r3),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: Column(
+            children: [
+              // Panel head: "PROBES · N DEFINED" — mirrors the mockup's
+              // "PROBES · 5 / 5 RESPONDED" affordance, scaled to "this
+              // is what we'll check" since we don't yet have live
+              // results to show.
+              Container(
+                padding: const EdgeInsets.fromLTRB(14, 8, 14, 8),
+                decoration: BoxDecoration(
+                  color: tokens.ink2,
+                  border: Border(bottom: BorderSide(color: tokens.line)),
+                ),
+                child: Row(
+                  children: [
+                    Text(
+                      'PROBES · ${detections.length} DEFINED',
+                      style: TextStyle(
+                        fontFamily: DeckhandTokens.fontMono,
+                        fontSize: 10,
+                        color: tokens.text3,
+                        letterSpacing: 0.1 * 10,
+                      ),
+                    ),
+                    const Spacer(),
+                    Text(
+                      '$requiredCount required',
+                      style: TextStyle(
+                        fontFamily: DeckhandTokens.fontMono,
+                        fontSize: 10,
+                        color: tokens.text4,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              for (var i = 0; i < detections.length; i++)
+                _ProbeRow(
+                  rule: detections[i],
+                  vendor: vendor,
+                  isLast: i == detections.length - 1,
+                  title: titleFor(
+                    detections[i].kind,
+                    detections[i].raw,
+                    vendor,
+                  ),
+                  command: _commandFor(detections[i].kind, detections[i].raw),
+                  detail: explainFor(
+                    detections[i].kind,
+                    detections[i].raw,
+                    detections[i].required,
+                  ),
+                ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 14),
+        // Footer reassurance banner. The mockup uses a green strip
+        // when all required probes pass; we don't have outcomes here
+        // so phrase it forward-looking ("ready to run").
+        Container(
+          padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+          decoration: BoxDecoration(
+            color: tokens.ok.withValues(alpha: 0.06),
+            border: Border.all(color: tokens.ok.withValues(alpha: 0.3)),
+            borderRadius: BorderRadius.circular(DeckhandTokens.r2),
+          ),
+          child: Row(
+            children: [
+              Icon(Icons.check_circle_outline, size: 16, color: tokens.ok),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text.rich(
+                  TextSpan(
+                    style: TextStyle(
+                      fontFamily: DeckhandTokens.fontSans,
+                      fontSize: DeckhandTokens.tSm,
+                      color: tokens.text2,
+                    ),
+                    children: [
+                      const TextSpan(text: 'Probes ready. '),
+                      TextSpan(
+                        text: vendor == null
+                            ? 'Continue to run them against the live SSH session.'
+                            : 'These checks confirm this is a $vendor printer.',
+                        style: TextStyle(color: tokens.text3),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Synthesise the shell command (or `--`) the row's `$ cmd` line
+  /// renders. Mirrors what the sidecar will eventually run for each
+  /// detection kind. Profile-defined kinds we don't recognise fall
+  /// back to em-dash so the row still aligns visually.
+  static String _commandFor(String kind, Map<String, dynamic> raw) {
+    String? quoted(Object? v) => v == null ? null : "'${v.toString().replaceAll("'", r"'\''")}'";
+    switch (kind) {
+      case 'file_exists':
+        final path = raw['path'] as String?;
+        return path == null ? 'test -e' : 'test -e ${quoted(path)}';
+      case 'file_contains':
+        final path = raw['path'] as String?;
+        final pattern = raw['pattern'] as String?;
+        if (path == null || pattern == null) return 'grep -q';
+        return 'grep -q ${quoted(pattern)} ${quoted(path)}';
+      case 'process_running':
+        final name = raw['name'] as String?;
+        return name == null ? 'pgrep' : 'pgrep -x ${quoted(name)}';
+      case 'process_pattern':
+        final pattern = raw['pattern'] as String?;
+        return pattern == null ? 'pgrep -af' : 'pgrep -af ${quoted(pattern)}';
+      case 'moonraker_object':
+        final obj = raw['object'] as String?;
+        return obj == null ? 'moonraker.list_objects' : 'moonraker.list_objects → ${quoted(obj)}';
+      default:
+        return '—';
+    }
+  }
+}
+
+class _ProbeRow extends StatelessWidget {
+  const _ProbeRow({
+    required this.rule,
+    required this.vendor,
+    required this.isLast,
+    required this.title,
+    required this.command,
+    required this.detail,
+  });
+
+  final DetectionRule rule;
+  final String? vendor;
+  final bool isLast;
+  final String title;
+  final String command;
+  final String detail;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = DeckhandTokens.of(context);
+    final iconColor = rule.required ? tokens.accent : tokens.text4;
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+      decoration: BoxDecoration(
+        border: isLast
+            ? null
+            : Border(bottom: BorderSide(color: tokens.lineSoft)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: Icon(
+              rule.required ? Icons.check_circle_outline : Icons.info_outline,
+              size: 16,
+              color: iconColor,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        title,
+                        style: TextStyle(
+                          fontFamily: DeckhandTokens.fontSans,
+                          fontSize: DeckhandTokens.tMd,
+                          color: tokens.text,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                    if (!rule.required) ...[
+                      const SizedBox(width: 8),
+                      StatusPill(
+                        label: 'optional',
+                        color: tokens.text3,
+                        noDot: true,
+                      ),
+                    ],
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '\$ $command',
+                  style: TextStyle(
+                    fontFamily: DeckhandTokens.fontMono,
+                    fontSize: DeckhandTokens.tXs,
+                    color: tokens.text4,
+                  ),
+                ),
+                if (detail.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    detail,
+                    style: TextStyle(
+                      fontFamily: DeckhandTokens.fontSans,
+                      fontSize: DeckhandTokens.tSm,
+                      color: tokens.text3,
+                      height: 1.4,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
         ],
       ),
     );

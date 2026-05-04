@@ -48,9 +48,7 @@ Future<BundleResult?> saveDebugBundle({
 
   // Re-derive the same redactor the screen used so the manifest's
   // placeholder hashes round-trip cleanly.
-  final redactor = Redactor(sessionValues: {
-    'printer_host': wizardState.sshHost,
-  });
+  final redactor = Redactor(sessionValues: controller.redactionSessionValues());
 
   try {
     final builder = BundleBuilder(

@@ -61,7 +61,12 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.textContaining('Fluidd'), findsOneWidget);
+      // The redesigned hero surfaces the chosen webui in two places:
+      // the "Web UI" stat tile in the stat-grid quad AND the "What's
+      // next" footer tip. Both intentionally name the same choice; the
+      // contract is "Fluidd shows, Mainsail doesn't" — not a single
+      // mention.
+      expect(find.textContaining('Fluidd'), findsAtLeastNWidgets(1));
       expect(find.textContaining('Mainsail'), findsNothing);
     });
 

@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:deckhand_core/deckhand_core.dart';
 import 'package:deckhand_ui/src/providers.dart';
+import 'package:deckhand_ui/src/theming/deckhand_theme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -14,6 +15,7 @@ Widget testHarness({
   required WizardController controller,
   required Widget child,
   String initialLocation = '/',
+  List<Override> extraOverrides = const [],
 }) {
   final router = GoRouter(
     initialLocation: initialLocation,
@@ -54,8 +56,20 @@ Widget testHarness({
       deckhandSettingsProvider.overrideWithValue(
         DeckhandSettings(path: '<memory>'),
       ),
+      // Per-test overrides win because they appear last (Riverpod
+      // resolves overrides in source order, last write wins).
+      ...extraOverrides,
     ],
-    child: MaterialApp.router(routerConfig: router),
+    // Use the Deckhand theme so widgets that reach for the
+    // [DeckhandTokens] extension (StatusPill, IdTag, TickRule,
+    // chrome) find it. Without this, those widgets assert at build
+    // time. Light theme picked arbitrarily — both ship the same
+    // extension instance.
+    child: MaterialApp.router(
+      routerConfig: router,
+      theme: DeckhandTheme.light(),
+      darkTheme: DeckhandTheme.dark(),
+    ),
   );
 }
 
@@ -106,7 +120,16 @@ Widget testHarnessWithSettings({
       ...overrideForController(controller),
       deckhandSettingsProvider.overrideWithValue(settings),
     ],
-    child: MaterialApp.router(routerConfig: router),
+    // Use the Deckhand theme so widgets that reach for the
+    // [DeckhandTokens] extension (StatusPill, IdTag, TickRule,
+    // chrome) find it. Without this, those widgets assert at build
+    // time. Light theme picked arbitrarily — both ship the same
+    // extension instance.
+    child: MaterialApp.router(
+      routerConfig: router,
+      theme: DeckhandTheme.light(),
+      darkTheme: DeckhandTheme.dark(),
+    ),
   );
 }
 
@@ -117,37 +140,35 @@ Map<String, dynamic> testProfileJson({
   Map<String, dynamic>? os,
   List<Map<String, dynamic>>? stockKeepSteps,
 }) => {
-      'profile_id': 'test-printer',
-      'profile_version': '0.1.0',
-      'display_name': 'Test Printer',
-      'status': 'alpha',
-      'manufacturer': 'Acme',
-      'model': 'Robo',
-      'os': os ??
+  'profile_id': 'test-printer',
+  'profile_version': '0.1.0',
+  'display_name': 'Test Printer',
+  'status': 'alpha',
+  'manufacturer': 'Acme',
+  'model': 'Robo',
+  'os':
+      os ??
+      {
+        'fresh_install_options': [
           {
-            'fresh_install_options': [
-              {
-                'id': 'debian-bookworm',
-                'display_name': 'Debian 12',
-                'url': 'https://example.com/img',
-                'recommended': true,
-              },
-            ],
+            'id': 'debian-bookworm',
+            'display_name': 'Debian 12',
+            'url': 'https://example.com/img',
+            'recommended': true,
           },
-      'ssh': {
-        'default_port': 22,
-        'default_credentials': [
-          {'user': 'root', 'password': 'root'},
         ],
       },
-      'stack': ?stack,
-      'flows': {
-        'stock_keep': {
-          'enabled': true,
-          'steps': stockKeepSteps ?? const [],
-        },
-      },
-    };
+  'ssh': {
+    'default_port': 22,
+    'default_credentials': [
+      {'user': 'root', 'password': 'root'},
+    ],
+  },
+  'stack': ?stack,
+  'flows': {
+    'stock_keep': {'enabled': true, 'steps': stockKeepSteps ?? const []},
+  },
+};
 
 /// Stubs a WizardController with minimal fake services - enough for
 /// widget tests to mount screens that read from the provider.
@@ -171,18 +192,18 @@ List<Override> overrideForController(
   WizardController controller, {
   DoctorService? doctor,
 }) => [
-      profileServiceProvider.overrideWithValue(
-        _StubProfileService(controller.profile!),
-      ),
-      sshServiceProvider.overrideWithValue(_StubSsh()),
-      flashServiceProvider.overrideWithValue(_StubFlash()),
-      discoveryServiceProvider.overrideWithValue(_StubDiscovery()),
-      moonrakerServiceProvider.overrideWithValue(_StubMoonraker()),
-      upstreamServiceProvider.overrideWithValue(_StubUpstream()),
-      securityServiceProvider.overrideWithValue(_StubSecurity()),
-      doctorServiceProvider.overrideWithValue(doctor ?? _StubDoctor.healthy()),
-      wizardControllerProvider.overrideWithValue(controller),
-    ];
+  profileServiceProvider.overrideWithValue(
+    _StubProfileService(controller.profile!),
+  ),
+  sshServiceProvider.overrideWithValue(_StubSsh()),
+  flashServiceProvider.overrideWithValue(_StubFlash()),
+  discoveryServiceProvider.overrideWithValue(_StubDiscovery()),
+  moonrakerServiceProvider.overrideWithValue(_StubMoonraker()),
+  upstreamServiceProvider.overrideWithValue(_StubUpstream()),
+  securityServiceProvider.overrideWithValue(_StubSecurity()),
+  doctorServiceProvider.overrideWithValue(doctor ?? _StubDoctor.healthy()),
+  wizardControllerProvider.overrideWithValue(controller),
+];
 
 /// Stub [DoctorService] used by widget tests. [_StubDoctor.healthy]
 /// returns a passing report; tests that exercise failure rendering
@@ -190,17 +211,19 @@ List<Override> overrideForController(
 class _StubDoctor implements DoctorService {
   _StubDoctor(this._report);
 
-  factory _StubDoctor.healthy() => _StubDoctor(const DoctorReport(
-        passed: true,
-        results: [
-          DoctorResult(
-            name: 'runtime',
-            status: DoctorStatus.pass,
-            detail: 'os=test',
-          ),
-        ],
-        report: '[PASS] runtime — os=test\n\nall checks passed\n',
-      ));
+  factory _StubDoctor.healthy() => _StubDoctor(
+    const DoctorReport(
+      passed: true,
+      results: [
+        DoctorResult(
+          name: 'runtime',
+          status: DoctorStatus.pass,
+          detail: 'os=test',
+        ),
+      ],
+      report: '[PASS] runtime — os=test\n\nall checks passed\n',
+    ),
+  );
 
   final DoctorReport _report;
 
@@ -218,12 +241,13 @@ class _StubProfileService implements ProfileService {
   Future<ProfileCacheEntry> ensureCached({
     required String profileId,
     String? ref,
+    bool force = false,
   }) async => ProfileCacheEntry(
-        profileId: profileId,
-        ref: ref ?? 'main',
-        localPath: '.',
-        resolvedSha: '',
-      );
+    profileId: profileId,
+    ref: ref ?? 'main',
+    localPath: '.',
+    resolvedSha: '',
+  );
   @override
   Future<PrinterProfile> load(ProfileCacheEntry cacheEntry) async => profile;
   @override
@@ -238,6 +262,7 @@ class _StubSsh implements SshService {
     int port = 22,
     required SshCredential credential,
     bool acceptHostKey = false,
+    String? acceptedHostFingerprint,
   }) async => SshSession(id: 'stub', host: host, port: port, user: 'root');
   @override
   Future<SshSession> tryDefaults({
@@ -245,6 +270,7 @@ class _StubSsh implements SshService {
     int port = 22,
     required List<SshCredential> credentials,
     bool acceptHostKey = false,
+    String? acceptedHostFingerprint,
   }) async => SshSession(id: 'stub', host: host, port: port, user: 'root');
   @override
   Future<SshCommandResult> run(
@@ -255,6 +281,9 @@ class _StubSsh implements SshService {
   }) async => const SshCommandResult(stdout: '', stderr: '', exitCode: 0);
   @override
   Stream<String> runStream(SshSession session, String command) =>
+      const Stream.empty();
+  @override
+  Stream<String> runStreamMerged(SshSession session, String command) =>
       const Stream.empty();
   @override
   Future<int> upload(
@@ -270,8 +299,10 @@ class _StubSsh implements SshService {
     String localPath,
   ) async => 0;
   @override
-  Future<Map<String, int>> duPaths(SshSession session, List<String> paths) async =>
-      {for (final p in paths) p: 0};
+  Future<Map<String, int>> duPaths(
+    SshSession session,
+    List<String> paths,
+  ) async => {for (final p in paths) p: 0};
   @override
   Future<void> disconnect(SshSession session) async {}
 }
@@ -279,6 +310,9 @@ class _StubSsh implements SshService {
 class _StubFlash implements FlashService {
   @override
   Future<List<DiskInfo>> listDisks() async => const [];
+  @override
+  Future<FlashSafetyVerdict> safetyCheck({required String diskId}) async =>
+      FlashSafetyVerdict(diskId: diskId, allowed: true);
   @override
   Stream<FlashProgress> readImage({
     required String diskId,
@@ -358,6 +392,7 @@ class _StubUpstream implements UpstreamService {
     required String repoSlug,
     required String assetPattern,
     required String destPath,
+    required String expectedSha256,
     String? tag,
   }) async =>
       UpstreamFetchResult(localPath: destPath, resolvedRef: tag ?? 'latest');
@@ -370,10 +405,12 @@ class _StubSecurity implements SecurityService {
     required String target,
     Duration ttl = const Duration(seconds: 60),
   }) async => ConfirmationToken(
-        value: 'stub-token-0123456789abcdef',
-        expiresAt: DateTime.now().add(ttl),
-        operation: operation,
-      );
+    value: 'stub-token-0123456789abcdef',
+    expiresAt: DateTime.now().add(ttl),
+    operation: operation,
+  );
+  @override
+  bool consumeToken(String value, String operation) => true;
   @override
   Future<bool> isHostAllowed(String host) async => true;
   @override
@@ -390,9 +427,19 @@ class _StubSecurity implements SecurityService {
   @override
   Future<String?> pinnedHostFingerprint(String host) async => null;
   @override
+  Future<void> forgetHostFingerprint(String host) async {}
+  @override
+  Future<Map<String, String>> listPinnedFingerprints() async => const {};
+  @override
+  Future<List<String>> listApprovedHosts() async => const [];
+  @override
+  Future<String?> getGitHubToken() async => null;
+  @override
+  Future<void> setGitHubToken(String? token) async {}
+  @override
   Future<Map<String, bool>> requestHostApprovals(List<String> hosts) async => {
-        for (final h in hosts) h: true,
-      };
+    for (final h in hosts) h: true,
+  };
   @override
   Stream<EgressEvent> get egressEvents => const Stream.empty();
   @override

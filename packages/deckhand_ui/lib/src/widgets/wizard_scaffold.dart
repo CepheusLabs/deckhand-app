@@ -1,27 +1,50 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../theming/deckhand_tokens.dart';
+import 'deckhand_stepper.dart';
 import 'dry_run_banner.dart';
+import 'grid_background.dart';
 import 'profile_text.dart';
+import 'tick_rule.dart';
 
 /// Standard layout for a wizard screen. Title + body + footer action row.
+///
+/// Visual structure (top to bottom):
+///  * [DryRunBanner] when active.
+///  * [DeckhandStepper] — 5-phase chip strip showing the current
+///    step. The design language puts wizard navigation HERE, not in
+///    a left rail; the stepper renders nothing on non-wizard routes.
+///  * Screen head — `Title` + [helperText] + [TickRule].
+///  * [body] — host content.
+///  * Action bar — primary + secondary actions.
+///
+/// The [screenId] parameter is retained on the API but no longer
+/// renders a visible chip — internal IDs are devs-only jargon. The
+/// id is kept available for future hooks (analytics, deeplinks,
+/// dev overlay).
 class WizardScaffold extends StatelessWidget {
   const WizardScaffold({
     super.key,
     required this.title,
     required this.body,
+    this.screenId,
     this.helperText,
     this.primaryAction,
     this.secondaryActions = const [],
-    this.stepper,
   });
 
   final String title;
   final Widget body;
+
+  /// Source-spec screen ID like `S15-pick-printer`. Reserved for
+  /// future analytics / dev overlay use — does NOT render in the
+  /// header today (would read as jargon to end users).
+  final String? screenId;
+
   final String? helperText;
   final WizardAction? primaryAction;
   final List<WizardAction> secondaryActions;
-  final Widget? stepper;
 
   @override
   Widget build(BuildContext context) {
@@ -77,40 +100,32 @@ class WizardScaffold extends StatelessWidget {
   }
 
   Widget _buildScaffold(BuildContext context, ThemeData theme) {
+    final tokens = DeckhandTokens.of(context);
     return Scaffold(
-      body: Column(
+      // Each routed page paints its own opaque ink0 surface +
+      // GridBackground texture so route transitions don't show two
+      // pages at once. (When the grid lived in the chrome instead,
+      // the fade-in transition revealed the previous page through
+      // the new one's transparent body.)
+      backgroundColor: tokens.ink0,
+      body: GridBackground(
+        child: Column(
         children: [
           const DryRunBanner(),
-          ?stepper,
           Expanded(
             child: SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(horizontal: 48, vertical: 32),
-              // Center the content block so wide displays don't leave a
-              // sea of empty space on the right. The 960px cap keeps
-              // line lengths readable regardless of window size.
+              padding: const EdgeInsets.fromLTRB(32, 24, 32, 48),
               child: Center(
                 child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 960),
+                  constraints: const BoxConstraints(maxWidth: 1080),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Semantics(
-                        header: true,
-                        child: Text(
-                          title,
-                          style: theme.textTheme.headlineMedium,
-                        ),
+                      const DeckhandStepper(),
+                      _ScreenHead(
+                        title: title,
+                        helperText: helperText,
                       ),
-                      if (helperText != null) ...[
-                        const SizedBox(height: 12),
-                        Text(
-                          flattenProfileText(helperText),
-                          style: theme.textTheme.bodyLarge?.copyWith(
-                            color: theme.colorScheme.onSurfaceVariant,
-                          ),
-                        ),
-                      ],
-                      const SizedBox(height: 24),
                       body,
                     ],
                   ),
@@ -120,23 +135,30 @@ class WizardScaffold extends StatelessWidget {
           ),
           if (primaryAction != null || secondaryActions.isNotEmpty)
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 48, vertical: 16),
+              padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
               decoration: BoxDecoration(
-                color: theme.colorScheme.surfaceContainerLow,
+                color: tokens.ink1,
                 border: Border(
-                  top: BorderSide(color: theme.colorScheme.outlineVariant),
+                  top: BorderSide(color: tokens.line),
                 ),
               ),
               child: Center(
                 child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 960),
+                  constraints: const BoxConstraints(maxWidth: 1080),
                   child: Row(
                     children: [
                       for (final a in secondaryActions) ...[
-                        TextButton(
-                          onPressed: a.onPressed,
-                          child: Text(a.label),
-                        ),
+                        if (a.isBack)
+                          OutlinedButton.icon(
+                            onPressed: a.onPressed,
+                            icon: const Icon(Icons.arrow_back, size: 14),
+                            label: Text(a.label),
+                          )
+                        else
+                          TextButton(
+                            onPressed: a.onPressed,
+                            child: Text(a.label),
+                          ),
                         const SizedBox(width: 8),
                       ],
                       const Spacer(),
@@ -152,7 +174,7 @@ class WizardScaffold extends StatelessWidget {
                               ? '${primaryAction!.label}, destructive'
                               : primaryAction!.label,
                           child: ExcludeSemantics(
-                            child: FilledButton(
+                            child: FilledButton.icon(
                               onPressed: primaryAction!.onPressed,
                               style: primaryAction!.destructive
                                   ? FilledButton.styleFrom(
@@ -160,7 +182,10 @@ class WizardScaffold extends StatelessWidget {
                                       foregroundColor: theme.colorScheme.onError,
                                     )
                                   : null,
-                              child: Text(primaryAction!.label),
+                              icon: primaryAction!.destructive
+                                  ? const SizedBox.shrink()
+                                  : const Icon(Icons.arrow_forward, size: 14),
+                              label: Text(primaryAction!.label),
                             ),
                           ),
                         ),
@@ -169,6 +194,61 @@ class WizardScaffold extends StatelessWidget {
                 ),
               ),
             ),
+        ],
+      ),
+      ),
+    );
+  }
+}
+
+class _ScreenHead extends StatelessWidget {
+  const _ScreenHead({
+    required this.title,
+    required this.helperText,
+  });
+
+  final String title;
+  final String? helperText;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final tokens = DeckhandTokens.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Semantics(
+            header: true,
+            child: Text(
+              title,
+              style: theme.textTheme.headlineMedium?.copyWith(
+                fontWeight: FontWeight.w500,
+                letterSpacing: -0.015 * DeckhandTokens.t2Xl,
+                color: tokens.text,
+              ),
+            ),
+          ),
+          if (helperText != null) ...[
+            const SizedBox(height: 8),
+            // Helper text inherits the same width as the rest of the
+            // screen body. The design source clamped this to 64ch
+            // for paragraph readability, but in the app that made
+            // the helper visibly narrower than the form below it,
+            // which read as a layout bug rather than typography.
+            Text(
+              flattenProfileText(helperText),
+              style: TextStyle(
+                fontFamily: DeckhandTokens.fontSans,
+                fontSize: DeckhandTokens.tMd,
+                height: 1.5,
+                color: tokens.text3,
+              ),
+            ),
+          ],
+          const SizedBox(height: 8),
+          const TickRule(),
         ],
       ),
     );

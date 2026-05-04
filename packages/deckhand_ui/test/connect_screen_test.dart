@@ -6,7 +6,7 @@ import 'helpers.dart';
 
 void main() {
   group('ConnectScreen', () {
-    testWidgets('renders the manual-host section when discovery is empty',
+    testWidgets('manual-host tab shows a host input field',
         (tester) async {
       final controller = stubWizardController(profileJson: testProfileJson());
       await controller.loadProfile('test-printer');
@@ -23,9 +23,33 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 200));
 
-      // Manual host field and Rescan button are present.
+      // Switch to the Manual host tab — the design's S20 puts the
+      // host input behind its own tab now, so the field is only in
+      // the widget tree when that tab is active.
+      await tester.tap(find.text('Manual host'));
+      await tester.pump();
+
       expect(find.byType(TextField), findsOneWidget);
-      expect(find.textContaining('Rescan'), findsOneWidget);
+    });
+
+    testWidgets('discover tab exposes a Refresh affordance',
+        (tester) async {
+      final controller = stubWizardController(profileJson: testProfileJson());
+      await controller.loadProfile('test-printer');
+      await tester.pumpWidget(
+        testHarness(
+          controller: controller,
+          child: const ConnectScreen(),
+          initialLocation: '/connect',
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+
+      // Refresh lives next to the tab strip on the Discover tab.
+      // The label changed from "Rescan" → "Refresh" with the tab
+      // redesign; both intents are the same — re-run discovery.
+      expect(find.text('Refresh'), findsOneWidget);
     });
 
     testWidgets(

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:deckhand_core/deckhand_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -5,10 +7,13 @@ import 'package:go_router/go_router.dart';
 
 import '../i18n/translations.g.dart';
 import '../providers.dart';
+import '../theming/deckhand_tokens.dart';
+import '../widgets/deckhand_panel.dart';
 import '../widgets/network_panel.dart';
 import '../widgets/profile_text.dart';
+import '../widgets/wizard_log_view.dart';
+import '../widgets/wizard_progress_bar.dart';
 import '../widgets/wizard_scaffold.dart';
-import '../widgets/deckhand_stepper.dart';
 
 class ProgressScreen extends ConsumerStatefulWidget {
   const ProgressScreen({super.key});
@@ -19,6 +24,11 @@ class ProgressScreen extends ConsumerStatefulWidget {
 
 class _ProgressScreenState extends ConsumerState<ProgressScreen> {
   final _log = <String>[];
+  // Distinct request IDs seen from egressEvents. The Network tab's
+  // badge reads this so the count reflects actual outbound HTTP
+  // traffic, not the log-line counter it used to mistakenly mirror.
+  final _seenEgressIds = <String>{};
+  StreamSubscription<EgressEvent>? _egressSub;
   bool _done = false;
   bool _failed = false;
   String? _error;
@@ -34,7 +44,18 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> {
   @override
   void initState() {
     super.initState();
+    final security = ref.read(securityServiceProvider);
+    _egressSub = security.egressEvents.listen((e) {
+      if (!mounted) return;
+      setState(() => _seenEgressIds.add(e.requestId));
+    });
     _startExecution();
+  }
+
+  @override
+  void dispose() {
+    _egressSub?.cancel();
+    super.dispose();
   }
 
   Future<void> _startExecution() async {
@@ -147,22 +168,41 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> {
     final buttons = actions.isEmpty
         ? [(id: 'continue', label: t.progress.prompt_default_action)]
         : actions;
+    final title = step['title'] as String? ?? t.progress.prompt_default_title;
     return _showFadedDialog<String>(
       barrierDismissible: false,
-      child: AlertDialog(
-        title: Text(
-          step['title'] as String? ?? t.progress.prompt_default_title,
+      child: Center(
+        child: _DeckhandPromptCard(
+          title: title,
+          message: flattenProfileText(message),
+          buttons: [
+            for (final a in buttons)
+              (
+                id: a.id,
+                label: a.label,
+                severity: _severityFor(a.label),
+              ),
+          ],
         ),
-        content: Text(flattenProfileText(message)),
-        actions: [
-          for (final a in buttons)
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(a.id),
-              child: Text(a.label),
-            ),
-        ],
       ),
     );
+  }
+
+  /// Heuristic — profile authors signal hierarchy through the label
+  /// suffix today (`(recommended)` / `(not recommended)`). Translating
+  /// that to a [_PromptSeverity] lets the dialog render a primary
+  /// FilledButton for the recommended path and a warning-tinted text
+  /// button for the destructive escape hatch, instead of three
+  /// indistinguishable TextButtons.
+  _PromptSeverity _severityFor(String label) {
+    final l = label.toLowerCase();
+    if (l.contains('not recommended') ||
+        l.contains('skip') ||
+        l.contains('destructive')) {
+      return _PromptSeverity.destructive;
+    }
+    if (l.contains('recommended')) return _PromptSeverity.recommended;
+    return _PromptSeverity.neutral;
   }
 
   Future<String?> _showChooseOneDialog(Map<String, dynamic> step) async {
@@ -204,7 +244,7 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> {
           ),
           actions: [
             FilledButton(
-              onPressed: () => Navigator.of(context).pop(choice),
+              onPressed: () => Navigator.of(context, rootNavigator: true).pop(choice),
               child: Text(t.progress.choose_one_ok),
             ),
           ],
@@ -328,7 +368,7 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> {
           content: Text('$e'),
           actions: [
             TextButton(
-              onPressed: () => Navigator.of(context).pop(),
+              onPressed: () => Navigator.of(context, rootNavigator: true).pop(),
               child: Text(t.progress.choose_one_ok),
             ),
           ],
@@ -345,7 +385,7 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> {
           content: Text(t.progress.disk_picker_no_disks_body),
           actions: [
             TextButton(
-              onPressed: () => Navigator.of(context).pop(),
+              onPressed: () => Navigator.of(context, rootNavigator: true).pop(),
               child: Text(t.progress.choose_one_ok),
             ),
           ],
@@ -385,11 +425,11 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> {
           ),
           actions: [
             TextButton(
-              onPressed: () => Navigator.of(context).pop(),
+              onPressed: () => Navigator.of(context, rootNavigator: true).pop(),
               child: Text(t.progress.disk_picker_cancel),
             ),
             FilledButton(
-              onPressed: () => Navigator.of(context).pop(choice),
+              onPressed: () => Navigator.of(context, rootNavigator: true).pop(choice),
               child: Text(t.progress.disk_picker_confirm),
             ),
           ],
@@ -453,14 +493,31 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final tokens = DeckhandTokens.of(context);
+    // The header used to be conditional on `(fraction != null ||
+    // message != null)`, which made the entire `STEP · <id>` strip
+    // disappear during steps that don't emit StepProgress (most SSH
+    // commands, snapshot, link_extras). The user read this as a UI
+    // glitch ("the top bar randomly disappears"). The strip now stays
+    // visible whenever a step is active so the user always knows
+    // what's running. The progress bar + percentage are still
+    // optional — they fall back to an indeterminate bar when the
+    // active step isn't reporting a fraction.
+    final hasActiveStep = _currentStepId != null && !_done && !_failed;
     return WizardScaffold(
-      stepper: const DeckhandStepper(),
+      screenId: 'S900-progress',
       title: _titleForState(),
       helperText: _error,
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (_currentFraction != null || _currentProgressMessage != null) ...[
+          if (hasActiveStep) ...[
+            _ProgressHeader(
+              fraction: _currentFraction,
+              message: _currentProgressMessage,
+              stepId: _currentStepId,
+            ),
+            const SizedBox(height: 16),
             Semantics(
               label: t.progress.semantics_progress_label,
               value: _currentFraction == null
@@ -468,57 +525,46 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> {
                   : t.progress.semantics_progress_percent(
                       percent: ((_currentFraction ?? 0) * 100).round(),
                     ),
-              child: LinearProgressIndicator(value: _currentFraction),
+              child: WizardProgressBar(fraction: _currentFraction),
             ),
-            if (_currentProgressMessage != null) ...[
-              const SizedBox(height: 8),
-              Text(
-                _currentProgressMessage!,
-                style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
-              ),
-            ],
-            const SizedBox(height: 16),
+            const SizedBox(height: 18),
           ],
-          DefaultTabController(
-            length: 2,
-            child: Column(
-              children: [
-                const TabBar(
-                  tabs: [
-                    Tab(text: 'Log', icon: Icon(Icons.receipt_long_outlined)),
-                    Tab(text: 'Network', icon: Icon(Icons.cloud_outlined)),
+          SizedBox(
+            height: 380,
+            child: DefaultTabController(
+              length: 2,
+              child: DeckhandPanel.flush(
+                child: Column(
+                  children: [
+                    _PaneTabs(
+                      tokens: tokens,
+                      tabs: [
+                        _PaneTab(
+                          label: 'Log',
+                          icon: Icons.terminal,
+                          countLabel: 'live',
+                        ),
+                        _PaneTab(
+                          label: 'Network',
+                          icon: Icons.wifi,
+                          countLabel: '${_seenEgressIds.length}',
+                        ),
+                      ],
+                    ),
+                    Expanded(
+                      child: TabBarView(
+                        children: [
+                          Semantics(
+                            label: t.progress.semantics_log_label,
+                            child: WizardLogView(lines: _log),
+                          ),
+                          const NetworkPanel(),
+                        ],
+                      ),
+                    ),
                   ],
                 ),
-                Container(
-                  height: 360,
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                    borderRadius: const BorderRadius.only(
-                      bottomLeft: Radius.circular(8),
-                      bottomRight: Radius.circular(8),
-                    ),
-                  ),
-                  child: TabBarView(
-                    children: [
-                      Semantics(
-                        label: t.progress.semantics_log_label,
-                        child: ListView.builder(
-                          itemCount: _log.length,
-                          itemBuilder: (_, i) => Text(
-                            _log[i],
-                            style: const TextStyle(
-                              fontFamily: 'monospace',
-                              fontSize: 12,
-                            ),
-                          ),
-                        ),
-                      ),
-                      const NetworkPanel(),
-                    ],
-                  ),
-                ),
-              ],
+              ),
             ),
           ),
         ],
@@ -534,5 +580,342 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> {
             : (_failed ? () => context.go('/') : null),
       ),
     );
+  }
+}
+
+class _ProgressHeader extends StatelessWidget {
+  const _ProgressHeader({
+    required this.fraction,
+    required this.message,
+    required this.stepId,
+  });
+  final double? fraction;
+  final String? message;
+  final String? stepId;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = DeckhandTokens.of(context);
+    final pct = fraction == null ? null : (fraction! * 100).toStringAsFixed(1);
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            stepId == null ? '' : 'STEP · $stepId',
+            style: TextStyle(
+              fontFamily: DeckhandTokens.fontMono,
+              fontSize: 10,
+              color: tokens.text3,
+              letterSpacing: 0.04 * 10,
+            ),
+          ),
+        ),
+        if (pct != null)
+          Text(
+            '$pct%',
+            style: TextStyle(
+              fontFamily: DeckhandTokens.fontMono,
+              fontSize: 10,
+              color: tokens.text3,
+              letterSpacing: 0.04 * 10,
+            ),
+          ),
+        if (message != null) ...[
+          const SizedBox(width: 12),
+          Flexible(
+            child: Text(
+              message!,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontFamily: DeckhandTokens.fontMono,
+                fontSize: 10,
+                color: tokens.text4,
+              ),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _PaneTab {
+  _PaneTab({required this.label, required this.icon, required this.countLabel});
+  final String label;
+  final IconData icon;
+  final String countLabel;
+}
+
+class _PaneTabs extends StatelessWidget {
+  const _PaneTabs({required this.tokens, required this.tabs});
+  final DeckhandTokens tokens;
+  final List<_PaneTab> tabs;
+
+  @override
+  Widget build(BuildContext context) {
+    final controller = DefaultTabController.of(context);
+    return AnimatedBuilder(
+      animation: controller,
+      builder: (context, _) {
+        return Container(
+          decoration: BoxDecoration(
+            color: tokens.ink2,
+            border: Border(bottom: BorderSide(color: tokens.line)),
+          ),
+          child: Row(
+            children: [
+              for (var i = 0; i < tabs.length; i++)
+                _PaneTabCell(
+                  tab: tabs[i],
+                  isActive: controller.index == i,
+                  tokens: tokens,
+                  onTap: () => controller.animateTo(i),
+                ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _PaneTabCell extends StatelessWidget {
+  const _PaneTabCell({
+    required this.tab,
+    required this.isActive,
+    required this.tokens,
+    required this.onTap,
+  });
+  final _PaneTab tab;
+  final bool isActive;
+  final DeckhandTokens tokens;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        decoration: BoxDecoration(
+          color: isActive ? tokens.ink1 : Colors.transparent,
+          border: Border(
+            top: BorderSide(
+              color: isActive ? tokens.accent : Colors.transparent,
+              width: 2,
+            ),
+            right: BorderSide(color: tokens.line),
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              tab.icon,
+              size: 14,
+              color: isActive ? tokens.text : tokens.text3,
+            ),
+            const SizedBox(width: 8),
+            Text(
+              tab.label,
+              style: TextStyle(
+                fontFamily: DeckhandTokens.fontSans,
+                fontSize: DeckhandTokens.tSm,
+                color: isActive ? tokens.text : tokens.text3,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+              decoration: BoxDecoration(
+                color: isActive ? tokens.accent : tokens.ink3,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                tab.countLabel,
+                style: TextStyle(
+                  fontFamily: DeckhandTokens.fontMono,
+                  fontSize: 9,
+                  color: isActive ? tokens.accentFg : tokens.text2,
+                  letterSpacing: 0.04 * 9,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+enum _PromptSeverity { recommended, neutral, destructive }
+
+typedef _PromptOption = ({
+  String id,
+  String label,
+  _PromptSeverity severity,
+});
+
+/// Custom prompt-dialog card. Replaces Material's [AlertDialog] —
+/// AlertDialog runs its action row through [OverflowBar] which wraps
+/// to a vertical stack as soon as the labels won't fit horizontally,
+/// which they reliably don't with three confirmation choices like
+/// "Back up now (recommended)". The vertically-stacked button list
+/// reads as a chaotic menu, not a confirmation prompt.
+///
+/// This card lays the actions out as an explicit two-group row:
+/// destructive escape hatches on the left, neutral + primary on the
+/// right. The primary (recommended) action is rendered as a filled
+/// accent button so the user's eye lands on it first. Falls back to
+/// [Wrap] only when the row genuinely overflows (very long labels +
+/// narrow window) — the rare case is graceful, not the default.
+class _DeckhandPromptCard extends StatelessWidget {
+  const _DeckhandPromptCard({
+    required this.title,
+    required this.message,
+    required this.buttons,
+  });
+
+  final String title;
+  final String message;
+  final List<_PromptOption> buttons;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = DeckhandTokens.of(context);
+    // Order: destructive first, neutral middle, recommended last.
+    // [OverflowBar] preserves this order as left-to-right when the row
+    // fits, and as top-to-bottom when it has to stack — so the
+    // recommended action ends up bottom-right (closest to the user's
+    // dominant-hand thumb) in both layouts. Severity colors carry the
+    // hierarchy when "Skip" sits visually next to the primary instead
+    // of being far-left.
+    final ordered = [
+      ...buttons.where((b) => b.severity == _PromptSeverity.destructive),
+      ...buttons.where((b) => b.severity == _PromptSeverity.neutral),
+      ...buttons.where((b) => b.severity == _PromptSeverity.recommended),
+    ];
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 600),
+      child: Material(
+        color: tokens.ink1,
+        elevation: 8,
+        borderRadius: BorderRadius.circular(DeckhandTokens.r3),
+        child: Container(
+          decoration: BoxDecoration(
+            border: Border.all(color: tokens.line),
+            borderRadius: BorderRadius.circular(DeckhandTokens.r3),
+          ),
+          padding: const EdgeInsets.fromLTRB(28, 24, 28, 22),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: TextStyle(
+                  fontFamily: DeckhandTokens.fontSans,
+                  fontSize: DeckhandTokens.tXl,
+                  fontWeight: FontWeight.w600,
+                  color: tokens.text,
+                  letterSpacing: -0.01 * DeckhandTokens.tXl,
+                ),
+              ),
+              const SizedBox(height: 14),
+              Text(
+                message,
+                style: TextStyle(
+                  fontFamily: DeckhandTokens.fontSans,
+                  fontSize: DeckhandTokens.tMd,
+                  color: tokens.text2,
+                  height: 1.55,
+                ),
+              ),
+              const SizedBox(height: 24),
+              // OverflowBar gracefully falls back to a vertical stack
+              // when the action labels don't fit on one row. A bare
+              // Row would overflow with the bright yellow-and-black
+              // "RIGHT OVERFLOWED BY N PIXELS" debug stripe.
+              OverflowBar(
+                alignment: MainAxisAlignment.end,
+                spacing: 8,
+                overflowSpacing: 8,
+                overflowAlignment: OverflowBarAlignment.end,
+                children: [
+                  for (final b in ordered)
+                    _PromptButton(
+                      label: b.label,
+                      severity: b.severity,
+                      tokens: tokens,
+                      onPressed: () => Navigator.of(
+                        context,
+                        rootNavigator: true,
+                      ).pop(b.id),
+                    ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Internal button wrapper — keeps the three styles co-located.
+class _PromptButton extends StatelessWidget {
+  const _PromptButton({
+    required this.label,
+    required this.severity,
+    required this.tokens,
+    required this.onPressed,
+  });
+
+  final String label;
+  final _PromptSeverity severity;
+  final DeckhandTokens tokens;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    // All three styles are real buttons (with a border or fill) so
+    // the user can immediately see "this is clickable" — the previous
+    // mix of FilledButton + TextButton made the non-recommended
+    // options read as plain links and lost the affordance for
+    // anything except the primary path.
+    const padding =
+        EdgeInsets.symmetric(horizontal: 16, vertical: 12);
+    switch (severity) {
+      case _PromptSeverity.recommended:
+        return FilledButton(
+          onPressed: onPressed,
+          style: FilledButton.styleFrom(
+            backgroundColor: tokens.accent,
+            foregroundColor: tokens.accentFg,
+            padding: padding,
+          ),
+          child: Text(label),
+        );
+      case _PromptSeverity.destructive:
+        return OutlinedButton(
+          onPressed: onPressed,
+          style: OutlinedButton.styleFrom(
+            foregroundColor: tokens.bad,
+            side: BorderSide(color: tokens.bad.withValues(alpha: 0.55)),
+            padding: padding,
+          ),
+          child: Text(label),
+        );
+      case _PromptSeverity.neutral:
+        return OutlinedButton(
+          onPressed: onPressed,
+          style: OutlinedButton.styleFrom(
+            foregroundColor: tokens.text,
+            side: BorderSide(color: tokens.line),
+            padding: padding,
+          ),
+          child: Text(label),
+        );
+    }
   }
 }

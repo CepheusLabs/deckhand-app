@@ -45,6 +45,23 @@ void main() {
       expect(routeForResumeStep('done'), '/done');
     });
 
+    test('snapshot/emmc-backup steps are navigable', () {
+      // Regression: clicking Resume with a saved snapshot at
+      // currentStep='emmc-backup' silently no-op'd because the
+      // route table didn't include it, leaving the user stranded
+      // on welcome. Both snapshot-flow steps must be present.
+      expect(routeForResumeStep('snapshot'), '/snapshot');
+      expect(routeForResumeStep('emmc-backup'), '/emmc-backup');
+    });
+
+    test('manage and settings are navigable resume targets', () {
+      // currentStep tracks every routed location now (via the
+      // WizardShell router listener), so a user who closed the app
+      // on /manage or /settings must be able to land back there.
+      expect(routeForResumeStep('manage'), '/manage');
+      expect(routeForResumeStep('settings'), '/settings');
+    });
+
     test('unknown step returns null — caller falls back to welcome', () {
       expect(routeForResumeStep('time-travel'), isNull);
       expect(routeForResumeStep(''), isNull);

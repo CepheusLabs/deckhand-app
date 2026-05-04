@@ -1,19 +1,21 @@
 import 'package:flutter/material.dart';
 
-/// Small rounded label used across the wizard to indicate state
+import '../theming/deckhand_tokens.dart';
+
+/// Small monospace badge used across the wizard to indicate state
 /// (service running, screen installed, profile status, etc.).
 ///
-/// Consolidates five near-identical private implementations that
-/// previously lived in connect_screen, pick_printer_screen,
-/// screen_choice_screen (twice), services_screen, and webui_screen.
-/// Each variation boiled down to the same `Container(decoration:
-/// BoxDecoration(...), child: Text)` shape; the only real axis of
-/// variation was whether a border was drawn and how the color was
-/// chosen.
+/// Visual spec — matches the design language `.pill`:
+///  * 18px tall, 9px radius (full-pill).
+///  * Monospace, 10px, uppercase, semibold, tracking 0.06em.
+///  * Tinted background (8% of color) + tinted border (40% of color).
+///  * Optional 5×5 leading dot at the full color (suppress with
+///    [noDot] for inline pills where the dot would crowd the text).
 ///
 /// Factories:
-///   * [StatusPill.new] - explicit color, no border.
-///   * [StatusPill.bordered] - explicit color with a faint border.
+///   * [StatusPill.new] - explicit color, dotted variant.
+///   * [StatusPill.bordered] - retained for back-compat; the new
+///     pill is always bordered, so this is now an alias.
 ///   * [StatusPill.fromKlippyState] - ready/printing/etc mapped to
 ///     semantic theme colors; adds a Semantics label.
 ///   * [StatusPill.fromProfileStatus] - stable/beta/alpha/etc mapped
@@ -23,15 +25,17 @@ class StatusPill extends StatelessWidget {
     super.key,
     required this.label,
     required this.color,
-    this.bordered = false,
+    this.noDot = false,
     this.semanticsLabel,
-  });
+  }) : bordered = true;
 
-  /// Same shape as [StatusPill.new] but with a faint outline.
+  /// Back-compat alias. The new pill is always bordered, so the
+  /// [bordered] flag is now informational rather than visual.
   const StatusPill.bordered({
     super.key,
     required this.label,
     required this.color,
+    this.noDot = false,
     this.semanticsLabel,
   }) : bordered = true;
 
@@ -42,13 +46,13 @@ class StatusPill extends StatelessWidget {
     BuildContext context,
     String state,
   ) {
-    final theme = Theme.of(context);
+    final tokens = DeckhandTokens.of(context);
     final normalized = state.toLowerCase();
     final color = switch (normalized) {
-      'ready' || 'printing' => theme.colorScheme.tertiary,
-      'startup' || 'shutdown' => theme.colorScheme.secondary,
-      'error' || 'disconnected' => theme.colorScheme.error,
-      _ => theme.colorScheme.outline,
+      'ready' || 'printing' => tokens.ok,
+      'startup' || 'shutdown' => tokens.warn,
+      'error' || 'disconnected' => tokens.bad,
+      _ => tokens.text3,
     };
     return StatusPill(
       label: normalized,
@@ -64,42 +68,68 @@ class StatusPill extends StatelessWidget {
     BuildContext context,
     String status,
   ) {
-    final theme = Theme.of(context);
+    final tokens = DeckhandTokens.of(context);
     final color = switch (status) {
-      'stable' => theme.colorScheme.tertiary,
-      'beta' => theme.colorScheme.secondary,
-      'alpha' => theme.colorScheme.primary,
-      'experimental' || 'deprecated' => theme.colorScheme.error,
-      _ => theme.colorScheme.outline,
+      'stable' => tokens.ok,
+      'beta' => tokens.info,
+      'alpha' => tokens.accent,
+      'experimental' || 'deprecated' => tokens.bad,
+      _ => tokens.text3,
     };
     return StatusPill(label: status, color: color);
   }
 
   final String label;
   final Color color;
+  // Retained on the public surface so older callers compile.
+  // Always-true under the new visual; the field is kept so the
+  // back-compat constructor keeps a stable shape.
   final bool bordered;
+  final bool noDot;
   final String? semanticsLabel;
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    // Bg and border tints — uniform recipe regardless of which color
+    // was passed in. Source spec uses `color-mix(in oklch, color N%,
+    // transparent)`; alpha-blending on top of the panel ink gives an
+    // equivalent visual without needing OKLCH at runtime.
+    final bgAlpha = color.withValues(alpha: 0.10);
+    final borderAlpha = color.withValues(alpha: 0.40);
     final pill = Container(
-      padding: bordered
-          ? const EdgeInsets.symmetric(horizontal: 6, vertical: 1)
-          : const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      height: 18,
+      padding: EdgeInsets.symmetric(horizontal: noDot ? 7 : 6),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: bordered ? 0.18 : 0.15),
-        borderRadius: BorderRadius.circular(bordered ? 8 : 10),
-        border: bordered
-            ? Border.all(color: color.withValues(alpha: 0.4), width: 0.5)
-            : null,
+        color: bgAlpha,
+        border: Border.all(color: borderAlpha),
+        borderRadius: BorderRadius.circular(9),
       ),
-      child: Text(
-        label,
-        style: theme.textTheme.labelSmall?.copyWith(
-          color: color,
-          fontWeight: FontWeight.w600,
-        ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (!noDot) ...[
+            Container(
+              width: 5,
+              height: 5,
+              decoration: BoxDecoration(
+                color: color,
+                shape: BoxShape.circle,
+              ),
+            ),
+            const SizedBox(width: 5),
+          ],
+          Text(
+            label.toUpperCase(),
+            style: TextStyle(
+              fontFamily: DeckhandTokens.fontMono,
+              fontSize: 10,
+              color: color,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0.06 * 10,
+              height: 1.0,
+            ),
+          ),
+        ],
       ),
     );
     if (semanticsLabel != null) {

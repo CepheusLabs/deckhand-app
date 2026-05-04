@@ -1,6 +1,5 @@
 import 'package:deckhand_core/deckhand_core.dart';
-import 'package:deckhand_ui/src/providers.dart';
-import 'package:deckhand_ui/src/widgets/wizard_scaffold.dart';
+import 'package:deckhand_ui/deckhand_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -21,6 +20,7 @@ void main() {
           ),
         ],
         child: MaterialApp(
+          theme: DeckhandTheme.light(),
           home: WizardScaffold(
             title: 'Test',
             body: const SizedBox.shrink(),
@@ -111,6 +111,7 @@ void main() {
           ),
         ],
         child: MaterialApp(
+          theme: DeckhandTheme.light(),
           home: WizardScaffold(
             title: 'Test',
             body: const SizedBox.shrink(),

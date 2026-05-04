@@ -5,8 +5,8 @@ import 'package:go_router/go_router.dart';
 
 import '../i18n/translations.g.dart';
 import '../providers.dart';
+import '../theming/deckhand_tokens.dart';
 import '../widgets/wizard_scaffold.dart';
-import '../widgets/deckhand_stepper.dart';
 
 /// Pre-run preview + final confirm. Lists every decision the user
 /// made AND every file path the flow is about to touch (from the
@@ -33,7 +33,6 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
       flow: state.flow,
       decisions: state.decisions,
     );
-    final theme = Theme.of(context);
 
     // Human labels for internal enum values. These never leak the
     // enum name (e.g. `stockKeep`) to the user, who would not know
@@ -43,98 +42,62 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
       WizardFlow.freshFlash => t.review.flow_fresh_flash,
       WizardFlow.none => t.review.flow_unknown,
     };
-    final printerLabel =
-        controller.profile?.displayName ?? state.profileId;
+    final printerLabel = controller.profile?.displayName ?? state.profileId;
+
+    final decisions = _humanDecisions(controller.profile, state.decisions);
 
     return WizardScaffold(
-      stepper: const DeckhandStepper(),
+      screenId: 'S800-review',
       title: t.review.title,
       helperText: t.review.helper,
       body: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(t.review.flow_line(flow: flowLabel)),
-                  Text(t.review.printer_line(printer: printerLabel)),
-                  if (state.sshHost != null)
-                    Text(t.review.host_line(host: state.sshHost!)),
-                  const SizedBox(height: 8),
-                  const Divider(),
-                  const SizedBox(height: 8),
-                  Text(
-                    t.review.your_decisions,
-                    style: theme.textTheme.titleSmall,
-                  ),
-                  for (final e in _humanDecisions(
-                    controller.profile,
-                    state.decisions,
-                  ))
-                    Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 2),
-                      child: Text(e),
-                    ),
+          _HeaderStrip(
+            flowLabel: flowLabel,
+            printerLabel: printerLabel,
+            host: state.sshHost,
+          ),
+          const SizedBox(height: 12),
+          if (decisions.isNotEmpty) ...[
+            _ReviewSection(
+              title: t.review.your_decisions,
+              icon: Icons.tune,
+              defaultOpen: true,
+              items: [for (final line in decisions) _decisionToItem(line)],
+            ),
+            const SizedBox(height: 10),
+          ],
+          if (plan.sections.isEmpty)
+            _EmptyPlanCard(message: t.review.plan_empty)
+          else ...[
+            for (var i = 0; i < plan.sections.length; i++) ...[
+              _ReviewSection(
+                title: plan.sections[i].title,
+                icon: plan.sections[i].icon,
+                // Open the first two sections by default — that's what
+                // the design source did for firmware + services.
+                defaultOpen: i < 2,
+                items: [
+                  for (final p in plan.sections[i].items)
+                    _Item(label: p.label, subtle: p.subtle),
                 ],
               ),
-            ),
-          ),
+              if (i < plan.sections.length - 1) const SizedBox(height: 10),
+            ],
+          ],
           const SizedBox(height: 16),
-          Card(
-            color: theme.colorScheme.tertiaryContainer,
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Icon(Icons.preview,
-                          color: theme.colorScheme.onTertiaryContainer),
-                      const SizedBox(width: 8),
-                      Text(
-                        t.review.plan_heading,
-                        style: theme.textTheme.titleSmall?.copyWith(
-                          color: theme.colorScheme.onTertiaryContainer,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    t.review.plan_explainer(flow: flowLabel),
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.onTertiaryContainer,
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  for (final s in plan.sections)
-                    _PlanSectionWidget(section: s),
-                  if (plan.sections.isEmpty)
-                    Text(
-                      t.review.plan_empty,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onTertiaryContainer,
-                      ),
-                    ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
-          CheckboxListTile(
-            value: _confirmed,
-            onChanged: (v) => setState(() => _confirmed = v ?? false),
-            title: Text(t.review.confirm),
+          _ConfirmTile(
+            checked: _confirmed,
+            label: t.review.confirm,
+            onChanged: (v) => setState(() => _confirmed = v),
           ),
         ],
       ),
       primaryAction: WizardAction(
         label: t.review.action_start,
         onPressed: _confirmed ? () => context.go('/progress') : null,
+        destructive: true,
       ),
       secondaryActions: [
         WizardAction(
@@ -144,6 +107,17 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
         ),
       ],
     );
+  }
+
+  /// Split a "Label: value" decision line into the 2-column shape the
+  /// review section expects (left bold label, right mono dim value).
+  /// Falls back to a single-column item if there's no colon.
+  _Item _decisionToItem(String line) {
+    final idx = line.indexOf(':');
+    if (idx < 0) return _Item(label: line);
+    final label = line.substring(0, idx).trim();
+    final value = line.substring(idx + 1).trim();
+    return _Item(label: label, value: value);
   }
 
   /// Convert raw `decisions` map entries into human-readable lines.
@@ -226,8 +200,8 @@ Map<String, dynamic>? _lookupStackCfg(PrinterProfile profile, String name) {
     case 'crowsnest':
       return stack.crowsnest;
     default:
-      final choices =
-          ((stack.webui?['choices'] as List?) ?? const []).cast<Map>();
+      final choices = ((stack.webui?['choices'] as List?) ?? const [])
+          .cast<Map>();
       for (final c in choices) {
         if ((c['id'] as String?) == name) return c.cast<String, dynamic>();
       }
@@ -279,14 +253,12 @@ _MutationPlan _buildMutationPlan({
       }
       if (key == 'firmware.install_path') {
         final fwId = decisions['firmware']?.toString();
-        final fw = profile.firmware.choices
-            .firstWhere(
-              (c) => c.id == fwId,
-              orElse: () => profile.firmware.choices.isEmpty
-                  ? const FirmwareChoice(
-                      id: '', displayName: '', repo: '', ref: '')
-                  : profile.firmware.choices.first,
-            );
+        final fw = profile.firmware.choices.firstWhere(
+          (c) => c.id == fwId,
+          orElse: () => profile.firmware.choices.isEmpty
+              ? const FirmwareChoice(id: '', displayName: '', repo: '', ref: '')
+              : profile.firmware.choices.first,
+        );
         return fw.installPath ?? '{{$key}}';
       }
       if (key == 'stack.webui.selected') {
@@ -313,13 +285,11 @@ _MutationPlan _buildMutationPlan({
             writes.add(_PlanItem(label: resolve(target) + tag));
           }
         case 'install_marker':
-          final dir =
-              step['target_dir'] as String? ?? '~/printer_data/config';
+          final dir = step['target_dir'] as String? ?? '~/printer_data/config';
           final filename = step['filename'] as String? ?? 'deckhand.json';
           writes.add(_PlanItem(label: resolve('$dir/$filename') + tag));
         case 'snapshot_paths':
-          final ids =
-              ((step['paths'] as List?) ?? const []).cast<String>();
+          final ids = ((step['paths'] as List?) ?? const []).cast<String>();
           for (final id in ids) {
             final p = profile.stockOs.paths.firstWhere(
               (x) => x.id == id,
@@ -345,16 +315,23 @@ _MutationPlan _buildMutationPlan({
             (c) => c.id == fwId,
             orElse: () => profile.firmware.choices.isEmpty
                 ? const FirmwareChoice(
-                    id: '', displayName: '', repo: '', ref: '')
+                    id: '',
+                    displayName: '',
+                    repo: '',
+                    ref: '',
+                  )
                 : profile.firmware.choices.first,
           );
-          clones.add(_PlanItem(
-            label: 'firmware: ${fw.displayName} '
-                '(${fw.repo}@${fw.ref}) -> ${fw.installPath ?? "?"}$tag',
-          ));
+          clones.add(
+            _PlanItem(
+              label:
+                  'firmware: ${fw.displayName} '
+                  '(${fw.repo}@${fw.ref}) -> ${fw.installPath ?? "?"}$tag',
+            ),
+          );
         case 'install_stack':
-          final comps =
-              ((step['components'] as List?) ?? const []).cast<String>();
+          final comps = ((step['components'] as List?) ?? const [])
+              .cast<String>();
           for (final c in comps) {
             final resolved = resolve(c);
             final cfg = _lookupStackCfg(profile, resolved);
@@ -363,14 +340,13 @@ _MutationPlan _buildMutationPlan({
             } else {
               final path = cfg['install_path'] as String? ?? '?';
               final repo = cfg['repo'] as String? ?? '?';
-              clones.add(_PlanItem(
-                label: 'stack: $resolved ($repo) -> $path$tag',
-              ));
+              clones.add(
+                _PlanItem(label: 'stack: $resolved ($repo) -> $path$tag'),
+              );
             }
           }
         case 'link_extras':
-          final srcs =
-              ((step['sources'] as List?) ?? const []).cast<String>();
+          final srcs = ((step['sources'] as List?) ?? const []).cast<String>();
           for (final s in srcs) {
             clones.add(_PlanItem(label: 'klippy extras <- $s$tag'));
           }
@@ -385,10 +361,7 @@ _MutationPlan _buildMutationPlan({
           final then = (step['then'] as List?) ?? const [];
           // Label the gate itself so users see there's branching.
           scripts.add(
-            _PlanItem(
-              label: '[gate: when $when] then...',
-              subtle: true,
-            ),
+            _PlanItem(label: '[gate: when $when] then...', subtle: true),
           );
           walk(then, conditional: true);
       }
@@ -399,82 +372,194 @@ _MutationPlan _buildMutationPlan({
 
   final sections = <_PlanSection>[];
   if (writes.isNotEmpty) {
-    sections.add(_PlanSection(
-        title: 'Files to write', icon: Icons.edit_note, items: writes));
+    sections.add(
+      _PlanSection(
+        title: 'Files to write',
+        icon: Icons.edit_note,
+        items: writes,
+      ),
+    );
   }
   if (snapshots.isNotEmpty) {
-    sections.add(_PlanSection(
+    sections.add(
+      _PlanSection(
         title: 'Paths snapshotted (renamed-with-suffix)',
         icon: Icons.history,
-        items: snapshots));
+        items: snapshots,
+      ),
+    );
   }
   if (deletes.isNotEmpty) {
-    sections.add(_PlanSection(
+    sections.add(
+      _PlanSection(
         title: 'Candidate files to delete',
         icon: Icons.delete_outline,
-        items: deletes));
+        items: deletes,
+      ),
+    );
   }
   if (clones.isNotEmpty) {
-    sections.add(_PlanSection(
+    sections.add(
+      _PlanSection(
         title: 'Components to install',
         icon: Icons.download,
-        items: clones));
+        items: clones,
+      ),
+    );
   }
   if (scripts.isNotEmpty) {
-    sections.add(_PlanSection(
+    sections.add(
+      _PlanSection(
         title: 'Scripts to run (via SSH, with askpass sudo)',
         icon: Icons.terminal,
-        items: scripts));
+        items: scripts,
+      ),
+    );
   }
   if (diskWrites.isNotEmpty) {
-    sections.add(_PlanSection(
+    sections.add(
+      _PlanSection(
         title: 'Raw disk writes (DESTRUCTIVE)',
         icon: Icons.warning_amber,
-        items: diskWrites));
+        items: diskWrites,
+      ),
+    );
   }
   return _MutationPlan(sections);
 }
 
-class _PlanSectionWidget extends StatelessWidget {
-  const _PlanSectionWidget({required this.section});
-  final _PlanSection section;
+/// 2-column row used inside [_ReviewSection]. `label` is bold, `value`
+/// is mono-dim. `subtle` italicizes + dims the entire row (used for
+/// conditional-gate markers in the mutation plan).
+class _Item {
+  const _Item({required this.label, this.value, this.subtle = false});
+  final String label;
+  final String? value;
+  final bool subtle;
+}
+
+/// Collapsible section panel. Mirrors the design source's
+/// `<details>` blocks: header row with icon + title + mono "N items"
+/// count on the right, expanding into a list of `_Item` rows.
+class _ReviewSection extends StatelessWidget {
+  const _ReviewSection({
+    required this.title,
+    required this.icon,
+    required this.items,
+    required this.defaultOpen,
+  });
+
+  final String title;
+  final IconData icon;
+  final List<_Item> items;
+  final bool defaultOpen;
+
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
+    final tokens = DeckhandTokens.of(context);
+    return Container(
+      decoration: BoxDecoration(
+        color: tokens.ink1,
+        border: Border.all(color: tokens.line),
+        borderRadius: BorderRadius.circular(DeckhandTokens.r3),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Theme(
+        data: Theme.of(context).copyWith(
+          dividerColor: Colors.transparent,
+          splashColor: Colors.transparent,
+        ),
+        child: ExpansionTile(
+          initiallyExpanded: defaultOpen,
+          tilePadding: const EdgeInsets.symmetric(horizontal: 14),
+          childrenPadding: EdgeInsets.zero,
+          collapsedShape: const RoundedRectangleBorder(),
+          shape: const RoundedRectangleBorder(),
+          leading: Icon(icon, size: 16, color: tokens.text3),
+          title: Row(
             children: [
-              Icon(section.icon,
-                  size: 16, color: theme.colorScheme.onTertiaryContainer),
-              const SizedBox(width: 6),
               Expanded(
                 child: Text(
-                  '${section.title} (${section.items.length})',
-                  style: theme.textTheme.labelLarge?.copyWith(
-                    color: theme.colorScheme.onTertiaryContainer,
+                  title,
+                  style: TextStyle(
+                    fontFamily: DeckhandTokens.fontSans,
+                    fontSize: DeckhandTokens.tMd,
+                    fontWeight: FontWeight.w500,
+                    color: tokens.text,
                   ),
-                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              Text(
+                '${items.length} item${items.length == 1 ? '' : 's'}',
+                style: TextStyle(
+                  fontFamily: DeckhandTokens.fontMono,
+                  fontSize: 11,
+                  color: tokens.text4,
                 ),
               ),
             ],
           ),
-          for (final item in section.items)
-            Padding(
-              padding: const EdgeInsets.only(left: 22, top: 2),
+          children: [
+            Container(
+              decoration: BoxDecoration(
+                border: Border(top: BorderSide(color: tokens.lineSoft)),
+              ),
+              child: Column(
+                children: [
+                  for (var i = 0; i < items.length; i++)
+                    _ItemRow(item: items[i], isLast: i == items.length - 1),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ItemRow extends StatelessWidget {
+  const _ItemRow({required this.item, required this.isLast});
+  final _Item item;
+  final bool isLast;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = DeckhandTokens.of(context);
+    final color = item.subtle ? tokens.text4 : tokens.text;
+    final valueColor = item.subtle ? tokens.text4 : tokens.text3;
+    return Container(
+      padding: const EdgeInsets.fromLTRB(36, 8, 16, 8),
+      decoration: BoxDecoration(
+        border: isLast
+            ? null
+            : Border(bottom: BorderSide(color: tokens.lineSoft)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 220,
+            child: Text(
+              item.label,
+              style: TextStyle(
+                fontFamily: DeckhandTokens.fontSans,
+                fontSize: DeckhandTokens.tSm,
+                fontWeight: item.subtle ? FontWeight.w400 : FontWeight.w500,
+                fontStyle: item.subtle ? FontStyle.italic : FontStyle.normal,
+                color: color,
+              ),
+            ),
+          ),
+          if (item.value != null)
+            Expanded(
               child: Text(
-                item.label,
-                style: theme.textTheme.bodySmall?.copyWith(
-                  fontFamily: 'monospace',
-                  color: item.subtle
-                      ? theme.colorScheme.onTertiaryContainer
-                          .withValues(alpha: 0.65)
-                      : theme.colorScheme.onTertiaryContainer,
-                  fontStyle:
-                      item.subtle ? FontStyle.italic : FontStyle.normal,
+                item.value!,
+                style: TextStyle(
+                  fontFamily: DeckhandTokens.fontMono,
+                  fontSize: DeckhandTokens.tXs,
+                  color: valueColor,
+                  fontStyle: item.subtle ? FontStyle.italic : FontStyle.normal,
                 ),
               ),
             ),
@@ -484,3 +569,155 @@ class _PlanSectionWidget extends StatelessWidget {
   }
 }
 
+/// Top "what we're about to do" strip — flow + printer + host as
+/// labeled mono cells.
+class _HeaderStrip extends StatelessWidget {
+  const _HeaderStrip({
+    required this.flowLabel,
+    required this.printerLabel,
+    required this.host,
+  });
+  final String flowLabel;
+  final String printerLabel;
+  final String? host;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = DeckhandTokens.of(context);
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+      decoration: BoxDecoration(
+        color: tokens.ink1,
+        border: Border.all(color: tokens.line),
+        borderRadius: BorderRadius.circular(DeckhandTokens.r3),
+      ),
+      child: Wrap(
+        spacing: 24,
+        runSpacing: 12,
+        children: [
+          _HeaderCell(label: 'flow', value: flowLabel),
+          _HeaderCell(label: 'printer', value: printerLabel),
+          if (host != null) _HeaderCell(label: 'host', value: host!),
+        ],
+      ),
+    );
+  }
+}
+
+class _HeaderCell extends StatelessWidget {
+  const _HeaderCell({required this.label, required this.value});
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = DeckhandTokens.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          label.toUpperCase(),
+          style: TextStyle(
+            fontFamily: DeckhandTokens.fontMono,
+            fontSize: 10,
+            color: tokens.text4,
+            letterSpacing: 0.1 * 10,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          value,
+          style: TextStyle(
+            fontFamily: DeckhandTokens.fontMono,
+            fontSize: DeckhandTokens.tMd,
+            color: tokens.text,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ConfirmTile extends StatelessWidget {
+  const _ConfirmTile({
+    required this.checked,
+    required this.label,
+    required this.onChanged,
+  });
+  final bool checked;
+  final String label;
+  final void Function(bool) onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = DeckhandTokens.of(context);
+    return InkWell(
+      onTap: () => onChanged(!checked),
+      borderRadius: BorderRadius.circular(DeckhandTokens.r3),
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
+        decoration: BoxDecoration(
+          color: checked ? tokens.accentSoft : tokens.ink1,
+          border: Border.all(
+            color: checked ? tokens.accent : tokens.line,
+            width: checked ? 1.5 : 1,
+          ),
+          borderRadius: BorderRadius.circular(DeckhandTokens.r3),
+        ),
+        child: Row(
+          children: [
+            SizedBox(
+              width: 18,
+              height: 18,
+              child: Checkbox(
+                value: checked,
+                onChanged: (v) => onChanged(v ?? false),
+                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                visualDensity: VisualDensity.compact,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                label,
+                style: TextStyle(
+                  fontFamily: DeckhandTokens.fontSans,
+                  fontSize: DeckhandTokens.tMd,
+                  color: tokens.text,
+                  height: 1.45,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _EmptyPlanCard extends StatelessWidget {
+  const _EmptyPlanCard({required this.message});
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = DeckhandTokens.of(context);
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: tokens.ink1,
+        border: Border.all(color: tokens.line),
+        borderRadius: BorderRadius.circular(DeckhandTokens.r3),
+      ),
+      child: Text(
+        message,
+        style: TextStyle(
+          fontFamily: DeckhandTokens.fontSans,
+          fontSize: DeckhandTokens.tSm,
+          color: tokens.text3,
+        ),
+      ),
+    );
+  }
+}

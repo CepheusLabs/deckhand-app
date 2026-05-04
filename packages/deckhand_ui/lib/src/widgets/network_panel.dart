@@ -37,11 +37,27 @@ class _NetworkPanelState extends ConsumerState<NetworkPanel> {
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(16),
-          child: Text(
-            'No outbound requests yet. As steps fetch profiles, OS '
-            'images, or upstream releases, they will appear here.',
-            style: theme.textTheme.bodySmall,
-            textAlign: TextAlign.center,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Text(
+                'No host-side outbound HTTP yet.',
+                style: theme.textTheme.bodyMedium,
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'This panel only shows traffic from your computer (e.g. '
+                'profile fetch, OS image download, GitHub release '
+                'metadata). Commands Deckhand runs on the printer over '
+                'SSH — including `git clone` of Kalico/Klipper — happen '
+                'from the printer\'s network, not yours, so they never '
+                'land here.',
+                style: theme.textTheme.bodySmall,
+                textAlign: TextAlign.center,
+              ),
+            ],
           ),
         ),
       );

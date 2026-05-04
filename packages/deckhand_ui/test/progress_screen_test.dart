@@ -43,9 +43,13 @@ void main() {
     testWidgets('prompt step shows an AlertDialog with profile message',
         (tester) async {
       final controller = stubWizardController(
+        // `backup_prompt` specifically is suppressed engine-side
+        // (consolidated into S145 snapshot screen). Use a different
+        // id so this generic prompt-rendering test still drives the
+        // dialog code path.
         profileJson: testProfileJson(stockKeepSteps: [
           {
-            'id': 'backup_prompt',
+            'id': 'continue_prompt',
             'kind': 'prompt',
             'message': 'Back up before proceeding',
             'actions': [

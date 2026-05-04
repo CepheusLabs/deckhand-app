@@ -53,10 +53,8 @@ class _DebugBundleScreenState extends ConsumerState<DebugBundleScreen> {
     // fine — Redactor skips null/empty entries. Tests inject their
     // own controller via `wizardControllerProvider`; production
     // wires this from the live session.
-    final state = ref.read(wizardControllerProvider).state;
-    return Redactor(sessionValues: {
-      'printer_host': state.sshHost,
-    });
+    final controller = ref.read(wizardControllerProvider);
+    return Redactor(sessionValues: controller.redactionSessionValues());
   }
 
   @override

@@ -19,9 +19,12 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      // Both switch tiles render; password fields are hidden by
-      // default because change_password defaults to false.
-      expect(find.byType(SwitchListTile), findsNWidgets(2));
+      // Both checkbox rows render; password fields are hidden by
+      // default because change_password defaults to false. The
+      // rebuild swapped SwitchListTile for the design's checkbox
+      // rows — test pinned the implementation type, not behaviour;
+      // updating to match the new component.
+      expect(find.byType(Checkbox), findsNWidgets(2));
       expect(find.byType(TextField), findsNothing);
       expect(find.widgetWithText(FilledButton, 'Continue'), findsOneWidget);
     });

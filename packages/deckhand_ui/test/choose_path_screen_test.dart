@@ -20,7 +20,9 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.textContaining('Keep my current OS'), findsOneWidget);
-      expect(find.textContaining('Flash a new OS'), findsOneWidget);
+      // Copy was tightened in the design pass — "Flash a fresh OS"
+      // matches the design language reference.
+      expect(find.textContaining('Flash a fresh OS'), findsOneWidget);
       expect(find.text('Continue'), findsOneWidget);
       expect(find.text('Back'), findsOneWidget);
     });

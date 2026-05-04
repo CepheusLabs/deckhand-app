@@ -28,7 +28,7 @@ void main() {
       );
       // Restore strategy radio still appears so the user can pick a
       // default for any future profile that does declare paths.
-      expect(find.text('Side-by-side'), findsOneWidget);
+      expect(find.text('Save as a separate backup'), findsOneWidget);
     });
 
     testWidgets('renders profile-declared paths with their helper text',

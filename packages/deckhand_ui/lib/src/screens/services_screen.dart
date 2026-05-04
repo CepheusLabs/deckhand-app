@@ -5,16 +5,20 @@ import 'package:go_router/go_router.dart';
 
 import '../i18n/translations.g.dart';
 import '../providers.dart';
+import '../theming/deckhand_tokens.dart';
 import '../widgets/profile_text.dart';
-import '../widgets/status_pill.dart';
 import '../widgets/wizard_scaffold.dart';
-import '../widgets/deckhand_stepper.dart';
 
-/// One card per stock-OS service that declares a `wizard:` block. Each
-/// card is collapsible so the whole list fits on one page and the user
-/// can see at a glance what they've decided without bouncing between
-/// pages. The first un-answered service is expanded by default; the
-/// rest stay collapsed until the user opens them.
+/// One-question-at-a-time service prompts. The design source treats
+/// each stock-OS service as its own wizard question — `Question 2 of
+/// 4 from the Phrozen vendor stack` — with a 2-column body: radio
+/// options on the left, a "WHAT THIS SERVICE DOES" explainer panel on
+/// the right, and a progress bar at the bottom of the body.
+///
+/// The screen advances through services one at a time. Continue
+/// records the active question's decision and moves to the next; on
+/// the last question Continue navigates onward to /files. Back walks
+/// in reverse, falling out to /screen-choice from the first question.
 class ServicesScreen extends ConsumerStatefulWidget {
   const ServicesScreen({super.key});
 
@@ -23,145 +27,161 @@ class ServicesScreen extends ConsumerStatefulWidget {
 }
 
 class _ServicesScreenState extends ConsumerState<ServicesScreen> {
-  final _expanded = <String>{};
+  int _index = 0;
   bool _seeded = false;
 
   @override
   void initState() {
     super.initState();
-    // Seed decisions once, on the first frame after mount. Previously
-    // this ran inside build() via a postFrameCallback, which
-    // accumulated a callback registration on every rebuild - the
-    // _seeded guard stopped actual re-seeding but did not stop the
-    // per-rebuild callback pile-up. initState runs exactly once per
-    // widget lifetime, which is the correct place for a seed action.
+    // Seed defaults once on the first frame after mount. initState
+    // runs exactly once per widget lifetime, which is the right
+    // place — earlier versions ran inside build via a postFrame
+    // callback and accumulated registrations on every rebuild.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      setState(_seedDefaults);
+      _seedDefaults();
     });
   }
 
+  /// Stock-OS services that actually have a `wizard:` block. Services
+  /// declared with `wizard: 'none'` aren't user-facing — they get
+  /// filtered out so the queue is exactly the questions to ask.
   List<StockService> _queue() {
     final all =
         ref.read(wizardControllerProvider).profile?.stockOs.services ??
-        const [];
-    return all.where((s) {
-      final w = s.raw['wizard'];
-      return w != null && w != 'none';
-    }).toList();
+            const [];
+    return all
+        .where((s) => s.raw['wizard'] != null && s.raw['wizard'] != 'none')
+        .toList();
   }
 
   void _seedDefaults() {
     if (_seeded) return;
     _seeded = true;
     final controller = ref.read(wizardControllerProvider);
-    final queue = _queue();
-    for (final svc in queue) {
+    for (final svc in _queue()) {
       final key = 'service.${svc.id}';
       if (controller.decision<String>(key) == null) {
-        final seeded = controller.resolveServiceDefault(svc);
-        controller.setDecision(key, seeded);
+        controller.setDecision(key, controller.resolveServiceDefault(svc));
       }
     }
-    // Expand the first service so the user sees an example of what the
-    // card looks like opened; everything else starts collapsed.
-    if (queue.isNotEmpty) _expanded.add(queue.first.id);
+    if (mounted) setState(() {});
   }
 
   @override
   Widget build(BuildContext context) {
-    // Subscribe to wizard events so the list rebuilds when the probe
-    // lands fresh data (changes which services show up as absent).
     ref.watch(wizardStateProvider);
     final controller = ref.watch(wizardControllerProvider);
     final queue = _queue();
     final probe = controller.printerState;
-    final probeReady = probe.probedAt != null;
 
-    // Split into "detected on this printer" and "absent / already
-    // clean". Absent cards still render but greyed + collapsed so
-    // the user can see we looked and found nothing.
-    final present = <StockService>[];
-    final absent = <StockService>[];
-    for (final svc in queue) {
-      final state = probe.services[svc.id];
-      if (probeReady && state != null && !state.present) {
-        absent.add(svc);
-      } else {
-        present.add(svc);
-      }
+    if (queue.isEmpty) {
+      return WizardScaffold(
+        screenId: 'S120-services',
+        title: 'Stock services',
+        helperText:
+            'This profile has nothing to ask about. Continue to keep '
+            'moving through the wizard.',
+        body: const SizedBox.shrink(),
+        primaryAction: WizardAction(
+          label: t.common.action_continue,
+          onPressed: () => context.go('/files'),
+        ),
+        secondaryActions: [
+          WizardAction(
+            label: t.common.action_back,
+            onPressed: () => context.go('/screen-choice'),
+            isBack: true,
+          ),
+        ],
+      );
     }
 
+    final clampedIdx = _index.clamp(0, queue.length - 1);
+    final current = queue[clampedIdx];
+    final wiz = (current.raw['wizard'] as Map?)?.cast<String, dynamic>() ??
+        const {};
+    final options = ((wiz['options'] as List?) ?? const []).cast<Map>();
+    final question = wiz['question'] as String?;
+    final helper = wiz['helper_text'] as String?;
+    final state = probe.services[current.id];
+    final decisionKey = 'service.${current.id}';
+    final selected = controller.decision<String>(decisionKey);
+
     return WizardScaffold(
-      stepper: const DeckhandStepper(),
-      title: 'Stock services',
-      helperText:
-          'Each stock service below is up to you. We probed your printer '
-          'after you connected - services already removed or disabled show '
-          'up dimmed under "Already clean" so you don\'t waste time picking '
-          'an action for something that isn\'t there. Pick what you care '
-          'about; defaults handle the rest.',
-      body: queue.isEmpty
-          ? const Text('Nothing to configure on this profile.')
-          : Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                if (!probeReady)
-                  const Padding(
-                    padding: EdgeInsets.only(bottom: 8),
-                    child: _ProbeLoadingBanner(),
+      screenId: 'S120-services',
+      title: question == null
+          ? 'What should we do with ${current.displayName}?'
+          : flattenProfileText(question),
+      helperText: helper == null ? null : flattenProfileText(helper),
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final twoCol = constraints.maxWidth >= 880;
+              final left = _OptionsPanel(
+                options: options,
+                selected: selected,
+                onChoose: (id) {
+                  controller.setDecision(decisionKey, id);
+                  setState(() {});
+                },
+              );
+              final right = _ExplainerPanel(
+                service: current,
+                state: state,
+              );
+              if (twoCol) {
+                return IntrinsicHeight(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Expanded(child: left),
+                      const SizedBox(width: 12),
+                      Expanded(child: right),
+                    ],
                   ),
-                for (final svc in present)
-                  _ServiceCard(
-                    service: svc,
-                    state: probe.services[svc.id],
-                    currentDecision:
-                        controller.decision<String>('service.${svc.id}'),
-                    expanded: _expanded.contains(svc.id),
-                    dimmed: false,
-                    onExpandChange: (v) => setState(() {
-                      if (v) {
-                        _expanded.add(svc.id);
-                      } else {
-                        _expanded.remove(svc.id);
-                      }
-                    }),
-                    onChoose: (action) {
-                      controller.setDecision('service.${svc.id}', action);
-                      setState(() {});
-                    },
-                  ),
-                if (absent.isNotEmpty) ...[
-                  const SizedBox(height: 16),
-                  _SectionHeader(
-                    label: 'Already clean (${absent.length})',
-                    subtitle:
-                        'These services were declared in the profile but '
-                        'we did not find them running on this printer. No '
-                        'action needed.',
-                  ),
-                  for (final svc in absent)
-                    _ServiceCard(
-                      service: svc,
-                      state: probe.services[svc.id],
-                      currentDecision:
-                          controller.decision<String>('service.${svc.id}'),
-                      expanded: false,
-                      dimmed: true,
-                      onExpandChange: (_) {},
-                      onChoose: (_) {},
-                    ),
+                );
+              }
+              return Column(
+                children: [
+                  left,
+                  const SizedBox(height: 12),
+                  right,
                 ],
-              ],
-            ),
+              );
+            },
+          ),
+          const SizedBox(height: 16),
+          _QuestionProgress(
+            current: clampedIdx + 1,
+            total: queue.length,
+          ),
+        ],
+      ),
       primaryAction: WizardAction(
         label: t.common.action_continue,
-        onPressed: () => context.go('/files'),
+        onPressed: selected == null
+            ? null
+            : () {
+                if (clampedIdx + 1 < queue.length) {
+                  setState(() => _index = clampedIdx + 1);
+                } else {
+                  context.go('/files');
+                }
+              },
       ),
       secondaryActions: [
         WizardAction(
           label: t.common.action_back,
-          onPressed: () => context.go('/screen-choice'),
+          onPressed: () {
+            if (clampedIdx > 0) {
+              setState(() => _index = clampedIdx - 1);
+            } else {
+              context.go('/screen-choice');
+            }
+          },
           isBack: true,
         ),
       ],
@@ -169,268 +189,337 @@ class _ServicesScreenState extends ConsumerState<ServicesScreen> {
   }
 }
 
-class _ServiceCard extends StatelessWidget {
-  const _ServiceCard({
-    required this.service,
-    required this.state,
-    required this.currentDecision,
-    required this.expanded,
-    required this.dimmed,
-    required this.onExpandChange,
+/// Left panel: radio rows for the current question's options.
+class _OptionsPanel extends StatelessWidget {
+  const _OptionsPanel({
+    required this.options,
+    required this.selected,
     required this.onChoose,
   });
 
-  final StockService service;
-  final ServiceRuntimeState? state;
-  final String? currentDecision;
-  final bool expanded;
-  final bool dimmed;
-  final ValueChanged<bool> onExpandChange;
-  final ValueChanged<String> onChoose;
+  final List<Map> options;
+  final String? selected;
+  final void Function(String id) onChoose;
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final wiz =
-        (service.raw['wizard'] as Map?)?.cast<String, dynamic>() ?? const {};
-    final options = ((wiz['options'] as List?) ?? const []).cast<Map>();
-    final question = wiz['question'] as String?;
-    final helper = wiz['helper_text'] as String?;
+    final tokens = DeckhandTokens.of(context);
+    return Container(
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: tokens.ink1,
+        border: Border.all(color: tokens.line),
+        borderRadius: BorderRadius.circular(DeckhandTokens.r3),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (final raw in options)
+            _OptionRow(
+              id: raw['id'] as String,
+              label: raw['label'] as String? ?? raw['id'] as String,
+              description: raw['description'] as String?,
+              isRecommended: raw['recommended'] == true,
+              selected: selected == raw['id'],
+              onTap: () => onChoose(raw['id'] as String),
+            ),
+        ],
+      ),
+    );
+  }
+}
 
-    final selectedLabel = _labelFor(options, currentDecision);
+class _OptionRow extends StatelessWidget {
+  const _OptionRow({
+    required this.id,
+    required this.label,
+    required this.description,
+    required this.isRecommended,
+    required this.selected,
+    required this.onTap,
+  });
 
-    final probeChip = _probeChip(theme);
+  final String id;
+  final String label;
+  final String? description;
+  final bool isRecommended;
+  final bool selected;
+  final VoidCallback onTap;
 
-    return Opacity(
-      opacity: dimmed ? 0.55 : 1.0,
-      child: Card(
-      margin: const EdgeInsets.only(bottom: 10),
-      child: Theme(
-        // Remove ExpansionTile's built-in divider lines so it sits
-        // cleanly inside a Card without doubling up borders.
-        data: theme.copyWith(dividerColor: Colors.transparent),
-        child: ExpansionTile(
-          initiallyExpanded: expanded,
-          onExpansionChanged: dimmed ? null : onExpandChange,
-          tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-          childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-          title: Row(
-            children: [
-              Expanded(
-                child: Text(
-                  service.displayName,
-                  style: theme.textTheme.titleMedium,
-                ),
-              ),
-              if (probeChip != null) ...[
-                const SizedBox(width: 8),
-                probeChip,
-              ],
-            ],
-          ),
-          subtitle: selectedLabel == null || dimmed
-              ? null
-              : Padding(
-                  padding: const EdgeInsets.only(top: 4),
-                  child: _DecisionChip(label: selectedLabel),
-                ),
+  @override
+  Widget build(BuildContext context) {
+    final tokens = DeckhandTokens.of(context);
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(DeckhandTokens.r2),
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+        decoration: BoxDecoration(
+          color: selected ? tokens.ink2 : Colors.transparent,
+          borderRadius: BorderRadius.circular(DeckhandTokens.r2),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            if (question != null) ...[
-              Text(
-                flattenProfileText(question),
-                style: theme.textTheme.titleSmall,
-              ),
-              const SizedBox(height: 8),
-            ],
-            if (helper != null) ...[
-              Text(
-                flattenProfileText(helper),
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
+            Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: Container(
+                width: 14,
+                height: 14,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: selected ? tokens.accent : tokens.rule,
+                    width: selected ? 4 : 1.5,
+                  ),
                 ),
               ),
-              const SizedBox(height: 12),
-            ],
-            RadioGroup<String>(
-              groupValue: currentDecision,
-              onChanged: (v) {
-                if (v != null) onChoose(v);
-              },
+            ),
+            const SizedBox(width: 12),
+            Expanded(
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  for (final opt in options)
-                    _OptionTile(
-                      id: opt['id'] as String,
-                      label: opt['label'] as String? ?? opt['id'] as String,
-                      description: opt['description'] as String?,
+                  Row(
+                    children: [
+                      Text(
+                        label,
+                        style: TextStyle(
+                          fontFamily: DeckhandTokens.fontSans,
+                          fontSize: DeckhandTokens.tMd,
+                          fontWeight: FontWeight.w500,
+                          color: tokens.text,
+                        ),
+                      ),
+                      if (isRecommended) ...[
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 7, vertical: 1),
+                          decoration: BoxDecoration(
+                            color: tokens.ok.withValues(alpha: 0.10),
+                            border: Border.all(
+                              color: tokens.ok.withValues(alpha: 0.40),
+                            ),
+                            borderRadius: BorderRadius.circular(9),
+                          ),
+                          child: Text(
+                            'recommended',
+                            style: TextStyle(
+                              fontFamily: DeckhandTokens.fontSans,
+                              fontSize: DeckhandTokens.tXs,
+                              color: tokens.ok,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                  if (description != null && description!.trim().isNotEmpty) ...[
+                    const SizedBox(height: 3),
+                    Text(
+                      flattenProfileText(description),
+                      style: TextStyle(
+                        fontFamily: DeckhandTokens.fontSans,
+                        fontSize: DeckhandTokens.tSm,
+                        color: tokens.text3,
+                        height: 1.45,
+                      ),
                     ),
+                  ],
                 ],
               ),
             ),
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Right panel: explains what this service is, plus mono unit /
+/// binary / config metadata pulled from the profile YAML.
+class _ExplainerPanel extends StatelessWidget {
+  const _ExplainerPanel({required this.service, required this.state});
+
+  final StockService service;
+  final ServiceRuntimeState? state;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = DeckhandTokens.of(context);
+    final raw = service.raw;
+    final wiz = (raw['wizard'] as Map?)?.cast<String, dynamic>() ?? const {};
+    final blurb = (wiz['explainer'] as String?) ??
+        (raw['description'] as String?) ??
+        '';
+    final unit = raw['systemd_unit'] as String?;
+    final binary = raw['binary'] as String?;
+    final config = raw['config_path'] as String?;
+
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: tokens.ink1,
+        border: Border.all(color: tokens.line),
+        borderRadius: BorderRadius.circular(DeckhandTokens.r3),
       ),
-    );
-  }
-
-  /// Small status chip summarising what the probe saw for this service.
-  /// Hidden when probe data is unavailable (screen hasn't been probed
-  /// yet) so we don't falsely imply "all clean" during that window.
-  ///
-  /// Status tiers (strongest signal first):
-  ///   - running   - unit is active OR pattern-matched process found
-  ///   - installed + stopped - unit file on disk but systemctl says
-  ///                           inactive (user disabled it, or it
-  ///                           hasn't been started). Calls out that
-  ///                           choosing "disable" here is still a
-  ///                           meaningful action even though the
-  ///                           service isn't currently running.
-  ///   - launcher present - script path from launched_by exists but
-  ///                        no systemd unit + no running process
-  ///                        (e.g. a cron/init.d launcher).
-  ///   - not detected - nothing matched; action is a no-op.
-  Widget? _probeChip(ThemeData theme) {
-    final s = state;
-    if (s == null) return null;
-    if (s.unitActive || s.processRunning) {
-      return StatusPill(
-        label: 'running',
-        color: theme.colorScheme.tertiary,
-      );
-    }
-    if (s.unitExists) {
-      return StatusPill(
-        label: 'installed + stopped',
-        color: theme.colorScheme.secondary,
-      );
-    }
-    if (s.launcherScriptExists) {
-      return StatusPill(
-        label: 'launcher present',
-        color: theme.colorScheme.secondary,
-      );
-    }
-    return StatusPill(
-      label: 'not detected',
-      color: theme.colorScheme.outline,
-    );
-  }
-
-  String? _labelFor(List<Map> options, String? id) {
-    if (id == null) return null;
-    for (final o in options) {
-      if (o['id'] == id) return o['label'] as String? ?? id;
-    }
-    return id;
-  }
-}
-
-class _OptionTile extends StatelessWidget {
-  const _OptionTile({
-    required this.id,
-    required this.label,
-    this.description,
-  });
-
-  final String id;
-  final String label;
-  final String? description;
-
-  @override
-  Widget build(BuildContext context) {
-    final desc = description == null ? null : flattenProfileText(description);
-    return RadioListTile<String>(
-      value: id,
-      title: Text(label),
-      subtitle: desc == null || desc.isEmpty ? null : Text(desc),
-      isThreeLine: desc != null && desc.length > 60,
-      contentPadding: EdgeInsets.zero,
-    );
-  }
-}
-
-class _SectionHeader extends StatelessWidget {
-  const _SectionHeader({required this.label, required this.subtitle});
-  final String label;
-  final String subtitle;
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8, top: 8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(label, style: theme.textTheme.titleSmall),
-          const SizedBox(height: 2),
           Text(
-            subtitle,
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
+            'WHAT THIS SERVICE DOES',
+            style: TextStyle(
+              fontFamily: DeckhandTokens.fontMono,
+              fontSize: 10,
+              color: tokens.text4,
+              letterSpacing: 0.12 * 10,
             ),
           ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  service.displayName,
+                  style: TextStyle(
+                    fontFamily: DeckhandTokens.fontSans,
+                    fontSize: DeckhandTokens.tLg,
+                    fontWeight: FontWeight.w500,
+                    color: tokens.text,
+                  ),
+                ),
+              ),
+              if (state != null) _StateChip(state: state!, tokens: tokens),
+            ],
+          ),
+          if (blurb.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text(
+              flattenProfileText(blurb),
+              style: TextStyle(
+                fontFamily: DeckhandTokens.fontSans,
+                fontSize: DeckhandTokens.tSm,
+                color: tokens.text2,
+                height: 1.55,
+              ),
+            ),
+          ],
+          if (unit != null || binary != null || config != null) ...[
+            const SizedBox(height: 14),
+            for (final entry in [
+              if (unit != null) ('unit', unit),
+              if (binary != null) ('binary', binary),
+              if (config != null) ('config', config),
+            ])
+              Padding(
+                padding: const EdgeInsets.only(bottom: 2),
+                child: Row(
+                  children: [
+                    SizedBox(
+                      width: 60,
+                      child: Text(
+                        entry.$1,
+                        style: TextStyle(
+                          fontFamily: DeckhandTokens.fontMono,
+                          fontSize: 11,
+                          color: tokens.text4,
+                        ),
+                      ),
+                    ),
+                    Expanded(
+                      child: Text(
+                        entry.$2,
+                        style: TextStyle(
+                          fontFamily: DeckhandTokens.fontMono,
+                          fontSize: 11,
+                          color: tokens.text3,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+          ],
         ],
       ),
     );
   }
 }
 
-class _ProbeLoadingBanner extends StatelessWidget {
-  const _ProbeLoadingBanner();
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(6),
-      ),
-      child: Row(
-        children: [
-          const SizedBox(
-            width: 14,
-            height: 14,
-            child: CircularProgressIndicator(strokeWidth: 2),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              'Probing this printer to see which services are actually '
-              'running. You can start picking while we check.',
-              style: theme.textTheme.bodySmall,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// _StatusChip removed; callers use widgets/status_pill.dart :: StatusPill.
-
-class _DecisionChip extends StatelessWidget {
-  const _DecisionChip({required this.label});
-  final String label;
+class _StateChip extends StatelessWidget {
+  const _StateChip({required this.state, required this.tokens});
+  final ServiceRuntimeState state;
+  final DeckhandTokens tokens;
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final (label, color) = _summarize();
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
       decoration: BoxDecoration(
-        color: theme.colorScheme.secondaryContainer,
-        borderRadius: BorderRadius.circular(8),
+        color: color.withValues(alpha: 0.10),
+        border: Border.all(color: color.withValues(alpha: 0.40)),
+        borderRadius: BorderRadius.circular(9),
       ),
       child: Text(
-        label,
-        style: theme.textTheme.labelSmall?.copyWith(
-          color: theme.colorScheme.onSecondaryContainer,
+        label.toUpperCase(),
+        style: TextStyle(
+          fontFamily: DeckhandTokens.fontMono,
+          fontSize: 9,
+          color: color,
           fontWeight: FontWeight.w600,
+          letterSpacing: 0.06 * 9,
         ),
       ),
+    );
+  }
+
+  (String, Color) _summarize() {
+    if (state.unitActive || state.processRunning) {
+      return ('running', tokens.ok);
+    }
+    if (state.unitExists) return ('installed · stopped', tokens.info);
+    if (state.launcherScriptExists) return ('launcher present', tokens.info);
+    return ('not detected', tokens.text4);
+  }
+}
+
+class _QuestionProgress extends StatelessWidget {
+  const _QuestionProgress({required this.current, required this.total});
+  final int current;
+  final int total;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = DeckhandTokens.of(context);
+    return Row(
+      children: [
+        Text(
+          'Question $current / $total',
+          style: TextStyle(
+            fontFamily: DeckhandTokens.fontMono,
+            fontSize: DeckhandTokens.tXs,
+            color: tokens.text3,
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(2),
+            child: SizedBox(
+              height: 2,
+              child: LinearProgressIndicator(
+                value: total == 0 ? 0 : current / total,
+                backgroundColor: tokens.ink2,
+                color: tokens.accent,
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
