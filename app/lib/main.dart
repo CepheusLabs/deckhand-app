@@ -112,24 +112,44 @@ Future<void> main() async {
         mode: FileMode.append,
       );
     } catch (_) {}
-    runApp(_FatalErrorApp(
-      title: 'Sidecar failed to start',
-      body:
-          'Deckhand could not launch its helper process. This is either '
-          'a missing binary next to the app executable, or a corrupted '
-          'install. Try reinstalling Deckhand. Details:\n\n$e',
-      sidecarPath: _resolveSidecarPath(),
-      logsDir: paths.logsDir,
-    ));
+    runApp(
+      _FatalErrorApp(
+        title: 'Sidecar failed to start',
+        body:
+            'Deckhand could not launch its helper process. This is either '
+            'a missing binary next to the app executable, or a corrupted '
+            'install. Try reinstalling Deckhand. Details:\n\n$e',
+        sidecarPath: _resolveSidecarPath(),
+        logsDir: paths.logsDir,
+      ),
+    );
     return;
   }
 
   // Env var still takes precedence over settings (developer override
-  // that's more visible than a JSON file).
-  final envLocalDir = Platform.environment['DECKHAND_PROFILES_LOCAL'];
-  final localProfilesDir = envLocalDir != null && envLocalDir.trim().isNotEmpty
-      ? envLocalDir
-      : settings.localProfilesDir;
+  // that's more visible than a JSON file). For non-release builds we
+  // also auto-detect a sibling `deckhand-builds/` checkout next to
+  // the running .exe so contributors can edit `profile.yaml` and see
+  // the change on next launch without exporting an env var or
+  // touching settings.json. Release builds skip the autodetect (a
+  // sibling dir on a user's machine could otherwise silently override
+  // their pinned profile registry).
+  String? autoDetectedDir;
+  const isReleaseBuild = bool.fromEnvironment(
+    'dart.vm.product',
+    defaultValue: false,
+  );
+  final envLocalDir = !isReleaseBuild
+      ? Platform.environment['DECKHAND_PROFILES_LOCAL']
+      : null;
+  if (!isReleaseBuild) {
+    autoDetectedDir = await _autoDetectLocalProfilesDir();
+  }
+  final localProfilesDir = !isReleaseBuild
+      ? (envLocalDir != null && envLocalDir.trim().isNotEmpty
+            ? envLocalDir
+            : (settings.localProfilesDir ?? autoDetectedDir))
+      : null;
 
   // SecurityService is constructed first so the SSH client can share
   // its fingerprint store. Without this shared instance, DartsshService
@@ -144,14 +164,27 @@ Future<void> main() async {
   final archiveService = DartsshArchiveService(ssh: sshService);
   final snapshotsDir = p.join(paths.stateDir, 'snapshots');
   await Directory(snapshotsDir).create(recursive: true);
+  // Full-eMMC `dd` images land here when the user clicks "Back up the
+  // eMMC now" from S145. Kept distinct from the directory-snapshot
+  // path so the two are never confused (and so the user can wipe the
+  // big images independently of the small per-install configs).
+  final emmcBackupsDir = p.join(paths.stateDir, 'emmc-backups');
+  await Directory(emmcBackupsDir).create(recursive: true);
+  await File(
+    p.join(emmcBackupsDir, '.deckhand-emmc-backups-root'),
+  ).writeAsString('deckhand-emmc-backups/1\n', flush: true);
 
   // Bundled profile-trust keyring. See docs/PROFILE-TRUST.md for the
   // rotation/bootstrap model. While the asset is still the dev
-  // placeholder we leave `requireSignedTag` off — turning it on with
-  // a placeholder would brick first launch. A non-placeholder
-  // keyring flips the flag on so unsigned/branch fetches are
-  // rejected.
+  // placeholder we leave `requireSignedTag` off only in dev builds.
+  // Release builds fail closed if packaging forgot to replace the
+  // placeholder, because profile content drives printer-side shell
+  // execution.
   final trustKeyring = await loadBundledTrustKeyring();
+  enforceProfileTrustKeyringForBuild(
+    isReleaseBuild: isReleaseBuild,
+    trustKeyring: trustKeyring,
+  );
   final requireSignedTag = !trustKeyring.isPlaceholder;
   if (trustKeyring.isPlaceholder) {
     persistenceErrorSink(
@@ -191,6 +224,7 @@ Future<void> main() async {
         sshServiceProvider.overrideWithValue(sshService),
         archiveServiceProvider.overrideWithValue(archiveService),
         snapshotsDirProvider.overrideWithValue(snapshotsDir),
+        emmcBackupsDirProvider.overrideWithValue(emmcBackupsDir),
         debugBundlesDirProvider.overrideWithValue(
           p.join(paths.stateDir, 'debug-bundles'),
         ),
@@ -208,10 +242,13 @@ Future<void> main() async {
           SidecarDoctorService(sidecar: sidecar),
         ),
         elevatedHelperServiceProvider.overrideWithValue(
-          ProcessElevatedHelperService(
-            helperPath: _resolveElevatedHelperPath(),
-            sentinelWriter: sentinelWriter,
-          ),
+          settings.dryRun
+              ? const DryRunElevatedHelperService()
+              : ProcessElevatedHelperService(
+                  helperPath: _resolveElevatedHelperPath(),
+                  sentinelWriter: sentinelWriter,
+                  readOutputRoot: emmcBackupsDir,
+                ),
         ),
       ],
       child: TranslationProvider(
@@ -237,6 +274,49 @@ String _resolveElevatedHelperPath() {
   return Platform.isWindows
       ? p.join(dir, 'deckhand-elevated-helper.exe')
       : p.join(dir, 'deckhand-elevated-helper');
+}
+
+/// Walks up from the running executable looking for the contributor's
+/// local `deckhand-builds/` checkout. The repo layout is
+/// `<root>/installer/deckhand/...` for the main project and
+/// `<root>/installer/deckhand-builds/...` for the profiles repo;
+/// when the .exe lives at
+/// `installer/deckhand/app/build/windows/x64/runner/Debug/deckhand.exe`
+/// we walk back until we find a sibling `deckhand-builds/registry.yaml`.
+/// Returns null if no checkout is found — the app falls back to the
+/// remote profile fetch in that case. Only used in non-release builds.
+Future<String?> _autoDetectLocalProfilesDir() async {
+  try {
+    final exe = Platform.resolvedExecutable;
+    var dir = Directory(p.dirname(exe));
+    // Cap the walk so a runaway parent traversal can't take seconds.
+    for (var i = 0; i < 12; i++) {
+      final sibling = Directory(p.join(dir.parent.path, 'deckhand-builds'));
+      final registry = File(p.join(sibling.path, 'registry.yaml'));
+      if (await registry.exists()) {
+        return sibling.path;
+      }
+      final parent = dir.parent;
+      if (parent.path == dir.path) break;
+      dir = parent;
+    }
+  } catch (_) {
+    // Best-effort dev convenience; never crash startup over it.
+  }
+  return null;
+}
+
+void enforceProfileTrustKeyringForBuild({
+  required bool isReleaseBuild,
+  required TrustKeyring trustKeyring,
+}) {
+  if (isReleaseBuild && trustKeyring.isPlaceholder) {
+    throw StateError(
+      'Release build cannot start with the placeholder profile-trust '
+      'keyring. Replace app/assets/keyring.asc with the production '
+      'trusted signing keys before packaging.',
+    );
+  }
 }
 
 /// Shown instead of the wizard when the sidecar refuses to start.
@@ -268,25 +348,35 @@ class _FatalErrorApp extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(children: [
-                    const Icon(Icons.error_outline, size: 32, color: Colors.red),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Text(
-                        title,
-                        style: Theme.of(context).textTheme.headlineSmall,
+                  Row(
+                    children: [
+                      const Icon(
+                        Icons.error_outline,
+                        size: 32,
+                        color: Colors.red,
                       ),
-                    ),
-                  ]),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          title,
+                          style: Theme.of(context).textTheme.headlineSmall,
+                        ),
+                      ),
+                    ],
+                  ),
                   const SizedBox(height: 16),
                   SelectableText(body),
                   const SizedBox(height: 24),
-                  Text('Sidecar expected at:',
-                      style: Theme.of(context).textTheme.labelLarge),
+                  Text(
+                    'Sidecar expected at:',
+                    style: Theme.of(context).textTheme.labelLarge,
+                  ),
                   SelectableText(sidecarPath),
                   const SizedBox(height: 12),
-                  Text('Startup log:',
-                      style: Theme.of(context).textTheme.labelLarge),
+                  Text(
+                    'Startup log:',
+                    style: Theme.of(context).textTheme.labelLarge,
+                  ),
                   SelectableText(p.join(logsDir, 'startup_crash.log')),
                 ],
               ),
