@@ -15,6 +15,7 @@ export 'src/services/ssh_service.dart';
 export 'src/services/profile_service.dart';
 export 'src/services/discovery_service.dart';
 export 'src/services/moonraker_service.dart';
+export 'src/services/printer_config_service.dart';
 export 'src/services/upstream_service.dart';
 export 'src/services/security_service.dart';
 export 'src/services/elevated_helper_service.dart';

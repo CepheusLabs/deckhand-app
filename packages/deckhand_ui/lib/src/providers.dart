@@ -215,6 +215,10 @@ final elevatedHelperServiceProvider = Provider<ElevatedHelperService?>(
 /// [ArchiveService]; tests typically leave this null.
 final archiveServiceProvider = Provider<ArchiveService?>((_) => null);
 
+final printerConfigServiceProvider = Provider<PrinterConfigService?>(
+  (_) => null,
+);
+
 /// Where on the host the snapshot archives land. Production wiring
 /// sets this to `<data_dir>/state/snapshots/`; null disables the
 /// archive step alongside [archiveServiceProvider].

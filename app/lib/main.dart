@@ -238,6 +238,9 @@ Future<void> main() async {
             ),
           ),
           sshServiceProvider.overrideWithValue(sshService),
+          printerConfigServiceProvider.overrideWithValue(
+            SshPrinterConfigService(ssh: sshService),
+          ),
           archiveServiceProvider.overrideWithValue(archiveService),
           snapshotsDirProvider.overrideWithValue(snapshotsDir),
           emmcBackupsDirProvider.overrideWithValue(emmcBackupsDir),

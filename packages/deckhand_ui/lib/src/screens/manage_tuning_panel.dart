@@ -26,6 +26,9 @@ class _ManageTuningPanelState extends ConsumerState<ManageTuningPanel> {
 
   Future<_TuningSnapshot>? _snapshot;
   String? _busyScript;
+  PrinterConfigPreview? _managedPreview;
+  String? _managedError;
+  bool _managedBusy = false;
 
   @override
   void initState() {
@@ -86,6 +89,7 @@ class _ManageTuningPanelState extends ConsumerState<ManageTuningPanel> {
   @override
   Widget build(BuildContext context) {
     final tokens = DeckhandTokens.of(context);
+    final configService = ref.watch(printerConfigServiceProvider);
     return FutureBuilder<_TuningSnapshot>(
       future: _snapshot,
       builder: (context, snap) {
@@ -165,6 +169,18 @@ class _ManageTuningPanelState extends ConsumerState<ManageTuningPanel> {
                 );
               },
             ),
+            if (configService != null) ...[
+              const SizedBox(height: 14),
+              _ManagedConfigPanel(
+                snapshot: snapshot,
+                settingsText: _managedSettingsText(snapshot),
+                preview: _managedPreview,
+                error: _managedError,
+                busy: _managedBusy,
+                onPreview: () => _previewManagedConfig(configService),
+                onApply: () => _applyManagedConfig(configService),
+              ),
+            ],
           ],
         );
       },
@@ -193,6 +209,183 @@ class _ManageTuningPanelState extends ConsumerState<ManageTuningPanel> {
     } finally {
       if (mounted) setState(() => _busyScript = null);
     }
+  }
+
+  Map<String, String> _managedSettings(_TuningSnapshot snapshot) {
+    final values = <String, String>{};
+    final pa = _pressureAdvance.text.trim();
+    if (pa.isNotEmpty) {
+      values['pressure_advance'] = pa;
+    }
+    final rotation = _rotationCurrent.text.trim();
+    if (rotation.isNotEmpty) {
+      values['rotation_distance'] = rotation;
+    } else if (snapshot.rotationDistance != null) {
+      values['rotation_distance'] = snapshot.rotationDistance!.toStringAsFixed(
+        6,
+      );
+    }
+    return values;
+  }
+
+  String _managedSettingsText(_TuningSnapshot snapshot) {
+    final lines = <String>['[extruder]'];
+    for (final entry in _managedSettings(snapshot).entries) {
+      lines.add('${entry.key}: ${entry.value}');
+    }
+    return '${lines.join('\n')}\n';
+  }
+
+  Future<void> _previewManagedConfig(PrinterConfigService service) async {
+    final snapshot = await _snapshot;
+    final session = ref.read(wizardControllerProvider).sshSession;
+    if (session == null || snapshot?.printing == true) return;
+    setState(() {
+      _managedBusy = true;
+      _managedError = null;
+    });
+    try {
+      final path = defaultPrinterConfigPath(session);
+      final document = await service.read(session, path: path);
+      final preview = service.previewSectionSettings(
+        original: document.content,
+        section: 'extruder',
+        values: _managedSettings(snapshot!),
+      );
+      if (!mounted) return;
+      setState(() => _managedPreview = preview);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _managedError = '$e');
+    } finally {
+      if (mounted) setState(() => _managedBusy = false);
+    }
+  }
+
+  Future<void> _applyManagedConfig(PrinterConfigService service) async {
+    final snapshot = await _snapshot;
+    final session = ref.read(wizardControllerProvider).sshSession;
+    if (session == null || snapshot?.printing == true) return;
+    setState(() {
+      _managedBusy = true;
+      _managedError = null;
+    });
+    try {
+      final path = defaultPrinterConfigPath(session);
+      final result = await service.applySectionSettings(
+        session,
+        path: path,
+        section: 'extruder',
+        values: _managedSettings(snapshot!),
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            result.changed
+                ? 'Managed printer.cfg updated; backup at ${result.backupPath}'
+                : 'Managed printer.cfg already up to date',
+          ),
+        ),
+      );
+      _refresh();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _managedError = '$e');
+    } finally {
+      if (mounted) setState(() => _managedBusy = false);
+    }
+  }
+}
+
+class _ManagedConfigPanel extends StatelessWidget {
+  const _ManagedConfigPanel({
+    required this.snapshot,
+    required this.settingsText,
+    required this.preview,
+    required this.error,
+    required this.busy,
+    required this.onPreview,
+    required this.onApply,
+  });
+
+  final _TuningSnapshot snapshot;
+  final String settingsText;
+  final PrinterConfigPreview? preview;
+  final String? error;
+  final bool busy;
+  final VoidCallback onPreview;
+  final VoidCallback onApply;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = DeckhandTokens.of(context);
+    final disabled = snapshot.printing || busy;
+    final status = preview == null
+        ? null
+        : preview!.changed
+        ? 'Preview ready - pending change'
+        : 'Preview ready - already up to date';
+    return DeckhandPanel(
+      head: const DeckhandPanelHead(label: 'MANAGED PRINTER.CFG'),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Container(
+            constraints: const BoxConstraints(minHeight: 96),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: tokens.ink2,
+              border: Border.all(color: tokens.line),
+              borderRadius: BorderRadius.circular(DeckhandTokens.r2),
+            ),
+            child: SelectableText(
+              settingsText,
+              style: TextStyle(
+                fontFamily: DeckhandTokens.fontMono,
+                fontSize: DeckhandTokens.tSm,
+                height: 1.45,
+                color: tokens.text,
+              ),
+            ),
+          ),
+          if (status != null || error != null) ...[
+            const SizedBox(height: 10),
+            Text(
+              error ?? status!,
+              style: TextStyle(
+                fontFamily: DeckhandTokens.fontSans,
+                fontSize: DeckhandTokens.tSm,
+                color: error == null ? tokens.text2 : tokens.bad,
+              ),
+            ),
+          ],
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              OutlinedButton.icon(
+                icon: busy
+                    ? const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.visibility_outlined, size: 16),
+                label: const Text('Preview'),
+                onPressed: disabled ? null : onPreview,
+              ),
+              OutlinedButton.icon(
+                icon: const Icon(Icons.backup_table_outlined, size: 16),
+                label: const Text('Apply with backup'),
+                onPressed: disabled ? null : onApply,
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
   }
 }
 
