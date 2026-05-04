@@ -23,4 +23,10 @@ func TestTerminalDeviceReadErrorWindows(t *testing.T) {
 	if isTerminalDeviceReadError(windowsErrorInvalidParameter, 512, 1024) {
 		t.Fatal("ERROR_INVALID_PARAMETER before the expected end should fail")
 	}
+	if !isTerminalDeviceReadError(windowsErrorSectorNotFound, 1024, 1024) {
+		t.Fatal("ERROR_SECTOR_NOT_FOUND at the expected end should be terminal")
+	}
+	if isTerminalDeviceReadError(windowsErrorSectorNotFound, 512, 1024) {
+		t.Fatal("ERROR_SECTOR_NOT_FOUND before the expected end should fail")
+	}
 }
