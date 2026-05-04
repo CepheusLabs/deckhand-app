@@ -99,6 +99,7 @@ void main() {
           '{"event":"started","op":"read-image"}\n'
           '{"event":"done","bytes":4096,"sha256":"deadbeef"}\n';
 
+      expect(helperEventsContainStartedForTesting(tail), isTrue);
       expect(helperEventsContainDoneForTesting(tail), isTrue);
       expect(lastHelperErrorMessageForTesting(tail), isNull);
     });
@@ -108,6 +109,7 @@ void main() {
           '{"event":"progress","phase":"reading","bytes_done":1,"bytes_total":2}\n'
           '{"event":"error","message":"read device after 4096 bytes: bad sector"}\n';
 
+      expect(helperEventsContainStartedForTesting(tail), isFalse);
       expect(helperEventsContainDoneForTesting(tail), isFalse);
       expect(
         lastHelperErrorMessageForTesting(tail),

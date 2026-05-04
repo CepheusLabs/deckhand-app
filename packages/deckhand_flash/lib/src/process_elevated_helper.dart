@@ -467,6 +467,19 @@ class ProcessElevatedHelperService implements ElevatedHelperService {
       return events;
     }
 
+    Future<String?> readEventsTail() async {
+      try {
+        if (!await stdoutFile.exists()) return null;
+        var eventsTail = (await stdoutFile.readAsString()).trim();
+        if (eventsTail.length > 512) {
+          eventsTail = eventsTail.substring(eventsTail.length - 512);
+        }
+        return eventsTail;
+      } catch (_) {
+        return null;
+      }
+    }
+
     try {
       while (!processExited) {
         await Future<void>.delayed(const Duration(milliseconds: 150));
@@ -514,15 +527,7 @@ class ProcessElevatedHelperService implements ElevatedHelperService {
       // only `exit`); surface it on failure in case a future tweak
       // emits diagnostic output.
       final psOut = psStdoutBuf.toString().trim();
-      String? eventsTail;
-      try {
-        if (await stdoutFile.exists()) {
-          eventsTail = (await stdoutFile.readAsString()).trim();
-          if (eventsTail.length > 512) {
-            eventsTail = eventsTail.substring(eventsTail.length - 512);
-          }
-        }
-      } catch (_) {}
+      var eventsTail = await readEventsTail();
 
       // The helper writes a "started" sentinel event the moment it
       // begins executing — we use that to tell three failure modes
@@ -537,7 +542,58 @@ class ProcessElevatedHelperService implements ElevatedHelperService {
           openErrTail = (await openErrFile.readAsString()).trim();
         }
       } catch (_) {}
-      final sawStartedEvent = (eventsTail ?? '').contains('"event":"started"');
+      var sawStartedEvent = _helperEventsContainStarted(eventsTail);
+
+      // In "never notify" UAC mode, ShellExecute/Start-Process can
+      // report success before the elevated process has had time to
+      // open the events file. Do not treat PowerShell exit 0 as helper
+      // completion; wait briefly for the helper's own started event.
+      if (exit == 0 && !sawStartedEvent) {
+        final deadline = DateTime.now().add(const Duration(seconds: 15));
+        while (DateTime.now().isBefore(deadline)) {
+          await Future<void>.delayed(const Duration(milliseconds: 150));
+          for (final ev in await readChunkOnce()) {
+            yield ev;
+          }
+          eventsTail = await readEventsTail();
+          sawStartedEvent = _helperEventsContainStarted(eventsTail);
+          if (sawStartedEvent ||
+              _helperEventsContainDone(eventsTail) ||
+              _lastHelperErrorMessage(eventsTail) != null) {
+            break;
+          }
+        }
+      }
+
+      // If PowerShell returned before the elevated helper finished,
+      // keep tailing the helper-owned events file until the helper
+      // emits a terminal event. This preserves progress and prevents
+      // a live backup from being misreported as "never started".
+      var helperError = _lastHelperErrorMessage(eventsTail);
+      var sawDoneEvent = _helperEventsContainDone(eventsTail);
+      if (exit == 0 &&
+          sawStartedEvent &&
+          !sawDoneEvent &&
+          helperError == null) {
+        var lastLength = await stdoutFile.length();
+        var idleSince = DateTime.now();
+        while (DateTime.now().difference(idleSince) <
+            const Duration(seconds: 45)) {
+          await Future<void>.delayed(const Duration(milliseconds: 250));
+          for (final ev in await readChunkOnce()) {
+            yield ev;
+          }
+          final len = await stdoutFile.length();
+          if (len != lastLength) {
+            lastLength = len;
+            idleSince = DateTime.now();
+          }
+          eventsTail = await readEventsTail();
+          helperError = _lastHelperErrorMessage(eventsTail);
+          sawDoneEvent = _helperEventsContainDone(eventsTail);
+          if (sawDoneEvent || helperError != null) break;
+        }
+      }
 
       // UAC denial: ShellExecuteEx → Start-Process throws an
       // exception with this exact message ("The operation was
@@ -553,11 +609,10 @@ class ProcessElevatedHelperService implements ElevatedHelperService {
         );
       }
       if (exit != 0) {
-        final helperError = _lastHelperErrorMessage(eventsTail);
         if (helperError != null) {
           throw ElevatedHelperException(helperError);
         }
-        if (_helperEventsContainDone(eventsTail)) {
+        if (sawDoneEvent) {
           return;
         }
         throw ElevatedHelperException(
@@ -576,6 +631,9 @@ class ProcessElevatedHelperService implements ElevatedHelperService {
           'write to the user-temp path. Path attempted: ${stdoutFile.path}',
         );
       }
+      if (helperError != null) {
+        throw ElevatedHelperException(helperError);
+      }
       if (!sawStartedEvent) {
         // No "started" sentinel + exit 0 = the helper was NEVER
         // launched. With ErrorActionPreference=Stop + try/catch in
@@ -591,9 +649,7 @@ class ProcessElevatedHelperService implements ElevatedHelperService {
           'PowerShell stderr: ${errTail ?? "(empty)"}',
         );
       }
-      if (eventsTail == null ||
-          eventsTail.isEmpty ||
-          !eventsTail.contains('"event":"done"')) {
+      if (!sawDoneEvent) {
         // Started but didn't reach done. The op body failed mid-flight
         // without going through fatalf — surface whatever events we
         // did see + any stderr.
@@ -767,6 +823,10 @@ bool helperEventsContainDoneForTesting(String? events) =>
     _helperEventsContainDone(events);
 
 @visibleForTesting
+bool helperEventsContainStartedForTesting(String? events) =>
+    _helperEventsContainStarted(events);
+
+@visibleForTesting
 String? lastHelperErrorMessageForTesting(String? events) =>
     _lastHelperErrorMessage(events);
 
@@ -821,6 +881,14 @@ bool _helperEventsContainDone(String? events) {
   if (events == null || events.trim().isEmpty) return false;
   for (final obj in _decodeHelperEvents(events)) {
     if (obj['event'] == 'done') return true;
+  }
+  return false;
+}
+
+bool _helperEventsContainStarted(String? events) {
+  if (events == null || events.trim().isEmpty) return false;
+  for (final obj in _decodeHelperEvents(events)) {
+    if (obj['event'] == 'started') return true;
   }
   return false;
 }
