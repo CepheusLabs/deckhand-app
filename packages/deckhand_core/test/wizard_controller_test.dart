@@ -2237,6 +2237,7 @@ class FakeElevatedHelper implements ElevatedHelperService {
     required String outputPath,
     required String confirmationToken,
     int totalBytes = 0,
+    String? outputRoot,
   }) async* {
     // No tests yet exercise the elevated read path; the stub mirrors
     // writeImage's empty-stream contract so adding readImage to the

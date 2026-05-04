@@ -132,6 +132,26 @@ func TestValidateBackupOutputPathRejectsWrongRootName(t *testing.T) {
 	}
 }
 
+func TestOperationCanceledRequiresLiveRegularFile(t *testing.T) {
+	if operationCanceled("") {
+		t.Fatal("empty cancel file should not cancel")
+	}
+
+	cancelFile := filepath.Join(t.TempDir(), "cancel")
+	if err := os.WriteFile(cancelFile, []byte("active"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if operationCanceled(cancelFile) {
+		t.Fatal("existing regular cancel file should keep operation active")
+	}
+	if err := os.Remove(cancelFile); err != nil {
+		t.Fatal(err)
+	}
+	if !operationCanceled(cancelFile) {
+		t.Fatal("missing cancel file should cancel")
+	}
+}
+
 func makeBackupRoot(t *testing.T) string {
 	t.Helper()
 	root := filepath.Join(t.TempDir(), "emmc-backups")

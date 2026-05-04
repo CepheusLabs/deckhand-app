@@ -32,10 +32,16 @@ abstract class ElevatedHelperService {
   /// `DiskInfo.sizeBytes` you already showed the user on the
   /// upstream picker. Zero (default) means "no hint, helper guesses
   /// from the device handle."
+  ///
+  /// [outputRoot] optionally narrows the helper's allowed backup root
+  /// for this invocation. Production uses this when the user picks a
+  /// different eMMC backup destination; implementations must still
+  /// enforce their own output-path policy before opening [outputPath].
   Stream<FlashProgress> readImage({
     required String diskId,
     required String outputPath,
     required String confirmationToken,
     int totalBytes = 0,
+    String? outputRoot,
   });
 }

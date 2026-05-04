@@ -15,6 +15,9 @@ import '../widgets/danger_card.dart';
 import '../widgets/wizard_progress_bar.dart';
 import '../widgets/wizard_scaffold.dart';
 
+const _backupRootMarker = '.deckhand-emmc-backups-root';
+const _backupCanceledMessage = 'Backup canceled.';
+
 /// S148-emmc-backup — full-image dd backup of the printer's eMMC via
 /// a USB-eMMC adapter on the host. Reached from the Snapshot screen's
 /// "Back up the eMMC now" button. On success, sets the wizard
@@ -41,7 +44,12 @@ class _EmmcBackupScreenState extends ConsumerState<EmmcBackupScreen> {
   FlashProgress? _progress;
   String? _error;
   bool _done = false;
+  bool _canceling = false;
+  bool _cancelRequested = false;
   String? _outputPath;
+  DateTime? _throughputStartedAt;
+  int _throughputStartedBytes = 0;
+  double? _bytesPerSecond;
 
   @override
   void initState() {
@@ -78,10 +86,14 @@ class _EmmcBackupScreenState extends ConsumerState<EmmcBackupScreen> {
   }
 
   Future<void> _startBackup() async {
+    await _readSub?.cancel();
+    _readSub = null;
+    _resetThroughput();
+
     final id = _selected;
     final helper = ref.read(elevatedHelperServiceProvider);
     final defaultDir = ref.read(emmcBackupsDirProvider);
-    final dir = helper == null ? (_customDestDir ?? defaultDir) : defaultDir;
+    final dir = _customDestDir ?? defaultDir;
     if (id == null || dir == null) {
       setState(
         () => _error =
@@ -138,6 +150,8 @@ class _EmmcBackupScreenState extends ConsumerState<EmmcBackupScreen> {
       );
       _error = null;
       _done = false;
+      _canceling = false;
+      _cancelRequested = false;
       _outputPath = outputPath;
     });
 
@@ -164,6 +178,7 @@ class _EmmcBackupScreenState extends ConsumerState<EmmcBackupScreen> {
           outputPath: outputPath,
           confirmationToken: token.value,
           totalBytes: totalHint,
+          outputRoot: dir,
         );
       } else {
         final flash = ref.read(flashServiceProvider);
@@ -204,12 +219,14 @@ class _EmmcBackupScreenState extends ConsumerState<EmmcBackupScreen> {
           final mergedTotal = event.bytesTotal > 0
               ? event.bytesTotal
               : priorTotal;
-          _progress = FlashProgress(
+          final merged = FlashProgress(
             bytesDone: event.bytesDone,
             bytesTotal: mergedTotal,
             phase: event.phase,
             message: event.message,
           );
+          _recordProgressSample(merged);
+          _progress = merged;
           if (event.phase == FlashPhase.done) {
             _done = true;
           }
@@ -220,6 +237,7 @@ class _EmmcBackupScreenState extends ConsumerState<EmmcBackupScreen> {
       },
       onError: (Object e, StackTrace s) {
         if (!mounted) return;
+        if (_cancelRequested) return;
         setState(() {
           _error = '$e';
           _progress = const FlashProgress(
@@ -232,6 +250,7 @@ class _EmmcBackupScreenState extends ConsumerState<EmmcBackupScreen> {
       },
       onDone: () {
         if (!mounted) return;
+        if (_cancelRequested) return;
         // If the stream closed without ever yielding a `done` phase
         // and we haven't already recorded an error, surface that as
         // an error so the user doesn't sit looking at a forever-
@@ -250,6 +269,42 @@ class _EmmcBackupScreenState extends ConsumerState<EmmcBackupScreen> {
           });
         }
       },
+    );
+  }
+
+  void _cancelBackup() {
+    if (_readSub == null || _canceling) return;
+    final sub = _readSub;
+    _readSub = null;
+    final last = _progress;
+    final partialPath = _outputPath;
+
+    setState(() {
+      _canceling = true;
+      _cancelRequested = true;
+      _error = _backupCanceledMessage;
+      _progress = FlashProgress(
+        bytesDone: last?.bytesDone ?? 0,
+        bytesTotal: last?.bytesTotal ?? 0,
+        phase: FlashPhase.failed,
+        message: 'canceled',
+      );
+      _done = false;
+    });
+
+    unawaited(
+      Future<void>(() async {
+        try {
+          await sub?.cancel();
+        } catch (_) {}
+        if (partialPath != null) {
+          await Future<void>.delayed(const Duration(milliseconds: 750));
+          try {
+            final f = File(partialPath);
+            if (await f.exists()) await f.delete();
+          } catch (_) {}
+        }
+      }),
     );
   }
 
@@ -334,13 +389,53 @@ class _EmmcBackupScreenState extends ConsumerState<EmmcBackupScreen> {
     return null;
   }
 
+  Future<String> _preparePickedBackupDir(String picked) async {
+    final clean = p.normalize(picked);
+    final root = p.basename(clean).toLowerCase() == 'emmc-backups'
+        ? clean
+        : p.join(clean, 'emmc-backups');
+    await Directory(root).create(recursive: true);
+    await File(
+      p.join(root, _backupRootMarker),
+    ).writeAsString('deckhand-emmc-backups/1\n', flush: true);
+    return root;
+  }
+
+  void _resetThroughput() {
+    _throughputStartedAt = null;
+    _throughputStartedBytes = 0;
+    _bytesPerSecond = null;
+  }
+
+  void _recordProgressSample(FlashProgress event) {
+    if (event.phase != FlashPhase.writing ||
+        event.bytesDone <= 0 ||
+        event.bytesTotal <= 0) {
+      return;
+    }
+    final now = DateTime.now();
+    if (_throughputStartedAt == null ||
+        event.bytesDone < _throughputStartedBytes) {
+      _throughputStartedAt = now;
+      _throughputStartedBytes = event.bytesDone;
+      _bytesPerSecond = null;
+      return;
+    }
+    final elapsedMs = now.difference(_throughputStartedAt!).inMilliseconds;
+    final copied = event.bytesDone - _throughputStartedBytes;
+    if (elapsedMs < 500 || copied <= 0) return;
+    final average = copied / (elapsedMs / 1000.0);
+    final prior = _bytesPerSecond;
+    _bytesPerSecond = prior == null
+        ? average
+        : (prior * 0.65) + (average * 0.35);
+  }
+
   @override
   Widget build(BuildContext context) {
     final tokens = DeckhandTokens.of(context);
     final defaultDir = ref.watch(emmcBackupsDirProvider);
-    final helper = ref.watch(elevatedHelperServiceProvider);
-    final customDestEnabled = helper == null;
-    final dir = customDestEnabled ? (_customDestDir ?? defaultDir) : defaultDir;
+    final dir = _customDestDir ?? defaultDir;
     final copying = _progress != null && !_done && _error == null;
     final disksAsync = ref.watch(disksProvider);
     final disksFuture = ref.watch(disksProvider.future);
@@ -360,13 +455,17 @@ class _EmmcBackupScreenState extends ConsumerState<EmmcBackupScreen> {
     // backup failures and write failures share one mental model.
     if (_error != null) {
       final pct = _failurePercent();
+      final canceled = _error == _backupCanceledMessage;
       return WizardScaffold(
         screenId: 'S148-fail',
-        title: pct == null ? 'Backup failed.' : 'Backup failed at $pct%.',
-        helperText:
-            'The eMMC itself is untouched — backups only read. '
-            'Reconnect the adapter and retry, or pick a different disk '
-            'if the issue keeps repeating.',
+        title: canceled
+            ? _backupCanceledMessage
+            : (pct == null ? 'Backup failed.' : 'Backup failed at $pct%.'),
+        helperText: canceled
+            ? 'Deckhand stopped the copy. The eMMC itself is untouched.'
+            : 'The eMMC itself is untouched — backups only read. '
+                  'Reconnect the adapter and retry, or pick a different disk '
+                  'if the issue keeps repeating.',
         body: _BackupFailedCard(
           tokens: tokens,
           progress: _progress,
@@ -376,6 +475,8 @@ class _EmmcBackupScreenState extends ConsumerState<EmmcBackupScreen> {
               _progress = null;
               _error = null;
               _done = false;
+              _canceling = false;
+              _cancelRequested = false;
               _outputPath = null;
               _showPicker = true;
               _selected = null;
@@ -386,6 +487,8 @@ class _EmmcBackupScreenState extends ConsumerState<EmmcBackupScreen> {
               _progress = null;
               _error = null;
               _done = false;
+              _canceling = false;
+              _cancelRequested = false;
             });
             _startBackup();
           },
@@ -421,16 +524,16 @@ class _EmmcBackupScreenState extends ConsumerState<EmmcBackupScreen> {
           _DestinationRow(
             tokens: tokens,
             dir: dir,
-            isCustom: customDestEnabled && _customDestDir != null,
-            disabled: copying || !customDestEnabled,
+            isCustom: _customDestDir != null,
+            disabled: copying,
             onPick: () async {
-              if (!customDestEnabled) return;
               final picked = await _pickDirectory();
               if (picked != null && picked.isNotEmpty && mounted) {
-                setState(() => _customDestDir = picked);
+                final prepared = await _preparePickedBackupDir(picked);
+                if (mounted) setState(() => _customDestDir = prepared);
               }
             },
-            onReset: !customDestEnabled || _customDestDir == null
+            onReset: _customDestDir == null
                 ? null
                 : () => setState(() => _customDestDir = null),
           ),
@@ -468,6 +571,7 @@ class _EmmcBackupScreenState extends ConsumerState<EmmcBackupScreen> {
               done: _done,
               error: null,
               outputPath: _outputPath,
+              bytesPerSecond: _bytesPerSecond,
             ),
           ],
         ],
@@ -480,10 +584,10 @@ class _EmmcBackupScreenState extends ConsumerState<EmmcBackupScreen> {
             ),
       secondaryActions: [
         WizardAction(
-          label: 'Cancel',
+          label: _canceling ? 'Canceling…' : 'Cancel',
           isBack: true,
           onPressed: copying
-              ? null
+              ? _cancelBackup
               : () {
                   context.go(_returnRoute());
                 },
@@ -729,12 +833,14 @@ class _ProgressCard extends StatelessWidget {
     required this.done,
     required this.error,
     required this.outputPath,
+    required this.bytesPerSecond,
   });
   final DeckhandTokens tokens;
   final FlashProgress progress;
   final bool done;
   final String? error;
   final String? outputPath;
+  final double? bytesPerSecond;
 
   @override
   Widget build(BuildContext context) {
@@ -789,11 +895,7 @@ class _ProgressCard extends StatelessWidget {
           const SizedBox(height: 10),
           Text(
             error ??
-                (done
-                    ? 'Image written to $outputPath'
-                    : '${_humanBytes(progress.bytesDone)} of '
-                          '${_humanBytes(progress.bytesTotal)}'
-                          '${progress.message != null ? ' · ${progress.message}' : ''}'),
+                (done ? 'Image written to $outputPath' : _progressDetail()),
             style: TextStyle(
               fontFamily: DeckhandTokens.fontMono,
               fontSize: DeckhandTokens.tXs,
@@ -804,6 +906,36 @@ class _ProgressCard extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  String _progressDetail() {
+    final copied =
+        '${_humanBytes(progress.bytesDone)} of '
+        '${_humanBytes(progress.bytesTotal)}';
+    final bps = bytesPerSecond;
+    if (bps == null ||
+        bps <= 0 ||
+        progress.bytesTotal <= 0 ||
+        progress.bytesDone <= 0) {
+      return '$copied${progress.message != null ? ' · ${progress.message}' : ''}';
+    }
+    final remainingBytes = progress.bytesTotal - progress.bytesDone;
+    final remaining = remainingBytes <= 0
+        ? Duration.zero
+        : Duration(seconds: (remainingBytes / bps).ceil());
+    return '$copied · ${_humanBytes(bps.round())}/s · ETA ${_formatDuration(remaining)}'
+        '${progress.message != null ? ' · ${progress.message}' : ''}';
+  }
+
+  String _formatDuration(Duration duration) {
+    final totalSeconds = duration.inSeconds;
+    if (totalSeconds <= 0) return 'now';
+    final hours = totalSeconds ~/ 3600;
+    final minutes = (totalSeconds % 3600) ~/ 60;
+    final seconds = totalSeconds % 60;
+    if (hours > 0) return '${hours}h ${minutes}m';
+    if (minutes > 0) return '${minutes}m ${seconds}s';
+    return '${seconds}s';
   }
 
   String _humanBytes(int bytes) {
@@ -1269,7 +1401,14 @@ class _BackupFailedCard extends StatelessWidget {
         'A previous failed backup left a partial image — delete old .img files in the destination folder.',
       ];
     }
-    if (s.contains('canceled by the user') ||
+    if (s.contains('backup canceled') ||
+        s.contains('operation canceled by user')) {
+      return const [
+        'Deckhand stopped the copy before it finished.',
+        'Any partial image in the destination folder can be deleted.',
+      ];
+    }
+    if (s.contains('the operation was canceled by the user') ||
         s.contains('cancelled by the user')) {
       return const [
         'You clicked "No" on the UAC prompt — click Retry and approve it this time to continue.',

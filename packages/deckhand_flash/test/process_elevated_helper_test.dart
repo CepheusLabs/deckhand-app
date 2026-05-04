@@ -31,6 +31,7 @@ void main() {
           '/deckhand/state/emmc-backups',
         ]),
       );
+      expect(svc.capturedArgs, contains('--cancel-file'));
     });
 
     test('refuses to launch without an output root', () async {
@@ -47,6 +48,26 @@ void main() {
         throwsA(isA<StateError>()),
       );
       expect(svc.capturedArgs, isNull);
+    });
+
+    test('allows a call-scoped output root', () async {
+      final svc = _CapturingElevatedHelper(
+        readOutputRoot: '/deckhand/state/emmc-backups',
+      );
+
+      await svc
+          .readImage(
+            diskId: 'PhysicalDrive3',
+            outputPath: '/external/emmc-backups/backup.img',
+            outputRoot: '/external/emmc-backups',
+            confirmationToken: 'token-0123456789abcdef',
+          )
+          .toList();
+
+      expect(
+        svc.capturedArgs,
+        containsAllInOrder(['--output-root', '/external/emmc-backups']),
+      );
     });
   });
 

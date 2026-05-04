@@ -46,6 +46,134 @@ void main() {
       expect(helper.readCalls, 1);
       expect(helper.lastOutputPath, startsWith('/deckhand/state/emmc-backups'));
       expect(helper.lastOutputPath, endsWith('.img'));
+      expect(helper.lastOutputRoot, '/deckhand/state/emmc-backups');
+    });
+
+    testWidgets('keeps destination picker enabled with elevated helper', (
+      tester,
+    ) async {
+      final controller = stubWizardController(profileJson: testProfileJson());
+      await controller.loadProfile('test-printer');
+      await controller.setDecision('flash.disk', 'disk-1');
+
+      await tester.pumpWidget(
+        testHarness(
+          controller: controller,
+          child: const EmmcBackupScreen(),
+          initialLocation: '/snapshot',
+          extraOverrides: [
+            flashServiceProvider.overrideWithValue(_OneDiskFlash()),
+            elevatedHelperServiceProvider.overrideWithValue(
+              _RecordingElevatedHelper(),
+            ),
+            emmcBackupsDirProvider.overrideWithValue(
+              '/deckhand/state/emmc-backups',
+            ),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final change = tester.widget<OutlinedButton>(
+        find.widgetWithText(OutlinedButton, 'Change…'),
+      );
+      expect(change.onPressed, isNotNull);
+    });
+
+    testWidgets('allows cancel while a backup is copying', (tester) async {
+      final controller = stubWizardController(profileJson: testProfileJson());
+      await controller.loadProfile('test-printer');
+      await controller.setDecision('flash.disk', 'disk-1');
+      final helper = _StreamingElevatedHelper();
+
+      await tester.pumpWidget(
+        testHarness(
+          controller: controller,
+          child: const EmmcBackupScreen(),
+          initialLocation: '/snapshot',
+          extraOverrides: [
+            flashServiceProvider.overrideWithValue(_OneDiskFlash()),
+            elevatedHelperServiceProvider.overrideWithValue(helper),
+            emmcBackupsDirProvider.overrideWithValue(
+              '/deckhand/state/emmc-backups',
+            ),
+          ],
+        ),
+      );
+      await tester.pump();
+
+      await tester.tap(find.text('Back up this disk'));
+      await tester.pump(const Duration(milliseconds: 50));
+      helper.add(
+        const FlashProgress(
+          bytesDone: 1024,
+          bytesTotal: 4096,
+          phase: FlashPhase.writing,
+        ),
+      );
+      await tester.pump();
+
+      final cancel = tester.widget<OutlinedButton>(
+        find.widgetWithText(OutlinedButton, 'Cancel'),
+      );
+      expect(cancel.onPressed, isNotNull);
+
+      await tester.tap(find.widgetWithText(OutlinedButton, 'Cancel'));
+      await tester.pump(const Duration(milliseconds: 50));
+      await tester.pump(const Duration(milliseconds: 750));
+
+      expect(helper.canceled, isTrue);
+      expect(find.textContaining('Backup canceled'), findsWidgets);
+    });
+
+    testWidgets('shows copy speed and ETA after progress samples', (
+      tester,
+    ) async {
+      final controller = stubWizardController(profileJson: testProfileJson());
+      await controller.loadProfile('test-printer');
+      await controller.setDecision('flash.disk', 'disk-1');
+      final helper = _StreamingElevatedHelper();
+
+      await tester.pumpWidget(
+        testHarness(
+          controller: controller,
+          child: const EmmcBackupScreen(),
+          initialLocation: '/snapshot',
+          extraOverrides: [
+            flashServiceProvider.overrideWithValue(_OneDiskFlash()),
+            elevatedHelperServiceProvider.overrideWithValue(helper),
+            emmcBackupsDirProvider.overrideWithValue(
+              '/deckhand/state/emmc-backups',
+            ),
+          ],
+        ),
+      );
+      await tester.pump();
+
+      await tester.tap(find.text('Back up this disk'));
+      await tester.pump(const Duration(milliseconds: 50));
+      helper.add(
+        const FlashProgress(
+          bytesDone: 1024,
+          bytesTotal: 4096,
+          phase: FlashPhase.writing,
+        ),
+      );
+      await tester.pump();
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 650)),
+      );
+      helper.add(
+        const FlashProgress(
+          bytesDone: 2048,
+          bytesTotal: 4096,
+          phase: FlashPhase.writing,
+        ),
+      );
+      await tester.pump();
+
+      expect(find.textContaining('KiB/s'), findsOneWidget);
+      expect(find.textContaining('ETA'), findsOneWidget);
     });
 
     testWidgets('does not launch helper when token consumption fails', (
@@ -210,6 +338,7 @@ class _NoDiskFlash implements FlashService {
 class _RecordingElevatedHelper implements ElevatedHelperService {
   int readCalls = 0;
   String? lastOutputPath;
+  String? lastOutputRoot;
 
   @override
   Stream<FlashProgress> readImage({
@@ -217,9 +346,11 @@ class _RecordingElevatedHelper implements ElevatedHelperService {
     required String outputPath,
     required String confirmationToken,
     int totalBytes = 0,
+    String? outputRoot,
   }) {
     readCalls++;
     lastOutputPath = outputPath;
+    lastOutputRoot = outputRoot;
     return Stream.value(
       FlashProgress(
         bytesDone: totalBytes,
@@ -229,6 +360,39 @@ class _RecordingElevatedHelper implements ElevatedHelperService {
       ),
     );
   }
+
+  @override
+  Stream<FlashProgress> writeImage({
+    required String imagePath,
+    required String diskId,
+    required String confirmationToken,
+    bool verifyAfterWrite = true,
+    String? expectedSha256,
+  }) => const Stream.empty();
+}
+
+class _StreamingElevatedHelper implements ElevatedHelperService {
+  _StreamingElevatedHelper() {
+    _controller = StreamController<FlashProgress>(
+      onCancel: () {
+        canceled = true;
+      },
+    );
+  }
+
+  late final StreamController<FlashProgress> _controller;
+  bool canceled = false;
+
+  void add(FlashProgress event) => _controller.add(event);
+
+  @override
+  Stream<FlashProgress> readImage({
+    required String diskId,
+    required String outputPath,
+    required String confirmationToken,
+    int totalBytes = 0,
+    String? outputRoot,
+  }) => _controller.stream;
 
   @override
   Stream<FlashProgress> writeImage({

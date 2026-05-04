@@ -53,9 +53,10 @@ class ProcessElevatedHelperService implements ElevatedHelperService {
     required String outputPath,
     required String confirmationToken,
     int totalBytes = 0,
+    String? outputRoot,
   }) async* {
-    final outputRoot = readOutputRoot;
-    if (outputRoot == null || outputRoot.trim().isEmpty) {
+    final effectiveOutputRoot = outputRoot ?? readOutputRoot;
+    if (effectiveOutputRoot == null || effectiveOutputRoot.trim().isEmpty) {
       throw StateError('elevated read-image output root not configured');
     }
 
@@ -72,12 +73,27 @@ class ProcessElevatedHelperService implements ElevatedHelperService {
       await Process.run('chmod', ['0600', tokenFile.path]);
     }
 
+    // Cooperative cancel for elevated operations. The unprivileged
+    // parent cannot reliably terminate a UAC-elevated child, so the
+    // child watches this file and aborts when stream cancellation
+    // removes it.
+    final cancelDir = await Directory.systemTemp.createTemp('deckhand-cancel-');
+    if (!Platform.isWindows) {
+      await Process.run('chmod', ['0700', cancelDir.path]);
+    }
+    final cancelFile = File(p.join(cancelDir.path, 'active'));
+    await cancelFile.writeAsString('active', flush: true);
+    if (!Platform.isWindows) {
+      await Process.run('chmod', ['0600', cancelFile.path]);
+    }
+
     final args = <String>[
       'read-image',
       '--target', diskId,
       '--output', outputPath,
-      '--output-root', outputRoot,
+      '--output-root', effectiveOutputRoot,
       '--token-file', tokenFile.path,
+      '--cancel-file', cancelFile.path,
       // Pass the size hint when the caller has it (the disk picker
       // upstream of S148 already enumerated sizeBytes via
       // listDisks()). Without this, Windows raw-device reads emit
@@ -95,6 +111,12 @@ class ProcessElevatedHelperService implements ElevatedHelperService {
     try {
       yield* launchHelper(args);
     } finally {
+      try {
+        if (await cancelFile.exists()) await cancelFile.delete();
+      } catch (_) {}
+      try {
+        await cancelDir.delete(recursive: true);
+      } catch (_) {}
       try {
         await tokenDir.delete(recursive: true);
       } catch (_) {}
@@ -569,6 +591,7 @@ class DryRunElevatedHelperService implements ElevatedHelperService {
     required String outputPath,
     required String confirmationToken,
     int totalBytes = 0,
+    String? outputRoot,
   }) => _dryRunHelperProgress(
     label: 'DRY-RUN elevated read $diskId -> $outputPath',
     totalBytes: totalBytes,

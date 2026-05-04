@@ -160,11 +160,13 @@ func runReadImage(args []string) {
 	output := fs.String("output", "", "absolute path of the image file to write")
 	outputRoot := fs.String("output-root", "", "Deckhand-owned backup directory containing the output file")
 	tokenFile := fs.String("token-file", "", "path to a 0600-mode file containing the UI-issued confirmation token; deleted on read")
+	cancelFile := fs.String("cancel-file", "", "optional regular file; operation aborts when the file disappears")
 	totalBytesHint := fs.Int64("total-bytes", 0, "optional size hint for progress reporting; used as bytes_total when the device handle reports 0 (Windows raw devices via Stat/Seek both return 0)")
 	if err := fs.Parse(args); err != nil {
 		fatalf("parse flags: %v", err)
 	}
 
+	fatalIfCanceled(*cancelFile, nil)
 	if *target == "" || *output == "" || *outputRoot == "" || *tokenFile == "" {
 		fatalf("read-image requires --target, --output, --output-root, and --token-file")
 	}
@@ -179,6 +181,7 @@ func runReadImage(args []string) {
 	if err := validateBackupOutputPath(*outputRoot, *output); err != nil {
 		fatalf("validate output: %v", err)
 	}
+	fatalIfCanceled(*cancelFile, nil)
 
 	devicePath, err := targetToDevicePath(*target)
 	if err != nil {
@@ -215,6 +218,11 @@ func runReadImage(args []string) {
 		fatalf("create output: %v", err)
 	}
 	defer func() { _ = dst.Close() }()
+	cancelCleanup := func() {
+		_ = src.Close()
+		_ = dst.Close()
+		_ = os.Remove(*output)
+	}
 
 	hasher := sha256.New()
 	buf := make([]byte, 4<<20)
@@ -222,6 +230,7 @@ func runReadImage(args []string) {
 	lastEmit := time.Now()
 
 	for {
+		fatalIfCanceled(*cancelFile, cancelCleanup)
 		n, rerr := src.Read(buf)
 		if n > 0 {
 			if _, werr := dst.Write(buf[:n]); werr != nil {
@@ -239,6 +248,7 @@ func runReadImage(args []string) {
 				lastEmit = time.Now()
 			}
 		}
+		fatalIfCanceled(*cancelFile, cancelCleanup)
 		if errors.Is(rerr, io.EOF) {
 			break
 		}
@@ -247,6 +257,7 @@ func runReadImage(args []string) {
 		}
 	}
 
+	fatalIfCanceled(*cancelFile, cancelCleanup)
 	if err := dst.Sync(); err != nil {
 		fatalf("sync: %v", err)
 	}
@@ -336,6 +347,7 @@ func runWriteImage(args []string) {
 	image := fs.String("image", "", "path to the source image file")
 	target := fs.String("target", "", "target disk id, e.g. PhysicalDrive3 on Windows, /dev/sde on Linux, /dev/rdisk4 on macOS")
 	tokenFile := fs.String("token-file", "", "path to a 0600-mode file containing the UI-issued confirmation token; deleted on read")
+	cancelFile := fs.String("cancel-file", "", "optional regular file; operation aborts when the file disappears")
 	verify := fs.Bool("verify", true, "read the written disk back and compare sha256")
 	expectedSha := fs.String("sha256", "", "optional expected sha256 of the image (post-write verification compares against this)")
 	// flag.ExitOnError calls os.Exit on parse failure, so Parse's return
@@ -348,6 +360,7 @@ func runWriteImage(args []string) {
 	if *image == "" || *target == "" || *tokenFile == "" {
 		fatalf("write-image requires --image, --target, and --token-file")
 	}
+	fatalIfCanceled(*cancelFile, nil)
 
 	token, err := readAndRemoveTokenFile(*tokenFile)
 	if err != nil {
@@ -364,6 +377,7 @@ func runWriteImage(args []string) {
 	if len(token) < 16 {
 		fatalf("token is implausibly short; refusing")
 	}
+	fatalIfCanceled(*cancelFile, nil)
 
 	devicePath, err := targetToDevicePath(*target)
 	if err != nil {
@@ -401,6 +415,7 @@ func runWriteImage(args []string) {
 	lastEmit := time.Now()
 
 	for {
+		fatalIfCanceled(*cancelFile, nil)
 		n, rerr := src.Read(buf)
 		if n > 0 {
 			if _, werr := mw.Write(buf[:n]); werr != nil {
@@ -417,6 +432,7 @@ func runWriteImage(args []string) {
 				lastEmit = time.Now()
 			}
 		}
+		fatalIfCanceled(*cancelFile, nil)
 		if errors.Is(rerr, io.EOF) {
 			break
 		}
@@ -425,6 +441,7 @@ func runWriteImage(args []string) {
 		}
 	}
 
+	fatalIfCanceled(*cancelFile, nil)
 	if err := dst.Sync(); err != nil {
 		fatalf("sync: %v", err)
 	}
@@ -441,7 +458,7 @@ func runWriteImage(args []string) {
 	})
 
 	if *verify {
-		verifySha, err := verifyDevice(devicePath, done)
+		verifySha, err := verifyDevice(devicePath, done, *cancelFile)
 		if err != nil {
 			fatalf("verify: %v", err)
 		}
@@ -454,7 +471,7 @@ func runWriteImage(args []string) {
 	emitJSON(map[string]any{"event": "done", "sha256": srcSha, "bytes": done})
 }
 
-func verifyDevice(devicePath string, expectBytes int64) (string, error) {
+func verifyDevice(devicePath string, expectBytes int64, cancelFile string) (string, error) {
 	f, err := os.Open(devicePath)
 	if err != nil {
 		return "", fmt.Errorf("open for verify: %w", err)
@@ -465,6 +482,9 @@ func verifyDevice(devicePath string, expectBytes int64) (string, error) {
 	buf := make([]byte, 4<<20)
 	var done int64
 	for done < expectBytes {
+		if operationCanceled(cancelFile) {
+			return "", fmt.Errorf("operation canceled by user")
+		}
 		n, rerr := f.Read(buf)
 		if n > 0 {
 			// Only hash the bytes we actually wrote.
@@ -483,6 +503,27 @@ func verifyDevice(devicePath string, expectBytes int64) (string, error) {
 		}
 	}
 	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+func fatalIfCanceled(cancelFile string, cleanup func()) {
+	if !operationCanceled(cancelFile) {
+		return
+	}
+	if cleanup != nil {
+		cleanup()
+	}
+	fatalf("operation canceled by user")
+}
+
+func operationCanceled(cancelFile string) bool {
+	if strings.TrimSpace(cancelFile) == "" {
+		return false
+	}
+	info, err := os.Stat(cancelFile)
+	if err != nil {
+		return true
+	}
+	return !info.Mode().IsRegular()
 }
 
 // readAndRemoveTokenFile reads the token from disk and immediately
