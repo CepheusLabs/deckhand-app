@@ -69,7 +69,7 @@ class _ManageScreenState extends ConsumerState<ManageScreen> {
             onSelect: (t) => setState(() => _currentTab = t),
           ),
           const SizedBox(height: 16),
-          _buildTabBody(state),
+          _buildTabBody(state, profile),
         ],
       ),
       primaryAction: WizardAction(
@@ -80,9 +80,9 @@ class _ManageScreenState extends ConsumerState<ManageScreen> {
     );
   }
 
-  Widget _buildTabBody(WizardState state) {
+  Widget _buildTabBody(WizardState state, PrinterProfile? profile) {
     return switch (_currentTab) {
-      _ManageTab.status => _StatusTab(state: state),
+      _ManageTab.status => _StatusTab(state: state, profile: profile),
       _ManageTab.tune => const ManageTuningPanel(),
       _ManageTab.backup => const _BackupTab(),
       _ManageTab.restore => const _RestoreTab(),
@@ -190,8 +190,9 @@ class _TabStripButton extends StatelessWidget {
 // Status tab — live Klippy state via Moonraker.
 // ---------------------------------------------------------------------
 class _StatusTab extends ConsumerStatefulWidget {
-  const _StatusTab({required this.state});
+  const _StatusTab({required this.state, required this.profile});
   final WizardState state;
+  final PrinterProfile? profile;
 
   @override
   ConsumerState<_StatusTab> createState() => _StatusTabState();
@@ -234,7 +235,13 @@ class _StatusTabState extends ConsumerState<_StatusTab> {
   @override
   Widget build(BuildContext context) {
     final tokens = DeckhandTokens.of(context);
+    final controller = ref.watch(wizardControllerProvider);
     final host = widget.state.sshHost;
+    final profile = widget.profile;
+    final webUiUrl = host == null || host.isEmpty
+        ? null
+        : _webUiUrl(host: host, profile: profile);
+    final sshUser = controller.sshSession?.user ?? _defaultSshUser(profile);
     return _Panel(
       child: FutureBuilder<_StatusSnapshot>(
         future: _snapshot,
@@ -316,11 +323,11 @@ class _StatusTabState extends ConsumerState<_StatusTab> {
                   children: [
                     OutlinedButton.icon(
                       icon: const Icon(Icons.copy, size: 14),
-                      label: const Text('Copy Mainsail URL'),
+                      label: const Text('Copy Web UI URL'),
                       onPressed: () => _copyToClipboard(
                         context,
-                        'http://$host',
-                        'Mainsail URL copied',
+                        webUiUrl!,
+                        'Web UI URL copied',
                       ),
                     ),
                     OutlinedButton.icon(
@@ -328,7 +335,7 @@ class _StatusTabState extends ConsumerState<_StatusTab> {
                       label: const Text('Copy SSH command'),
                       onPressed: () => _copyToClipboard(
                         context,
-                        'ssh root@$host',
+                        'ssh $sshUser@$host',
                         'SSH command copied',
                       ),
                     ),
@@ -358,6 +365,35 @@ class _StatusTabState extends ConsumerState<_StatusTab> {
     if (ks.isEmpty) return s.info!.state;
     return ks[0].toUpperCase() + ks.substring(1);
   }
+}
+
+String _webUiUrl({required String host, required PrinterProfile? profile}) {
+  final webui = profile?.stack.webui ?? const <String, dynamic>{};
+  final scheme = (webui['scheme'] as String?)?.trim().toLowerCase();
+  final port = _webUiPort(profile);
+  final normalizedScheme = scheme == 'https' ? 'https' : 'http';
+  final portSuffix =
+      (normalizedScheme == 'http' && port == 80) ||
+          (normalizedScheme == 'https' && port == 443)
+      ? ''
+      : ':$port';
+  return '$normalizedScheme://$host$portSuffix';
+}
+
+int _webUiPort(PrinterProfile? profile) {
+  final webui = profile?.stack.webui ?? const <String, dynamic>{};
+  final raw = webui['port'] ?? webui['url_port'] ?? webui['http_port'];
+  if (raw is num && raw >= 1 && raw <= 65535) return raw.toInt();
+  if (raw is String) {
+    final parsed = int.tryParse(raw.trim());
+    if (parsed != null && parsed >= 1 && parsed <= 65535) return parsed;
+  }
+  return profile?.id == 'phrozen-arco' ? 8808 : 80;
+}
+
+String _defaultSshUser(PrinterProfile? profile) {
+  final credentials = profile?.ssh.defaultCredentials ?? const [];
+  return credentials.isEmpty ? 'root' : credentials.first.user;
 }
 
 class _StatusSnapshot {
