@@ -168,6 +168,40 @@ RECT ClampRectToMonitor(RECT rect, HMONITOR monitor, double scale_factor) {
   return RECT{left, top, left + width, top + height};
 }
 
+void EnsureWindowVisible(HWND window) {
+  if (window == nullptr || IsIconic(window)) {
+    return;
+  }
+
+  WINDOWPLACEMENT placement{};
+  placement.length = sizeof(WINDOWPLACEMENT);
+  if (GetWindowPlacement(window, &placement) &&
+      placement.showCmd == SW_SHOWMAXIMIZED) {
+    return;
+  }
+
+  RECT rect{};
+  if (!GetWindowRect(window, &rect) ||
+      rect.right <= rect.left ||
+      rect.bottom <= rect.top) {
+    return;
+  }
+
+  HMONITOR monitor = MonitorFromRect(&rect, MONITOR_DEFAULTTONEAREST);
+  UINT dpi = FlutterDesktopGetDpiForMonitor(monitor);
+  RECT clamped = ClampRectToMonitor(rect, monitor, dpi / 96.0);
+  if (clamped.left == rect.left &&
+      clamped.top == rect.top &&
+      clamped.right == rect.right &&
+      clamped.bottom == rect.bottom) {
+    return;
+  }
+
+  SetWindowPos(window, nullptr, clamped.left, clamped.top,
+               RectWidth(clamped), RectHeight(clamped),
+               SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOOWNERZORDER);
+}
+
 // Dynamically loads the |EnableNonClientDpiScaling| from the User32 module.
 // This API is only needed for PerMonitor V1 awareness mode.
 void EnableFullDpiSupportIfAvailable(HWND hwnd) {
@@ -303,7 +337,9 @@ bool Win32Window::Create(const std::wstring& title,
 }
 
 bool Win32Window::Show() {
-  return ShowWindow(window_handle_, show_command_);
+  bool shown = ShowWindow(window_handle_, show_command_);
+  EnsureWindowVisible(window_handle_);
+  return shown;
 }
 
 // static
@@ -351,9 +387,14 @@ Win32Window::MessageHandler(HWND hwnd,
 
       SetWindowPos(hwnd, nullptr, newRectSize->left, newRectSize->top, newWidth,
                    newHeight, SWP_NOZORDER | SWP_NOACTIVATE);
+      EnsureWindowVisible(hwnd);
 
       return 0;
     }
+    case WM_DISPLAYCHANGE:
+      EnsureWindowVisible(hwnd);
+      return 0;
+
     case WM_SIZE: {
       RECT rect = GetClientArea();
       if (child_content_ != nullptr) {
