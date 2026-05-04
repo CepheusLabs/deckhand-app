@@ -289,6 +289,7 @@ func escapeTableCell(s string) string {
 // specific fields we know about.
 var redactedKeys = map[string]struct{}{
 	"confirmation_token": {},
+	"repo_url":           {},
 	"trusted_keys":       {},
 }
 

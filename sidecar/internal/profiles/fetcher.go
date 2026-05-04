@@ -64,13 +64,14 @@ func FetchWithOptions(ctx context.Context, repoURL, ref, destDir string, force b
 		if repo, err := git.PlainOpen(absDest); err == nil {
 			head, hErr := repo.Head()
 			if hErr == nil {
-				return FetchResult{
+				result := FetchResult{
 					LocalPath:    absDest,
 					ResolvedSha:  head.Hash().String(),
-					ResolvedRef:  head.Name().Short(),
+					ResolvedRef:  cachedResolvedRef(ref, head.Name()),
 					WasCached:    true,
-					ResolvedKind: kindOfRef(head.Name()),
-				}, nil
+					ResolvedKind: cachedKindOfRef(repo, ref, head.Name()),
+				}
+				return verifyFetchResult(repo, ref, result, opts)
 			}
 		}
 	}
@@ -92,7 +93,7 @@ func FetchWithOptions(ctx context.Context, repoURL, ref, destDir string, force b
 		ReferenceName: plumbing.NewBranchReferenceName(ref),
 		Depth:         1,
 		SingleBranch:  true,
-		Tags:          git.AllTags,
+		Tags:          git.NoTags,
 	})
 	if err != nil && !errors.Is(err, git.ErrRepositoryAlreadyExists) {
 		kind = "tag"
@@ -101,7 +102,7 @@ func FetchWithOptions(ctx context.Context, repoURL, ref, destDir string, force b
 			ReferenceName: plumbing.NewTagReferenceName(ref),
 			Depth:         1,
 			SingleBranch:  true,
-			Tags:          git.AllTags,
+			Tags:          git.NoTags,
 		})
 	}
 	if err != nil {
@@ -121,10 +122,15 @@ func FetchWithOptions(ctx context.Context, repoURL, ref, destDir string, force b
 		ResolvedKind: kind,
 	}
 
-	// Signature verification. Only tags can be signed usefully; branches
-	// are mutable and can't be pinned cryptographically.
+	return verifyFetchResult(repo, ref, result, opts)
+}
+
+// verifyFetchResult applies the profile trust policy to both newly cloned
+// checkouts and fast-path cache hits. Only tags can be signed usefully;
+// branches are mutable and can't be pinned cryptographically.
+func verifyFetchResult(repo *git.Repository, ref string, result FetchResult, opts Options) (FetchResult, error) {
 	if len(opts.TrustedKeys) > 0 {
-		if kind != "tag" {
+		if result.ResolvedKind != "tag" {
 			if opts.RequireSignedTag {
 				return result, fmt.Errorf("%w: resolved ref %q is a branch, not a signed tag", ErrUnsignedOrUntrusted, ref)
 			}
@@ -144,6 +150,25 @@ func FetchWithOptions(ctx context.Context, repoURL, ref, destDir string, force b
 	}
 
 	return result, nil
+}
+
+func cachedResolvedRef(ref string, head plumbing.ReferenceName) string {
+	if ref != "" {
+		return ref
+	}
+	return head.Short()
+}
+
+func cachedKindOfRef(repo *git.Repository, ref string, head plumbing.ReferenceName) string {
+	if ref != "" {
+		if _, err := repo.Tag(ref); err == nil {
+			return "tag"
+		}
+		if _, err := repo.Reference(plumbing.NewBranchReferenceName(ref), true); err == nil {
+			return "branch"
+		}
+	}
+	return kindOfRef(head)
 }
 
 func kindOfRef(n plumbing.ReferenceName) string {

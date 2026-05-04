@@ -26,6 +26,11 @@ import (
 	"github.com/CepheusLabs/deckhand/sidecar/internal/rpc"
 )
 
+const (
+	backupRootMarker     = ".deckhand-emmc-backups-root"
+	downloadTempRootName = "deckhand-os-images"
+)
+
 // Register wires every handler onto s. The cancel parameter is the
 // outer Serve context's cancel func; `shutdown` calls it so the Serve
 // loop exits cleanly. version is used by `ping` and `version.compat`.
@@ -218,16 +223,20 @@ func Register(s *rpc.Server, cancel context.CancelFunc, version string) {
 		},
 	})
 
+	readImageSpecs := []rpc.ParamSpec{
+		{Name: "device_id", Kind: rpc.ParamKindString, MaxLen: 256},
+		{Name: "path", Kind: rpc.ParamKindString, MaxLen: 4096},
+		{Name: "output", Required: true, Kind: rpc.ParamKindString, MinLen: 1, MaxLen: 4096},
+	}
 	s.RegisterMethod(rpc.MethodSpec{
 		Name:        "disks.read_image",
 		Description: "Read a raw device to a local file with progress notifications.",
-		Params: []rpc.ParamSpec{
-			{Name: "device_id", Kind: rpc.ParamKindString, MaxLen: 256},
-			{Name: "path", Kind: rpc.ParamKindString, MaxLen: 4096},
-			{Name: "output", Kind: rpc.ParamKindString, MaxLen: 4096},
-		},
-		Returns: "{sha256, output}",
+		Params:      readImageSpecs,
+		Returns:     "{sha256, output}",
 		Handler: func(ctx context.Context, raw json.RawMessage, note rpc.Notifier) (any, error) {
+			if err := rpc.ValidateParams(raw, readImageSpecs); err != nil {
+				return nil, err
+			}
 			var req struct {
 				DeviceID string `json:"device_id"`
 				Path     string `json:"path"`
@@ -239,6 +248,12 @@ func Register(s *rpc.Server, cancel context.CancelFunc, version string) {
 			dev, err := disks.ResolveDevicePath(req.Path, req.DeviceID)
 			if err != nil {
 				return nil, rpc.NewError(rpc.CodeDisk, "resolve device: %v", err)
+			}
+			// disks.read_image writes a raw-device backup. Keep it in
+			// the same marked Deckhand-owned backup root as the elevated
+			// helper so a caller cannot clobber arbitrary user files.
+			if err := validateReadImageOutputPath(req.Output); err != nil {
+				return nil, rpc.NewError(rpc.CodeGeneric, "%v", err)
 			}
 			sha, err := disks.ReadImage(ctx, dev, req.Output, note)
 			if err != nil {
@@ -255,7 +270,7 @@ func Register(s *rpc.Server, cancel context.CancelFunc, version string) {
 			{Name: "disk", Required: true, Kind: rpc.ParamKindObject},
 		},
 		Returns: "SafetyVerdict",
-		Handler: func(_ context.Context, raw json.RawMessage, _ rpc.Notifier) (any, error) {
+		Handler: func(ctx context.Context, raw json.RawMessage, _ rpc.Notifier) (any, error) {
 			var req struct {
 				Disk disks.DiskInfo `json:"disk"`
 			}
@@ -265,7 +280,16 @@ func Register(s *rpc.Server, cancel context.CancelFunc, version string) {
 			if req.Disk.ID == "" {
 				return nil, rpc.NewError(rpc.CodeGeneric, "disk.id is required")
 			}
-			return disks.AssessWriteTarget(req.Disk), nil
+			// Cross-check against the live OS enumeration. A caller
+			// that fabricates a DiskInfo (removable: true, small size,
+			// no system mounts) could otherwise pass safety on a
+			// fictional disk and then issue write_image against the
+			// real disk ID. Re-probe and assess the live record.
+			live, err := liveDiskByID(ctx, req.Disk.ID)
+			if err != nil {
+				return nil, rpc.NewError(rpc.CodeDisk, "%v", err)
+			}
+			return disks.AssessWriteTarget(*live), nil
 		},
 	})
 
@@ -293,22 +317,24 @@ func Register(s *rpc.Server, cancel context.CancelFunc, version string) {
 			if err := json.Unmarshal(raw, &req); err != nil {
 				return nil, rpc.NewError(rpc.CodeGeneric, "decode params: %v", err)
 			}
-			// Defense-in-depth preflight. If the UI passes the DiskInfo
-			// alongside the write request, we re-run the safety check
-			// here before telling the caller to elevate - this catches
-			// a malicious or racy UI that skipped the separate safety
-			// call.
-			if req.Disk != nil {
-				verdict := disks.AssessWriteTarget(*req.Disk)
-				if !verdict.Allowed {
-					return nil, &rpc.Error{
-						Code:    rpc.CodeDisk + 2,
-						Message: "safety check refused this target",
-						Data: map[string]any{
-							"reason":  "unsafe_target",
-							"verdict": verdict,
-						},
-					}
+			// Defense-in-depth preflight. Re-probe the disk live (do
+			// NOT trust the caller-supplied DiskInfo) and re-run the
+			// safety check before telling the caller to elevate. This
+			// catches a malicious or racy UI that fabricated DiskInfo
+			// or skipped the separate safety call.
+			live, err := liveDiskByID(ctx, req.DiskID)
+			if err != nil {
+				return nil, rpc.NewError(rpc.CodeDisk, "%v", err)
+			}
+			verdict := disks.AssessWriteTarget(*live)
+			if !verdict.Allowed {
+				return nil, &rpc.Error{
+					Code:    rpc.CodeDisk + 2,
+					Message: "safety check refused this target",
+					Data: map[string]any{
+						"reason":  "unsafe_target",
+						"verdict": verdict,
+					},
 				}
 			}
 			if err := disks.WriteImage(ctx, req.ImagePath, req.DiskID, req.ConfirmationToken); err != nil {
@@ -330,13 +356,13 @@ func Register(s *rpc.Server, cancel context.CancelFunc, version string) {
 
 	// OS image download
 	downloadSpecs := []rpc.ParamSpec{
-		{Name: "url", Required: true, Kind: rpc.ParamKindString, MinLen: 1, MaxLen: 4096, Pattern: `^https?://`},
+		{Name: "url", Required: true, Kind: rpc.ParamKindString, MinLen: 1, MaxLen: 4096, Pattern: `^https://`},
 		{Name: "dest", Required: true, Kind: rpc.ParamKindString, MinLen: 1, MaxLen: 4096},
-		{Name: "sha256", Kind: rpc.ParamKindString, MaxLen: 128},
+		{Name: "sha256", Required: true, Kind: rpc.ParamKindString, MinLen: 64, MaxLen: 64, Pattern: `^[0-9a-f]{64}$`},
 	}
 	s.RegisterMethod(rpc.MethodSpec{
 		Name:        "os.download",
-		Description: "Download an OS image to dest, optionally verifying the expected SHA-256.",
+		Description: "Download an OS image to a managed cache path, verifying the expected SHA-256.",
 		Params:      downloadSpecs,
 		Returns:     "{sha256, path}",
 		Handler: func(ctx context.Context, raw json.RawMessage, note rpc.Notifier) (any, error) {
@@ -350,6 +376,15 @@ func Register(s *rpc.Server, cancel context.CancelFunc, version string) {
 			}
 			if err := json.Unmarshal(raw, &req); err != nil {
 				return nil, fmt.Errorf("decode params: %w", err)
+			}
+			if err := validateDownloadDestPath(req.Dest); err != nil {
+				return nil, rpc.NewError(rpc.CodeGeneric, "%v", err)
+			}
+			if err := os.MkdirAll(filepath.Dir(req.Dest), 0o700); err != nil {
+				return nil, rpc.NewError(rpc.CodeGeneric, "create download dir: %v", err)
+			}
+			if err := validateDownloadDestPath(req.Dest); err != nil {
+				return nil, rpc.NewError(rpc.CodeGeneric, "%v", err)
 			}
 			sha, err := osimg.Download(ctx, req.URL, req.Dest, req.ExpectedSha, note)
 			if err != nil {
@@ -393,6 +428,9 @@ func Register(s *rpc.Server, cancel context.CancelFunc, version string) {
 			}
 			if err := validateGitRef(req.Ref); err != nil {
 				return nil, err
+			}
+			if err := validateProfileFetchDestPath(req.Dest); err != nil {
+				return nil, rpc.NewError(rpc.CodeGeneric, "%v", err)
 			}
 			opts := profiles.Options{
 				RequireSignedTag: req.RequireSignedTag,
@@ -490,13 +528,314 @@ func validateRepoURL(raw string) error {
 	if err != nil {
 		return fmt.Errorf("parse repo_url %q: %w", raw, err)
 	}
-	if u.Scheme != "https" && u.Scheme != "http" {
-		return fmt.Errorf("repo_url scheme must be http or https, got %q", u.Scheme)
+	// HTTPS only - profile content drives shell commands over SSH to
+	// the printer, so a LAN MitM that can serve a malicious profile
+	// repo over plain http would be a meaningful escalation. The
+	// signed-tag verification path is the deeper defence, but this
+	// closes the simpler attack at the network layer.
+	if u.Scheme != "https" {
+		return fmt.Errorf("repo_url scheme must be https, got %q", u.Scheme)
 	}
 	if u.Host == "" {
 		return fmt.Errorf("repo_url %q has no host", raw)
 	}
+	if u.User != nil {
+		return fmt.Errorf("repo_url must not contain embedded credentials")
+	}
+	if u.RawQuery != "" || u.Fragment != "" {
+		return fmt.Errorf("repo_url must not contain query strings or fragments")
+	}
 	return nil
+}
+
+// validateProfileFetchDestPath constrains profiles.fetch to the
+// Deckhand-owned profile cache. FetchWithOptions(force=true) removes
+// the destination before cloning, so this RPC boundary must not accept
+// arbitrary paths from the caller.
+func validateProfileFetchDestPath(dest string) error {
+	if dest == "" {
+		return fmt.Errorf("dest is required")
+	}
+	if err := rejectDeviceOutputPath(dest); err != nil {
+		return err
+	}
+	clean, err := filepath.Abs(filepath.Clean(dest))
+	if err != nil {
+		return fmt.Errorf("resolve dest %q: %w", dest, err)
+	}
+	if strings.Contains(clean, "..") {
+		return fmt.Errorf("dest %q contains traversal", dest)
+	}
+
+	for _, base := range managedProfileBases() {
+		if !isPathUnderRoot(clean, base) {
+			continue
+		}
+		if !hasDeckhandProfilesAncestor(clean, base) {
+			continue
+		}
+		if err := rejectSymlinkPath(base, clean); err != nil {
+			return err
+		}
+		return nil
+	}
+	return fmt.Errorf("dest %q is not under a Deckhand-managed profile cache", dest)
+}
+
+func managedProfileBases() []string {
+	h := host.Current()
+	bases := []string{}
+	for _, base := range []string{h.Cache, h.Data} {
+		if base == "" {
+			continue
+		}
+		absBase, err := filepath.Abs(base)
+		if err != nil {
+			continue
+		}
+		bases = append(bases, filepath.Clean(absBase))
+	}
+	return bases
+}
+
+func hasDeckhandProfilesAncestor(path, base string) bool {
+	parent := filepath.Dir(path)
+	for !samePath(parent, base) && parent != "." && parent != string(os.PathSeparator) {
+		if filepath.Base(parent) == "profiles" &&
+			filepath.Base(filepath.Dir(parent)) == "Deckhand" {
+			return true
+		}
+		next := filepath.Dir(parent)
+		if samePath(next, parent) {
+			break
+		}
+		parent = next
+	}
+	return false
+}
+
+func isPathUnderRoot(path, root string) bool {
+	if samePath(path, root) {
+		return false
+	}
+	rel, err := filepath.Rel(root, path)
+	if err != nil {
+		return false
+	}
+	return rel != "." &&
+		rel != ".." &&
+		!strings.HasPrefix(rel, ".."+string(os.PathSeparator)) &&
+		!filepath.IsAbs(rel)
+}
+
+func samePath(a, b string) bool {
+	if runtime.GOOS == "windows" {
+		return strings.EqualFold(a, b)
+	}
+	return a == b
+}
+
+func rejectSymlinkPath(base, target string) error {
+	rel, err := filepath.Rel(base, target)
+	if err != nil {
+		return fmt.Errorf("resolve dest ancestry: %w", err)
+	}
+	if rel == "." {
+		return nil
+	}
+	cur := base
+	for _, part := range strings.Split(rel, string(os.PathSeparator)) {
+		if part == "" || part == "." {
+			continue
+		}
+		cur = filepath.Join(cur, part)
+		info, err := os.Lstat(cur)
+		if os.IsNotExist(err) {
+			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("inspect dest ancestry %q: %w", cur, err)
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("dest ancestry %q must not be a symlink", cur)
+		}
+		if !info.IsDir() && cur != target {
+			return fmt.Errorf("dest ancestry %q must be a directory", cur)
+		}
+	}
+	return nil
+}
+
+// validateReadImageOutputPath constrains disks.read_image's destination
+// to a marked Deckhand eMMC backup root. This mirrors the elevated
+// helper policy so the non-elevated fallback cannot be used to truncate
+// arbitrary user files or follow symlinks.
+func validateReadImageOutputPath(output string) error {
+	if output == "" {
+		return fmt.Errorf("output is required")
+	}
+	if err := rejectDeviceOutputPath(output); err != nil {
+		return err
+	}
+	clean, err := filepath.Abs(filepath.Clean(output))
+	if err != nil {
+		return fmt.Errorf("resolve output %q: %w", output, err)
+	}
+	if strings.Contains(clean, "..") {
+		return fmt.Errorf("output %q contains traversal", output)
+	}
+	if filepath.Ext(clean) != ".img" {
+		return fmt.Errorf("output %q must end in .img", output)
+	}
+	root := filepath.Dir(clean)
+	if filepath.Base(root) != "emmc-backups" {
+		return fmt.Errorf("output %q must be inside Deckhand's emmc-backups directory", output)
+	}
+	rootInfo, err := os.Lstat(root)
+	if err != nil {
+		return fmt.Errorf("backup root %q is not available: %w", root, err)
+	}
+	if rootInfo.Mode()&os.ModeSymlink != 0 || !rootInfo.IsDir() {
+		return fmt.Errorf("backup root %q must be a real directory", root)
+	}
+	marker := filepath.Join(root, backupRootMarker)
+	markerInfo, err := os.Lstat(marker)
+	if err != nil {
+		return fmt.Errorf("backup root %q is missing Deckhand marker", root)
+	}
+	if markerInfo.Mode()&os.ModeSymlink != 0 || !markerInfo.Mode().IsRegular() {
+		return fmt.Errorf("backup root marker %q must be a regular file", marker)
+	}
+	if _, err := os.Lstat(clean); err == nil {
+		return fmt.Errorf("output %q already exists", output)
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("inspect output %q: %w", output, err)
+	}
+	return nil
+}
+
+// validateDownloadDestPath restricts os.download to Deckhand-owned OS
+// image caches and rejects pre-existing final or partial files. The
+// sidecar downloader still opens temp files with O_EXCL, but the policy
+// check here keeps the RPC from being a generic "write file" primitive.
+func validateDownloadDestPath(dest string) error {
+	if dest == "" {
+		return fmt.Errorf("dest is required")
+	}
+	if err := rejectDeviceOutputPath(dest); err != nil {
+		return err
+	}
+	clean, err := filepath.Abs(filepath.Clean(dest))
+	if err != nil {
+		return fmt.Errorf("resolve dest %q: %w", dest, err)
+	}
+	if strings.Contains(clean, "..") {
+		return fmt.Errorf("dest %q contains traversal", dest)
+	}
+	if filepath.Ext(clean) != ".img" {
+		return fmt.Errorf("dest %q must end in .img", dest)
+	}
+	allowedRoots := managedDownloadRoots()
+	if !isDirectChildOfAnyRoot(clean, allowedRoots) {
+		return fmt.Errorf("dest %q is not under a Deckhand-managed OS image directory", dest)
+	}
+	parent := filepath.Dir(clean)
+	if info, err := os.Lstat(parent); err == nil {
+		if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
+			return fmt.Errorf("download root %q must be a real directory", parent)
+		}
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("inspect download root %q: %w", parent, err)
+	}
+	if _, err := os.Lstat(clean); err == nil {
+		return fmt.Errorf("dest %q already exists", dest)
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("inspect dest %q: %w", dest, err)
+	}
+	part := clean + ".part"
+	if _, err := os.Lstat(part); err == nil {
+		return fmt.Errorf("partial dest %q already exists", part)
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("inspect partial dest %q: %w", part, err)
+	}
+	return nil
+}
+
+func managedDownloadRoots() []string {
+	h := host.Current()
+	roots := []string{}
+	for _, root := range []string{h.Cache, h.Data} {
+		if root == "" {
+			continue
+		}
+		if abs, err := filepath.Abs(filepath.Join(root, "Deckhand", "os-images")); err == nil {
+			roots = append(roots, filepath.Clean(abs))
+		}
+	}
+	if tmp := os.TempDir(); tmp != "" {
+		if abs, err := filepath.Abs(filepath.Join(tmp, downloadTempRootName)); err == nil {
+			roots = append(roots, filepath.Clean(abs))
+		}
+	}
+	return roots
+}
+
+func isDirectChildOfAnyRoot(path string, roots []string) bool {
+	parent := filepath.Dir(path)
+	for _, root := range roots {
+		if root != "" && parent == root {
+			return true
+		}
+	}
+	return false
+}
+
+func rejectDeviceOutputPath(path string) error {
+	clean := filepath.Clean(path)
+	devicePrefixes := []string{
+		"/dev/sd", "/dev/nvme", "/dev/mmcblk", "/dev/disk",
+		"/dev/rdisk", "/dev/loop", "/dev/vd",
+	}
+	for _, prefix := range devicePrefixes {
+		if strings.HasPrefix(clean, prefix) {
+			return fmt.Errorf("output %q must be a regular file path, not a device", path)
+		}
+	}
+	if runtime.GOOS == "windows" &&
+		(strings.HasPrefix(clean, `\\.\`) || strings.HasPrefix(clean, `//./`)) {
+		return fmt.Errorf("output %q must be a regular file path, not a device", path)
+	}
+	return nil
+}
+
+// listDisksFn is the live OS enumeration. Tests substitute a stub via
+// SetListDisksForTest so they can drive safety_check / write_image
+// preflight without depending on hardware present on the test host.
+var listDisksFn = disks.List
+
+// SetListDisksForTest swaps the disk lister and returns a restore
+// func. Production code must not call this.
+func SetListDisksForTest(fn func(context.Context) ([]disks.DiskInfo, error)) func() {
+	prev := listDisksFn
+	listDisksFn = fn
+	return func() { listDisksFn = prev }
+}
+
+// liveDiskByID re-probes the OS to fetch the authoritative DiskInfo
+// for the given ID. Callers must use this rather than trusting any
+// caller-supplied DiskInfo, since the supplied struct could fabricate
+// safety-relevant fields (removable, mounted, size).
+func liveDiskByID(ctx context.Context, id string) (*disks.DiskInfo, error) {
+	all, err := listDisksFn(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("enumerate disks: %w", err)
+	}
+	for i := range all {
+		if all[i].ID == id {
+			return &all[i], nil
+		}
+	}
+	return nil, fmt.Errorf("disk %q not found in current enumeration", id)
 }
 
 func validateGitRef(ref string) error {

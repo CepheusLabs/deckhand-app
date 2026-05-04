@@ -6,6 +6,7 @@ import 'package:dio/dio.dart';
 import 'package:path/path.dart' as p;
 
 import 'egress_interceptor.dart';
+import 'github_token_interceptor.dart';
 import 'sidecar_client.dart';
 
 /// [UpstreamService] - git clones via the sidecar, release assets over
@@ -27,8 +28,13 @@ class SidecarUpstreamService implements UpstreamService {
     required this.sidecar,
     required SecurityService security,
     Dio? dio,
-  })  : _security = security,
-        _dio = (dio ?? Dio())..interceptors.add(EgressLogInterceptor(security));
+  }) : _security = security,
+       _dio = (dio ?? Dio())
+         // Token interceptor runs first so it sees the un-mutated
+         // request and can inject the auth header before the egress
+         // logger snapshots the URL/headers.
+         ..interceptors.add(GitHubTokenInterceptor(security))
+         ..interceptors.add(EgressLogInterceptor(security));
 
   final SidecarConnection sidecar;
   final SecurityService _security;
@@ -58,8 +64,18 @@ class SidecarUpstreamService implements UpstreamService {
     required String repoSlug,
     required String assetPattern,
     required String destPath,
+    required String expectedSha256,
     String? tag,
   }) async {
+    _validateReleaseRepoSlug(repoSlug);
+    _validateAssetPattern(assetPattern);
+    final normalizedExpected = expectedSha256.trim().toLowerCase();
+    if (!RegExp(r'^[0-9a-f]{64}$').hasMatch(normalizedExpected)) {
+      throw UpstreamException(
+        'release asset $repoSlug/$assetPattern has invalid sha256',
+      );
+    }
+
     final url = tag == null
         ? 'https://api.github.com/repos/$repoSlug/releases/latest'
         : 'https://api.github.com/repos/$repoSlug/releases/tags/$tag';
@@ -80,10 +96,26 @@ class SidecarUpstreamService implements UpstreamService {
     }
     final dlUrl = match['browser_download_url'] as String;
     final assetName = match['name'] as String;
+    _validateReleaseAssetName(assetName);
+    await requireHostApproved(_security, dlUrl);
 
     final outPath = p.join(destPath, assetName);
     await Directory(destPath).create(recursive: true);
     await _dio.download(dlUrl, outPath);
+    final hashRes = await sidecar.call('disks.hash', {'path': outPath});
+    final actualSha = (hashRes['sha256'] as String? ?? '').trim().toLowerCase();
+    if (actualSha != normalizedExpected) {
+      try {
+        await File(outPath).delete();
+      } on FileSystemException {
+        // Best-effort cleanup; the important behavior is that the
+        // unverified file is not returned to the install flow.
+      }
+      throw UpstreamException(
+        'sha256 mismatch for $assetName: expected '
+        '$normalizedExpected, got $actualSha',
+      );
+    }
 
     return UpstreamFetchResult(
       localPath: outPath,
@@ -98,12 +130,21 @@ class SidecarUpstreamService implements UpstreamService {
     required String destPath,
     String? expectedSha256,
   }) async* {
+    final parsed = Uri.tryParse(url);
+    if (parsed == null || parsed.scheme != 'https' || parsed.host.isEmpty) {
+      throw UpstreamException('OS image downloads must use https:// URLs');
+    }
+    final normalizedExpected = expectedSha256?.trim().toLowerCase();
+    if (normalizedExpected == null ||
+        !RegExp(r'^[0-9a-f]{64}$').hasMatch(normalizedExpected)) {
+      throw UpstreamException('OS image downloads require a 64-hex sha256');
+    }
     await requireHostApproved(_security, url);
     yield* sidecar
         .callStreaming('os.download', {
           'url': url,
           'dest': destPath,
-          'sha256': ?expectedSha256,
+          'sha256': normalizedExpected,
         })
         .transform(_osDownloadTransformer);
   }
@@ -120,6 +161,35 @@ class SidecarUpstreamService implements UpstreamService {
       pos = idx + part.length;
     }
     return true;
+  }
+
+  void _validateReleaseRepoSlug(String repoSlug) {
+    if (!RegExp(r'^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$').hasMatch(repoSlug)) {
+      throw UpstreamException(
+        'release repo slug must be "owner/repo" with no URL syntax',
+      );
+    }
+  }
+
+  void _validateAssetPattern(String pattern) {
+    if (pattern.isEmpty ||
+        pattern.contains('/') ||
+        pattern.contains('\\') ||
+        pattern == '.' ||
+        pattern == '..') {
+      throw UpstreamException('release asset pattern must be a file name glob');
+    }
+  }
+
+  void _validateReleaseAssetName(String name) {
+    if (name.isEmpty ||
+        name.contains('/') ||
+        name.contains('\\') ||
+        name == '.' ||
+        name == '..' ||
+        p.basename(name) != name) {
+      throw UpstreamException('unsafe release asset name: $name');
+    }
   }
 }
 

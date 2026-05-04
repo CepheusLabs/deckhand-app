@@ -158,10 +158,10 @@ func TestVerifyTagSignature_LightweightTagRejected(t *testing.T) {
 	}
 }
 
-// TestFetchWithOptions_RequireSignedTag_RejectsBranch proves that when
-// a caller insists on a signed tag, a resolved-branch result is an
-// error rather than a silently-unverified success.
-func TestFetchWithOptions_RequireSignedTag_RejectsBranch(t *testing.T) {
+// TestFetchWithOptions_RequireSignedTag_RejectsCachedBranch proves that
+// when a caller insists on a signed tag, a cached branch is rejected
+// instead of bypassing the trust policy on the fast path.
+func TestFetchWithOptions_RequireSignedTag_RejectsCachedBranch(t *testing.T) {
 	dest := filepath.Join(t.TempDir(), "need-signed")
 	if err := os.MkdirAll(dest, 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
@@ -196,13 +196,56 @@ func TestFetchWithOptions_RequireSignedTag_RejectsBranch(t *testing.T) {
 		TrustedKeys:      []byte("armored-garbage"),
 		RequireSignedTag: true,
 	})
-	// Cache path returns res without running the signature branch, so
-	// this asserts the path-through (cached == true, signature not
-	// attempted). The stricter require_signed_tag enforcement happens
-	// on a non-cached fetch; the test above covers the lightweight-tag
-	// reject logic.
-	_ = err
+	if !errors.Is(err, ErrUnsignedOrUntrusted) {
+		t.Fatalf("expected ErrUnsignedOrUntrusted, got %v", err)
+	}
 	if !res.WasCached {
 		t.Fatalf("expected cached result; got %+v", res)
+	}
+}
+
+func TestFetchWithOptions_VerifiesCachedLightweightTag(t *testing.T) {
+	dest := filepath.Join(t.TempDir(), "cached-lw-tag")
+	if err := os.MkdirAll(dest, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if _, err := git.PlainInit(dest, false); err != nil {
+		t.Fatalf("PlainInit: %v", err)
+	}
+	repo, err := git.PlainOpen(dest)
+	if err != nil {
+		t.Fatalf("PlainOpen: %v", err)
+	}
+	wt, err := repo.Worktree()
+	if err != nil {
+		t.Fatalf("Worktree: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dest, "a"), []byte("hi"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if _, err := wt.Add("a"); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	commit, err := wt.Commit("seed", &git.CommitOptions{
+		Author: &object.Signature{Name: "T", Email: "t@e.invalid", When: time.Now()},
+	})
+	if err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+	if _, err := repo.CreateTag("v0.0.1", commit, nil); err != nil {
+		t.Fatalf("CreateTag: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	res, err := FetchWithOptions(ctx, "https://example.invalid/x", "v0.0.1", dest, false, Options{
+		TrustedKeys:      []byte("armored-garbage"),
+		RequireSignedTag: true,
+	})
+	if !errors.Is(err, ErrUnsignedOrUntrusted) {
+		t.Fatalf("expected ErrUnsignedOrUntrusted, got %v", err)
+	}
+	if !res.WasCached || res.ResolvedKind != "tag" {
+		t.Fatalf("expected cached tag result, got %+v", res)
 	}
 }

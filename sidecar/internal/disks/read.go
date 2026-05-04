@@ -45,7 +45,7 @@ func ReadImage(ctx context.Context, devicePath, outputPath string, note rpc.Noti
 		_, _ = src.Seek(0, io.SeekStart)
 	}
 
-	dst, err := os.Create(outputPath)
+	dst, err := os.OpenFile(outputPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
 		return "", fmt.Errorf("create output: %w", err)
 	}

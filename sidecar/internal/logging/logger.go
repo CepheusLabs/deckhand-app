@@ -112,10 +112,12 @@ func newRotatingFile(path string, maxBytes int64, maxFiles int) (*rotatingFile, 
 }
 
 func (r *rotatingFile) open() error {
-	// #nosec G302 -- logs may contain user-visible paths but not
-	// secrets (those are redacted upstream); 0o644 is the conventional
-	// log permission.
-	f, err := os.OpenFile(r.path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	// 0o600: logs may contain disk paths, profile URLs, and SSH-auth
+	// failure messages. Credentials are redacted upstream, but keep
+	// the on-disk file user-readable only so a multi-user host can't
+	// surface diagnostic data to a different account. The single
+	// owning user (and root) can still tail the file directly.
+	f, err := os.OpenFile(r.path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
 	if err != nil {
 		return fmt.Errorf("logging: open %q: %w", r.path, err)
 	}

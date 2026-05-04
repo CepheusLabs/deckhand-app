@@ -11,3 +11,4 @@ export 'src/flash_sentinel.dart';
 export 'src/sidecar_supervisor.dart';
 export 'src/sidecar_doctor_service.dart';
 export 'src/egress_interceptor.dart';
+export 'src/github_token_interceptor.dart';

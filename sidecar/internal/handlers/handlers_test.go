@@ -6,12 +6,28 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/CepheusLabs/deckhand/sidecar/internal/disks"
 	"github.com/CepheusLabs/deckhand/sidecar/internal/rpc"
 )
+
+// stubDisks installs a disk lister returning the supplied fixtures
+// for the duration of the test. Use this for any handler test that
+// touches safety_check or write_image preflight - those handlers
+// re-probe the live OS rather than trusting caller-supplied DiskInfo.
+func stubDisks(t *testing.T, items ...disks.DiskInfo) {
+	t.Helper()
+	restore := SetListDisksForTest(func(_ context.Context) ([]disks.DiskInfo, error) {
+		return items, nil
+	})
+	t.Cleanup(restore)
+}
 
 // TestRegister_RegistersEveryMethod makes sure the IPC docs generator
 // (which reuses handlers.Register) will always see every public method.
@@ -114,23 +130,22 @@ func TestDisksSafetyCheck_MissingParamsRejected(t *testing.T) {
 
 // TestDisksSafetyCheck_AllowsEMMC runs the happy path: a typical
 // 32 GiB removable disk with no system mounts should come back
-// Allowed=true and no warnings.
+// Allowed=true and no warnings. The handler re-probes the live OS,
+// so we install a stub lister returning the eMMC fixture.
 func TestDisksSafetyCheck_AllowsEMMC(t *testing.T) {
+	stubDisks(t, disks.DiskInfo{
+		ID:        "mmcblk0",
+		Path:      "/dev/mmcblk0",
+		SizeBytes: 32 * 1024 * 1024 * 1024,
+		Bus:       "MMC",
+		Model:     "Generic eMMC",
+		Removable: true,
+	})
 	resp := dispatch(t, map[string]any{
 		"jsonrpc": "2.0",
 		"id":      "2",
 		"method":  "disks.safety_check",
-		"params": map[string]any{
-			"disk": map[string]any{
-				"id":         "mmcblk0",
-				"path":       "/dev/mmcblk0",
-				"size_bytes": 32 * 1024 * 1024 * 1024,
-				"bus":        "MMC",
-				"model":      "Generic eMMC",
-				"removable":  true,
-				"partitions": []any{},
-			},
-		},
+		"params":  map[string]any{"disk": map[string]any{"id": "mmcblk0"}},
 	})
 	if _, hasErr := resp["error"]; hasErr {
 		t.Fatalf("expected no error, got %+v", resp["error"])
@@ -145,21 +160,18 @@ func TestDisksSafetyCheck_AllowsEMMC(t *testing.T) {
 }
 
 // TestDisksSafetyCheck_BlocksOversizedDisk ensures the RPC surfaces
-// the blocking reasons as structured data the UI can render. The
-// domain layer's string messages must make it through the JSON-RPC
-// boundary without being flattened into a single "unsafe" bool.
+// the blocking reasons as structured data the UI can render.
 func TestDisksSafetyCheck_BlocksOversizedDisk(t *testing.T) {
+	stubDisks(t, disks.DiskInfo{
+		ID:        "nvme0n1",
+		SizeBytes: 2 * 1024 * 1024 * 1024 * 1024, // 2 TiB
+		Removable: false,
+	})
 	resp := dispatch(t, map[string]any{
 		"jsonrpc": "2.0",
 		"id":      "3",
 		"method":  "disks.safety_check",
-		"params": map[string]any{
-			"disk": map[string]any{
-				"id":         "nvme0n1",
-				"size_bytes": 2 * 1024 * 1024 * 1024 * 1024, // 2 TiB
-				"removable":  false,
-			},
-		},
+		"params":  map[string]any{"disk": map[string]any{"id": "nvme0n1"}},
 	})
 	result, ok := resp["result"].(map[string]any)
 	if !ok {
@@ -174,12 +186,37 @@ func TestDisksSafetyCheck_BlocksOversizedDisk(t *testing.T) {
 	}
 }
 
+// TestDisksSafetyCheck_UnknownDiskIDRejected confirms a caller cannot
+// pass an arbitrary disk.id and have the handler quietly return an
+// "allowed" verdict on a fictional device. The live re-probe must
+// fail closed when the ID isn't in the enumeration.
+func TestDisksSafetyCheck_UnknownDiskIDRejected(t *testing.T) {
+	stubDisks(t /* no disks */)
+	resp := dispatch(t, map[string]any{
+		"jsonrpc": "2.0",
+		"id":      "2u",
+		"method":  "disks.safety_check",
+		"params":  map[string]any{"disk": map[string]any{"id": "ghost0"}},
+	})
+	errObj, ok := resp["error"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected error for unknown disk, got %+v", resp)
+	}
+	if msg, _ := errObj["message"].(string); !strings.Contains(msg, "not found") {
+		t.Fatalf("expected 'not found' in error, got %q", msg)
+	}
+}
+
 // TestDisksWriteImage_PreflightBlocksUnsafeTarget proves the
 // defense-in-depth re-check inside the write handler: even if the
-// UI somehow skipped disks.safety_check, passing an obviously unsafe
-// `disk` alongside the write request must error with the structured
-// `reason: "unsafe_target"` data the UI branches on.
+// UI somehow skipped disks.safety_check, the live-probed disk must
+// drive the safety verdict.
 func TestDisksWriteImage_PreflightBlocksUnsafeTarget(t *testing.T) {
+	stubDisks(t, disks.DiskInfo{
+		ID:        "nvme0n1",
+		SizeBytes: 2 * 1024 * 1024 * 1024 * 1024,
+		Removable: false,
+	})
 	resp := dispatch(t, map[string]any{
 		"jsonrpc": "2.0",
 		"id":      "4",
@@ -187,12 +224,7 @@ func TestDisksWriteImage_PreflightBlocksUnsafeTarget(t *testing.T) {
 		"params": map[string]any{
 			"image_path":         "/tmp/does-not-matter.img",
 			"disk_id":            "nvme0n1",
-			"confirmation_token": "tok",
-			"disk": map[string]any{
-				"id":         "nvme0n1",
-				"size_bytes": 2 * 1024 * 1024 * 1024 * 1024,
-				"removable":  false,
-			},
+			"confirmation_token": "tok-1234567890abcd",
 		},
 	})
 	errObj, ok := resp["error"].(map[string]any)
@@ -202,5 +234,204 @@ func TestDisksWriteImage_PreflightBlocksUnsafeTarget(t *testing.T) {
 	data, _ := errObj["data"].(map[string]any)
 	if reason, _ := data["reason"].(string); reason != "unsafe_target" {
 		t.Fatalf("expected data.reason=unsafe_target, got %v (full: %+v)", reason, errObj)
+	}
+}
+
+// TestDisksWriteImage_FabricatedDiskInfoIsIgnored proves the handler
+// ignores caller-supplied DiskInfo entirely. A caller crafting a
+// "safe-looking" disk struct (small, removable, no mounts) cannot
+// override the live re-probe, which sees the real (unsafe) disk.
+func TestDisksWriteImage_FabricatedDiskInfoIsIgnored(t *testing.T) {
+	stubDisks(t, disks.DiskInfo{
+		ID:        "nvme0n1",
+		SizeBytes: 2 * 1024 * 1024 * 1024 * 1024, // really 2 TiB
+		Removable: false,
+	})
+	resp := dispatch(t, map[string]any{
+		"jsonrpc": "2.0",
+		"id":      "4f",
+		"method":  "disks.write_image",
+		"params": map[string]any{
+			"image_path":         "/tmp/does-not-matter.img",
+			"disk_id":            "nvme0n1",
+			"confirmation_token": "tok-1234567890abcd",
+			"disk": map[string]any{ // hostile/fabricated:
+				"id":         "nvme0n1",
+				"size_bytes": 8 * 1024 * 1024 * 1024,
+				"removable":  true,
+			},
+		},
+	})
+	errObj, ok := resp["error"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected error - fabricated DiskInfo must not bypass live probe (got %+v)", resp)
+	}
+	data, _ := errObj["data"].(map[string]any)
+	if reason, _ := data["reason"].(string); reason != "unsafe_target" {
+		t.Fatalf("expected data.reason=unsafe_target, got %v", reason)
+	}
+}
+
+func TestReadImageOutputPolicyRequiresMarkedBackupRoot(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "emmc-backups")
+	if err := os.MkdirAll(root, 0o700); err != nil {
+		t.Fatalf("mkdir root: %v", err)
+	}
+	output := filepath.Join(root, "printer.img")
+
+	if err := validateReadImageOutputPath(output); err == nil {
+		t.Fatalf("expected missing marker to reject output")
+	}
+	if err := os.WriteFile(filepath.Join(root, backupRootMarker), []byte("ok\n"), 0o600); err != nil {
+		t.Fatalf("write marker: %v", err)
+	}
+	if err := validateReadImageOutputPath(output); err != nil {
+		t.Fatalf("expected marked direct child to pass: %v", err)
+	}
+	if err := os.WriteFile(output, []byte("existing"), 0o600); err != nil {
+		t.Fatalf("write existing output: %v", err)
+	}
+	if err := validateReadImageOutputPath(output); err == nil {
+		t.Fatalf("expected existing output to be rejected")
+	}
+}
+
+func TestReadImageOutputPolicyRejectsUnsafeOutputs(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "emmc-backups")
+	if err := os.MkdirAll(root, 0o700); err != nil {
+		t.Fatalf("mkdir root: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, backupRootMarker), []byte("ok\n"), 0o600); err != nil {
+		t.Fatalf("write marker: %v", err)
+	}
+
+	deviceOutput := "/dev/sda"
+	if runtime.GOOS == "windows" {
+		deviceOutput = `\\.\PhysicalDrive3`
+	}
+	cases := []struct {
+		name   string
+		output string
+		want   string
+	}{
+		{
+			name:   "raw device path",
+			output: deviceOutput,
+			want:   "regular file path",
+		},
+		{
+			name:   "wrong extension",
+			output: filepath.Join(root, "printer.bin"),
+			want:   "must end in .img",
+		},
+		{
+			name:   "nested below backup root",
+			output: filepath.Join(root, "nested", "printer.img"),
+			want:   "emmc-backups directory",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validateReadImageOutputPath(tc.output)
+			if err == nil {
+				t.Fatalf("expected %q to be rejected", tc.output)
+			}
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("expected %q in error, got %q", tc.want, err.Error())
+			}
+		})
+	}
+}
+
+func TestDownloadDestPolicyRejectsUnmanagedAndExistingPaths(t *testing.T) {
+	outside := filepath.Join(t.TempDir(), "image.img")
+	if err := validateDownloadDestPath(outside); err == nil {
+		t.Fatalf("expected unmanaged temp path to be rejected")
+	}
+
+	root := filepath.Join(os.TempDir(), downloadTempRootName)
+	t.Cleanup(func() { _ = os.RemoveAll(root) })
+	dest := filepath.Join(root, "image.img")
+	if err := validateDownloadDestPath(dest); err != nil {
+		t.Fatalf("expected managed download path to pass: %v", err)
+	}
+	if err := os.MkdirAll(root, 0o700); err != nil {
+		t.Fatalf("mkdir root: %v", err)
+	}
+	if err := os.WriteFile(dest, []byte("existing"), 0o600); err != nil {
+		t.Fatalf("write existing dest: %v", err)
+	}
+	if err := validateDownloadDestPath(dest); err == nil {
+		t.Fatalf("expected existing download dest to be rejected")
+	}
+}
+
+func TestOsDownloadRejectsMissingShaBeforeNetwork(t *testing.T) {
+	resp := dispatch(t, map[string]any{
+		"jsonrpc": "2.0",
+		"id":      "os-missing-sha",
+		"method":  "os.download",
+		"params": map[string]any{
+			"url":  "https://example.invalid/image.img",
+			"dest": filepath.Join(os.TempDir(), downloadTempRootName, "image.img"),
+		},
+	})
+
+	if _, ok := resp["error"].(map[string]any); !ok {
+		t.Fatalf("expected missing sha to fail, got %+v", resp)
+	}
+}
+
+func TestProfileFetchDestPolicyRejectsUnmanagedPath(t *testing.T) {
+	dest := filepath.Join(t.TempDir(), "profiles", "main")
+	if err := validateProfileFetchDestPath(dest); err == nil {
+		t.Fatalf("expected unmanaged profile dest to be rejected")
+	}
+}
+
+func TestProfileFetchDestPolicyAllowsManagedCachePath(t *testing.T) {
+	cache, err := os.UserCacheDir()
+	if err != nil || cache == "" {
+		t.Skipf("user cache dir unavailable: %v", err)
+	}
+	cases := []string{
+		filepath.Join(cache, "Deckhand", "profiles", "test-ref-security-policy"),
+		filepath.Join(cache, "DeckhandApp", "Deckhand", "profiles", "test-ref-security-policy"),
+	}
+	for _, dest := range cases {
+		if err := validateProfileFetchDestPath(dest); err != nil {
+			t.Fatalf("expected managed profile cache path %q to pass: %v", dest, err)
+		}
+	}
+}
+
+func TestProfilesFetchRejectsUnmanagedDestBeforeNetwork(t *testing.T) {
+	resp := dispatch(t, map[string]any{
+		"jsonrpc": "2.0",
+		"id":      "profile-unmanaged-dest",
+		"method":  "profiles.fetch",
+		"params": map[string]any{
+			"repo_url": "https://example.invalid/deckhand-profiles.git",
+			"ref":      "main",
+			"dest":     filepath.Join(t.TempDir(), "outside"),
+			"force":    true,
+		},
+	})
+
+	errObj, ok := resp["error"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected unmanaged dest to fail, got %+v", resp)
+	}
+	if msg, _ := errObj["message"].(string); !strings.Contains(msg, "profile cache") {
+		t.Fatalf("expected profile cache policy error, got %q", msg)
+	}
+}
+
+func TestValidateRepoURLRejectsEmbeddedCredentials(t *testing.T) {
+	if err := validateRepoURL("https://token@example.com/repo.git"); err == nil {
+		t.Fatalf("expected repo URL credentials to be rejected")
+	}
+	if err := validateRepoURL("https://example.com/repo.git?token=secret"); err == nil {
+		t.Fatalf("expected repo URL query string to be rejected")
 	}
 }

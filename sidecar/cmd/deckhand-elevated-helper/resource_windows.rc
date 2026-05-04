@@ -1,0 +1,19 @@
+// Resource script linked into the Windows build of
+// deckhand-elevated-helper. Embeds the side-by-side manifest that
+// declares requireAdministrator so Windows always raises the UAC
+// prompt when the binary is launched, instead of relying on
+// PowerShell's `Start-Process -Verb RunAs` to do it for a
+// manifest-less .exe (which is unreliable across Windows builds).
+//
+// Compile with windres into a .syso:
+//   windres -i resource_windows.rc -O coff -o rsrc.syso
+//
+// Go's toolchain auto-links any .syso file in the package dir
+// during `go build`, so the .syso name is incidental — `rsrc.syso`
+// is the conventional choice.
+
+#include <winuser.h>
+
+// Resource type 24 (RT_MANIFEST) at id 1 is the application
+// manifest Windows reads at process-start to decide UAC behavior.
+1 24 "deckhand-elevated-helper.exe.manifest"

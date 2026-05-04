@@ -52,6 +52,7 @@ class FlashSentinelWriter {
       'disk_id': diskId,
       'started_at': DateTime.now().toUtc().toIso8601String(),
       'image_path': imagePath,
+      // ignore: use_null_aware_elements
       if (imageSha256 != null) 'image_sha256': imageSha256,
     };
     final tmp = File('${sentinelPath(diskId)}.tmp');

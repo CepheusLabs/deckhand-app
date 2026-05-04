@@ -124,6 +124,27 @@ func TestDownload_ShaMismatch_Fails(t *testing.T) {
 	}
 }
 
+func TestDownload_RejectsExistingDestination(t *testing.T) {
+	body := []byte("actual-bytes")
+	url := serveBody(t, body)
+	dest := filepath.Join(t.TempDir(), "out.img")
+	if err := os.WriteFile(dest, []byte("existing"), 0o600); err != nil {
+		t.Fatalf("write existing dest: %v", err)
+	}
+	sum := sha256.Sum256(body)
+	_, err := Download(context.Background(), url, dest, hex.EncodeToString(sum[:]), nil)
+	if err == nil {
+		t.Fatalf("want existing destination error, got nil")
+	}
+	got, readErr := os.ReadFile(dest)
+	if readErr != nil {
+		t.Fatalf("read dest: %v", readErr)
+	}
+	if string(got) != "existing" {
+		t.Fatalf("destination was overwritten: %q", got)
+	}
+}
+
 func TestDownload_RejectsFileScheme(t *testing.T) {
 	dest := filepath.Join(t.TempDir(), "out.img")
 	cases := []string{

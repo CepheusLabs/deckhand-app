@@ -28,6 +28,7 @@ class ProcessElevatedHelperService implements ElevatedHelperService {
   ProcessElevatedHelperService({
     required this.helperPath,
     this.sentinelWriter,
+    this.readOutputRoot,
   });
 
   /// Absolute path to the `deckhand-elevated-helper` binary.
@@ -40,6 +41,66 @@ class ProcessElevatedHelperService implements ElevatedHelperService {
   /// directory; tests that don't care about sentinels leave it null.
   final FlashSentinelWriter? sentinelWriter;
 
+  /// Deckhand-owned directory the elevated helper may write eMMC
+  /// backup images into. The helper independently enforces this path
+  /// policy, but the caller must pass the root so the elevated process
+  /// can verify `--output` is a direct child before opening it.
+  final String? readOutputRoot;
+
+  @override
+  Stream<FlashProgress> readImage({
+    required String diskId,
+    required String outputPath,
+    required String confirmationToken,
+    int totalBytes = 0,
+  }) async* {
+    final outputRoot = readOutputRoot;
+    if (outputRoot == null || outputRoot.trim().isEmpty) {
+      throw StateError('elevated read-image output root not configured');
+    }
+
+    // Mirrors writeImage's token handoff: 0600 file in a 0700 dir, no
+    // CLI argument leaks the secret into the process table. The helper
+    // deletes the file on read; we clean up best-effort in `finally`.
+    final tokenDir = await Directory.systemTemp.createTemp('deckhand-tok-');
+    if (!Platform.isWindows) {
+      await Process.run('chmod', ['0700', tokenDir.path]);
+    }
+    final tokenFile = File(p.join(tokenDir.path, 'token'));
+    await tokenFile.writeAsString(confirmationToken, flush: true);
+    if (!Platform.isWindows) {
+      await Process.run('chmod', ['0600', tokenFile.path]);
+    }
+
+    final args = <String>[
+      'read-image',
+      '--target', diskId,
+      '--output', outputPath,
+      '--output-root', outputRoot,
+      '--token-file', tokenFile.path,
+      // Pass the size hint when the caller has it (the disk picker
+      // upstream of S148 already enumerated sizeBytes via
+      // listDisks()). Without this, Windows raw-device reads emit
+      // bytes_total: 0 for every progress event.
+      if (totalBytes > 0) ...['--total-bytes', '$totalBytes'],
+      // The unprivileged Flutter parent can't terminate an elevated
+      // child once UAC has approved it. Hand the helper our PID so
+      // it can self-terminate when we go away (user closes Deckhand
+      // mid-backup, app crash, etc.). Without this, an aborted UI
+      // flow leaves the elevated process churning the disk in the
+      // background until the operation completes naturally.
+      '--watchdog-pid', '$pid',
+    ];
+
+    try {
+      yield* launchHelper(args);
+    } finally {
+      try {
+        await tokenDir.delete(recursive: true);
+      } catch (_) {}
+    }
+  }
+
   @override
   Stream<FlashProgress> writeImage({
     required String imagePath,
@@ -48,13 +109,33 @@ class ProcessElevatedHelperService implements ElevatedHelperService {
     bool verifyAfterWrite = true,
     String? expectedSha256,
   }) async* {
+    // Write the token to a 0600-mode regular file in a 0700-mode
+    // private temp dir, so the value never appears in /proc/<pid>/cmdline,
+    // ps output, or the equivalent OS process table. The helper reads
+    // the file and removes it before any other I/O; we also clean up
+    // best-effort here in case the helper exits abnormally.
+    final tokenDir = await Directory.systemTemp.createTemp('deckhand-tok-');
+    if (!Platform.isWindows) {
+      // chmod the dir 0700 explicitly; createTemp already does on
+      // *nix but be defensive against future platform changes.
+      await Process.run('chmod', ['0700', tokenDir.path]);
+    }
+    final tokenFile = File(p.join(tokenDir.path, 'token'));
+    await tokenFile.writeAsString(confirmationToken, flush: true);
+    if (!Platform.isWindows) {
+      await Process.run('chmod', ['0600', tokenFile.path]);
+    }
+
     final args = <String>[
       'write-image',
       '--image', imagePath,
       '--target', diskId,
-      '--token', confirmationToken,
+      '--token-file', tokenFile.path,
       '--verify', verifyAfterWrite.toString(),
       if (expectedSha256 != null) ...['--sha256', expectedSha256],
+      // Self-terminate when the unprivileged parent (this process)
+      // dies — see the read-image branch for the rationale.
+      '--watchdog-pid', '$pid',
     ];
 
     // Sentinel goes down before the elevation prompt fires. Anything
@@ -86,6 +167,11 @@ class ProcessElevatedHelperService implements ElevatedHelperService {
       if (sawDone && sentinelWriter != null) {
         await sentinelWriter!.clear(diskId);
       }
+      // Best-effort token cleanup. The helper deletes the file on
+      // read; this catches the case where it never got that far.
+      try {
+        await tokenDir.delete(recursive: true);
+      } catch (_) {}
     }
   }
 
@@ -119,24 +205,86 @@ class ProcessElevatedHelperService implements ElevatedHelperService {
   //      dropped between phases.
 
   Stream<FlashProgress> _runWindows(List<String> helperArgs) async* {
+    // PowerShell's `Start-Process -Verb RunAs` does NOT honor
+    // -RedirectStandardOutput because the elevated child is spawned
+    // by Windows (ShellExecuteEx) rather than by PowerShell, and file
+    // handles can't cross the elevation boundary. The helper is taught
+    // a `--events-file <path>` flag that opens the file itself and
+    // writes line-delimited JSON events into it. Same on-disk file as
+    // far as both processes are concerned, so the parent's tail loop
+    // keeps working.
+    //
+    // -RedirectStandardError is ALSO unsupported with -Verb RunAs:
+    // the two parameters are in different parameter sets in both
+    // Windows PowerShell 5.1 and PowerShell 7. Combining them throws
+    // AmbiguousParameterSet (a NON-terminating error), which leaves
+    // `$p` null. `exit $null.ExitCode` evaluates to `exit 0`, the
+    // helper never launches, no UAC dialog appears, and the parent
+    // sees "exit 0 + empty events file" — indistinguishable from a
+    // UAC denial. Set ErrorActionPreference=Stop and wrap in
+    // try/catch so any failure (param binding, UAC denial, missing
+    // exe) is surfaced as a non-zero exit + a clear message on
+    // PowerShell's own stderr, which the Dart parent drains.
     final stdoutFile = File(
       p.join(
         Directory.systemTemp.path,
         'deckhand-helper-${DateTime.now().millisecondsSinceEpoch}.log',
       ),
     );
-    final stderrFile = File('${stdoutFile.path}.err');
     await stdoutFile.writeAsString('');
 
-    final argList = helperArgs.map(powerShellQuoteArg).join(',');
+    final argsWithEventsFile = <String>[
+      ...helperArgs,
+      '--events-file',
+      stdoutFile.path,
+    ];
+    final argList = argsWithEventsFile.map(powerShellQuoteArg).join(',');
 
+    // Two launch paths depending on whether we already have admin:
+    //
+    // 1. Already admin (EnableLUA=0, OR Deckhand was started via
+    //    "Run as administrator", OR the user is in Administrators
+    //    with a non-split token): launch the helper DIRECTLY without
+    //    the `-Verb RunAs` dance. Critical for the EnableLUA=0
+    //    case — `Start-Process -Verb RunAs` does NOT actually elevate
+    //    when LUA is disabled (Windows treats `runas` differently),
+    //    and the helper ends up running in a half-broken context
+    //    that crashes silently before writing the "started" event.
+    //
+    // 2. Not admin: use `-Verb RunAs` to trigger UAC. This is the
+    //    normal flow for the typical Windows user who runs Deckhand
+    //    unprivileged with LUA on.
+    //
+    // The `IsInRole(Administrator)` check returns true exactly when
+    // the current process token has the Administrators group active —
+    // that's the right signal: "right now, can I do raw-device IO
+    // without asking?". When EnableLUA=0 it's true for every admin
+    // user; when LUA is on it's true only for already-elevated
+    // processes.
     final psCommand = [
-      '\$p = Start-Process -FilePath "$helperPath" ',
-      '-ArgumentList $argList ',
-      '-Verb RunAs -Wait -PassThru ',
-      '-RedirectStandardOutput "${stdoutFile.path}" ',
-      '-RedirectStandardError "${stderrFile.path}";',
-      'exit \$p.ExitCode',
+      '\$ErrorActionPreference = "Stop"; ',
+      'try { ',
+      '  \$isAdmin = ([Security.Principal.WindowsPrincipal] ',
+      '    [Security.Principal.WindowsIdentity]::GetCurrent()).',
+      '    IsInRole([Security.Principal.WindowsBuiltinRole]::Administrator); ',
+      '  if (\$isAdmin) { ',
+      '    \$p = Start-Process -FilePath "$helperPath" ',
+      '      -ArgumentList $argList ',
+      '      -Wait -PassThru -WindowStyle Hidden; ',
+      '  } else { ',
+      '    \$p = Start-Process -FilePath "$helperPath" ',
+      '      -ArgumentList $argList ',
+      '      -Verb RunAs -Wait -PassThru; ',
+      '  } ',
+      '  exit \$p.ExitCode ',
+      '} catch { ',
+      // Write the failure to PowerShell's stderr so the Dart parent
+      // can show the user something actionable: UAC denial reads
+      // "The operation was canceled by the user.", missing exe reads
+      // "This file does not have an app associated with it…", etc.
+      '  [Console]::Error.WriteLine(\$_.Exception.Message); ',
+      '  exit 1 ',
+      '}',
     ].join();
 
     final ps = await Process.start('powershell.exe', [
@@ -145,6 +293,22 @@ class ProcessElevatedHelperService implements ElevatedHelperService {
       '-Command',
       psCommand,
     ], runInShell: false);
+
+    // Drain PowerShell's own stdout/stderr concurrently. Without
+    // this, the OS pipe buffers can fill on a chatty error and
+    // Process.exitCode hangs; more importantly we need the captured
+    // stderr text to build the diagnostic when Start-Process itself
+    // fails (parameter binding, UAC denial, exe missing).
+    final psStdoutBuf = StringBuffer();
+    final psStderrBuf = StringBuffer();
+    final psStdoutDone = ps.stdout
+        .transform(utf8.decoder)
+        .listen(psStdoutBuf.write)
+        .asFuture<void>();
+    final psStderrDone = ps.stderr
+        .transform(utf8.decoder)
+        .listen(psStderrBuf.write)
+        .asFuture<void>();
 
     final exitFuture = ps.exitCode;
     var processExited = false;
@@ -212,23 +376,108 @@ class ProcessElevatedHelperService implements ElevatedHelperService {
       }
 
       final exit = await exitFuture;
-      if (exit != 0) {
-        String? errTail;
-        try {
-          if (await stderrFile.exists()) {
-            errTail = (await stderrFile.readAsString()).trim();
-            if (errTail.length > 512) {
-              errTail = errTail.substring(errTail.length - 512);
-            }
+      // Read the events-file + PowerShell streams unconditionally;
+      // we want their contents in any error message even when the
+      // parent exited 0. The previous version only surfaced output
+      // on non-zero exit, which missed the failure mode where
+      // powershell returns 0 but the helper produced no events (UAC
+      // denied, helper crashed, events-file not writable, …). The
+      // user just sees "no completion event" with no diagnostic to
+      // act on.
+      await Future.wait<void>([psStdoutDone, psStderrDone]);
+      String? errTail = psStderrBuf.toString().trim();
+      if (errTail.isEmpty) errTail = null;
+      if (errTail != null && errTail.length > 512) {
+        errTail = errTail.substring(errTail.length - 512);
+      }
+      // PowerShell's stdout for our script is normally empty (we
+      // only `exit`); surface it on failure in case a future tweak
+      // emits diagnostic output.
+      final psOut = psStdoutBuf.toString().trim();
+      String? eventsTail;
+      try {
+        if (await stdoutFile.exists()) {
+          eventsTail = (await stdoutFile.readAsString()).trim();
+          if (eventsTail.length > 512) {
+            eventsTail = eventsTail.substring(eventsTail.length - 512);
           }
-        } catch (_) {}
+        }
+      } catch (_) {}
+
+      // The helper writes a "started" sentinel event the moment it
+      // begins executing — we use that to tell three failure modes
+      // apart: helper never launched (events file empty + no
+      // .openerr), helper couldn't open the events file (.openerr
+      // sidecar exists), or helper ran but didn't reach `done`
+      // (started event present but no done).
+      final openErrFile = File('${stdoutFile.path}.openerr');
+      String? openErrTail;
+      try {
+        if (await openErrFile.exists()) {
+          openErrTail = (await openErrFile.readAsString()).trim();
+        }
+      } catch (_) {}
+      final sawStartedEvent = (eventsTail ?? '').contains('"event":"started"');
+
+      // UAC denial: ShellExecuteEx → Start-Process throws an
+      // exception with this exact message ("The operation was
+      // canceled by the user."). Our PowerShell try/catch turns it
+      // into exit 1 + this string on stderr. Detect it before the
+      // generic "exited with code N" branch so the user sees a
+      // human-readable message instead of a stack-tracey blob.
+      if (errTail != null &&
+          errTail.contains('The operation was canceled by the user')) {
+        throw ElevatedHelperException(
+          'UAC prompt was denied. Click "Yes" on the Windows '
+          'elevation prompt to allow the backup, then try again.',
+        );
+      }
+      if (exit != 0) {
         throw ElevatedHelperException(
           'elevated helper exited with code $exit'
-          '${errTail == null || errTail.isEmpty ? "" : "\n$errTail"}',
+          '${errTail == null || errTail.isEmpty ? "" : "\npowershell stderr: $errTail"}'
+          '${psOut.isEmpty ? "" : "\npowershell stdout: $psOut"}'
+          '${openErrTail == null || openErrTail.isEmpty ? "" : "\nopen-error: $openErrTail"}'
+          '${eventsTail == null || eventsTail.isEmpty ? "" : "\nevents: $eventsTail"}',
+        );
+      }
+      if (openErrTail != null && openErrTail.isNotEmpty) {
+        throw ElevatedHelperException(
+          'helper could not write to its events-file:\n$openErrTail\n'
+          'This usually means the file path was mangled by '
+          '`Start-Process -Verb RunAs` or the elevated process can\'t '
+          'write to the user-temp path. Path attempted: ${stdoutFile.path}',
+        );
+      }
+      if (!sawStartedEvent) {
+        // No "started" sentinel + exit 0 = the helper was NEVER
+        // launched. With ErrorActionPreference=Stop + try/catch in
+        // the PowerShell wrapper, this should now only happen if
+        // Windows itself swallowed the launch (rare): antivirus
+        // quarantine of the helper exe, missing manifest, etc.
+        throw ElevatedHelperException(
+          'elevated helper never started. '
+          'The UAC prompt may have been suppressed or the elevated '
+          'process couldn\'t be launched (antivirus quarantine, '
+          'helper missing, missing manifest, etc.). '
+          'Helper path: $helperPath. Events-file: ${stdoutFile.path} (empty). '
+          'PowerShell stderr: ${errTail ?? "(empty)"}',
+        );
+      }
+      if (eventsTail == null ||
+          eventsTail.isEmpty ||
+          !eventsTail.contains('"event":"done"')) {
+        // Started but didn't reach done. The op body failed mid-flight
+        // without going through fatalf — surface whatever events we
+        // did see + any stderr.
+        throw ElevatedHelperException(
+          'elevated helper started but never reported completion.\n'
+          'events tail:\n${eventsTail ?? "(empty)"}\n'
+          'powershell stderr: ${errTail ?? "(empty)"}',
         );
       }
     } finally {
-      for (final f in [stdoutFile, stderrFile]) {
+      for (final f in [stdoutFile, File('${stdoutFile.path}.openerr')]) {
         try {
           if (await f.exists()) await f.delete();
         } catch (_) {}
@@ -241,51 +490,31 @@ class ProcessElevatedHelperService implements ElevatedHelperService {
   // captured line-by-line.
 
   Stream<FlashProgress> _runMacOs(List<String> helperArgs) async* {
-    // The previous implementation concatenated POSIX-single-quoted
-    // args inside an AppleScript double-quoted string and tried to
-    // escape with a bare `replaceAll('"', r'\"')`. That left
-    // AppleScript-level string-escape edge cases (backslashes,
-    // multi-byte chars) unhandled and stacked two fragile layers of
-    // quoting on top of a privilege-escalation dialog.
-    //
-    // Write a one-shot shell script to a private temp file (0700)
-    // that execs the helper with a literal argv array, then osascript
-    // only needs to quote a single controlled path. The script file
-    // is removed in a finally block regardless of outcome.
-    final tmpDir = await Directory.systemTemp.createTemp('deckhand-helper-');
-    final scriptPath = p.join(tmpDir.path, 'run.sh');
-    final script = StringBuffer('#!/bin/sh\nexec ')
-      ..write(_shellQuote(helperPath));
+    // Build a single shell command line from helperPath + each arg,
+    // POSIX-quoted in-line, and pass it directly to `do shell script`.
+    // The previous implementation wrote a one-shot script to a temp
+    // file - that opened a TOCTOU window between writeAsString and
+    // osascript's exec where a same-user attacker could have replaced
+    // the file. There is no script file to race in this version: the
+    // command is a literal string in the AppleScript source.
+    final shellCmd = StringBuffer(_shellQuote(helperPath));
     for (final a in helperArgs) {
-      script
+      shellCmd
         ..write(' ')
         ..write(_shellQuote(a));
     }
-    script.write('\n');
-    await File(scriptPath).writeAsString(script.toString());
-    await Process.run('chmod', ['0700', scriptPath]);
-
-    try {
-      // `quoted form of` produces a POSIX-safely-quoted version of
-      // the string for `do shell script`, so scriptPath is inert
-      // even if it ever contains a space or unusual character. The
-      // only Dart->AppleScript escaping we still need covers
-      // backslash + double-quote inside the AppleScript string
-      // literal for scriptPath itself.
-      final aquoted = scriptPath.replaceAll(r'\', r'\\').replaceAll('"', r'\"');
-      final appleScript =
-          'do shell script quoted form of "$aquoted" '
-          'with administrator privileges';
-      final proc = await Process.start('osascript', ['-e', appleScript]);
-      yield* _streamLines(proc);
-    } finally {
-      try {
-        await tmpDir.delete(recursive: true);
-      } catch (_) {
-        // Best-effort cleanup; the private temp dir will be reaped
-        // by the OS eventually if the delete fails.
-      }
-    }
+    // AppleScript string literal: escape backslash and double-quote
+    // only. The shell-level quoting above already neutralised every
+    // shell metacharacter, so the AppleScript layer just needs to
+    // preserve the bytes through to /bin/sh.
+    final aquoted = shellCmd
+        .toString()
+        .replaceAll(r'\', r'\\')
+        .replaceAll('"', r'\"');
+    final appleScript =
+        'do shell script "$aquoted" with administrator privileges';
+    final proc = await Process.start('osascript', ['-e', appleScript]);
+    yield* _streamLines(proc);
   }
 
   // -----------------------------------------------------------------
@@ -328,6 +557,64 @@ class ProcessElevatedHelperService implements ElevatedHelperService {
   }
 }
 
+/// Non-destructive elevated-helper stand-in used for whole-app dry-run
+/// mode. This closes the gap where the sidecar flash service was
+/// dry-run aware but the app still had a real privileged helper wired.
+class DryRunElevatedHelperService implements ElevatedHelperService {
+  const DryRunElevatedHelperService();
+
+  @override
+  Stream<FlashProgress> readImage({
+    required String diskId,
+    required String outputPath,
+    required String confirmationToken,
+    int totalBytes = 0,
+  }) => _dryRunHelperProgress(
+    label: 'DRY-RUN elevated read $diskId -> $outputPath',
+    totalBytes: totalBytes,
+  );
+
+  @override
+  Stream<FlashProgress> writeImage({
+    required String imagePath,
+    required String diskId,
+    required String confirmationToken,
+    bool verifyAfterWrite = true,
+    String? expectedSha256,
+  }) => _dryRunHelperProgress(
+    label: 'DRY-RUN elevated write $imagePath -> $diskId',
+  );
+}
+
+Stream<FlashProgress> _dryRunHelperProgress({
+  required String label,
+  int totalBytes = 0,
+}) async* {
+  final total = totalBytes > 0 ? totalBytes : 1024 * 1024 * 1024;
+  yield FlashProgress(
+    bytesDone: 0,
+    bytesTotal: total,
+    phase: FlashPhase.preparing,
+    message: label,
+  );
+  await Future<void>.delayed(const Duration(milliseconds: 50));
+  for (final pct in const [0.25, 0.5, 0.75, 1.0]) {
+    yield FlashProgress(
+      bytesDone: (total * pct).round(),
+      bytesTotal: total,
+      phase: FlashPhase.writing,
+      message: label,
+    );
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+  }
+  yield FlashProgress(
+    bytesDone: total,
+    bytesTotal: total,
+    phase: FlashPhase.done,
+    message: '$label (simulated)',
+  );
+}
+
 /// Test-only re-export of [_parseHelperLine]. The platform-specific
 /// `_runWindows` / `_runMacOs` / `_runLinux` paths can't be unit-
 /// tested without spawning a real elevated process, but the parser
@@ -335,8 +622,7 @@ class ProcessElevatedHelperService implements ElevatedHelperService {
 /// `event:done` / `event:error` line the helper emits goes through
 /// here. Tests use this seam to pin the contract.
 @visibleForTesting
-FlashProgress? parseHelperLineForTesting(String line) =>
-    _parseHelperLine(line);
+FlashProgress? parseHelperLineForTesting(String line) => _parseHelperLine(line);
 
 FlashProgress? _parseHelperLine(String line) {
   if (line.trim().isEmpty) return null;
@@ -386,7 +672,7 @@ FlashProgress? _parseHelperLine(String line) {
 }
 
 FlashPhase _phaseFromString(String? s) => switch (s) {
-  'writing' => FlashPhase.writing,
+  'writing' || 'reading' => FlashPhase.writing,
   'verifying' || 'write-complete' || 'verified' => FlashPhase.verifying,
   'done' => FlashPhase.done,
   'failed' => FlashPhase.failed,

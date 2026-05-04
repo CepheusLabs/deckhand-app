@@ -53,6 +53,7 @@ class DefaultSecurityService implements SecurityService {
 
   /// Validate + consume a token. Returns true if the token is live;
   /// removes it so subsequent attempts fail.
+  @override
   bool consumeToken(String value, String operation) {
     final t = _tokens.remove(value);
     if (t == null) return false;
@@ -91,6 +92,19 @@ class DefaultSecurityService implements SecurityService {
   }
 
   @override
+  Future<List<String>> listApprovedHosts() async {
+    final all = await _storage.readAll();
+    final hosts = <String>[];
+    for (final entry in all.entries) {
+      if (entry.key.startsWith(_hostAllowPrefix) && entry.value == '1') {
+        hosts.add(entry.key.substring(_hostAllowPrefix.length));
+      }
+    }
+    hosts.sort();
+    return hosts;
+  }
+
+  @override
   Future<void> pinHostFingerprint({
     required String host,
     required String fingerprint,
@@ -103,6 +117,43 @@ class DefaultSecurityService implements SecurityService {
     return _storage.read(key: _hostFpKey(host));
   }
 
-  String _hostAllowKey(String host) => 'deckhand.net.allowlist.$host';
-  String _hostFpKey(String host) => 'deckhand.ssh.fp.$host';
+  @override
+  Future<void> forgetHostFingerprint(String host) async {
+    await _storage.delete(key: _hostFpKey(host));
+  }
+
+  @override
+  Future<Map<String, String>> listPinnedFingerprints() async {
+    final all = await _storage.readAll();
+    final result = <String, String>{};
+    for (final entry in all.entries) {
+      if (entry.key.startsWith(_hostFpPrefix)) {
+        result[entry.key.substring(_hostFpPrefix.length)] = entry.value;
+      }
+    }
+    return result;
+  }
+
+  @override
+  Future<String?> getGitHubToken() async {
+    final v = await _storage.read(key: _githubTokenKey);
+    if (v == null || v.isEmpty) return null;
+    return v;
+  }
+
+  @override
+  Future<void> setGitHubToken(String? token) async {
+    if (token == null || token.trim().isEmpty) {
+      await _storage.delete(key: _githubTokenKey);
+      return;
+    }
+    await _storage.write(key: _githubTokenKey, value: token.trim());
+  }
+
+  static const _hostAllowPrefix = 'deckhand.net.allowlist.';
+  static const _hostFpPrefix = 'deckhand.ssh.fp.';
+  static const _githubTokenKey = 'deckhand.github.pat';
+
+  String _hostAllowKey(String host) => '$_hostAllowPrefix$host';
+  String _hostFpKey(String host) => '$_hostFpPrefix$host';
 }

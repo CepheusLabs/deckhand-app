@@ -68,6 +68,12 @@ func TestRedactParams(t *testing.T) {
 			must:   []string{`"trusted_keys":"[redacted]"`},
 		},
 		{
+			name:   "repo_url redacted",
+			in:     `{"repo_url":"https://token@example.com/repo.git"}`,
+			mustnt: []string{"token@example.com"},
+			must:   []string{`"repo_url":"[redacted]"`},
+		},
+		{
 			name:   "password substring redacted",
 			in:     `{"api_password":"p@ss"}`,
 			mustnt: []string{"p@ss"},

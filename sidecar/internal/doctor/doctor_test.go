@@ -41,12 +41,10 @@ type fakeProbe struct {
 	// mDNS/network probes. Zero values are healthy so existing tests
 	// pass without touching them; tests targeting the new checks set
 	// these explicitly.
-	mdnsErr        error
-	rateRemaining  int
-	rateTotal      int
-	rateErr        error
-	remoteTimeFunc func() time.Time
-	remoteTimeErr  error
+	mdnsErr       error
+	rateRemaining int
+	rateTotal     int
+	rateErr       error
 }
 
 type statAnswer struct {
@@ -93,15 +91,6 @@ func (f *fakeProbe) GitHubRateLimit(ctx context.Context) (int, int, error) {
 		return 0, 0, f.rateErr
 	}
 	return f.rateRemaining, f.rateTotal, nil
-}
-func (f *fakeProbe) RemoteTime(ctx context.Context) (time.Time, error) {
-	if f.remoteTimeErr != nil {
-		return time.Time{}, f.remoteTimeErr
-	}
-	if f.remoteTimeFunc != nil {
-		return f.remoteTimeFunc(), nil
-	}
-	return time.Now(), nil
 }
 
 // fakeFileInfo is the minimum os.FileInfo surface doctor touches.
@@ -176,7 +165,6 @@ func TestCollect_HappyPath_Linux(t *testing.T) {
 		"pkexec_on_path",
 		"mdns_resolvable",
 		"github_rate_limit",
-		"clock_skew",
 	}
 	if len(got) != len(wantNames) {
 		t.Fatalf("want %d results, got %d: %+v", len(wantNames), len(got), got)
@@ -494,30 +482,5 @@ func TestCheckGitHubRateLimit_LowRemaining_Warns(t *testing.T) {
 	}
 	if !strings.Contains(r.Detail, "3/60") {
 		t.Errorf("detail %q missing the ratio", r.Detail)
-	}
-}
-
-func TestCheckClockSkew_LargeSkew_Warns(t *testing.T) {
-	p := baseProbe()
-	// Remote clock is 30 minutes ahead of host time. Skew > 5min →
-	// WARN.
-	p.remoteTimeFunc = func() time.Time { return time.Now().Add(30 * time.Minute) }
-	got := collectWithProbe(context.Background(), "1.0.0", p)
-	r := findResult(t, got, "clock_skew")
-	if r.Status != StatusWarn {
-		t.Fatalf("status=%s, want WARN; detail=%s", r.Status, r.Detail)
-	}
-	if !strings.Contains(r.Detail, "off") {
-		t.Errorf("detail %q missing skew explanation", r.Detail)
-	}
-}
-
-func TestCheckClockSkew_NetworkFailure_Warns(t *testing.T) {
-	p := baseProbe()
-	p.remoteTimeErr = errors.New("dns lookup failed")
-	got := collectWithProbe(context.Background(), "1.0.0", p)
-	r := findResult(t, got, "clock_skew")
-	if r.Status != StatusWarn {
-		t.Fatalf("status=%s, want WARN", r.Status)
 	}
 }

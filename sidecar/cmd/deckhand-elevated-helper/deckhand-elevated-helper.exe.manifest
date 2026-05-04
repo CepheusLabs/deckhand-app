@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
+  <assemblyIdentity
+    type="win32"
+    name="CepheusLabs.Deckhand.ElevatedHelper"
+    version="1.0.0.0"
+    processorArchitecture="*"/>
+  <description>Deckhand elevated helper — performs raw block-device I/O for Deckhand.</description>
+  <trustInfo xmlns="urn:schemas-microsoft-com:asm.v3">
+    <security>
+      <requestedPrivileges>
+        <!--
+          requireAdministrator: Windows ALWAYS shows the UAC prompt
+          when this binary is launched, regardless of how it's
+          invoked. Without this, ShellExecuteEx(verb=runas) on a
+          manifest-less Go binary can fail silently on some Windows
+          configurations — UAC never displays, the launcher returns
+          immediately, and the parent sees an empty events file.
+        -->
+        <requestedExecutionLevel level="requireAdministrator" uiAccess="false"/>
+      </requestedPrivileges>
+    </security>
+  </trustInfo>
+  <compatibility xmlns="urn:schemas-microsoft-com:compatibility.v1">
+    <application>
+      <!-- Windows 10 / 11 -->
+      <supportedOS Id="{8e0f7a12-bfb3-4fe8-b9a5-48fd50a15a9a}"/>
+    </application>
+  </compatibility>
+</assembly>

@@ -12,13 +12,13 @@ import (
 // helper will accept. Everything else - including regular files, config
 // files, and `/dev/null` style specials - is rejected.
 var allowedUnixPrefixes = []string{
-	"/dev/sd",      // SCSI/SATA on Linux
-	"/dev/nvme",    // NVMe on Linux
-	"/dev/mmcblk",  // SD/eMMC on Linux
-	"/dev/disk",    // macOS whole-disk path
-	"/dev/rdisk",   // macOS raw-disk path (recommended for writes)
-	"/dev/loop",    // Linux loopback - used by tests + dev rigs
-	"/dev/vd",      // virtio disks (KVM/QEMU) - appear in dev VMs
+	"/dev/sd",     // SCSI/SATA on Linux
+	"/dev/nvme",   // NVMe on Linux
+	"/dev/mmcblk", // SD/eMMC on Linux
+	"/dev/disk",   // macOS whole-disk path
+	"/dev/rdisk",  // macOS raw-disk path (recommended for writes)
+	"/dev/loop",   // Linux loopback - used by tests + dev rigs
+	"/dev/vd",     // virtio disks (KVM/QEMU) - appear in dev VMs
 }
 
 // targetToDevicePath validates the Unix device target and returns a

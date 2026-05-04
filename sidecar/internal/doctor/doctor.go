@@ -22,6 +22,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sync"
 	"time"
 
 	"github.com/CepheusLabs/deckhand/sidecar/internal/disks"
@@ -87,12 +88,6 @@ type Probe interface {
 	// (0, 0, err) — the doctor surfaces the error as a WARN so an
 	// offline first launch isn't a hard fail.
 	GitHubRateLimit(ctx context.Context) (remaining int, total int, err error)
-	// RemoteTime returns the Date header from a stable HTTP endpoint
-	// for clock-skew comparison. The doctor uses this to flag hosts
-	// whose clock is more than 5 minutes off, which breaks TLS
-	// validation in subtle ways during long installs. Network failure
-	// is reported as a WARN, not a FAIL.
-	RemoteTime(ctx context.Context) (time.Time, error)
 }
 
 // defaultProbe is the production Probe: it delegates to the real
@@ -171,32 +166,6 @@ func (defaultProbe) GitHubRateLimit(ctx context.Context) (int, int, error) {
 	}
 	return body.Rate.Remaining, body.Rate.Limit, nil
 }
-func (defaultProbe) RemoteTime(ctx context.Context) (time.Time, error) {
-	// HEAD against a stable endpoint that always returns Date. We use
-	// api.github.com for parity with GitHubRateLimit's host (one DNS
-	// + TLS handshake amortized across both probes when callers run
-	// them back-to-back).
-	const url = "https://api.github.com/zen"
-	req, err := http.NewRequestWithContext(ctx, http.MethodHead, url, nil)
-	if err != nil {
-		return time.Time{}, err
-	}
-	client := &http.Client{Timeout: 5 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		return time.Time{}, err
-	}
-	defer func() { _ = resp.Body.Close() }()
-	dateHeader := resp.Header.Get("Date")
-	if dateHeader == "" {
-		return time.Time{}, fmt.Errorf("no Date header in response")
-	}
-	t, err := http.ParseTime(dateHeader)
-	if err != nil {
-		return time.Time{}, fmt.Errorf("parse Date %q: %w", dateHeader, err)
-	}
-	return t, nil
-}
 
 // probeWritable creates `dir` (if missing), writes a small temp file,
 // reads it back, and removes it. Any error short-circuits and is
@@ -255,51 +224,74 @@ func Collect(ctx context.Context, version string) []Result {
 }
 
 // collectWithProbe runs every diagnostic and returns the ordered
-// Result list. Kept separate from writeReport so tests can assert on
-// structured results without parsing text.
+// Result list. Each check runs in its own goroutine so the user-facing
+// latency is roughly the slowest check (GitHub rate-limit HTTP, capped
+// at 5s) rather than the sum of all of them. Previously sequential,
+// the whole sweep ran 3-5s on a healthy host because checkDisks
+// (Windows PowerShell startup) and checkGitHubRateLimit (network
+// round-trip) were stacked.
+//
+// Each goroutine writes to its own pre-allocated slot so the result
+// order matches the report's expected order without a post-sort.
+// Tests pin the order via Names so re-ordering would silently break
+// them.
+//
+// Kept separate from writeReport so tests can assert on structured
+// results without parsing text.
 func collectWithProbe(ctx context.Context, version string, p Probe) []Result {
-	results := make([]Result, 0, 10)
+	const slots = 8
+	results := make([]Result, slots)
+	var wg sync.WaitGroup
 
-	// 1. Runtime + sidecar version (informational, always PASS).
-	results = append(results, Result{
-		Name:   "runtime",
-		Status: StatusPass,
-		Detail: fmt.Sprintf("os=%s arch=%s go=%s sidecar=%s",
-			p.GOOS(), p.GOARCH(), p.GoVersion(), version),
-	})
-
-	// 2. Elevated helper presence next to the sidecar binary.
-	results = append(results, checkElevatedHelper(p))
-
-	// 3. Disk enumeration.
-	results = append(results, checkDisks(ctx, p))
-
-	// 4. Writability of the data dir.
 	info := p.HostInfo()
-	results = append(results, checkDirWritable(p, "data_dir", info.Data))
 
-	// 5. Writability of the cache dir.
-	results = append(results, checkDirWritable(p, "cache_dir", info.Cache))
-
-	// 6. Platform-specific elevation/tooling probe.
-	results = append(results, checkPlatformTool(p))
-
-	// 7. mDNS primitives — the wizard's auto-discovery path needs
-	// these. Failure is WARN: a user can still type the printer's IP
-	// manually on S20.
-	results = append(results, checkMDNS(p))
-
-	// 8. GitHub rate limit headroom — surfaces "your install will
-	// fail at the upstream fetch step in 6 minutes" before the user
-	// has invested 20. Network failure is WARN, not FAIL.
-	results = append(results, checkGitHubRateLimit(ctx, p))
-
-	// 9. Clock skew — TLS validation is sensitive to host clocks
-	// that are off by more than a few minutes. Network failure is
-	// WARN; an actual large skew is also WARN (loud, but not a hard
-	// block — the install might still succeed).
-	results = append(results, checkClockSkew(ctx, p))
-
+	wg.Add(slots)
+	// 0. Runtime + sidecar version (informational, always PASS).
+	go func() {
+		defer wg.Done()
+		results[0] = Result{
+			Name:   "runtime",
+			Status: StatusPass,
+			Detail: fmt.Sprintf("os=%s arch=%s go=%s sidecar=%s",
+				p.GOOS(), p.GOARCH(), p.GoVersion(), version),
+		}
+	}()
+	// 1. Elevated helper presence.
+	go func() {
+		defer wg.Done()
+		results[1] = checkElevatedHelper(p)
+	}()
+	// 2. Disk enumeration (slow on Windows: PowerShell startup).
+	go func() {
+		defer wg.Done()
+		results[2] = checkDisks(ctx, p)
+	}()
+	// 3. Data dir writability.
+	go func() {
+		defer wg.Done()
+		results[3] = checkDirWritable(p, "data_dir", info.Data)
+	}()
+	// 4. Cache dir writability.
+	go func() {
+		defer wg.Done()
+		results[4] = checkDirWritable(p, "cache_dir", info.Cache)
+	}()
+	// 5. Platform tool LookPath.
+	go func() {
+		defer wg.Done()
+		results[5] = checkPlatformTool(p)
+	}()
+	// 6. mDNS primitives.
+	go func() {
+		defer wg.Done()
+		results[6] = checkMDNS(p)
+	}()
+	// 7. GitHub rate limit (slow: HTTP round-trip with 5s timeout).
+	go func() {
+		defer wg.Done()
+		results[7] = checkGitHubRateLimit(ctx, p)
+	}()
+	wg.Wait()
 	return results
 }
 
@@ -347,38 +339,6 @@ func checkGitHubRateLimit(ctx context.Context, p Probe) Result {
 		Name:   name,
 		Status: StatusPass,
 		Detail: fmt.Sprintf("%d/%d requests remaining this hour", remaining, total),
-	}
-}
-
-// checkClockSkew compares the host clock to a remote HTTP server's
-// Date header. Five minutes is a common TLS-tolerance threshold; a
-// host clock further off than that has been the root cause of
-// "certificate not yet valid" errors halfway through long installs.
-func checkClockSkew(ctx context.Context, p Probe) Result {
-	const name = "clock_skew"
-	remote, err := p.RemoteTime(ctx)
-	if err != nil {
-		return Result{
-			Name:   name,
-			Status: StatusWarn,
-			Detail: fmt.Sprintf("could not fetch a remote Date header: %v", err),
-		}
-	}
-	skew := time.Since(remote)
-	if skew < 0 {
-		skew = -skew
-	}
-	if skew > 5*time.Minute {
-		return Result{
-			Name:   name,
-			Status: StatusWarn,
-			Detail: fmt.Sprintf("host clock is %v off from network time — TLS handshakes may fail", skew.Truncate(time.Second)),
-		}
-	}
-	return Result{
-		Name:   name,
-		Status: StatusPass,
-		Detail: fmt.Sprintf("clock within %v of network time", skew.Truncate(time.Second)),
 	}
 }
 

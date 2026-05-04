@@ -24,6 +24,28 @@ class SidecarFlashService implements FlashService {
   }
 
   @override
+  Future<FlashSafetyVerdict> safetyCheck({required String diskId}) async {
+    if (dryRun) {
+      return FlashSafetyVerdict(diskId: diskId, allowed: true);
+    }
+    final disks = await listDisks();
+    DiskInfo? disk;
+    for (final candidate in disks) {
+      if (candidate.id == diskId) {
+        disk = candidate;
+        break;
+      }
+    }
+    if (disk == null) {
+      throw StateError('disk not found during safety check: $diskId');
+    }
+    final res = await _client.call('disks.safety_check', {
+      'disk': _diskToJson(disk),
+    });
+    return _safetyVerdictFromJson(res);
+  }
+
+  @override
   Stream<FlashProgress> writeImage({
     required String imagePath,
     required String diskId,
@@ -31,9 +53,7 @@ class SidecarFlashService implements FlashService {
     bool verifyAfterWrite = true,
   }) {
     if (dryRun) {
-      return _simulatedProgress(
-        label: 'DRY-RUN write $imagePath -> $diskId',
-      );
+      return _simulatedProgress(label: 'DRY-RUN write $imagePath -> $diskId');
     }
     return _client
         .callStreaming('disks.write_image', {
@@ -51,9 +71,7 @@ class SidecarFlashService implements FlashService {
     required String outputPath,
   }) {
     if (dryRun) {
-      return _simulatedProgress(
-        label: 'DRY-RUN read $diskId -> $outputPath',
-      );
+      return _simulatedProgress(label: 'DRY-RUN read $diskId -> $outputPath');
     }
     return _client
         .callStreaming('disks.read_image', {
@@ -100,6 +118,34 @@ Stream<FlashProgress> _simulatedProgress({required String label}) async* {
     message: '$label (simulated)',
   );
 }
+
+Map<String, dynamic> _diskToJson(DiskInfo disk) => {
+  'id': disk.id,
+  'path': disk.path,
+  'size_bytes': disk.sizeBytes,
+  'bus': disk.bus,
+  'model': disk.model,
+  'removable': disk.removable,
+  'partitions': disk.partitions.map(_partToJson).toList(),
+};
+
+Map<String, dynamic> _partToJson(PartitionInfo part) => {
+  'index': part.index,
+  'filesystem': part.filesystem,
+  'size_bytes': part.sizeBytes,
+  if (part.mountpoint != null) 'mountpoint': part.mountpoint,
+};
+
+FlashSafetyVerdict _safetyVerdictFromJson(Map raw) => FlashSafetyVerdict(
+  diskId: raw['disk_id'] as String? ?? '',
+  allowed: raw['allowed'] as bool? ?? false,
+  blockingReasons: ((raw['blocking_reasons'] as List?) ?? const [])
+      .map((e) => e.toString())
+      .toList(),
+  warnings: ((raw['warnings'] as List?) ?? const [])
+      .map((e) => e.toString())
+      .toList(),
+);
 
 DiskInfo _diskFromJson(Map raw) {
   final parts = ((raw['partitions'] as List?) ?? const []).cast<Map>();

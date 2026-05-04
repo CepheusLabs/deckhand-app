@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:deckhand_core/deckhand_core.dart';
+import 'package:meta/meta.dart';
 
 import 'sidecar_client.dart';
 
@@ -38,18 +39,26 @@ class SidecarSupervisor implements SidecarConnection {
   SidecarSupervisor({
     required SidecarClient Function() spawn,
     DeckhandLogger? logger,
-  }) : _spawn = spawn,
-       _logger = logger;
+    @visibleForTesting List<Duration>? backoffSchedule,
+  })  : _spawn = spawn,
+        _logger = logger,
+        _backoffSchedule = backoffSchedule ?? _defaultBackoffSchedule;
 
   final SidecarClient Function() _spawn;
   final DeckhandLogger? _logger;
+
+  /// Per-restart wait. Production wiring uses [_defaultBackoffSchedule];
+  /// tests pass a list of zero-durations so the restart-cap and crash
+  /// path tests don't actually sleep 1+4 seconds. Length must be
+  /// [_maxRestarts]; that invariant is enforced at construction.
+  final List<Duration> _backoffSchedule;
 
   SidecarClient? _client;
   int _restartCount = 0;
   bool _latched = false;
 
   static const int _maxRestarts = 2;
-  static const List<Duration> _backoffSchedule = [
+  static const List<Duration> _defaultBackoffSchedule = [
     Duration(seconds: 1),
     Duration(seconds: 4),
   ];
@@ -114,23 +123,54 @@ class SidecarSupervisor implements SidecarConnection {
   /// so this method does not auto-retry. The downstream consumer is
   /// expected to handle the in-band error; the supervisor's only job
   /// here is to attempt a restart so the next call can succeed.
+  ///
+  /// Implementation note: uses a manual StreamController + listen
+  /// rather than `yield*` in an async* generator. yield* forwards
+  /// errors from the delegated stream directly to the output stream
+  /// and bypasses any surrounding try/catch in the async* function -
+  /// the previous implementation looked correct but silently dropped
+  /// the restart trigger on process-exit errors. The listen-based
+  /// path catches errors before they reach the consumer.
   @override
   Stream<SidecarEvent> callStreaming(
     String method,
     Map<String, dynamic> params,
-  ) async* {
-    if (_latched) throw const SidecarLatchedException();
+  ) {
+    if (_latched) {
+      return Stream.error(const SidecarLatchedException());
+    }
     if (_client == null) {
-      throw StateError('SidecarSupervisor.callStreaming before start()');
+      return Stream.error(
+        StateError('SidecarSupervisor.callStreaming before start()'),
+      );
     }
-    try {
-      yield* _client!.callStreaming(method, params);
-    } on SidecarError catch (e) {
-      if (_isProcessExitError(e)) {
-        await _restartOrLatch();
-      }
-      rethrow;
-    }
+    final ctl = StreamController<SidecarEvent>();
+    late StreamSubscription<SidecarEvent> sub;
+    sub = _client!.callStreaming(method, params).listen(
+      ctl.add,
+      onError: (Object e, StackTrace s) async {
+        if (e is SidecarError && _isProcessExitError(e)) {
+          try {
+            await _restartOrLatch();
+          } on Object {
+            // Swallow restart-side errors; the consumer cares about
+            // the original stream error, not whether the restart
+            // succeeded. The next call will see the latch if the
+            // supervisor latched.
+          }
+        }
+        if (!ctl.isClosed) {
+          ctl.addError(e, s);
+          await ctl.close();
+        }
+      },
+      onDone: () {
+        if (!ctl.isClosed) ctl.close();
+      },
+      cancelOnError: true,
+    );
+    ctl.onCancel = () => sub.cancel();
+    return ctl.stream;
   }
 
   /// Subscribe to the all-notifications stream. The supervisor

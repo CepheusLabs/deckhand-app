@@ -88,7 +88,17 @@ func Download(ctx context.Context, rawURL, destPath, expectedSha string, note rp
 	}
 
 	tmpPath := destPath + ".part"
-	f, err := os.Create(tmpPath)
+	if _, err := os.Lstat(destPath); err == nil {
+		return "", fmt.Errorf("dest already exists: %s", destPath)
+	} else if !os.IsNotExist(err) {
+		return "", fmt.Errorf("inspect dest: %w", err)
+	}
+	if _, err := os.Lstat(tmpPath); err == nil {
+		return "", fmt.Errorf("partial dest already exists: %s", tmpPath)
+	} else if !os.IsNotExist(err) {
+		return "", fmt.Errorf("inspect partial dest: %w", err)
+	}
+	f, err := os.OpenFile(tmpPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
 		return "", fmt.Errorf("open dest: %w", err)
 	}
@@ -148,9 +158,15 @@ func Download(ctx context.Context, rawURL, destPath, expectedSha string, note rp
 		return "", fmt.Errorf("sha256 mismatch: got %s, want %s", actual, expectedSha)
 	}
 
+	if _, err := os.Lstat(destPath); err == nil {
+		return "", fmt.Errorf("dest already exists before rename: %s", destPath)
+	} else if !os.IsNotExist(err) {
+		return "", fmt.Errorf("inspect dest before rename: %w", err)
+	}
+
 	// Atomic-ish rename. On POSIX this is a single rename(2) syscall.
-	// On Windows os.Rename uses MoveFileExW with replace-existing, so
-	// a prior destPath is overwritten.
+	// We re-check the final path immediately before rename so a normal
+	// stale destination cannot be replaced.
 	if err := os.Rename(tmpPath, destPath); err != nil {
 		return "", fmt.Errorf("rename to final path: %w", err)
 	}
