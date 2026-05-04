@@ -48,7 +48,7 @@ jobs:
         shell: pwsh
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5
         with:
           fetch-depth: 0
           ref: ${{ inputs.ref || 'main' }}
@@ -93,12 +93,33 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
           New-Item -ItemType Directory -Path dist -Force | Out-Null
-          foreach ($cmd in @("deckhand-sidecar", "deckhand-elevated-helper")) {
-            & go build -trimpath `
-              -ldflags "-s -w -X main.Version=$env:STAMP" `
-              -o "dist/$cmd.exe" `
-              "./cmd/$cmd"
-            if ($LASTEXITCODE -ne 0) { throw "go build $cmd failed" }
+          $helperDir = "cmd/deckhand-elevated-helper"
+          $helperSyso = Join-Path $helperDir "rsrc_windows.syso"
+          $windres = Get-Command windres.exe -ErrorAction SilentlyContinue
+          if (-not $windres) {
+            throw "windres.exe is required to embed the elevated-helper UAC manifest"
+          }
+          Push-Location $helperDir
+          try {
+            & $windres.Source -i resource_windows.rc -O coff -o rsrc_windows.syso
+            if ($LASTEXITCODE -ne 0) { throw "windres failed" }
+          } finally {
+            Pop-Location
+          }
+          try {
+            foreach ($cmd in @("deckhand-sidecar", "deckhand-elevated-helper")) {
+              $ldflags = "-s -w -X main.Version=$env:STAMP"
+              if ($cmd -eq "deckhand-elevated-helper") {
+                $ldflags = "$ldflags -H windowsgui"
+              }
+              & go build -trimpath `
+                -ldflags "$ldflags" `
+                -o "dist/$cmd.exe" `
+                "./cmd/$cmd"
+              if ($LASTEXITCODE -ne 0) { throw "go build $cmd failed" }
+            }
+          } finally {
+            Remove-Item $helperSyso -Force -ErrorAction SilentlyContinue
           }
           Get-ChildItem dist
 
@@ -176,7 +197,7 @@ jobs:
           $size = (Get-Item $out).Length / 1MB
           Write-Host ("zip size: {0:N1} MB" -f $size)
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
         with:
           name: deckhand-windows-${{ steps.v.outputs.version }}
           path: dist/*.zip

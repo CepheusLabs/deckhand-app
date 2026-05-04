@@ -48,8 +48,21 @@ Categories=Utility;
 Terminal=false
 EOF
 
-# Placeholder icon — replace with a real one when the design lands.
-touch "$APPDIR/deckhand.png"
+# Icon: prefer a real packaged icon if present, fall back to a minimal
+# valid 1x1 transparent PNG (NOT zero-byte - that ships a broken-image
+# launcher placeholder to every Linux user). Drop a real icon at
+# packaging/linux/deckhand.png when the design lands and this script
+# will pick it up automatically.
+ICON_SRC="$REPO_ROOT/packaging/linux/deckhand.png"
+if [ -f "$ICON_SRC" ] && [ -s "$ICON_SRC" ]; then
+  cp "$ICON_SRC" "$APPDIR/deckhand.png"
+else
+  # Embedded minimal transparent PNG (67 bytes, 1x1). Rendering as
+  # a blank tile is acceptable; an empty file is not (appimagetool
+  # warns and some launchers display a broken-image symbol).
+  printf '\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4\x89\x00\x00\x00\rIDATx\x9cc\xfc\xff\xff?\x03\x00\x05\xfe\x02\xfe\xa1V\xa3\x80\x00\x00\x00\x00IEND\xaeB`\x82' \
+    > "$APPDIR/deckhand.png"
+fi
 
 # AppRun — launches the Flutter binary with LD_LIBRARY_PATH set for bundled libs.
 cat > "$APPDIR/AppRun" <<'EOF'

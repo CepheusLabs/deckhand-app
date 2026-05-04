@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Hardened-runtime entitlements for deckhand-sidecar.
+
+  The sidecar runs as the user, no elevation. It needs to make outbound
+  network calls (GitHub, mDNS) and load Go runtime memory regions.
+
+  Same minimal set as the helper for consistency: library validation
+  disabled (third-party Go modules linked statically still trip the
+  default policy on some macOS releases) and unsigned-exec-memory
+  permitted for Go GC.
+-->
+<plist version="1.0">
+<dict>
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+</dict>
+</plist>

@@ -85,7 +85,7 @@ jobs:
     timeout-minutes: 90
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5
 
       - name: Resolve scenario file
         id: resolve
@@ -135,7 +135,7 @@ jobs:
 
       - name: Set up Flutter
         if: steps.resolve.outputs.skip != '1'
-        uses: subosito/flutter-action@v2
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2  # v2
         with:
           channel: stable
           flutter-version: '3.38.9'
@@ -179,7 +179,7 @@ jobs:
       # quietly turning into 28 min between releases).
       - name: Upload artifacts
         if: always() && steps.resolve.outputs.skip != '1'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
         with:
           name: hitl-${{ matrix.rig }}-${{ matrix.flow }}
           path: hitl-artifacts/
@@ -197,7 +197,7 @@ jobs:
     if: failure() && github.event_name == 'schedule'
     runs-on: [self-hosted, linux]
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5
       - name: Open or update tracking issue
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

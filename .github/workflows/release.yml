@@ -45,10 +45,28 @@ jobs:
       tag: ${{ steps.v.outputs.tag }}
       ref: ${{ steps.v.outputs.ref }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5
         with:
           fetch-depth: 0
           ref: ${{ inputs.ref || github.ref }}
+
+      - name: Reject placeholder profile keyring
+        shell: bash
+        run: |
+          set -euo pipefail
+          keyring="app/assets/keyring.asc"
+          if [ ! -s "$keyring" ]; then
+            echo "::error ::profile trust keyring is missing at $keyring"
+            exit 1
+          fi
+          if grep -q 'BEGIN DECKHAND PROFILE TRUST PLACEHOLDER' "$keyring"; then
+            echo "::error ::release builds must replace app/assets/keyring.asc with production profile-signing public keys"
+            exit 1
+          fi
+          if ! grep -q 'BEGIN PGP PUBLIC KEY BLOCK' "$keyring"; then
+            echo "::error ::profile trust keyring is not an armored PGP public key block"
+            exit 1
+          fi
 
       - id: v
         shell: bash
@@ -88,11 +106,11 @@ jobs:
           - { goos: darwin,  goarch: arm64, runner: '["self-hosted","macos"]',   ext: ""     }
           - { goos: linux,   goarch: amd64, runner: '["self-hosted","linux"]',   ext: ""     }
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5
         with:
           ref: ${{ needs.version.outputs.ref }}
 
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c  # v6
         with:
           go-version: "1.22"
           cache-dependency-path: sidecar/go.sum
@@ -107,14 +125,30 @@ jobs:
         shell: bash
         run: |
           mkdir -p dist
+          helper_syso=""
+          if [ "${{ matrix.goos }}" = "windows" ]; then
+            command -v windres >/dev/null 2>&1 || {
+              echo "::error ::windres is required to embed the elevated-helper UAC manifest"
+              exit 1
+            }
+            helper_dir="cmd/deckhand-elevated-helper"
+            helper_syso="$helper_dir/rsrc_windows.syso"
+            ( cd "$helper_dir" && windres \
+              -i resource_windows.rc -O coff -o rsrc_windows.syso )
+            trap 'rm -f "$helper_syso"' EXIT
+          fi
           for cmd in deckhand-sidecar deckhand-elevated-helper; do
+            ldflags="-s -w -X main.Version=${STAMP}"
+            if [ "${{ matrix.goos }}" = "windows" ] && [ "$cmd" = "deckhand-elevated-helper" ]; then
+              ldflags="$ldflags -H windowsgui"
+            fi
             go build -trimpath \
-              -ldflags "-s -w -X main.Version=${STAMP}" \
+              -ldflags "$ldflags" \
               -o "dist/${cmd}${{ matrix.ext }}" \
               "./cmd/${cmd}"
           done
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
         with:
           name: go-${{ matrix.goos }}-${{ matrix.goarch }}
           path: sidecar/dist/*
@@ -127,17 +161,17 @@ jobs:
     needs: [version, go-binaries]
     runs-on: [self-hosted, windows]
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5
         with: { ref: "${{ needs.version.outputs.ref }}" }
 
-      - uses: subosito/flutter-action@v2
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2  # v2
         with:
           flutter-version: "3.38.9"
           channel: stable
           cache: true
 
       - name: Download Go binaries
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4
         with:
           name: go-windows-amd64
           path: sidecar/dist
@@ -158,25 +192,45 @@ jobs:
         shell: bash
         run: flutter build windows --release --build-name="$VERSION" --build-number="$BUILD"
 
-      - name: Set up Inno Setup
-        uses: nextgens/inno-setup-action@v1.0.11
+      - name: Code-sign inner binaries (Authenticode)
+        if: ${{ secrets.WINDOWS_SIGN_THUMBPRINT != '' }}
+        shell: pwsh
+        env:
+          SIGNTOOL_CERT_THUMBPRINT: ${{ secrets.WINDOWS_SIGN_THUMBPRINT }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $signTargets = @()
+          $signTargets += Get-ChildItem app\build\windows\x64\runner\Release\*.exe -File
+          $signTargets += Get-ChildItem sidecar\dist\*.exe -File
+          foreach ($f in $signTargets) {
+            & signtool sign `
+              /sha1 $env:SIGNTOOL_CERT_THUMBPRINT `
+              /tr http://timestamp.digicert.com `
+              /td sha256 /fd sha256 $f.FullName
+            if ($LASTEXITCODE -ne 0) { throw "signtool failed on $($f.FullName)" }
+            & signtool verify /pa /all $f.FullName
+            if ($LASTEXITCODE -ne 0) { throw "signtool verify failed on $($f.FullName)" }
+          }
 
+      # Inno Setup must be pre-installed on the self-hosted Windows
+      # runner (per the org's pre-installed-toolchain policy). The
+      # previous `nextgens/inno-setup-action@v1.0.11` reference was
+      # bitrot — that repo does not exist on GitHub. Drop the action
+      # entirely and rely on the runner's pre-installed iscc.
       - name: Build installer
         shell: pwsh
         env:
           VERSION: ${{ needs.version.outputs.version }}
         run: iscc /dVersion=$env:VERSION packaging\windows\deckhand.iss
 
-      - name: Code-sign (Authenticode)
+      - name: Code-sign installer (Authenticode)
         if: ${{ secrets.WINDOWS_SIGN_THUMBPRINT != '' }}
         shell: pwsh
         env:
           SIGNTOOL_CERT_THUMBPRINT: ${{ secrets.WINDOWS_SIGN_THUMBPRINT }}
         run: |
-          $signTargets = @(
-            (Get-ChildItem packaging\windows\dist\*.exe),
-            (Get-ChildItem sidecar\dist\*.exe)
-          ) | ForEach-Object { $_ }
+          $ErrorActionPreference = "Stop"
+          $signTargets = Get-ChildItem packaging\windows\dist\*.exe -File
           foreach ($f in $signTargets) {
             & signtool sign `
               /sha1 $env:SIGNTOOL_CERT_THUMBPRINT `
@@ -194,7 +248,7 @@ jobs:
           Write-Warning "WINDOWS_SIGN_THUMBPRINT not set; shipping UNSIGNED installer."
           Write-Warning "Unsigned installers will trigger SmartScreen warnings on end-user machines."
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
         with:
           name: deckhand-windows
           path: packaging/windows/dist/*
@@ -207,17 +261,17 @@ jobs:
       matrix:
         arch: [amd64, arm64]
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5
         with: { ref: "${{ needs.version.outputs.ref }}" }
 
-      - uses: subosito/flutter-action@v2
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2  # v2
         with:
           flutter-version: "3.38.9"
           channel: stable
           cache: true
 
       - name: Download Go binaries
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4
         with:
           name: go-darwin-${{ matrix.arch }}
           path: sidecar/dist
@@ -280,7 +334,7 @@ jobs:
             xcrun stapler validate "$dmg"
           done
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
         with:
           name: deckhand-macos-${{ matrix.arch }}
           path: packaging/macos/dist/*
@@ -290,17 +344,17 @@ jobs:
     needs: [version, go-binaries]
     runs-on: [self-hosted, linux]
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5
         with: { ref: "${{ needs.version.outputs.ref }}" }
 
-      - uses: subosito/flutter-action@v2
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2  # v2
         with:
           flutter-version: "3.38.9"
           channel: stable
           cache: true
 
       - name: Download Go binaries
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4
         with:
           name: go-linux-amd64
           path: sidecar/dist
@@ -354,7 +408,7 @@ jobs:
               --output "${f}.asc" "$f"
           done
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
         with:
           name: deckhand-linux
           path: packaging/linux/dist/*
@@ -367,12 +421,12 @@ jobs:
     needs: [version, windows, macos, linux]
     runs-on: [self-hosted, linux]
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5
         with:
           fetch-depth: 0
           ref: ${{ needs.version.outputs.ref }}
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4
         with:
           path: release-artifacts
           merge-multiple: false
@@ -390,9 +444,23 @@ jobs:
           cat SHA256SUMS
 
       - name: Install syft
+        # Pin to a specific syft release tarball + verify the SHA256
+        # against the known hash for v1.18.1. The previous
+        # `curl … | sudo sh` pattern fetched install.sh from
+        # raw.githubusercontent.com unverified - a network MitM or a
+        # GitHub-side compromise of the install.sh ref would land
+        # arbitrary code as root on the release runner. SHA pinning
+        # closes that.
         run: |
-          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh \
-            | sudo sh -s -- -b /usr/local/bin v1.18.1
+          set -euo pipefail
+          SYFT_VERSION="1.18.1"
+          SYFT_SHA256="066c251652221e4d44fcc4d115ce3df33a91769da38c830a8533199db2f65aab"
+          TARBALL="syft_${SYFT_VERSION}_linux_amd64.tar.gz"
+          curl -fsSLO "https://github.com/anchore/syft/releases/download/v${SYFT_VERSION}/${TARBALL}"
+          echo "${SYFT_SHA256}  ${TARBALL}" | sha256sum --check --status
+          tar -xzf "${TARBALL}" syft
+          sudo install -m0755 syft /usr/local/bin/syft
+          rm -f "${TARBALL}" syft
           syft version
 
       - name: Generate SBOMs (SPDX + CycloneDX)
@@ -452,6 +520,19 @@ jobs:
             --output release-artifacts/manifest.json
           cat release-artifacts/manifest.json
 
+      - name: Stamp CHANGELOG with the resolved tag
+        env:
+          TAG: ${{ needs.version.outputs.tag }}
+        run: |
+          set -euo pipefail
+          # Replace the leading `## Unreleased` heading with the
+          # actual tag + today's date. Idempotent: re-running on an
+          # already-stamped CHANGELOG is a no-op (e.g. workflow_dispatch
+          # rebuild of the same ref). Committed-and-pushed alongside
+          # the tag below so consumers reading the source tarball see
+          # the resolved heading.
+          bash scripts/stamp_changelog.sh "$TAG" "$(date -u +%Y-%m-%d)"
+
       - name: Create tag
         env:
           TAG: ${{ needs.version.outputs.tag }}
@@ -459,14 +540,21 @@ jobs:
         run: |
           git config user.name  'cepheus-labs-bot'
           git config user.email 'support@cepheuslabs.com'
+          # Commit the stamped CHANGELOG so the tag points at a
+          # source tree where the heading already names the tag.
+          if ! git diff --quiet -- CHANGELOG.md; then
+            git add CHANGELOG.md
+            git commit -m "chore: stamp CHANGELOG for $TAG"
+          fi
           if git rev-parse --verify --quiet "refs/tags/$TAG" >/dev/null; then
             echo "Tag $TAG already exists — reusing."
           else
-            git tag -a "$TAG" "$REF" -m "Deckhand $TAG"
+            git tag -a "$TAG" -m "Deckhand $TAG"
+            git push origin HEAD:main
             git push origin "$TAG"
           fi
 
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65  # v2
         with:
           tag_name: ${{ needs.version.outputs.tag }}
           name: Deckhand ${{ needs.version.outputs.version }}+${{ needs.version.outputs.build }}

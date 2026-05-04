@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Hardened-runtime entitlements for deckhand-elevated-helper.
+
+  The elevated helper opens raw block devices via /dev/rdiskN. macOS 13+
+  Gatekeeper rejects helpers signed with `codesign --deep` against the
+  app's identity unless they carry their own entitlements file.
+
+  Conservative set:
+  - disable-library-validation: Go binary may load system frameworks
+    that aren't Apple-signed in the same way as the main bundle. The
+    helper does no IPC across process boundaries beyond stdout, so the
+    library-validation guarantee adds little.
+  - allow-unsigned-executable-memory: Go's runtime occasionally maps
+    JIT-like memory pages even in CGO_ENABLED=0 builds during garbage
+    collection. Granting this unconditionally avoids surprise rejects
+    on macOS releases that tighten the policy.
+-->
+<plist version="1.0">
+<dict>
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+</dict>
+</plist>

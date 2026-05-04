@@ -35,10 +35,45 @@ cp "$SIDECAR" "$APP_BUNDLE/Contents/MacOS/"
 cp "$HELPER"  "$APP_BUNDLE/Contents/MacOS/"
 
 # Sign if cert present.
+#
+# `codesign --deep` re-signs nested binaries with the app's identity
+# but does NOT propagate per-binary entitlements. The elevated helper
+# specifically needs its own entitlements (hardened-runtime exceptions
+# documented in helper.entitlements) or Gatekeeper rejects it at
+# runtime on macOS 13+. We sign the inner binaries individually FIRST
+# with their own entitlements, then run --deep on the bundle to seal
+# everything else.
 if [ -n "${MACOS_SIGN_ID:-}" ]; then
-  echo "Signing $APP_BUNDLE with $MACOS_SIGN_ID"
+  HELPER_ENTITLEMENTS="$REPO_ROOT/packaging/macos/helper.entitlements"
+  SIDECAR_ENTITLEMENTS="$REPO_ROOT/packaging/macos/sidecar.entitlements"
+  EMBEDDED_HELPER="$APP_BUNDLE/Contents/MacOS/deckhand-elevated-helper"
+  EMBEDDED_SIDECAR="$APP_BUNDLE/Contents/MacOS/deckhand-sidecar"
+
+  echo "Signing $EMBEDDED_HELPER with helper entitlements"
+  codesign --force --options runtime --timestamp \
+    --sign "$MACOS_SIGN_ID" \
+    --entitlements "$HELPER_ENTITLEMENTS" \
+    "$EMBEDDED_HELPER"
+
+  echo "Signing $EMBEDDED_SIDECAR with sidecar entitlements"
+  codesign --force --options runtime --timestamp \
+    --sign "$MACOS_SIGN_ID" \
+    --entitlements "$SIDECAR_ENTITLEMENTS" \
+    "$EMBEDDED_SIDECAR"
+
+  echo "Signing $APP_BUNDLE with $MACOS_SIGN_ID (--deep, but inner binaries already signed)"
   codesign --force --options runtime --timestamp --sign "$MACOS_SIGN_ID" \
     --deep "$APP_BUNDLE"
+
+  # Verify each inner binary kept its own signature + entitlements
+  # rather than getting flattened by --deep. Fails the build if --deep
+  # ever changes behavior and clobbers what we just signed.
+  for bin in "$EMBEDDED_HELPER" "$EMBEDDED_SIDECAR"; do
+    echo "Verifying $bin"
+    codesign --verify --strict --verbose=2 "$bin"
+    codesign -d --entitlements - "$bin" | grep -q "disable-library-validation" \
+      || { echo "ERROR: $bin lost its entitlements after --deep"; exit 1; }
+  done
 else
   echo "MACOS_SIGN_ID not set — producing unsigned app bundle"
 fi

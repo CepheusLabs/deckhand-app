@@ -89,13 +89,13 @@ BEGIN
     BEGIN
         BLOCK "040904e4"
         BEGIN
-            VALUE "CompanyName", "labs.cepheus" "\0"
-            VALUE "FileDescription", "deckhand" "\0"
+            VALUE "CompanyName", "CepheusLabs" "\0"
+            VALUE "FileDescription", "Deckhand" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
-            VALUE "InternalName", "deckhand" "\0"
-            VALUE "LegalCopyright", "Copyright (C) 2026 labs.cepheus. All rights reserved." "\0"
+            VALUE "InternalName", "Deckhand" "\0"
+            VALUE "LegalCopyright", "Copyright (C) 2026 CepheusLabs. All rights reserved." "\0"
             VALUE "OriginalFilename", "deckhand.exe" "\0"
-            VALUE "ProductName", "deckhand" "\0"
+            VALUE "ProductName", "Deckhand" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END

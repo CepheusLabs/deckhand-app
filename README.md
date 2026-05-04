@@ -3,8 +3,9 @@
 A local-only desktop tool that flashes, sets up, and maintains
 Klipper-based 3D printers.
 
-> **Status: design phase.** No usable binaries yet. Architecture and
-> specification docs are the deliverable at this stage.
+Download the latest signed installer for Windows, macOS, or Linux from
+the [Releases](https://github.com/CepheusLabs/deckhand-app/releases)
+page, or visit [dh.printdeck.io](https://dh.printdeck.io/).
 
 ## Start here
 

@@ -44,7 +44,7 @@ jobs:
       cancel-in-progress: false
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5
         with:
           fetch-depth: 0
           ref: ${{ inputs.ref || 'main' }}
@@ -175,7 +175,7 @@ jobs:
           ls -la dist/
           du -sh dist/*.tar.gz
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
         with:
           name: deckhand-macos-${{ steps.v.outputs.version }}
           path: dist/*.tar.gz
