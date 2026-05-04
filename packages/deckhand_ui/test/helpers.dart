@@ -42,6 +42,7 @@ Widget testHarness({
         '/review',
         '/progress',
         '/done',
+        '/manage',
         '/settings',
       ])
         GoRoute(path: path, builder: (_, _) => child),
@@ -108,6 +109,7 @@ Widget testHarnessWithSettings({
         '/review',
         '/progress',
         '/done',
+        '/manage',
         '/settings',
       ])
         GoRoute(path: path, builder: (_, _) => child),
@@ -360,6 +362,18 @@ class _StubMoonraker implements MoonrakerService {
   @override
   Future<bool> isPrinting({required String host, int port = 7125}) async =>
       false;
+  @override
+  Future<Map<String, dynamic>> queryObjects({
+    required String host,
+    int port = 7125,
+    required List<String> objects,
+  }) async => const {};
+  @override
+  Future<void> runGCode({
+    required String host,
+    int port = 7125,
+    required String script,
+  }) async {}
   @override
   Future<List<String>> listObjects({
     required String host,

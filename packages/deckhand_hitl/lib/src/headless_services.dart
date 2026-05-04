@@ -72,8 +72,7 @@ class HeadlessSecurityService implements SecurityService {
       try {
         final data = jsonDecode(fpFile.readAsStringSync());
         if (data is Map) {
-          data.forEach((k, v) =>
-              _fingerprints[k.toString()] = v.toString());
+          data.forEach((k, v) => _fingerprints[k.toString()] = v.toString());
         }
       } on FormatException {
         // ignore
@@ -100,7 +99,8 @@ class HeadlessSecurityService implements SecurityService {
     Duration ttl = const Duration(seconds: 60),
   }) async {
     _tokenCounter++;
-    final value = 'hitl-token-$_tokenCounter-${DateTime.now().microsecondsSinceEpoch}';
+    final value =
+        'hitl-token-$_tokenCounter-${DateTime.now().microsecondsSinceEpoch}';
     final expires = DateTime.now().add(ttl);
     _tokens[value] = _TokenRecord(operation: operation, expiresAt: expires);
     return ConfirmationToken(
@@ -247,8 +247,11 @@ class StubDiscoveryService implements DiscoveryService {
     final deadline = DateTime.now().add(timeout);
     while (DateTime.now().isBefore(deadline)) {
       try {
-        final s = await Socket.connect(host, port,
-            timeout: const Duration(seconds: 5));
+        final s = await Socket.connect(
+          host,
+          port,
+          timeout: const Duration(seconds: 5),
+        );
         s.destroy();
         return true;
       } on SocketException {
@@ -276,10 +279,32 @@ class StubMoonrakerService implements MoonrakerService {
   }
 
   @override
-  Future<bool> isPrinting({required String host, int port = 7125}) async => false;
+  Future<bool> isPrinting({required String host, int port = 7125}) async =>
+      false;
 
   @override
-  Future<List<String>> listObjects({required String host, int port = 7125}) async => const [];
+  Future<Map<String, dynamic>> queryObjects({
+    required String host,
+    int port = 7125,
+    required List<String> objects,
+  }) async {
+    throw const _StubUnavailable('moonraker.queryObjects');
+  }
+
+  @override
+  Future<void> runGCode({
+    required String host,
+    int port = 7125,
+    required String script,
+  }) async {
+    throw const _StubUnavailable('moonraker.runGCode');
+  }
+
+  @override
+  Future<List<String>> listObjects({
+    required String host,
+    int port = 7125,
+  }) async => const [];
 
   @override
   Future<String?> fetchConfigFile({

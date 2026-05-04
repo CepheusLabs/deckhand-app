@@ -219,6 +219,18 @@ class _StubMoonraker implements MoonrakerService {
   Future<bool> isPrinting({required String host, int port = 7125}) async =>
       false;
   @override
+  Future<Map<String, dynamic>> queryObjects({
+    required String host,
+    int port = 7125,
+    required List<String> objects,
+  }) async => const {};
+  @override
+  Future<void> runGCode({
+    required String host,
+    int port = 7125,
+    required String script,
+  }) async {}
+  @override
   Future<List<String>> listObjects({
     required String host,
     int port = 7125,

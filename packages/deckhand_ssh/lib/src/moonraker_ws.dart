@@ -34,14 +34,40 @@ class MoonrakerHttpService implements MoonrakerService {
 
   @override
   Future<bool> isPrinting({required String host, int port = 7125}) async {
-    final res = await _dio.get<Map<String, dynamic>>(
-      'http://$host:$port/printer/objects/query',
-      queryParameters: {'print_stats': ''},
+    final status = await queryObjects(
+      host: host,
+      port: port,
+      objects: const ['print_stats'],
     );
-    final status = (res.data?['result'] as Map?)?['status'] as Map?;
-    final stats = status?['print_stats'] as Map?;
+    final stats = status['print_stats'] as Map?;
     final state = stats?['state'] as String?;
     return state == 'printing' || state == 'paused';
+  }
+
+  @override
+  Future<Map<String, dynamic>> queryObjects({
+    required String host,
+    int port = 7125,
+    required List<String> objects,
+  }) async {
+    final res = await _dio.get<Map<String, dynamic>>(
+      'http://$host:$port/printer/objects/query',
+      queryParameters: {for (final object in objects) object: ''},
+    );
+    final status = (res.data?['result'] as Map?)?['status'] as Map? ?? const {};
+    return status.cast<String, dynamic>();
+  }
+
+  @override
+  Future<void> runGCode({
+    required String host,
+    int port = 7125,
+    required String script,
+  }) async {
+    await _dio.post<Map<String, dynamic>>(
+      'http://$host:$port/printer/gcode/script',
+      data: {'script': script},
+    );
   }
 
   @override

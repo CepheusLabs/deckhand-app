@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import '../providers.dart';
 import '../theming/deckhand_tokens.dart';
 import '../widgets/wizard_scaffold.dart';
+import 'manage_tuning_panel.dart';
 
 /// Post-install printer management. Reached after a wizard run
 /// completes (or directly via `/manage`). The mockup design is a
@@ -36,7 +37,7 @@ class ManageScreen extends ConsumerStatefulWidget {
   ConsumerState<ManageScreen> createState() => _ManageScreenState();
 }
 
-enum _ManageTab { status, backup, restore, mcu, wizard }
+enum _ManageTab { status, tune, backup, restore, mcu, wizard }
 
 class _ManageScreenState extends ConsumerState<ManageScreen> {
   _ManageTab _currentTab = _ManageTab.status;
@@ -82,6 +83,7 @@ class _ManageScreenState extends ConsumerState<ManageScreen> {
   Widget _buildTabBody(WizardState state) {
     return switch (_currentTab) {
       _ManageTab.status => _StatusTab(state: state),
+      _ManageTab.tune => const ManageTuningPanel(),
       _ManageTab.backup => const _BackupTab(),
       _ManageTab.restore => const _RestoreTab(),
       _ManageTab.mcu => const _McuTab(),
@@ -101,6 +103,7 @@ class _ManageTabStrip extends StatelessWidget {
 
   static const _items = <(_ManageTab, String, IconData)>[
     (_ManageTab.status, 'Printer status', Icons.visibility_outlined),
+    (_ManageTab.tune, 'Tune', Icons.tune),
     (_ManageTab.backup, 'Backup', Icons.inventory_2_outlined),
     (_ManageTab.restore, 'Restore', Icons.restore),
     (_ManageTab.mcu, 'Flash MCU', Icons.memory),
@@ -114,16 +117,19 @@ class _ManageTabStrip extends StatelessWidget {
       decoration: BoxDecoration(
         border: Border(bottom: BorderSide(color: tokens.line)),
       ),
-      child: Row(
-        children: [
-          for (final (tab, label, icon) in _items)
-            _TabStripButton(
-              label: label,
-              icon: icon,
-              selected: current == tab,
-              onTap: () => onSelect(tab),
-            ),
-        ],
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: [
+            for (final (tab, label, icon) in _items)
+              _TabStripButton(
+                label: label,
+                icon: icon,
+                selected: current == tab,
+                onTap: () => onSelect(tab),
+              ),
+          ],
+        ),
       ),
     );
   }
@@ -162,11 +168,7 @@ class _TabStripButton extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              icon,
-              size: 14,
-              color: selected ? tokens.text : tokens.text3,
-            ),
+            Icon(icon, size: 14, color: selected ? tokens.text : tokens.text3),
             const SizedBox(width: 6),
             Text(
               label,
@@ -216,7 +218,10 @@ class _StatusTabState extends ConsumerState<_StatusTab> {
     });
   }
 
-  Future<_StatusSnapshot> _query(MoonrakerService moonraker, String host) async {
+  Future<_StatusSnapshot> _query(
+    MoonrakerService moonraker,
+    String host,
+  ) async {
     try {
       final info = await moonraker.info(host: host);
       final printing = await moonraker.isPrinting(host: host);
@@ -283,12 +288,14 @@ class _StatusTabState extends ConsumerState<_StatusTab> {
                   ),
                 ),
               ] else if (s.info != null) ...[
-                _StatGrid(stats: [
-                  _Stat('HOSTNAME', s.info!.hostname),
-                  _Stat('KLIPPER', s.info!.softwareVersion),
-                  _Stat('KLIPPY', s.info!.klippyState),
-                  _Stat('JOB', s.printing ? 'Printing' : 'Idle'),
-                ]),
+                _StatGrid(
+                  stats: [
+                    _Stat('HOSTNAME', s.info!.hostname),
+                    _Stat('KLIPPER', s.info!.softwareVersion),
+                    _Stat('KLIPPY', s.info!.klippyState),
+                    _Stat('JOB', s.printing ? 'Printing' : 'Idle'),
+                  ],
+                ),
               ] else if (host == null || host.isEmpty) ...[
                 Text(
                   'No printer connected. Run the wizard once to pin a '
@@ -355,19 +362,19 @@ class _StatusTabState extends ConsumerState<_StatusTab> {
 
 class _StatusSnapshot {
   const _StatusSnapshot.disconnected()
-      : info = null,
-        printing = false,
-        host = null,
-        error = null;
+    : info = null,
+      printing = false,
+      host = null,
+      error = null;
   const _StatusSnapshot.ok({
     required KlippyInfo this.info,
     required this.printing,
     required this.host,
   }) : error = null;
   const _StatusSnapshot.error({required this.host, required String message})
-      : info = null,
-        printing = false,
-        error = message;
+    : info = null,
+      printing = false,
+      error = message;
 
   final KlippyInfo? info;
   final bool printing;
@@ -562,10 +569,7 @@ class _ComingSoonPanel extends StatelessWidget {
               _MonoLabel(label),
               const SizedBox(width: 8),
               Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 6,
-                  vertical: 2,
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                 decoration: BoxDecoration(
                   color: tokens.ink2,
                   border: Border.all(color: tokens.line),
@@ -643,10 +647,7 @@ class _StatGrid extends StatelessWidget {
       children: [
         for (final s in stats)
           Container(
-            padding: const EdgeInsets.symmetric(
-              horizontal: 14,
-              vertical: 12,
-            ),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
             decoration: BoxDecoration(
               color: tokens.ink2,
               border: Border.all(color: tokens.line),
@@ -682,7 +683,5 @@ Future<void> _copyToClipboard(
 ) async {
   await Clipboard.setData(ClipboardData(text: value));
   if (!context.mounted) return;
-  ScaffoldMessenger.of(context).showSnackBar(
-    SnackBar(content: Text(message)),
-  );
+  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
 }
