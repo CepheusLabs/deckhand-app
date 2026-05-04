@@ -141,6 +141,8 @@ func main() {
 		runWriteImage(args)
 	case "read-image":
 		runReadImage(args)
+	case "hash-device":
+		runHashDevice(args)
 	case "version":
 		emitJSON(map[string]any{"event": "version", "version": Version, "os": runtime.GOOS, "arch": runtime.GOARCH})
 	default:
@@ -264,6 +266,104 @@ func runReadImage(args []string) {
 
 	sum := hex.EncodeToString(hasher.Sum(nil))
 	emitJSON(map[string]any{"event": "done", "sha256": sum, "bytes": done})
+}
+
+// runHashDevice opens [target] read-only and streams every byte through
+// SHA-256 without writing an image file. The UI uses this to prove that
+// a completed eMMC backup image matches the currently attached live disk
+// before auto-acknowledging the rollback step.
+func runHashDevice(args []string) {
+	fs := flag.NewFlagSet("hash-device", flag.ExitOnError)
+	target := fs.String("target", "", "source disk id, e.g. PhysicalDrive3 on Windows, /dev/sde on Linux, /dev/rdisk4 on macOS")
+	tokenFile := fs.String("token-file", "", "path to a 0600-mode file containing the UI-issued confirmation token; deleted on read")
+	cancelFile := fs.String("cancel-file", "", "optional regular file; operation aborts when the file disappears")
+	totalBytesHint := fs.Int64("total-bytes", 0, "optional size hint for progress reporting; used as bytes_total when the device handle reports 0")
+	if err := fs.Parse(args); err != nil {
+		fatalf("parse flags: %v", err)
+	}
+
+	fatalIfCanceled(*cancelFile, nil)
+	if *target == "" || *tokenFile == "" {
+		fatalf("hash-device requires --target and --token-file")
+	}
+	token, err := readAndRemoveTokenFile(*tokenFile)
+	if err != nil {
+		fatalf("read token: %v", err)
+	}
+	if len(token) < 16 {
+		fatalf("token is implausibly short; refusing")
+	}
+	fatalIfCanceled(*cancelFile, nil)
+
+	devicePath, err := targetToDevicePath(*target)
+	if err != nil {
+		fatalf("validate target: %v", err)
+	}
+	emitJSON(map[string]any{"event": "preparing", "device": devicePath})
+
+	src, err := os.Open(devicePath)
+	if err != nil {
+		fatalf("open device: %v", err)
+	}
+	defer func() { _ = src.Close() }()
+
+	total := readableSize(src, *totalBytesHint)
+	sum, done, err := hashReader(src, total, *cancelFile)
+	if err != nil {
+		fatalf("hash device after %d of %d bytes: %v", done, total, err)
+	}
+	emitJSON(map[string]any{"event": "done", "sha256": sum, "bytes": done})
+}
+
+func readableSize(src *os.File, hint int64) int64 {
+	var total int64
+	if info, statErr := src.Stat(); statErr == nil && info.Size() > 0 {
+		total = info.Size()
+	} else if n, seekErr := src.Seek(0, io.SeekEnd); seekErr == nil && n > 0 {
+		total = n
+		_, _ = src.Seek(0, io.SeekStart)
+	}
+	if total == 0 && hint > 0 {
+		total = hint
+	}
+	return total
+}
+
+func hashReader(src io.Reader, total int64, cancelFile string) (string, int64, error) {
+	hasher := sha256.New()
+	buf := make([]byte, 4<<20)
+	var done int64
+	lastEmit := time.Now()
+
+	for {
+		if operationCanceled(cancelFile) {
+			return "", done, fmt.Errorf("operation canceled by user")
+		}
+		n, rerr := src.Read(buf)
+		if n > 0 {
+			hasher.Write(buf[:n])
+			done += int64(n)
+			if time.Since(lastEmit) > 250*time.Millisecond {
+				emitJSON(map[string]any{
+					"event":       "progress",
+					"phase":       "reading",
+					"bytes_done":  done,
+					"bytes_total": total,
+				})
+				lastEmit = time.Now()
+			}
+		}
+		if operationCanceled(cancelFile) {
+			return "", done, fmt.Errorf("operation canceled by user")
+		}
+		if errors.Is(rerr, io.EOF) {
+			break
+		}
+		if rerr != nil {
+			return "", done, rerr
+		}
+	}
+	return hex.EncodeToString(hasher.Sum(nil)), done, nil
 }
 
 const backupRootMarker = ".deckhand-emmc-backups-root"

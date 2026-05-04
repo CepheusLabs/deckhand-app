@@ -44,4 +44,18 @@ abstract class ElevatedHelperService {
     int totalBytes = 0,
     String? outputRoot,
   });
+
+  /// Spawn the helper with elevation and hash the currently attached
+  /// [diskId] without writing an image file. Used to prove an existing
+  /// completed eMMC backup still matches the live disk before the UI
+  /// treats it as an exact rollback image.
+  ///
+  /// [totalBytes] is the same optional progress denominator as
+  /// [readImage]; pass the live [DiskInfo.sizeBytes] from the disk
+  /// enumeration when available.
+  Stream<FlashProgress> hashDevice({
+    required String diskId,
+    required String confirmationToken,
+    int totalBytes = 0,
+  });
 }

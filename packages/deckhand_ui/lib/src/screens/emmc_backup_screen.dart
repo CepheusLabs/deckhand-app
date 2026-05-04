@@ -47,6 +47,9 @@ class _EmmcBackupScreenState extends ConsumerState<EmmcBackupScreen> {
   bool _canceling = false;
   bool _cancelRequested = false;
   String? _outputPath;
+  DiskInfo? _backupDisk;
+  int? _finalBytes;
+  String? _finalSha256;
   DateTime? _throughputStartedAt;
   int _throughputStartedBytes = 0;
   double? _bytesPerSecond;
@@ -130,9 +133,11 @@ class _EmmcBackupScreenState extends ConsumerState<EmmcBackupScreen> {
     // first "preparing" card with the real denominator so the user
     // sees "0 B of 7.28 GiB" instead of "0 B of 0 B" while UAC pops.
     final disks = ref.read(disksProvider).value ?? const <DiskInfo>[];
+    DiskInfo? backupDisk;
     var totalHint = 0;
     for (final d in disks) {
       if (d.id == id) {
+        backupDisk = d;
         totalHint = d.sizeBytes;
         break;
       }
@@ -153,6 +158,9 @@ class _EmmcBackupScreenState extends ConsumerState<EmmcBackupScreen> {
       _canceling = false;
       _cancelRequested = false;
       _outputPath = outputPath;
+      _backupDisk = backupDisk;
+      _finalBytes = null;
+      _finalSha256 = null;
     });
 
     // Reading raw block devices needs admin on Windows (and root on
@@ -229,6 +237,8 @@ class _EmmcBackupScreenState extends ConsumerState<EmmcBackupScreen> {
           _progress = merged;
           if (event.phase == FlashPhase.done) {
             _done = true;
+            _finalBytes = merged.bytesDone > 0 ? merged.bytesDone : mergedTotal;
+            _finalSha256 = event.message;
           }
           if (event.phase == FlashPhase.failed && event.message != null) {
             _error = event.message;
@@ -311,7 +321,42 @@ class _EmmcBackupScreenState extends ConsumerState<EmmcBackupScreen> {
   Future<void> _confirmAndReturn() async {
     final controller = ref.read(wizardControllerProvider);
     final outputPath = _outputPath;
+    final disk = _backupDisk;
+    final sha256 = _finalSha256;
     if (outputPath != null) {
+      if (disk != null && _isSha256Hex(sha256)) {
+        try {
+          await ref.read(emmcBackupManifestWriterProvider)(
+            EmmcBackupManifest.create(
+              profileId: controller.state.profileId,
+              imagePath: outputPath,
+              imageBytes: _finalBytes ?? _progress?.bytesDone ?? 0,
+              imageSha256: sha256!,
+              disk: disk,
+              deckhandVersion: ref.read(deckhandVersionProvider),
+            ),
+          );
+          ref.invalidate(emmcBackupManifestsProvider);
+        } catch (e) {
+          if (!mounted) return;
+          setState(() {
+            _error =
+                'Backup completed, but Deckhand could not write the '
+                'verification manifest: $e';
+            _done = false;
+          });
+          return;
+        }
+      } else {
+        setState(() {
+          _error =
+              'Backup completed, but Deckhand did not receive a final '
+              'SHA-256 from the helper. Retry so the image can be '
+              'verified later.';
+          _done = false;
+        });
+        return;
+      }
       await controller.setDecision('snapshot.emmc_backup_path', outputPath);
     }
     await controller.setDecision('snapshot.emmc_acknowledged', true);
@@ -478,6 +523,9 @@ class _EmmcBackupScreenState extends ConsumerState<EmmcBackupScreen> {
               _canceling = false;
               _cancelRequested = false;
               _outputPath = null;
+              _backupDisk = null;
+              _finalBytes = null;
+              _finalSha256 = null;
               _showPicker = true;
               _selected = null;
             });
@@ -607,6 +655,11 @@ class _EmmcBackupScreenState extends ConsumerState<EmmcBackupScreen> {
     final pct = (p.bytesDone / p.bytesTotal) * 100;
     if (pct.isNaN || pct < 0) return null;
     return pct.toStringAsFixed(0);
+  }
+
+  bool _isSha256Hex(String? value) {
+    if (value == null || value.length != 64) return false;
+    return RegExp(r'^[0-9a-fA-F]{64}$').hasMatch(value);
   }
 }
 

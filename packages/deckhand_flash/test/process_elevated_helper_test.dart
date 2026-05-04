@@ -71,6 +71,33 @@ void main() {
     });
   });
 
+  group('hashDevice', () {
+    test('launches the helper with cancel and size hint', () async {
+      final svc = _CapturingElevatedHelper();
+
+      final events = await svc
+          .hashDevice(
+            diskId: 'PhysicalDrive3',
+            confirmationToken: 'token-0123456789abcdef',
+            totalBytes: 4096,
+          )
+          .toList();
+
+      expect(events.single.phase, FlashPhase.done);
+      expect(
+        svc.capturedArgs,
+        containsAllInOrder([
+          'hash-device',
+          '--target',
+          'PhysicalDrive3',
+          '--token-file',
+        ]),
+      );
+      expect(svc.capturedArgs, contains('--cancel-file'));
+      expect(svc.capturedArgs, containsAllInOrder(['--total-bytes', '4096']));
+    });
+  });
+
   group('DryRunElevatedHelperService', () {
     test(
       'writeImage emits synthetic progress without launching a helper',
@@ -106,6 +133,22 @@ void main() {
       expect(events.first.bytesTotal, 4096);
       expect(events.last.bytesDone, 4096);
       expect(events.last.message, contains('DRY-RUN elevated read'));
+    });
+
+    test('hashDevice uses the provided size hint', () async {
+      const svc = DryRunElevatedHelperService();
+
+      final events = await svc
+          .hashDevice(
+            diskId: 'PhysicalDrive3',
+            confirmationToken: 'token-0123456789abcdef',
+            totalBytes: 4096,
+          )
+          .toList();
+
+      expect(events.first.bytesTotal, 4096);
+      expect(events.last.bytesDone, 4096);
+      expect(events.last.message, contains('DRY-RUN elevated hash'));
     });
   });
 

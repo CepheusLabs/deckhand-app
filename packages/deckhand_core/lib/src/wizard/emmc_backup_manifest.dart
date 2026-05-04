@@ -1,0 +1,201 @@
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:path/path.dart' as p;
+
+import '../services/flash_service.dart';
+
+const int emmcBackupManifestSchema = 1;
+
+String emmcBackupManifestPath(String imagePath) => '$imagePath.manifest.json';
+
+class EmmcBackupManifest {
+  const EmmcBackupManifest({
+    required this.schemaVersion,
+    required this.createdAt,
+    required this.profileId,
+    required this.imagePath,
+    required this.imageBytes,
+    required this.imageSha256,
+    required this.disk,
+    required this.deckhandVersion,
+  });
+
+  factory EmmcBackupManifest.create({
+    required String profileId,
+    required String imagePath,
+    required int imageBytes,
+    required String imageSha256,
+    required DiskInfo disk,
+    required String deckhandVersion,
+    DateTime? createdAt,
+  }) {
+    return EmmcBackupManifest(
+      schemaVersion: emmcBackupManifestSchema,
+      createdAt: createdAt ?? DateTime.now().toUtc(),
+      profileId: profileId,
+      imagePath: imagePath,
+      imageBytes: imageBytes,
+      imageSha256: imageSha256,
+      disk: EmmcBackupDiskIdentity.fromDisk(disk),
+      deckhandVersion: deckhandVersion,
+    );
+  }
+
+  factory EmmcBackupManifest.fromJson(Map<String, dynamic> json) {
+    return EmmcBackupManifest(
+      schemaVersion: (json['schema_version'] as num?)?.toInt() ?? 0,
+      createdAt: DateTime.parse(json['created_at'] as String),
+      profileId: json['profile_id'] as String? ?? '',
+      imagePath: json['image_path'] as String? ?? '',
+      imageBytes: (json['image_bytes'] as num?)?.toInt() ?? 0,
+      imageSha256: json['image_sha256'] as String? ?? '',
+      disk: EmmcBackupDiskIdentity.fromJson(
+        (json['disk'] as Map).cast<String, dynamic>(),
+      ),
+      deckhandVersion: json['deckhand_version'] as String? ?? '',
+    );
+  }
+
+  final int schemaVersion;
+  final DateTime createdAt;
+  final String profileId;
+  final String imagePath;
+  final int imageBytes;
+  final String imageSha256;
+  final EmmcBackupDiskIdentity disk;
+  final String deckhandVersion;
+
+  Map<String, dynamic> toJson() => {
+    'schema_version': schemaVersion,
+    'created_at': createdAt.toUtc().toIso8601String(),
+    'profile_id': profileId,
+    'image_path': imagePath,
+    'image_bytes': imageBytes,
+    'image_sha256': imageSha256,
+    'disk': disk.toJson(),
+    'deckhand_version': deckhandVersion,
+  };
+
+  bool matches({required String profileId, required DiskInfo disk}) {
+    return schemaVersion == emmcBackupManifestSchema &&
+        this.profileId == profileId &&
+        imageBytes == disk.sizeBytes &&
+        this.disk.matches(disk);
+  }
+}
+
+class EmmcBackupDiskIdentity {
+  const EmmcBackupDiskIdentity({
+    required this.id,
+    required this.path,
+    required this.sizeBytes,
+    required this.bus,
+    required this.model,
+    required this.removable,
+  });
+
+  factory EmmcBackupDiskIdentity.fromDisk(DiskInfo disk) {
+    return EmmcBackupDiskIdentity(
+      id: disk.id,
+      path: disk.path,
+      sizeBytes: disk.sizeBytes,
+      bus: disk.bus,
+      model: disk.model,
+      removable: disk.removable,
+    );
+  }
+
+  factory EmmcBackupDiskIdentity.fromJson(Map<String, dynamic> json) {
+    return EmmcBackupDiskIdentity(
+      id: json['id'] as String? ?? '',
+      path: json['path'] as String? ?? '',
+      sizeBytes: (json['size_bytes'] as num?)?.toInt() ?? 0,
+      bus: json['bus'] as String? ?? '',
+      model: json['model'] as String? ?? '',
+      removable: json['removable'] as bool? ?? false,
+    );
+  }
+
+  final String id;
+  final String path;
+  final int sizeBytes;
+  final String bus;
+  final String model;
+  final bool removable;
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'path': path,
+    'size_bytes': sizeBytes,
+    'bus': bus,
+    'model': model,
+    'removable': removable,
+  };
+
+  bool matches(DiskInfo disk) {
+    if (sizeBytes != disk.sizeBytes) return false;
+    if (_sameStableValue(id, disk.id)) return true;
+    if (_sameStableValue(path, disk.path)) return true;
+    return _sameStableValue(model, disk.model) &&
+        _sameStableValue(bus, disk.bus);
+  }
+
+  static bool _sameStableValue(String a, String b) {
+    final left = a.trim().toLowerCase();
+    final right = b.trim().toLowerCase();
+    return left.isNotEmpty && left == right;
+  }
+}
+
+Future<String> writeEmmcBackupManifest(EmmcBackupManifest manifest) async {
+  final manifestPath = emmcBackupManifestPath(manifest.imagePath);
+  await Directory(p.dirname(manifestPath)).create(recursive: true);
+  await File(manifestPath).writeAsString(
+    const JsonEncoder.withIndent('  ').convert(manifest.toJson()),
+    flush: true,
+  );
+  return manifestPath;
+}
+
+Future<List<EmmcBackupManifest>> scanEmmcBackupManifests(String dir) async {
+  final root = Directory(dir);
+  if (!await root.exists()) return const [];
+  final manifests = <EmmcBackupManifest>[];
+  await for (final entity in root.list(followLinks: false)) {
+    if (entity is! File || !entity.path.endsWith('.manifest.json')) {
+      continue;
+    }
+    final manifest = await _readManifest(entity);
+    if (manifest == null) continue;
+    final image = File(manifest.imagePath);
+    if (!await image.exists()) continue;
+    if (await image.length() != manifest.imageBytes) continue;
+    manifests.add(manifest);
+  }
+  manifests.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+  return manifests;
+}
+
+EmmcBackupManifest? findMatchingEmmcBackup({
+  required List<EmmcBackupManifest> manifests,
+  required String profileId,
+  required DiskInfo disk,
+}) {
+  for (final manifest in manifests) {
+    if (manifest.matches(profileId: profileId, disk: disk)) {
+      return manifest;
+    }
+  }
+  return null;
+}
+
+Future<EmmcBackupManifest?> _readManifest(File file) async {
+  try {
+    final decoded = jsonDecode(await file.readAsString());
+    if (decoded is! Map) return null;
+    return EmmcBackupManifest.fromJson(decoded.cast<String, dynamic>());
+  } catch (_) {
+    return null;
+  }
+}

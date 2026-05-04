@@ -176,6 +176,53 @@ void main() {
       expect(find.textContaining('ETA'), findsOneWidget);
     });
 
+    testWidgets('successful backup writes an eMMC manifest', (tester) async {
+      final controller = stubWizardController(profileJson: testProfileJson());
+      await controller.loadProfile('test-printer');
+      await controller.setDecision('flash.disk', 'disk-1');
+      final helper = _RecordingElevatedHelper();
+      EmmcBackupManifest? writtenManifest;
+
+      await tester.pumpWidget(
+        testHarness(
+          controller: controller,
+          child: const EmmcBackupScreen(),
+          initialLocation: '/snapshot',
+          extraOverrides: [
+            flashServiceProvider.overrideWithValue(_OneDiskFlash()),
+            elevatedHelperServiceProvider.overrideWithValue(helper),
+            emmcBackupsDirProvider.overrideWithValue(
+              '/deckhand/state/emmc-backups',
+            ),
+            emmcBackupManifestWriterProvider.overrideWithValue((
+              manifest,
+            ) async {
+              writtenManifest = manifest;
+              return emmcBackupManifestPath(manifest.imagePath);
+            }),
+          ],
+        ),
+      );
+      await tester.pump();
+
+      await tester.tap(find.text('Back up this disk'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+      await tester.tap(find.text('Continue'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      await tester.pump();
+
+      final manifest = writtenManifest;
+
+      expect(manifest, isNotNull);
+      expect(manifest!.profileId, 'test-printer');
+      expect(manifest.imagePath, helper.lastOutputPath);
+      expect(manifest.imageBytes, 4096);
+      expect(manifest.imageSha256, 'a' * 64);
+      expect(manifest.disk.model, 'Test eMMC');
+    });
+
     testWidgets('does not launch helper when token consumption fails', (
       tester,
     ) async {
@@ -356,10 +403,17 @@ class _RecordingElevatedHelper implements ElevatedHelperService {
         bytesDone: totalBytes,
         bytesTotal: totalBytes,
         phase: FlashPhase.done,
-        message: 'ok',
+        message: 'a' * 64,
       ),
     );
   }
+
+  @override
+  Stream<FlashProgress> hashDevice({
+    required String diskId,
+    required String confirmationToken,
+    int totalBytes = 0,
+  }) => const Stream.empty();
 
   @override
   Stream<FlashProgress> writeImage({
@@ -393,6 +447,13 @@ class _StreamingElevatedHelper implements ElevatedHelperService {
     int totalBytes = 0,
     String? outputRoot,
   }) => _controller.stream;
+
+  @override
+  Stream<FlashProgress> hashDevice({
+    required String diskId,
+    required String confirmationToken,
+    int totalBytes = 0,
+  }) => const Stream.empty();
 
   @override
   Stream<FlashProgress> writeImage({

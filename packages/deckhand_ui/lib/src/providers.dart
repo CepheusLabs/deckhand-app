@@ -244,6 +244,21 @@ final disksProvider = FutureProvider<List<DiskInfo>>((ref) async {
 /// surprise path.
 final emmcBackupsDirProvider = Provider<String?>((_) => null);
 
+final emmcBackupManifestsProvider = FutureProvider<List<EmmcBackupManifest>>((
+  ref,
+) async {
+  final dir = ref.watch(emmcBackupsDirProvider);
+  if (dir == null || dir.trim().isEmpty) return const [];
+  return scanEmmcBackupManifests(dir);
+});
+
+typedef EmmcBackupManifestWriter =
+    Future<String> Function(EmmcBackupManifest manifest);
+
+final emmcBackupManifestWriterProvider = Provider<EmmcBackupManifestWriter>(
+  (_) => writeEmmcBackupManifest,
+);
+
 /// Where on the host debug bundles ([BundleBuilder] output) land.
 /// Production wiring sets this to `<data_dir>/debug-bundles/`. When
 /// null the "Save bundle" path on [DebugBundleScreen] surfaces an

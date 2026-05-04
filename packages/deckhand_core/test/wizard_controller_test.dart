@@ -2246,6 +2246,17 @@ class FakeElevatedHelper implements ElevatedHelperService {
       yield e;
     }
   }
+
+  @override
+  Stream<FlashProgress> hashDevice({
+    required String diskId,
+    required String confirmationToken,
+    int totalBytes = 0,
+  }) async* {
+    for (final e in _events) {
+      yield e;
+    }
+  }
 }
 
 class FakeSecurity implements SecurityService {

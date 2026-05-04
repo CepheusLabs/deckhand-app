@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"os"
 	"path/filepath"
 	"strings"
@@ -149,6 +151,24 @@ func TestOperationCanceledRequiresLiveRegularFile(t *testing.T) {
 	}
 	if !operationCanceled(cancelFile) {
 		t.Fatal("missing cancel file should cancel")
+	}
+}
+
+func TestHashReaderHashesEveryByte(t *testing.T) {
+	payload := "deckhand live disk hash"
+	wantBytes := int64(len(payload))
+	sum := sha256.Sum256([]byte(payload))
+	wantSha := hex.EncodeToString(sum[:])
+
+	gotSha, gotBytes, err := hashReader(strings.NewReader(payload), wantBytes, "")
+	if err != nil {
+		t.Fatalf("hashReader() error = %v", err)
+	}
+	if gotSha != wantSha {
+		t.Fatalf("hashReader() sha = %s, want %s", gotSha, wantSha)
+	}
+	if gotBytes != wantBytes {
+		t.Fatalf("hashReader() bytes = %d, want %d", gotBytes, wantBytes)
 	}
 }
 

@@ -29,6 +29,16 @@ class _SnapshotScreenState extends ConsumerState<SnapshotScreen> {
   bool _didRefresh = false;
   bool _emmcBackupAcknowledged = false;
   String _restoreStrategy = 'side_by_side';
+  StreamSubscription<FlashProgress>? _hashSub;
+  FlashProgress? _hashProgress;
+  String? _hashError;
+  EmmcBackupManifest? _verifiedEmmcBackup;
+
+  @override
+  void dispose() {
+    _hashSub?.cancel();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -50,6 +60,30 @@ class _SnapshotScreenState extends ConsumerState<SnapshotScreen> {
     final sizes = probe?.sizes ?? const <String, int>{};
     final probedAt = probe?.probedAt;
     final probeError = probeAsync.hasError ? probeAsync.error : null;
+    final disks = ref.watch(disksProvider).valueOrNull ?? const <DiskInfo>[];
+    final selectedDiskId = controller.state.decisions['flash.disk'];
+    final selectedDisk = selectedDiskId is String
+        ? _findDisk(disks, selectedDiskId)
+        : null;
+    final manifestsAsync = ref.watch(emmcBackupManifestsProvider);
+    final manifests =
+        manifestsAsync.valueOrNull ?? const <EmmcBackupManifest>[];
+    final matchingBackup = selectedDisk == null
+        ? null
+        : findMatchingEmmcBackup(
+            manifests: manifests,
+            profileId: controller.state.profileId,
+            disk: selectedDisk,
+          );
+    final verifiedBackup = _verifiedBackupFor(
+      controller.state.profileId,
+      selectedDisk,
+      matchingBackup,
+    );
+    final eMmcReady =
+        _emmcBackupAcknowledged ||
+        controller.state.decisions['snapshot.emmc_acknowledged'] == true ||
+        verifiedBackup != null;
 
     // Race recovery: if the probe completed with `null` because SSH
     // wasn't ready at the moment ChoosePath kicked it off, but is
@@ -102,9 +136,16 @@ class _SnapshotScreenState extends ConsumerState<SnapshotScreen> {
             const SizedBox(height: 12),
           ],
           _FullEmmcBackupBanner(
-            acknowledged: _emmcBackupAcknowledged,
-            onChanged: (v) =>
-                setState(() => _emmcBackupAcknowledged = v),
+            acknowledged: eMmcReady,
+            backupScanLoading: manifestsAsync.isLoading,
+            matchingBackup: matchingBackup,
+            verifyProgress: _hashProgress,
+            verifyError: _hashError,
+            verifiedBackup: verifiedBackup,
+            onVerify: selectedDisk != null && matchingBackup != null
+                ? () => _verifyEmmcBackup(selectedDisk, matchingBackup)
+                : null,
+            onChanged: (v) => setState(() => _emmcBackupAcknowledged = v),
           ),
           const SizedBox(height: 12),
           LayoutBuilder(
@@ -130,8 +171,8 @@ class _SnapshotScreenState extends ConsumerState<SnapshotScreen> {
                 estimatedBytes: selectedSize,
                 probedAt: probedAt,
                 probing: probing,
-                onChange: (v) => setState(
-                    () => _restoreStrategy = v ?? 'side_by_side'),
+                onChange: (v) =>
+                    setState(() => _restoreStrategy = v ?? 'side_by_side'),
               );
               if (twoCol) {
                 return IntrinsicHeight(
@@ -146,11 +187,7 @@ class _SnapshotScreenState extends ConsumerState<SnapshotScreen> {
                 );
               }
               return Column(
-                children: [
-                  left,
-                  const SizedBox(height: 12),
-                  right,
-                ],
+                children: [left, const SizedBox(height: 12), right],
               );
             },
           ),
@@ -163,14 +200,14 @@ class _SnapshotScreenState extends ConsumerState<SnapshotScreen> {
         // we ask them about their rollback path. Allowing advance
         // even before the probe lands — a slow network shouldn't
         // gate the user. Decisions still record.
-        onPressed: !_emmcBackupAcknowledged
+        onPressed: !eMmcReady
             ? null
             : () {
                 final c = ref.read(wizardControllerProvider);
+                unawaited(c.setDecision('snapshot.paths', _selected.toList()));
                 unawaited(
-                    c.setDecision('snapshot.paths', _selected.toList()));
-                unawaited(c.setDecision(
-                    'snapshot.restore_strategy', _restoreStrategy));
+                  c.setDecision('snapshot.restore_strategy', _restoreStrategy),
+                );
                 unawaited(c.setDecision('snapshot.emmc_acknowledged', true));
                 context.go('/hardening');
               },
@@ -183,6 +220,165 @@ class _SnapshotScreenState extends ConsumerState<SnapshotScreen> {
         ),
       ],
     );
+  }
+
+  DiskInfo? _findDisk(List<DiskInfo> disks, String id) {
+    for (final disk in disks) {
+      if (disk.id == id) return disk;
+    }
+    return null;
+  }
+
+  EmmcBackupManifest? _verifiedBackupFor(
+    String profileId,
+    DiskInfo? disk,
+    EmmcBackupManifest? matchingBackup,
+  ) {
+    final verified = _verifiedEmmcBackup;
+    if (verified == null || disk == null || matchingBackup == null) {
+      return null;
+    }
+    if (!verified.matches(profileId: profileId, disk: disk)) return null;
+    if (verified.imagePath != matchingBackup.imagePath) return null;
+    if (verified.imageSha256.toLowerCase() !=
+        matchingBackup.imageSha256.toLowerCase()) {
+      return null;
+    }
+    return verified;
+  }
+
+  Future<void> _verifyEmmcBackup(
+    DiskInfo disk,
+    EmmcBackupManifest manifest,
+  ) async {
+    await _hashSub?.cancel();
+    _hashSub = null;
+    final helper = ref.read(elevatedHelperServiceProvider);
+    if (helper == null) {
+      setState(() {
+        _hashError =
+            'Exact verification needs the elevated helper so Deckhand can '
+            'read the raw eMMC.';
+        _hashProgress = null;
+      });
+      return;
+    }
+
+    try {
+      final security = ref.read(securityServiceProvider);
+      final token = await security.issueConfirmationToken(
+        operation: 'disks.hash_device',
+        target: disk.id,
+      );
+      if (!security.consumeToken(token.value, 'disks.hash_device')) {
+        throw StateError(
+          'confirmation token was rejected before helper launch',
+        );
+      }
+
+      setState(() {
+        _hashError = null;
+        _verifiedEmmcBackup = null;
+        _hashProgress = FlashProgress(
+          bytesDone: 0,
+          bytesTotal: disk.sizeBytes,
+          phase: FlashPhase.preparing,
+          message: 'requesting elevation...',
+        );
+      });
+
+      _hashSub = helper
+          .hashDevice(
+            diskId: disk.id,
+            confirmationToken: token.value,
+            totalBytes: disk.sizeBytes,
+          )
+          .listen(
+            (event) {
+              if (!mounted) return;
+              setState(() {
+                final priorTotal = _hashProgress?.bytesTotal ?? 0;
+                final mergedTotal = event.bytesTotal > 0
+                    ? event.bytesTotal
+                    : priorTotal;
+                final merged = FlashProgress(
+                  bytesDone: event.bytesDone,
+                  bytesTotal: mergedTotal,
+                  phase: event.phase,
+                  message: event.message,
+                );
+                _hashProgress = merged;
+                if (event.phase == FlashPhase.failed) {
+                  _hashError = event.message ?? 'Live eMMC hash failed.';
+                  _hashSub = null;
+                } else if (event.phase == FlashPhase.done) {
+                  final gotSha = event.message?.toLowerCase();
+                  final wantSha = manifest.imageSha256.toLowerCase();
+                  if (gotSha == wantSha &&
+                      event.bytesDone == manifest.imageBytes) {
+                    _verifiedEmmcBackup = manifest;
+                    _hashError = null;
+                    unawaited(
+                      ref
+                          .read(wizardControllerProvider)
+                          .setDecision('snapshot.emmc_acknowledged', true),
+                    );
+                    unawaited(
+                      ref
+                          .read(wizardControllerProvider)
+                          .setDecision(
+                            'snapshot.emmc_backup_path',
+                            manifest.imagePath,
+                          ),
+                    );
+                  } else {
+                    _hashError =
+                        'Live eMMC hash does not match this backup image. '
+                        'Back up the eMMC again before continuing.';
+                    _verifiedEmmcBackup = null;
+                  }
+                  _hashSub = null;
+                }
+              });
+            },
+            onError: (Object e) {
+              if (!mounted) return;
+              setState(() {
+                _hashError = '$e';
+                _hashProgress = FlashProgress(
+                  bytesDone: _hashProgress?.bytesDone ?? 0,
+                  bytesTotal: _hashProgress?.bytesTotal ?? 0,
+                  phase: FlashPhase.failed,
+                  message: '$e',
+                );
+                _verifiedEmmcBackup = null;
+                _hashSub = null;
+              });
+            },
+            onDone: () {
+              if (!mounted) return;
+              if (_verifiedEmmcBackup == null && _hashError == null) {
+                setState(() {
+                  _hashError =
+                      'Live eMMC hash ended without a completion event.';
+                  _hashSub = null;
+                });
+              }
+            },
+          );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _hashError = '$e';
+        _hashProgress = FlashProgress(
+          bytesDone: 0,
+          bytesTotal: disk.sizeBytes,
+          phase: FlashPhase.failed,
+          message: '$e',
+        );
+        _verifiedEmmcBackup = null;
+      });
+    }
   }
 }
 
@@ -337,7 +533,8 @@ class _PathsPanel extends StatelessWidget {
               selected: selected.contains(paths[i].id),
               probing: probing,
               size: sizes[paths[i].path],
-              missing: !probing &&
+              missing:
+                  !probing &&
                   sizes[paths[i].path] != null &&
                   sizes[paths[i].path] == 0,
               isLast: i == paths.length - 1,
@@ -472,10 +669,7 @@ class _SizeCell extends StatelessWidget {
       return SizedBox(
         width: 12,
         height: 12,
-        child: CircularProgressIndicator(
-          strokeWidth: 1.5,
-          color: tokens.text4,
-        ),
+        child: CircularProgressIndicator(strokeWidth: 1.5, color: tokens.text4),
       );
     }
     if (missing) {
@@ -593,9 +787,7 @@ class _StrategyPanel extends StatelessWidget {
                 Text(
                   probing
                       ? '…'
-                      : (probedAt == null
-                          ? '—'
-                          : _humanBytes(estimatedBytes)),
+                      : (probedAt == null ? '—' : _humanBytes(estimatedBytes)),
                   style: TextStyle(
                     fontFamily: DeckhandTokens.fontMono,
                     fontSize: DeckhandTokens.tXl,
@@ -608,8 +800,8 @@ class _StrategyPanel extends StatelessWidget {
                   probing
                       ? 'du -sk · running'
                       : (probedAt == null
-                          ? 'du -sk · not available'
-                          : 'du -sk · cached ${_ago(probedAt!)}'),
+                            ? 'du -sk · not available'
+                            : 'du -sk · cached ${_ago(probedAt!)}'),
                   style: TextStyle(
                     fontFamily: DeckhandTokens.fontMono,
                     fontSize: 10,
@@ -688,7 +880,9 @@ class _StrategyOption extends StatelessWidget {
                       const SizedBox(width: 8),
                       Container(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 7, vertical: 1),
+                          horizontal: 7,
+                          vertical: 1,
+                        ),
                         decoration: BoxDecoration(
                           color: tokens.ink3,
                           border: Border.all(color: tokens.line),
@@ -739,25 +933,138 @@ String _humanBytes(int bytes) {
   return '${v.toStringAsFixed(v < 10 ? 1 : 0)} ${units[i]}';
 }
 
+class _BackupVerificationStatus extends StatelessWidget {
+  const _BackupVerificationStatus({
+    required this.tokens,
+    required this.matchingBackup,
+    required this.verifiedBackup,
+    required this.progress,
+    required this.error,
+    required this.loading,
+    required this.onVerify,
+  });
+
+  final DeckhandTokens tokens;
+  final EmmcBackupManifest? matchingBackup;
+  final EmmcBackupManifest? verifiedBackup;
+  final FlashProgress? progress;
+  final String? error;
+  final bool loading;
+  final VoidCallback? onVerify;
+
+  @override
+  Widget build(BuildContext context) {
+    final verified = verifiedBackup != null;
+    final color = error != null
+        ? tokens.bad
+        : (verified ? tokens.ok : tokens.info);
+    final message = _message();
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.06),
+        border: Border.all(color: color.withValues(alpha: 0.28)),
+        borderRadius: BorderRadius.circular(DeckhandTokens.r2),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            error != null
+                ? Icons.error_outline
+                : (verified ? Icons.verified_outlined : Icons.manage_search),
+            size: 16,
+            color: color,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              message,
+              style: TextStyle(
+                fontFamily: DeckhandTokens.fontSans,
+                fontSize: DeckhandTokens.tXs,
+                color: error != null ? tokens.bad : tokens.text2,
+                height: 1.4,
+              ),
+            ),
+          ),
+          if (matchingBackup != null && !verified) ...[
+            const SizedBox(width: 12),
+            OutlinedButton.icon(
+              onPressed: onVerify,
+              icon: const Icon(Icons.fingerprint, size: 14),
+              label: const Text('Verify exact match'),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  String _message() {
+    final verified = verifiedBackup;
+    if (verified != null) {
+      return 'Exact eMMC backup verified: ${verified.imagePath}';
+    }
+    final err = error;
+    if (err != null) return err;
+    final p = progress;
+    if (p != null && p.phase != FlashPhase.done) {
+      final pct = p.bytesTotal <= 0
+          ? null
+          : ((p.bytesDone / p.bytesTotal) * 100).clamp(0, 100);
+      final prefix = pct == null
+          ? 'Hashing live eMMC'
+          : 'Hashing live eMMC (${pct.toStringAsFixed(1)}%)';
+      final bytes = p.bytesTotal <= 0
+          ? _humanBytes(p.bytesDone)
+          : '${_humanBytes(p.bytesDone)} of ${_humanBytes(p.bytesTotal)}';
+      return '$prefix: $bytes';
+    }
+    final match = matchingBackup;
+    if (match != null) {
+      return 'Matching eMMC backup found. Verify exact match before '
+          'Deckhand trusts ${match.imagePath} as the rollback image.';
+    }
+    if (loading) return 'Checking completed eMMC backups...';
+    return 'No completed eMMC backup manifest matches the selected disk yet.';
+  }
+}
+
 /// Full-eMMC-image backup banner. Asks the user to confirm they
 /// either have a full image backup (via a USB-eMMC adapter + dd)
 /// or are knowingly proceeding without one — and offers to actually
 /// run the backup right now via the dedicated S148 backup screen.
 /// Lives on the snapshot screen because that's the natural "what am
 /// I preserving before destructive changes?" moment in the flow.
-class _FullEmmcBackupBanner extends ConsumerWidget {
+class _FullEmmcBackupBanner extends StatelessWidget {
   const _FullEmmcBackupBanner({
     required this.acknowledged,
+    required this.backupScanLoading,
+    required this.matchingBackup,
+    required this.verifyProgress,
+    required this.verifyError,
+    required this.verifiedBackup,
+    required this.onVerify,
     required this.onChanged,
   });
 
   final bool acknowledged;
+  final bool backupScanLoading;
+  final EmmcBackupManifest? matchingBackup;
+  final FlashProgress? verifyProgress;
+  final String? verifyError;
+  final EmmcBackupManifest? verifiedBackup;
+  final VoidCallback? onVerify;
   final void Function(bool) onChanged;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final tokens = DeckhandTokens.of(context);
     final color = acknowledged ? tokens.ok : tokens.warn;
+    final verifying =
+        verifyProgress != null && verifyProgress!.phase != FlashPhase.done;
+    final verified = verifiedBackup != null;
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
       decoration: BoxDecoration(
@@ -769,7 +1076,7 @@ class _FullEmmcBackupBanner extends ConsumerWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           InkWell(
-            onTap: () => onChanged(!acknowledged),
+            onTap: verified ? null : () => onChanged(!acknowledged),
             borderRadius: BorderRadius.circular(DeckhandTokens.r2),
             child: Padding(
               padding: const EdgeInsets.symmetric(vertical: 2),
@@ -781,9 +1088,8 @@ class _FullEmmcBackupBanner extends ConsumerWidget {
                     height: 18,
                     child: Checkbox(
                       value: acknowledged,
-                      onChanged: (v) => onChanged(v ?? false),
-                      materialTapTargetSize:
-                          MaterialTapTargetSize.shrinkWrap,
+                      onChanged: verified ? null : (v) => onChanged(v ?? false),
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                       visualDensity: VisualDensity.compact,
                       activeColor: tokens.ok,
                     ),
@@ -823,6 +1129,25 @@ class _FullEmmcBackupBanner extends ConsumerWidget {
               ),
             ),
           ),
+          if (verified ||
+              matchingBackup != null ||
+              backupScanLoading ||
+              verifyError != null ||
+              verifyProgress != null) ...[
+            const SizedBox(height: 12),
+            Padding(
+              padding: const EdgeInsets.only(left: 30),
+              child: _BackupVerificationStatus(
+                tokens: tokens,
+                matchingBackup: matchingBackup,
+                verifiedBackup: verifiedBackup,
+                progress: verifyProgress,
+                error: verifyError,
+                loading: backupScanLoading,
+                onVerify: verifying || verified ? null : onVerify,
+              ),
+            ),
+          ],
           const SizedBox(height: 12),
           Padding(
             padding: const EdgeInsets.only(left: 30),

@@ -124,6 +124,60 @@ class ProcessElevatedHelperService implements ElevatedHelperService {
   }
 
   @override
+  Stream<FlashProgress> hashDevice({
+    required String diskId,
+    required String confirmationToken,
+    int totalBytes = 0,
+  }) async* {
+    final tokenDir = await Directory.systemTemp.createTemp('deckhand-tok-');
+    if (!Platform.isWindows) {
+      await Process.run('chmod', ['0700', tokenDir.path]);
+    }
+    final tokenFile = File(p.join(tokenDir.path, 'token'));
+    await tokenFile.writeAsString(confirmationToken, flush: true);
+    if (!Platform.isWindows) {
+      await Process.run('chmod', ['0600', tokenFile.path]);
+    }
+
+    final cancelDir = await Directory.systemTemp.createTemp('deckhand-cancel-');
+    if (!Platform.isWindows) {
+      await Process.run('chmod', ['0700', cancelDir.path]);
+    }
+    final cancelFile = File(p.join(cancelDir.path, 'active'));
+    await cancelFile.writeAsString('active', flush: true);
+    if (!Platform.isWindows) {
+      await Process.run('chmod', ['0600', cancelFile.path]);
+    }
+
+    final args = <String>[
+      'hash-device',
+      '--target',
+      diskId,
+      '--token-file',
+      tokenFile.path,
+      '--cancel-file',
+      cancelFile.path,
+      if (totalBytes > 0) ...['--total-bytes', '$totalBytes'],
+      '--watchdog-pid',
+      '$pid',
+    ];
+
+    try {
+      yield* launchHelper(args);
+    } finally {
+      try {
+        if (await cancelFile.exists()) await cancelFile.delete();
+      } catch (_) {}
+      try {
+        await cancelDir.delete(recursive: true);
+      } catch (_) {}
+      try {
+        await tokenDir.delete(recursive: true);
+      } catch (_) {}
+    }
+  }
+
+  @override
   Stream<FlashProgress> writeImage({
     required String imagePath,
     required String diskId,
@@ -584,6 +638,16 @@ class ProcessElevatedHelperService implements ElevatedHelperService {
 /// dry-run aware but the app still had a real privileged helper wired.
 class DryRunElevatedHelperService implements ElevatedHelperService {
   const DryRunElevatedHelperService();
+
+  @override
+  Stream<FlashProgress> hashDevice({
+    required String diskId,
+    required String confirmationToken,
+    int totalBytes = 0,
+  }) => _dryRunHelperProgress(
+    label: 'DRY-RUN elevated hash $diskId',
+    totalBytes: totalBytes,
+  );
 
   @override
   Stream<FlashProgress> readImage({
