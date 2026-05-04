@@ -16,6 +16,7 @@ import (
 	"log/slog"
 	"os"
 	"runtime"
+	"time"
 
 	"github.com/CepheusLabs/deckhand/sidecar/internal/doctor"
 	"github.com/CepheusLabs/deckhand/sidecar/internal/handlers"
@@ -38,6 +39,11 @@ Usage:
   deckhand-sidecar helper-smoke [--helper PATH] [--long-args]
                                Launch the elevated helper with a harmless
                                version probe and verify helper events work.
+  deckhand-sidecar backup-smoke --disk DISK_ID [--helper PATH]
+                               [--output-root DIR] [--output PATH]
+                               [--total-bytes N] [--timeout 45m]
+                               Launch the elevated helper with a real
+                               read-image backup probe.
   deckhand-sidecar -h|--help   Show this message and exit 0.
   deckhand-sidecar --version   Print the sidecar version and exit 0.
 `
@@ -80,6 +86,41 @@ func main() {
 			})
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "[deckhand-sidecar] helper-smoke: %v\n", err)
+				os.Exit(1)
+			}
+			if !passed {
+				os.Exit(1)
+			}
+			return
+		case "backup-smoke":
+			fs := flag.NewFlagSet("backup-smoke", flag.ExitOnError)
+			helperPath := fs.String("helper", "", "path to deckhand-elevated-helper; default is sibling of sidecar")
+			diskID := fs.String("disk", "", "disk id to read, for example PhysicalDrive3")
+			outputRoot := fs.String("output-root", "", "Deckhand emmc-backups root; default is the app state backup root")
+			outputPath := fs.String("output", "", "full output .img path; default is a timestamped file in output-root")
+			totalBytes := fs.Int64("total-bytes", 0, "expected disk size in bytes; auto-detected when omitted")
+			timeoutRaw := fs.String("timeout", "45m", "maximum time to wait, for example 10m or 1h")
+			if err := fs.Parse(os.Args[2:]); err != nil {
+				fmt.Fprintf(os.Stderr, "[deckhand-sidecar] backup-smoke: %v\n", err)
+				os.Exit(2)
+			}
+			timeout, err := time.ParseDuration(*timeoutRaw)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "[deckhand-sidecar] backup-smoke: invalid --timeout %q: %v\n", *timeoutRaw, err)
+				os.Exit(2)
+			}
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			passed, err := doctor.RunBackupSmoke(ctx, os.Stdout, doctor.BackupSmokeOptions{
+				HelperPath: *helperPath,
+				DiskID:     *diskID,
+				OutputRoot: *outputRoot,
+				OutputPath: *outputPath,
+				TotalBytes: *totalBytes,
+				Timeout:    timeout,
+			})
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "[deckhand-sidecar] backup-smoke: %v\n", err)
 				os.Exit(1)
 			}
 			if !passed {
