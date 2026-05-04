@@ -52,6 +52,39 @@ add_subdirectory(${FLUTTER_MANAGED_DIR})
 # Application build; see runner/CMakeLists.txt.
 add_subdirectory("runner")
 
+# Deckhand ships two Go helpers next to the Flutter runner:
+#   * deckhand-sidecar.exe handles JSON-RPC, downloads, disk probes, etc.
+#   * deckhand-elevated-helper.exe is the UAC-elevated destructive I/O helper.
+#
+# Flutter's Windows toolchain only knows about the Dart app and C++ runner,
+# so wire the Go build into CMake explicitly. This makes both
+# `flutter run -d windows` and `flutter build windows` produce a complete
+# runnable folder instead of requiring a manual post-build copy.
+option(DECKHAND_BUILD_SIDECAR "Build Deckhand sidecar/helper during Windows builds" ON)
+if(DECKHAND_BUILD_SIDECAR)
+  find_program(DECKHAND_POWERSHELL pwsh powershell)
+  if(NOT DECKHAND_POWERSHELL)
+    message(FATAL_ERROR "PowerShell is required to build Deckhand sidecar binaries")
+  endif()
+
+  set(DECKHAND_BUILD_WINDOWS_SIDECAR_SCRIPT
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../scripts/build-windows-sidecar.ps1")
+  if(NOT EXISTS "${DECKHAND_BUILD_WINDOWS_SIDECAR_SCRIPT}")
+    message(FATAL_ERROR "Missing ${DECKHAND_BUILD_WINDOWS_SIDECAR_SCRIPT}")
+  endif()
+
+  set(DECKHAND_RUNNER_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/runner/$<CONFIG>")
+  add_custom_target(deckhand_sidecar_binaries ALL
+    COMMAND "${DECKHAND_POWERSHELL}" -NoProfile -ExecutionPolicy Bypass
+      -File "${DECKHAND_BUILD_WINDOWS_SIDECAR_SCRIPT}"
+      -OutputDir "${DECKHAND_RUNNER_OUTPUT_DIR}"
+    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/../.."
+    COMMENT "Building Deckhand sidecar and elevated helper"
+    VERBATIM
+  )
+  add_dependencies(${BINARY_NAME} deckhand_sidecar_binaries)
+endif()
+
 
 # Generated plugin build rules, which manage building the plugins and adding
 # them to the application.
