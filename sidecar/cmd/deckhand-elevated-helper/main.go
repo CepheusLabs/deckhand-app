@@ -251,10 +251,10 @@ func runReadImage(args []string) {
 			}
 		}
 		fatalIfCanceled(*cancelFile, cancelCleanup)
-		if errors.Is(rerr, io.EOF) {
-			break
-		}
 		if rerr != nil {
+			if isTerminalDeviceReadError(rerr, done, total) {
+				break
+			}
 			fatalf("read device after %d of %d bytes: %v", done, total, rerr)
 		}
 	}

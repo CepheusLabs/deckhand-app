@@ -3,6 +3,8 @@ package main
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -169,6 +171,24 @@ func TestHashReaderHashesEveryByte(t *testing.T) {
 	}
 	if gotBytes != wantBytes {
 		t.Fatalf("hashReader() bytes = %d, want %d", gotBytes, wantBytes)
+	}
+}
+
+func TestTerminalDeviceReadErrorAcceptsEOFOnly(t *testing.T) {
+	if !isTerminalDeviceReadError(io.EOF, 1024, 1024) {
+		t.Fatal("io.EOF should be terminal")
+	}
+	if isTerminalDeviceReadError(io.EOF, 512, 1024) {
+		t.Fatal("early EOF should not be treated as a complete raw-device read")
+	}
+	if !isTerminalDeviceReadError(io.EOF, 1024, 0) {
+		t.Fatal("io.EOF should be terminal when no expected size is known")
+	}
+	if isTerminalDeviceReadError(io.ErrUnexpectedEOF, 1024, 1024) {
+		t.Fatal("unexpected EOF should not be treated as a complete raw-device read")
+	}
+	if isTerminalDeviceReadError(errors.New("read failed"), 1024, 1024) {
+		t.Fatal("generic read error should not be terminal")
 	}
 }
 

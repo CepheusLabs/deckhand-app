@@ -553,6 +553,13 @@ class ProcessElevatedHelperService implements ElevatedHelperService {
         );
       }
       if (exit != 0) {
+        final helperError = _lastHelperErrorMessage(eventsTail);
+        if (helperError != null) {
+          throw ElevatedHelperException(helperError);
+        }
+        if (_helperEventsContainDone(eventsTail)) {
+          return;
+        }
         throw ElevatedHelperException(
           'elevated helper exited with code $exit'
           '${errTail == null || errTail.isEmpty ? "" : "\npowershell stderr: $errTail"}'
@@ -755,6 +762,14 @@ Stream<FlashProgress> _dryRunHelperProgress({
 @visibleForTesting
 FlashProgress? parseHelperLineForTesting(String line) => _parseHelperLine(line);
 
+@visibleForTesting
+bool helperEventsContainDoneForTesting(String? events) =>
+    _helperEventsContainDone(events);
+
+@visibleForTesting
+String? lastHelperErrorMessageForTesting(String? events) =>
+    _lastHelperErrorMessage(events);
+
 FlashProgress? _parseHelperLine(String line) {
   if (line.trim().isEmpty) return null;
   Map<String, dynamic> obj;
@@ -799,6 +814,41 @@ FlashProgress? _parseHelperLine(String line) {
       );
     default:
       return null;
+  }
+}
+
+bool _helperEventsContainDone(String? events) {
+  if (events == null || events.trim().isEmpty) return false;
+  for (final obj in _decodeHelperEvents(events)) {
+    if (obj['event'] == 'done') return true;
+  }
+  return false;
+}
+
+String? _lastHelperErrorMessage(String? events) {
+  if (events == null || events.trim().isEmpty) return null;
+  String? last;
+  for (final obj in _decodeHelperEvents(events)) {
+    if (obj['event'] == 'error') {
+      final msg = obj['message'];
+      if (msg is String && msg.trim().isNotEmpty) {
+        last = msg.trim();
+      }
+    }
+  }
+  return last;
+}
+
+Iterable<Map<String, dynamic>> _decodeHelperEvents(String events) sync* {
+  for (final line in const LineSplitter().convert(events)) {
+    final trimmed = line.trim();
+    if (trimmed.isEmpty) continue;
+    try {
+      final obj = jsonDecode(trimmed);
+      if (obj is Map<String, dynamic>) yield obj;
+    } catch (_) {
+      continue;
+    }
   }
 }
 
