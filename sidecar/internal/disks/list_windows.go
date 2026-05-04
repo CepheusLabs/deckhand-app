@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os/exec"
 	"strconv"
+	"strings"
 )
 
 // List enumerates physical disks using PowerShell's Get-Disk cmdlet.
@@ -19,11 +20,10 @@ import (
 // Storage modules emit integers, PS 7+ emits enum names. See
 // windows_parse.go for the full story.
 func List(ctx context.Context) ([]DiskInfo, error) {
-	cmd := exec.CommandContext(ctx, "powershell.exe", "-NoProfile", "-Command",
+	out, err := runPowerShell(ctx,
 		`Get-Disk | Select-Object Number,FriendlyName,Size,BusType,OperationalStatus | ConvertTo-Json -Compress`)
-	out, err := cmd.Output()
 	if err != nil {
-		return nil, fmt.Errorf("Get-Disk failed: %w", err)
+		return listDisksViaCIM(ctx, err)
 	}
 
 	// ConvertTo-Json emits an object (not an array) if only one disk.
@@ -79,9 +79,8 @@ func listPartitions(ctx context.Context, diskNumber int) ([]Partition, error) {
 	if diskNumber < 0 {
 		return nil, fmt.Errorf("invalid disk number %d", diskNumber)
 	}
-	cmd := exec.CommandContext(ctx, "powershell.exe", "-NoProfile", "-Command",
+	out, err := runPowerShell(ctx,
 		fmt.Sprintf(`Get-Partition -DiskNumber %d | Select-Object PartitionNumber,Size,Type,DriveLetter | ConvertTo-Json -Compress`, diskNumber))
-	out, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("Get-Partition disk %d: %w", diskNumber, err)
 	}
@@ -115,4 +114,64 @@ func listPartitions(ctx context.Context, diskNumber int) ([]Partition, error) {
 		})
 	}
 	return result, nil
+}
+
+var runPowerShell = func(ctx context.Context, script string) ([]byte, error) {
+	cmd := exec.CommandContext(ctx, "powershell.exe", "-NoProfile", "-Command", script)
+	out, err := cmd.Output()
+	if err != nil {
+		var detail string
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			detail = strings.TrimSpace(string(exitErr.Stderr))
+		}
+		if detail != "" {
+			return nil, fmt.Errorf("%w: %s", err, detail)
+		}
+		return nil, err
+	}
+	return out, nil
+}
+
+func listDisksViaCIM(ctx context.Context, getDiskErr error) ([]DiskInfo, error) {
+	out, err := runPowerShell(ctx,
+		`Get-CimInstance Win32_DiskDrive | Select-Object Index,Model,Size,InterfaceType,MediaType | ConvertTo-Json -Compress`)
+	if err != nil {
+		return nil, fmt.Errorf("Get-Disk failed: %w; Win32_DiskDrive fallback failed: %v", getDiskErr, err)
+	}
+
+	type raw struct {
+		Index         int    `json:"Index"`
+		Model         string `json:"Model"`
+		Size          int64  `json:"Size"`
+		InterfaceType string `json:"InterfaceType"`
+		MediaType     string `json:"MediaType"`
+	}
+	var disks []raw
+	if err := json.Unmarshal(out, &disks); err != nil {
+		var single raw
+		if serr := json.Unmarshal(out, &single); serr == nil {
+			disks = []raw{single}
+		} else {
+			return nil, fmt.Errorf("parse Win32_DiskDrive output after Get-Disk failed (%v): %w (%q)", getDiskErr, err, string(out))
+		}
+	}
+
+	results := make([]DiskInfo, 0, len(disks))
+	for _, d := range disks {
+		busName := strings.TrimSpace(d.InterfaceType)
+		if busName == "" {
+			busName = "Unknown"
+		}
+		mediaType := strings.ToLower(strings.TrimSpace(d.MediaType))
+		results = append(results, DiskInfo{
+			ID:         "PhysicalDrive" + strconv.Itoa(d.Index),
+			Path:       `\\.\PHYSICALDRIVE` + strconv.Itoa(d.Index),
+			SizeBytes:  d.Size,
+			Bus:        busName,
+			Model:      strings.TrimSpace(d.Model),
+			Removable:  isRemovableBus(busName) || strings.Contains(mediaType, "removable"),
+			Partitions: nil,
+		})
+	}
+	return results, nil
 }

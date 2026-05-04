@@ -176,6 +176,44 @@ void main() {
       expect(find.textContaining('ETA'), findsOneWidget);
     });
 
+    testWidgets('progress detail uses the friendly disk label', (tester) async {
+      final controller = stubWizardController(profileJson: testProfileJson());
+      await controller.loadProfile('test-printer');
+      await controller.setDecision('flash.disk', 'disk-1');
+      final helper = _StreamingElevatedHelper();
+
+      await tester.pumpWidget(
+        testHarness(
+          controller: controller,
+          child: const EmmcBackupScreen(),
+          initialLocation: '/snapshot',
+          extraOverrides: [
+            flashServiceProvider.overrideWithValue(_OneDiskFlash()),
+            elevatedHelperServiceProvider.overrideWithValue(helper),
+            emmcBackupsDirProvider.overrideWithValue(
+              '/deckhand/state/emmc-backups',
+            ),
+          ],
+        ),
+      );
+      await tester.pump();
+
+      await tester.tap(find.text('Back up this disk'));
+      await tester.pump(const Duration(milliseconds: 50));
+      helper.add(
+        const FlashProgress(
+          bytesDone: 0,
+          bytesTotal: 4096,
+          phase: FlashPhase.preparing,
+          message: r'\\.\PHYSICALDRIVE3',
+        ),
+      );
+      await tester.pump();
+
+      expect(find.textContaining('PHYSICALDRIVE3'), findsNothing);
+      expect(find.textContaining('Test eMMC'), findsWidgets);
+    });
+
     testWidgets('successful backup writes an eMMC manifest', (tester) async {
       final controller = stubWizardController(profileJson: testProfileJson());
       await controller.loadProfile('test-printer');

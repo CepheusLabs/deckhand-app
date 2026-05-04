@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:io';
+
 import 'package:deckhand_core/deckhand_core.dart';
 import 'package:deckhand_flash/src/process_elevated_helper.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -69,6 +72,34 @@ void main() {
         containsAllInOrder(['--output-root', '/external/emmc-backups']),
       );
     });
+
+    test(
+      'stream cancellation removes the helper cancel file promptly',
+      () async {
+        final svc = _BlockingElevatedHelper(
+          readOutputRoot: '/deckhand/state/emmc-backups',
+        );
+        final sub = svc
+            .readImage(
+              diskId: 'PhysicalDrive3',
+              outputPath: '/deckhand/state/emmc-backups/backup.img',
+              confirmationToken: 'token-0123456789abcdef',
+            )
+            .listen((_) {});
+
+        await svc.started.future.timeout(const Duration(seconds: 1));
+        final cancelPath = svc.cancelFilePath;
+        expect(cancelPath, isNotNull);
+        expect(await svc.cancelFileExists(), isTrue);
+
+        try {
+          await sub.cancel().timeout(const Duration(milliseconds: 200));
+          expect(await svc.cancelFileExists(), isFalse);
+        } finally {
+          svc.release();
+        }
+      },
+    );
   });
 
   group('hashDevice', () {
@@ -217,5 +248,39 @@ class _CapturingElevatedHelper extends ProcessElevatedHelperService {
       phase: FlashPhase.done,
       message: 'ok',
     );
+  }
+}
+
+class _BlockingElevatedHelper extends ProcessElevatedHelperService {
+  _BlockingElevatedHelper({super.readOutputRoot})
+    : super(helperPath: '/bin/helper');
+
+  final started = Completer<void>();
+  final _release = Completer<void>();
+  String? cancelFilePath;
+
+  @override
+  Stream<FlashProgress> launchHelper(List<String> args) async* {
+    final cancelIndex = args.indexOf('--cancel-file');
+    if (cancelIndex >= 0 && cancelIndex + 1 < args.length) {
+      cancelFilePath = args[cancelIndex + 1];
+    }
+    if (!started.isCompleted) started.complete();
+    yield const FlashProgress(
+      bytesDone: 1,
+      bytesTotal: 2,
+      phase: FlashPhase.writing,
+    );
+    await _release.future;
+  }
+
+  Future<bool> cancelFileExists() async {
+    final path = cancelFilePath;
+    if (path == null) return false;
+    return File(path).exists();
+  }
+
+  void release() {
+    if (!_release.isCompleted) _release.complete();
   }
 }

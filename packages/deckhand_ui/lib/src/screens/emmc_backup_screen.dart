@@ -17,6 +17,10 @@ import '../widgets/wizard_scaffold.dart';
 
 const _backupRootMarker = '.deckhand-emmc-backups-root';
 const _backupCanceledMessage = 'Backup canceled.';
+final _technicalDiskMessageRe = RegExp(
+  r'^(?:\\\\\.\\)?physicaldrive[0-9]+$',
+  caseSensitive: false,
+);
 
 /// S148-emmc-backup — full-image dd backup of the printer's eMMC via
 /// a USB-eMMC adapter on the host. Reached from the Snapshot screen's
@@ -388,8 +392,9 @@ class _EmmcBackupScreenState extends ConsumerState<EmmcBackupScreen> {
             r'$f = New-Object System.Windows.Forms.FolderBrowserDialog;'
             r'$f.Description = "Choose where to save the eMMC backup image";'
             r'if ($f.ShowDialog() -eq "OK") { Write-Output $f.SelectedPath }';
-        final res = await Process.run('powershell', [
+        final res = await Process.run('powershell.exe', [
           '-NoProfile',
+          '-STA',
           '-Command',
           script,
         ]);
@@ -619,6 +624,9 @@ class _EmmcBackupScreenState extends ConsumerState<EmmcBackupScreen> {
               done: _done,
               error: null,
               outputPath: _outputPath,
+              diskLabel: _backupDisk == null
+                  ? null
+                  : diskDisplayName(_backupDisk!),
               bytesPerSecond: _bytesPerSecond,
             ),
           ],
@@ -886,6 +894,7 @@ class _ProgressCard extends StatelessWidget {
     required this.done,
     required this.error,
     required this.outputPath,
+    required this.diskLabel,
     required this.bytesPerSecond,
   });
   final DeckhandTokens tokens;
@@ -893,6 +902,7 @@ class _ProgressCard extends StatelessWidget {
   final bool done;
   final String? error;
   final String? outputPath;
+  final String? diskLabel;
   final double? bytesPerSecond;
 
   @override
@@ -965,19 +975,35 @@ class _ProgressCard extends StatelessWidget {
     final copied =
         '${_humanBytes(progress.bytesDone)} of '
         '${_humanBytes(progress.bytesTotal)}';
+    final parts = <String>[copied];
     final bps = bytesPerSecond;
-    if (bps == null ||
-        bps <= 0 ||
-        progress.bytesTotal <= 0 ||
-        progress.bytesDone <= 0) {
-      return '$copied${progress.message != null ? ' · ${progress.message}' : ''}';
+    if (bps != null &&
+        bps > 0 &&
+        progress.bytesTotal > 0 &&
+        progress.bytesDone > 0) {
+      final remainingBytes = progress.bytesTotal - progress.bytesDone;
+      final remaining = remainingBytes <= 0
+          ? Duration.zero
+          : Duration(seconds: (remainingBytes / bps).ceil());
+      parts
+        ..add('${_humanBytes(bps.round())}/s')
+        ..add('ETA ${_formatDuration(remaining)}');
     }
-    final remainingBytes = progress.bytesTotal - progress.bytesDone;
-    final remaining = remainingBytes <= 0
-        ? Duration.zero
-        : Duration(seconds: (remainingBytes / bps).ceil());
-    return '$copied · ${_humanBytes(bps.round())}/s · ETA ${_formatDuration(remaining)}'
-        '${progress.message != null ? ' · ${progress.message}' : ''}';
+    final label = diskLabel?.trim();
+    if (label != null && label.isNotEmpty) parts.add(label);
+    final helperMessage = _userFacingHelperMessage(progress.message);
+    if (helperMessage != null && helperMessage != label) {
+      parts.add(helperMessage);
+    }
+    return parts.join(' · ');
+  }
+
+  String? _userFacingHelperMessage(String? message) {
+    final value = message?.trim();
+    if (value == null || value.isEmpty) return null;
+    final compact = value.replaceAll(RegExp(r'[\s_-]+'), '');
+    if (_technicalDiskMessageRe.hasMatch(compact)) return null;
+    return value;
   }
 
   String _formatDuration(Duration duration) {

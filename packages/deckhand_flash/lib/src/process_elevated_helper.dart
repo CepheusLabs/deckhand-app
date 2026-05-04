@@ -54,73 +54,36 @@ class ProcessElevatedHelperService implements ElevatedHelperService {
     required String confirmationToken,
     int totalBytes = 0,
     String? outputRoot,
-  }) async* {
+  }) {
     final effectiveOutputRoot = outputRoot ?? readOutputRoot;
     if (effectiveOutputRoot == null || effectiveOutputRoot.trim().isEmpty) {
-      throw StateError('elevated read-image output root not configured');
+      return Stream.error(
+        StateError('elevated read-image output root not configured'),
+      );
     }
-
-    // Mirrors writeImage's token handoff: 0600 file in a 0700 dir, no
-    // CLI argument leaks the secret into the process table. The helper
-    // deletes the file on read; we clean up best-effort in `finally`.
-    final tokenDir = await Directory.systemTemp.createTemp('deckhand-tok-');
-    if (!Platform.isWindows) {
-      await Process.run('chmod', ['0700', tokenDir.path]);
-    }
-    final tokenFile = File(p.join(tokenDir.path, 'token'));
-    await tokenFile.writeAsString(confirmationToken, flush: true);
-    if (!Platform.isWindows) {
-      await Process.run('chmod', ['0600', tokenFile.path]);
-    }
-
-    // Cooperative cancel for elevated operations. The unprivileged
-    // parent cannot reliably terminate a UAC-elevated child, so the
-    // child watches this file and aborts when stream cancellation
-    // removes it.
-    final cancelDir = await Directory.systemTemp.createTemp('deckhand-cancel-');
-    if (!Platform.isWindows) {
-      await Process.run('chmod', ['0700', cancelDir.path]);
-    }
-    final cancelFile = File(p.join(cancelDir.path, 'active'));
-    await cancelFile.writeAsString('active', flush: true);
-    if (!Platform.isWindows) {
-      await Process.run('chmod', ['0600', cancelFile.path]);
-    }
-
-    final args = <String>[
-      'read-image',
-      '--target', diskId,
-      '--output', outputPath,
-      '--output-root', effectiveOutputRoot,
-      '--token-file', tokenFile.path,
-      '--cancel-file', cancelFile.path,
-      // Pass the size hint when the caller has it (the disk picker
-      // upstream of S148 already enumerated sizeBytes via
-      // listDisks()). Without this, Windows raw-device reads emit
-      // bytes_total: 0 for every progress event.
-      if (totalBytes > 0) ...['--total-bytes', '$totalBytes'],
-      // The unprivileged Flutter parent can't terminate an elevated
-      // child once UAC has approved it. Hand the helper our PID so
-      // it can self-terminate when we go away (user closes Deckhand
-      // mid-backup, app crash, etc.). Without this, an aborted UI
-      // flow leaves the elevated process churning the disk in the
-      // background until the operation completes naturally.
-      '--watchdog-pid', '$pid',
-    ];
-
-    try {
-      yield* launchHelper(args);
-    } finally {
-      try {
-        if (await cancelFile.exists()) await cancelFile.delete();
-      } catch (_) {}
-      try {
-        await cancelDir.delete(recursive: true);
-      } catch (_) {}
-      try {
-        await tokenDir.delete(recursive: true);
-      } catch (_) {}
-    }
+    return _launchCancellableHelper(
+      confirmationToken: confirmationToken,
+      buildArgs: (tokenFile, cancelFile) => <String>[
+        'read-image',
+        '--target', diskId,
+        '--output', outputPath,
+        '--output-root', effectiveOutputRoot,
+        '--token-file', tokenFile,
+        '--cancel-file', cancelFile,
+        // Pass the size hint when the caller has it (the disk picker
+        // upstream of S148 already enumerated sizeBytes via
+        // listDisks()). Without this, Windows raw-device reads emit
+        // bytes_total: 0 for every progress event.
+        if (totalBytes > 0) ...['--total-bytes', '$totalBytes'],
+        // The unprivileged Flutter parent can't terminate an elevated
+        // child once UAC has approved it. Hand the helper our PID so
+        // it can self-terminate when we go away (user closes Deckhand
+        // mid-backup, app crash, etc.). Without this, an aborted UI
+        // flow leaves the elevated process churning the disk in the
+        // background until the operation completes naturally.
+        '--watchdog-pid', '$pid',
+      ],
+    );
   }
 
   @override
@@ -128,53 +91,134 @@ class ProcessElevatedHelperService implements ElevatedHelperService {
     required String diskId,
     required String confirmationToken,
     int totalBytes = 0,
-  }) async* {
-    final tokenDir = await Directory.systemTemp.createTemp('deckhand-tok-');
-    if (!Platform.isWindows) {
-      await Process.run('chmod', ['0700', tokenDir.path]);
-    }
-    final tokenFile = File(p.join(tokenDir.path, 'token'));
-    await tokenFile.writeAsString(confirmationToken, flush: true);
-    if (!Platform.isWindows) {
-      await Process.run('chmod', ['0600', tokenFile.path]);
+  }) {
+    return _launchCancellableHelper(
+      confirmationToken: confirmationToken,
+      buildArgs: (tokenFile, cancelFile) => <String>[
+        'hash-device',
+        '--target',
+        diskId,
+        '--token-file',
+        tokenFile,
+        '--cancel-file',
+        cancelFile,
+        if (totalBytes > 0) ...['--total-bytes', '$totalBytes'],
+        '--watchdog-pid',
+        '$pid',
+      ],
+    );
+  }
+
+  Stream<FlashProgress> _launchCancellableHelper({
+    required String confirmationToken,
+    required List<String> Function(String tokenFile, String cancelFile)
+    buildArgs,
+  }) {
+    final controller = StreamController<FlashProgress>();
+    Directory? tokenDir;
+    Directory? cancelDir;
+    File? cancelFile;
+    StreamSubscription<FlashProgress>? helperSub;
+    var cancelRequested = false;
+
+    Future<void> closeController() async {
+      if (!controller.isClosed) await controller.close();
     }
 
-    final cancelDir = await Directory.systemTemp.createTemp('deckhand-cancel-');
-    if (!Platform.isWindows) {
-      await Process.run('chmod', ['0700', cancelDir.path]);
-    }
-    final cancelFile = File(p.join(cancelDir.path, 'active'));
-    await cancelFile.writeAsString('active', flush: true);
-    if (!Platform.isWindows) {
-      await Process.run('chmod', ['0600', cancelFile.path]);
+    Future<void> cleanupFiles() async {
+      final liveCancelFile = cancelFile;
+      if (liveCancelFile != null) {
+        try {
+          if (await liveCancelFile.exists()) await liveCancelFile.delete();
+        } catch (_) {}
+      }
+      final liveCancelDir = cancelDir;
+      if (liveCancelDir != null) {
+        try {
+          if (await liveCancelDir.exists()) {
+            await liveCancelDir.delete(recursive: true);
+          }
+        } catch (_) {}
+      }
+      final liveTokenDir = tokenDir;
+      if (liveTokenDir != null) {
+        try {
+          if (await liveTokenDir.exists()) {
+            await liveTokenDir.delete(recursive: true);
+          }
+        } catch (_) {}
+      }
     }
 
-    final args = <String>[
-      'hash-device',
-      '--target',
-      diskId,
-      '--token-file',
-      tokenFile.path,
-      '--cancel-file',
-      cancelFile.path,
-      if (totalBytes > 0) ...['--total-bytes', '$totalBytes'],
-      '--watchdog-pid',
-      '$pid',
-    ];
-
-    try {
-      yield* launchHelper(args);
-    } finally {
-      try {
-        if (await cancelFile.exists()) await cancelFile.delete();
-      } catch (_) {}
-      try {
-        await cancelDir.delete(recursive: true);
-      } catch (_) {}
-      try {
-        await tokenDir.delete(recursive: true);
-      } catch (_) {}
+    Future<File> writePrivateTempFile({
+      required String dirPrefix,
+      required String fileName,
+      required String body,
+    }) async {
+      final dir = await Directory.systemTemp.createTemp(dirPrefix);
+      if (!Platform.isWindows) {
+        await Process.run('chmod', ['0700', dir.path]);
+      }
+      final file = File(p.join(dir.path, fileName));
+      await file.writeAsString(body, flush: true);
+      if (!Platform.isWindows) {
+        await Process.run('chmod', ['0600', file.path]);
+      }
+      if (dirPrefix == 'deckhand-tok-') {
+        tokenDir = dir;
+      } else {
+        cancelDir = dir;
+      }
+      return file;
     }
+
+    controller.onListen = () async {
+      try {
+        final tokenFile = await writePrivateTempFile(
+          dirPrefix: 'deckhand-tok-',
+          fileName: 'token',
+          body: confirmationToken,
+        );
+        cancelFile = await writePrivateTempFile(
+          dirPrefix: 'deckhand-cancel-',
+          fileName: 'active',
+          body: 'active',
+        );
+        if (cancelRequested) {
+          await cleanupFiles();
+          await closeController();
+          return;
+        }
+
+        helperSub = launchHelper(buildArgs(tokenFile.path, cancelFile!.path))
+            .listen(
+              (event) {
+                if (!controller.isClosed) controller.add(event);
+              },
+              onError: (Object e, StackTrace st) async {
+                if (!controller.isClosed) controller.addError(e, st);
+                await cleanupFiles();
+                await closeController();
+              },
+              onDone: () async {
+                await cleanupFiles();
+                await closeController();
+              },
+            );
+      } catch (e, st) {
+        await cleanupFiles();
+        if (!controller.isClosed) controller.addError(e, st);
+        await closeController();
+      }
+    };
+
+    controller.onCancel = () async {
+      cancelRequested = true;
+      await cleanupFiles();
+      unawaited(helperSub?.cancel() ?? Future<void>.value());
+    };
+
+    return controller.stream;
   }
 
   @override
