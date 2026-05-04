@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import '../i18n/translations.g.dart';
 import '../providers.dart';
 import '../theming/deckhand_tokens.dart';
+import '../utils/disk_display.dart';
 import '../widgets/wizard_scaffold.dart';
 
 class FlashTargetScreen extends ConsumerStatefulWidget {
@@ -227,7 +228,7 @@ class _DiskRow extends StatelessWidget {
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      disk.model.isEmpty ? disk.id : disk.model,
+                      diskDisplayName(disk),
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         fontFamily: DeckhandTokens.fontMono,

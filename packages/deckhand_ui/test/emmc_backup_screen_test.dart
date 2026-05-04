@@ -116,6 +116,32 @@ void main() {
         expect(button.onPressed, isNull);
       },
     );
+
+    testWidgets('unresolved inherited disk never shows the raw id', (
+      tester,
+    ) async {
+      final controller = stubWizardController(profileJson: testProfileJson());
+      await controller.loadProfile('test-printer');
+      await controller.setDecision('flash.disk', 'PhysicalDrive3');
+
+      await tester.pumpWidget(
+        testHarness(
+          controller: controller,
+          child: const EmmcBackupScreen(),
+          initialLocation: '/snapshot',
+          extraOverrides: [
+            flashServiceProvider.overrideWithValue(_NoDiskFlash()),
+            emmcBackupsDirProvider.overrideWithValue(
+              '/deckhand/state/emmc-backups',
+            ),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Selected disk is no longer connected'), findsOneWidget);
+      expect(find.text('PhysicalDrive3'), findsNothing);
+    });
   });
 }
 

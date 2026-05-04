@@ -8,6 +8,7 @@ import 'package:go_router/go_router.dart';
 import '../i18n/translations.g.dart';
 import '../providers.dart';
 import '../theming/deckhand_tokens.dart';
+import '../utils/disk_display.dart';
 import '../widgets/deckhand_panel.dart';
 import '../widgets/network_panel.dart';
 import '../widgets/profile_text.dart';
@@ -413,7 +414,7 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> {
                   for (final d in removable)
                     RadioListTile<String>(
                       value: d.id,
-                      title: Text(d.model.isEmpty ? d.id : d.model),
+                      title: Text(diskDisplayName(d)),
                       subtitle: Text(
                         '${(d.sizeBytes / (1 << 30)).toStringAsFixed(1)} GB * '
                         '${d.bus}',

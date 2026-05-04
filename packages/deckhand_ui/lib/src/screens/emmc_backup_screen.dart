@@ -10,6 +10,7 @@ import 'package:path/path.dart' as p;
 
 import '../providers.dart';
 import '../theming/deckhand_tokens.dart';
+import '../utils/disk_display.dart';
 import '../widgets/danger_card.dart';
 import '../widgets/wizard_progress_bar.dart';
 import '../widgets/wizard_scaffold.dart';
@@ -664,7 +665,7 @@ class _DiskRow extends StatelessWidget {
             Expanded(
               flex: 4,
               child: Text(
-                disk.model.isEmpty ? disk.id : disk.model,
+                diskDisplayName(disk),
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
                   fontFamily: DeckhandTokens.fontMono,
@@ -896,11 +897,17 @@ class _InheritedPickCard extends StatelessWidget {
                   break;
                 }
               }
-              final label = match == null
-                  ? diskId
-                  : '${match.model.isEmpty ? match.id : match.model} · '
-                        '${match.bus} · '
-                        '${(match.sizeBytes / (1 << 30)).toStringAsFixed(2)} GiB';
+              if (match == null) {
+                return Text(
+                  'Selected disk is no longer connected',
+                  style: TextStyle(
+                    fontFamily: DeckhandTokens.fontMono,
+                    fontSize: DeckhandTokens.tMd,
+                    color: tokens.warn,
+                  ),
+                );
+              }
+              final label = diskDisplaySummary(match);
               return Text(
                 label,
                 style: TextStyle(

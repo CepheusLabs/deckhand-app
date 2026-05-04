@@ -51,6 +51,37 @@ void main() {
         );
       },
     );
+
+    testWidgets('uses a friendly fallback when the disk model is raw', (
+      tester,
+    ) async {
+      final controller = stubWizardController(profileJson: testProfileJson());
+      await controller.loadProfile('test-printer');
+      final flash = _MutableFlashService([
+        const DiskInfo(
+          id: 'PhysicalDrive3',
+          path: r'\\.\PhysicalDrive3',
+          sizeBytes: 32 * 1024 * 1024 * 1024,
+          bus: 'USB',
+          model: '',
+          removable: true,
+          partitions: [],
+        ),
+      ]);
+
+      await tester.pumpWidget(
+        testHarness(
+          controller: controller,
+          child: const FlashTargetScreen(),
+          initialLocation: '/flash-target',
+          extraOverrides: [flashServiceProvider.overrideWithValue(flash)],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Generic STORAGE DEVICE'), findsOneWidget);
+      expect(find.text('PhysicalDrive3'), findsNothing);
+    });
   });
 }
 

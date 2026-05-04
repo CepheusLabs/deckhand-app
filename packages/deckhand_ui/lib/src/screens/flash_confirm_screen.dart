@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 
 import '../providers.dart';
 import '../theming/deckhand_tokens.dart';
+import '../utils/disk_display.dart';
 import '../widgets/wizard_scaffold.dart';
 
 /// S220 — Last check before we wipe a disk.
@@ -71,11 +72,11 @@ class _FlashConfirmScreenState extends ConsumerState<FlashConfirmScreen>
   /// use the friendly model (the same name shown on the prior pick
   /// disk + flash-target screens — "Generic STORAGE DEVICE",
   /// "SanDisk Cruzer USB") so the typed-confirm matches what the
-  /// user just saw, not the dev-facing platform id. Falls back to
-  /// the id when the model string is empty.
+  /// user just saw, not the dev-facing platform id. Missing or raw
+  /// device identifiers get the same friendly fallback as the picker.
   String _expectedDiskName(DiskInfo? disk) {
     if (disk == null) return '';
-    return disk.model.isEmpty ? disk.id : disk.model;
+    return diskDisplayName(disk);
   }
 
   bool _isMatched(String expected) =>
@@ -674,7 +675,7 @@ class _TargetCard extends StatelessWidget {
           if (disk != null) ...[
             const SizedBox(height: 2),
             Text(
-              disk!.id,
+              diskTechnicalLabel(disk!),
               style: TextStyle(
                 fontFamily: DeckhandTokens.fontMono,
                 fontSize: 10,
@@ -735,7 +736,7 @@ class _TargetCard extends StatelessWidget {
   /// types the name they actually saw on flash-target.
   String _friendlyName(DiskInfo? d) {
     if (d == null) return '<no disk>';
-    return d.model.isEmpty ? d.id : d.model;
+    return diskDisplayName(d);
   }
 
   /// Subtitle row — size + bus + removable flag. The model name is
