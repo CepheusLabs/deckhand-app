@@ -229,6 +229,49 @@ status: alpha
     });
   });
 
+  group('SidecarProfileService.fetchRegistry', () {
+    test('parses printer-card hardware metadata from registry.yaml', () async {
+      final tmp = await Directory.systemTemp.createTemp(
+        'deckhand-profile-registry-',
+      );
+      addTearDown(() async => tmp.delete(recursive: true));
+      await File(p.join(tmp.path, 'registry.yaml')).writeAsString('''
+schema_version: 1
+profiles:
+  - id: test-printer
+    display_name: Test Printer
+    manufacturer: Acme
+    model: Robo
+    status: beta
+    directory: printers/test-printer
+    latest_tag: null
+    sbc: RK3328
+    kinematics: CoreXY
+    mcu: STM32F407
+    extras: ChromaKit
+''');
+
+      final svc = SidecarProfileService(
+        sidecar: _FakeSidecar(),
+        paths: DeckhandPaths(
+          cacheDir: p.join(tmp.path, 'cache'),
+          stateDir: p.join(tmp.path, 'state'),
+          logsDir: p.join(tmp.path, 'logs'),
+          settingsFile: p.join(tmp.path, 'settings.json'),
+        ),
+        security: _AllowAllSecurity(),
+        localProfilesDir: tmp.path,
+      );
+
+      final registry = await svc.fetchRegistry();
+      final entry = registry.entries.single;
+      expect(entry.sbc, 'RK3328');
+      expect(entry.kinematics, 'CoreXY');
+      expect(entry.mcu, 'STM32F407');
+      expect(entry.extras, 'ChromaKit');
+    });
+  });
+
   // TODO(test-hardware): end-to-end `SidecarProfileService.load` goes
   // through File I/O + an actual sidecar process for `ensureCached`.
   // That's covered in the wizard-level integration harness. The pure

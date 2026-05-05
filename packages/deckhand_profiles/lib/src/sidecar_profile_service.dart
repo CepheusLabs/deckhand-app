@@ -22,7 +22,9 @@ import 'package:yaml/yaml.dart';
 /// The local-dir override is **dev-only**: in AOT-compiled release builds
 /// (`dart.vm.product` = true) both the env var and direct
 /// [localProfilesDir] parameter are ignored, so a hostile environment
-/// or settings file cannot bypass the signed-tag chain.
+/// or settings file cannot bypass the signed-tag chain. The app may
+/// explicitly opt local smoke releases back in with
+/// [allowLocalProfilesInProduct]; production wiring must leave it false.
 class SidecarProfileService implements ProfileService {
   SidecarProfileService({
     required this.sidecar,
@@ -35,21 +37,30 @@ class SidecarProfileService implements ProfileService {
     Dio? dio,
     TrustKeyring? trustKeyring,
     bool requireSignedTag = false,
+    bool allowLocalProfilesInProduct = false,
   }) : _security = security,
        _dio = (dio ?? Dio())..interceptors.add(EgressLogInterceptor(security)),
        _trustKeyring = trustKeyring,
        _requireSignedTag = requireSignedTag,
-       localProfilesDir = _effectiveLocalProfilesDir(localProfilesDir);
+       localProfilesDir = _effectiveLocalProfilesDir(
+         localProfilesDir,
+         allowLocalProfilesInProduct: allowLocalProfilesInProduct,
+       );
 
-  /// Reads local profile overrides only in non-release builds. Release
-  /// builds (`dart compile exe`, `flutter build --release`) compile out
-  /// to `null` regardless of env vars or constructor arguments.
-  static String? _effectiveLocalProfilesDir(String? explicit) {
+  /// Reads local profile overrides only in non-release builds unless
+  /// [allowLocalProfilesInProduct] is true for an explicit local smoke
+  /// release. Normal release builds (`dart compile exe`,
+  /// `flutter build --release`) compile out to `null` regardless of
+  /// env vars or constructor arguments.
+  static String? _effectiveLocalProfilesDir(
+    String? explicit, {
+    bool allowLocalProfilesInProduct = false,
+  }) {
     const isRelease = bool.fromEnvironment(
       'dart.vm.product',
       defaultValue: false,
     );
-    if (isRelease) return null;
+    if (isRelease && !allowLocalProfilesInProduct) return null;
     return explicit ?? Platform.environment['DECKHAND_PROFILES_LOCAL'];
   }
 

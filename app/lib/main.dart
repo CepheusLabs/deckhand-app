@@ -233,6 +233,7 @@ Future<void> main() async {
               paths: paths,
               security: security,
               localProfilesDir: localProfilesDir,
+              allowLocalProfilesInProduct: build_info.localSmokeRelease,
               trustKeyring: trustKeyring,
               requireSignedTag: requireSignedTag,
             ),
