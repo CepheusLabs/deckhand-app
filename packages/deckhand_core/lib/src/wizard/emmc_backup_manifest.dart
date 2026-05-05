@@ -148,6 +148,26 @@ class EmmcBackupDiskIdentity {
   }
 }
 
+class EmmcBackupImageCandidate {
+  const EmmcBackupImageCandidate({
+    required this.imagePath,
+    required this.imageBytes,
+    required this.modifiedAt,
+    required this.inferredProfileId,
+  });
+
+  final String imagePath;
+  final int imageBytes;
+  final DateTime modifiedAt;
+  final String? inferredProfileId;
+
+  bool matches({required String profileId, required DiskInfo disk}) {
+    if (imageBytes != disk.sizeBytes) return false;
+    final inferred = inferredProfileId;
+    return inferred == null || inferred == profileId;
+  }
+}
+
 Future<String> writeEmmcBackupManifest(EmmcBackupManifest manifest) async {
   final manifestPath = emmcBackupManifestPath(manifest.imagePath);
   await Directory(p.dirname(manifestPath)).create(recursive: true);
@@ -177,6 +197,31 @@ Future<List<EmmcBackupManifest>> scanEmmcBackupManifests(String dir) async {
   return manifests;
 }
 
+Future<List<EmmcBackupImageCandidate>> scanEmmcBackupImageCandidates(
+  String dir,
+) async {
+  final root = Directory(dir);
+  if (!await root.exists()) return const [];
+  final candidates = <EmmcBackupImageCandidate>[];
+  await for (final entity in root.list(followLinks: false)) {
+    if (entity is! File || !entity.path.toLowerCase().endsWith('.img')) {
+      continue;
+    }
+    final stat = await entity.stat();
+    if (stat.type != FileSystemEntityType.file || stat.size <= 0) continue;
+    candidates.add(
+      EmmcBackupImageCandidate(
+        imagePath: entity.path,
+        imageBytes: stat.size,
+        modifiedAt: stat.modified,
+        inferredProfileId: inferEmmcBackupProfileId(entity.path),
+      ),
+    );
+  }
+  candidates.sort((a, b) => b.modifiedAt.compareTo(a.modifiedAt));
+  return candidates;
+}
+
 EmmcBackupManifest? findMatchingEmmcBackup({
   required List<EmmcBackupManifest> manifests,
   required String profileId,
@@ -188,6 +233,28 @@ EmmcBackupManifest? findMatchingEmmcBackup({
     }
   }
   return null;
+}
+
+EmmcBackupImageCandidate? findMatchingEmmcBackupImageCandidate({
+  required List<EmmcBackupImageCandidate> candidates,
+  required String profileId,
+  required DiskInfo disk,
+}) {
+  for (final candidate in candidates) {
+    if (candidate.matches(profileId: profileId, disk: disk)) {
+      return candidate;
+    }
+  }
+  return null;
+}
+
+String? inferEmmcBackupProfileId(String imagePath) {
+  final base = p.basename(imagePath);
+  final lower = base.toLowerCase();
+  const marker = '-emmc-';
+  final markerIndex = lower.indexOf(marker);
+  if (markerIndex <= 0 || !lower.endsWith('.img')) return null;
+  return base.substring(0, markerIndex);
 }
 
 Future<EmmcBackupManifest?> _readManifest(File file) async {

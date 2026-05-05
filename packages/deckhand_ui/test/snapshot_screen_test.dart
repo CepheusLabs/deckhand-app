@@ -130,6 +130,63 @@ void main() {
         ('hash-token-0123456789abcdef', 'disks.hash_device'),
       ]);
     });
+
+    testWidgets('surfaces and indexes full-size image candidates', (
+      tester,
+    ) async {
+      final candidate = EmmcBackupImageCandidate(
+        imagePath: r'C:\Deckhand\phrozen-arco-emmc-old.img',
+        imageBytes: 4096,
+        modifiedAt: DateTime(2026, 5, 4),
+        inferredProfileId: 'test-printer',
+      );
+      EmmcBackupManifest? writtenManifest;
+
+      final controller = stubWizardController(profileJson: testProfileJson());
+      await controller.loadProfile('test-printer');
+      await controller.setDecision('flash.disk', 'disk-1');
+      final helper = _HashingElevatedHelper('b' * 64);
+      final security = _RecordingSecurity();
+
+      await tester.pumpWidget(
+        testHarness(
+          controller: controller,
+          child: const SnapshotScreen(),
+          initialLocation: '/snapshot',
+          extraOverrides: [
+            flashServiceProvider.overrideWithValue(_OneDiskFlash('b' * 64)),
+            elevatedHelperServiceProvider.overrideWithValue(helper),
+            securityServiceProvider.overrideWithValue(security),
+            emmcBackupManifestsProvider.overrideWith((_) async => const []),
+            emmcBackupImageCandidatesProvider.overrideWith(
+              (_) async => [candidate],
+            ),
+            emmcBackupManifestWriterProvider.overrideWithValue((
+              manifest,
+            ) async {
+              writtenManifest = manifest;
+              return emmcBackupManifestPath(manifest.imagePath);
+            }),
+          ],
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      await tester.pump();
+
+      expect(find.textContaining('Complete eMMC image found'), findsOneWidget);
+      expect(find.text('Verify exact match'), findsOneWidget);
+
+      await tester.tap(find.text('Verify exact match'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      await tester.pump();
+
+      expect(find.textContaining('Exact eMMC backup verified'), findsOneWidget);
+      expect(writtenManifest?.imagePath, candidate.imagePath);
+      expect(writtenManifest?.imageSha256, 'b' * 64);
+      expect(helper.hashCalls, 1);
+    });
   });
 }
 
@@ -144,6 +201,10 @@ const _disk = DiskInfo(
 );
 
 class _OneDiskFlash implements FlashService {
+  const _OneDiskFlash([this.imageSha256 = '']);
+
+  final String imageSha256;
+
   @override
   Future<List<DiskInfo>> listDisks() async => const [_disk];
 
@@ -158,7 +219,7 @@ class _OneDiskFlash implements FlashService {
   }) => const Stream.empty();
 
   @override
-  Future<String> sha256(String path) async => '';
+  Future<String> sha256(String path) async => imageSha256;
 
   @override
   Stream<FlashProgress> writeImage({

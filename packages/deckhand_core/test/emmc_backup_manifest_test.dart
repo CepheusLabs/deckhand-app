@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:deckhand_core/deckhand_core.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:path/path.dart' as p;
 
 void main() {
   const disk = DiskInfo(
@@ -84,4 +85,33 @@ void main() {
     expect(manifests, hasLength(1));
     expect(manifests.single.imagePath, image.path);
   });
+
+  test(
+    'scanner returns full-size image candidates without manifests',
+    () async {
+      final dir = await Directory.systemTemp.createTemp(
+        'deckhand_emmc_candidate_',
+      );
+      addTearDown(() async {
+        if (await dir.exists()) await dir.delete(recursive: true);
+      });
+
+      final image = File(p.join(dir.path, 'phrozen-arco-emmc-2026.img'));
+      await image.writeAsBytes(List<int>.filled(4096, 7), flush: true);
+      await File('${dir.path}/notes.txt').writeAsString('ignore');
+
+      final candidates = await scanEmmcBackupImageCandidates(dir.path);
+      final match = findMatchingEmmcBackupImageCandidate(
+        candidates: candidates,
+        profileId: 'phrozen-arco',
+        disk: disk,
+      );
+
+      expect(candidates, hasLength(1));
+      expect(candidates.single.imagePath, image.path);
+      expect(candidates.single.imageBytes, 4096);
+      expect(candidates.single.inferredProfileId, 'phrozen-arco');
+      expect(match?.imagePath, image.path);
+    },
+  );
 }

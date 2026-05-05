@@ -256,6 +256,13 @@ final emmcBackupManifestsProvider = FutureProvider<List<EmmcBackupManifest>>((
   return scanEmmcBackupManifests(dir);
 });
 
+final emmcBackupImageCandidatesProvider =
+    FutureProvider<List<EmmcBackupImageCandidate>>((ref) async {
+      final dir = ref.watch(emmcBackupsDirProvider);
+      if (dir == null || dir.trim().isEmpty) return const [];
+      return scanEmmcBackupImageCandidates(dir);
+    });
+
 typedef EmmcBackupManifestWriter =
     Future<String> Function(EmmcBackupManifest manifest);
 

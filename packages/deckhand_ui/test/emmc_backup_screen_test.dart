@@ -80,6 +80,51 @@ void main() {
       expect(change.onPressed, isNotNull);
     });
 
+    testWidgets('tells the user when a full-size backup already exists', (
+      tester,
+    ) async {
+      final controller = stubWizardController(profileJson: testProfileJson());
+      await controller.loadProfile('test-printer');
+      await controller.setDecision('flash.disk', 'disk-1');
+
+      await tester.pumpWidget(
+        testHarness(
+          controller: controller,
+          child: const EmmcBackupScreen(),
+          initialLocation: '/snapshot',
+          extraOverrides: [
+            flashServiceProvider.overrideWithValue(_OneDiskFlash()),
+            elevatedHelperServiceProvider.overrideWithValue(
+              _RecordingElevatedHelper(),
+            ),
+            emmcBackupsDirProvider.overrideWithValue(
+              '/deckhand/state/emmc-backups',
+            ),
+            emmcBackupImageCandidatesProvider.overrideWith(
+              (_) async => [
+                EmmcBackupImageCandidate(
+                  imagePath: '/deckhand/state/emmc-backups/test.img',
+                  imageBytes: 4096,
+                  modifiedAt: DateTime(2026, 5, 4),
+                  inferredProfileId: 'test-printer',
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.textContaining('Complete backup already exists'),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining('/deckhand/state/emmc-backups/test.img'),
+        findsOneWidget,
+      );
+    });
+
     testWidgets('allows cancel while a backup is copying', (tester) async {
       final controller = stubWizardController(profileJson: testProfileJson());
       await controller.loadProfile('test-printer');

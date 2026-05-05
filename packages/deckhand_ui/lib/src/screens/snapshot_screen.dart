@@ -68,6 +68,9 @@ class _SnapshotScreenState extends ConsumerState<SnapshotScreen> {
     final manifestsAsync = ref.watch(emmcBackupManifestsProvider);
     final manifests =
         manifestsAsync.valueOrNull ?? const <EmmcBackupManifest>[];
+    final candidatesAsync = ref.watch(emmcBackupImageCandidatesProvider);
+    final candidates =
+        candidatesAsync.valueOrNull ?? const <EmmcBackupImageCandidate>[];
     final matchingBackup = selectedDisk == null
         ? null
         : findMatchingEmmcBackup(
@@ -75,10 +78,18 @@ class _SnapshotScreenState extends ConsumerState<SnapshotScreen> {
             profileId: controller.state.profileId,
             disk: selectedDisk,
           );
+    final matchingCandidate = selectedDisk == null
+        ? null
+        : findMatchingEmmcBackupImageCandidate(
+            candidates: candidates,
+            profileId: controller.state.profileId,
+            disk: selectedDisk,
+          );
     final verifiedBackup = _verifiedBackupFor(
       controller.state.profileId,
       selectedDisk,
       matchingBackup,
+      matchingCandidate,
     );
     final eMmcReady =
         _emmcBackupAcknowledged ||
@@ -137,13 +148,20 @@ class _SnapshotScreenState extends ConsumerState<SnapshotScreen> {
           ],
           _FullEmmcBackupBanner(
             acknowledged: eMmcReady,
-            backupScanLoading: manifestsAsync.isLoading,
+            backupScanLoading:
+                manifestsAsync.isLoading || candidatesAsync.isLoading,
             matchingBackup: matchingBackup,
+            matchingCandidate: matchingCandidate,
             verifyProgress: _hashProgress,
             verifyError: _hashError,
             verifiedBackup: verifiedBackup,
             onVerify: selectedDisk != null && matchingBackup != null
                 ? () => _verifyEmmcBackup(selectedDisk, matchingBackup)
+                : (selectedDisk != null && matchingCandidate != null)
+                ? () => _verifyEmmcBackupCandidate(
+                    selectedDisk,
+                    matchingCandidate,
+                  )
                 : null,
             onChanged: (v) => setState(() => _emmcBackupAcknowledged = v),
           ),
@@ -233,24 +251,74 @@ class _SnapshotScreenState extends ConsumerState<SnapshotScreen> {
     String profileId,
     DiskInfo? disk,
     EmmcBackupManifest? matchingBackup,
+    EmmcBackupImageCandidate? matchingCandidate,
   ) {
     final verified = _verifiedEmmcBackup;
-    if (verified == null || disk == null || matchingBackup == null) {
+    if (verified == null || disk == null) {
       return null;
     }
     if (!verified.matches(profileId: profileId, disk: disk)) return null;
-    if (verified.imagePath != matchingBackup.imagePath) return null;
-    if (verified.imageSha256.toLowerCase() !=
-        matchingBackup.imageSha256.toLowerCase()) {
+    final expectedPath =
+        matchingBackup?.imagePath ?? matchingCandidate?.imagePath;
+    if (expectedPath == null || verified.imagePath != expectedPath) {
+      return null;
+    }
+    if (matchingBackup != null &&
+        verified.imageSha256.toLowerCase() !=
+            matchingBackup.imageSha256.toLowerCase()) {
       return null;
     }
     return verified;
   }
 
+  Future<void> _verifyEmmcBackupCandidate(
+    DiskInfo disk,
+    EmmcBackupImageCandidate candidate,
+  ) async {
+    setState(() {
+      _hashError = null;
+      _verifiedEmmcBackup = null;
+      _hashProgress = FlashProgress(
+        bytesDone: 0,
+        bytesTotal: candidate.imageBytes,
+        phase: FlashPhase.preparing,
+        message: 'hashing backup image...',
+      );
+    });
+
+    try {
+      final imageSha = await ref
+          .read(flashServiceProvider)
+          .sha256(candidate.imagePath);
+      final manifest = EmmcBackupManifest.create(
+        profileId: ref.read(wizardControllerProvider).state.profileId,
+        imagePath: candidate.imagePath,
+        imageBytes: candidate.imageBytes,
+        imageSha256: imageSha,
+        disk: disk,
+        deckhandVersion: ref.read(deckhandVersionProvider),
+      );
+      await _verifyEmmcBackup(disk, manifest, writeManifestOnSuccess: true);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _hashError = 'Could not hash backup image: $e';
+        _hashProgress = FlashProgress(
+          bytesDone: 0,
+          bytesTotal: candidate.imageBytes,
+          phase: FlashPhase.failed,
+          message: '$e',
+        );
+        _verifiedEmmcBackup = null;
+      });
+    }
+  }
+
   Future<void> _verifyEmmcBackup(
     DiskInfo disk,
-    EmmcBackupManifest manifest,
-  ) async {
+    EmmcBackupManifest manifest, {
+    bool writeManifestOnSuccess = false,
+  }) async {
     await _hashSub?.cancel();
     _hashSub = null;
     final helper = ref.read(elevatedHelperServiceProvider);
@@ -316,6 +384,16 @@ class _SnapshotScreenState extends ConsumerState<SnapshotScreen> {
                   final wantSha = manifest.imageSha256.toLowerCase();
                   if (gotSha == wantSha &&
                       event.bytesDone == manifest.imageBytes) {
+                    if (writeManifestOnSuccess) {
+                      unawaited(
+                        ref
+                            .read(emmcBackupManifestWriterProvider)(manifest)
+                            .then((_) {
+                              ref.invalidate(emmcBackupManifestsProvider);
+                              ref.invalidate(emmcBackupImageCandidatesProvider);
+                            }),
+                      );
+                    }
                     _verifiedEmmcBackup = manifest;
                     _hashError = null;
                     unawaited(
@@ -937,6 +1015,7 @@ class _BackupVerificationStatus extends StatelessWidget {
   const _BackupVerificationStatus({
     required this.tokens,
     required this.matchingBackup,
+    required this.matchingCandidate,
     required this.verifiedBackup,
     required this.progress,
     required this.error,
@@ -946,6 +1025,7 @@ class _BackupVerificationStatus extends StatelessWidget {
 
   final DeckhandTokens tokens;
   final EmmcBackupManifest? matchingBackup;
+  final EmmcBackupImageCandidate? matchingCandidate;
   final EmmcBackupManifest? verifiedBackup;
   final FlashProgress? progress;
   final String? error;
@@ -988,7 +1068,8 @@ class _BackupVerificationStatus extends StatelessWidget {
               ),
             ),
           ),
-          if (matchingBackup != null && !verified) ...[
+          if ((matchingBackup != null || matchingCandidate != null) &&
+              !verified) ...[
             const SizedBox(width: 12),
             OutlinedButton.icon(
               onPressed: onVerify,
@@ -1026,8 +1107,13 @@ class _BackupVerificationStatus extends StatelessWidget {
       return 'Matching eMMC backup found. Verify exact match before '
           'Deckhand trusts ${match.imagePath} as the rollback image.';
     }
+    final candidate = matchingCandidate;
+    if (candidate != null) {
+      return 'Complete eMMC image found. Verify exact match and Deckhand '
+          'will index ${candidate.imagePath} as the rollback image.';
+    }
     if (loading) return 'Checking completed eMMC backups...';
-    return 'No completed eMMC backup manifest matches the selected disk yet.';
+    return 'No completed eMMC backup image matches the selected disk yet.';
   }
 }
 
@@ -1042,6 +1128,7 @@ class _FullEmmcBackupBanner extends StatelessWidget {
     required this.acknowledged,
     required this.backupScanLoading,
     required this.matchingBackup,
+    required this.matchingCandidate,
     required this.verifyProgress,
     required this.verifyError,
     required this.verifiedBackup,
@@ -1052,6 +1139,7 @@ class _FullEmmcBackupBanner extends StatelessWidget {
   final bool acknowledged;
   final bool backupScanLoading;
   final EmmcBackupManifest? matchingBackup;
+  final EmmcBackupImageCandidate? matchingCandidate;
   final FlashProgress? verifyProgress;
   final String? verifyError;
   final EmmcBackupManifest? verifiedBackup;
@@ -1131,6 +1219,7 @@ class _FullEmmcBackupBanner extends StatelessWidget {
           ),
           if (verified ||
               matchingBackup != null ||
+              matchingCandidate != null ||
               backupScanLoading ||
               verifyError != null ||
               verifyProgress != null) ...[
@@ -1140,6 +1229,7 @@ class _FullEmmcBackupBanner extends StatelessWidget {
               child: _BackupVerificationStatus(
                 tokens: tokens,
                 matchingBackup: matchingBackup,
+                matchingCandidate: matchingCandidate,
                 verifiedBackup: verifiedBackup,
                 progress: verifyProgress,
                 error: verifyError,

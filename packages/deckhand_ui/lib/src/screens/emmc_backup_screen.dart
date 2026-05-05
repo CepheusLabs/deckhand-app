@@ -489,6 +489,30 @@ class _EmmcBackupScreenState extends ConsumerState<EmmcBackupScreen> {
     final copying = _progress != null && !_done && _error == null;
     final disksAsync = ref.watch(disksProvider);
     final disksFuture = ref.watch(disksProvider.future);
+    final manifests =
+        ref.watch(emmcBackupManifestsProvider).valueOrNull ??
+        const <EmmcBackupManifest>[];
+    final candidates =
+        ref.watch(emmcBackupImageCandidatesProvider).valueOrNull ??
+        const <EmmcBackupImageCandidate>[];
+    final profileId = ref.watch(wizardControllerProvider).state.profileId;
+    final selectedDisk = _selected == null
+        ? null
+        : _findDisk(disksAsync.valueOrNull ?? const <DiskInfo>[], _selected!);
+    final existingManifest = selectedDisk == null
+        ? null
+        : findMatchingEmmcBackup(
+            manifests: manifests,
+            profileId: profileId,
+            disk: selectedDisk,
+          );
+    final existingCandidate = selectedDisk == null
+        ? null
+        : findMatchingEmmcBackupImageCandidate(
+            candidates: candidates,
+            profileId: profileId,
+            disk: selectedDisk,
+          );
     final selectedDiskIsUsable =
         _selected != null &&
         !disksAsync.isLoading &&
@@ -590,6 +614,15 @@ class _EmmcBackupScreenState extends ConsumerState<EmmcBackupScreen> {
                 ? null
                 : () => setState(() => _customDestDir = null),
           ),
+          if (!copying &&
+              (existingManifest != null || existingCandidate != null)) ...[
+            const SizedBox(height: 12),
+            _ExistingBackupCard(
+              tokens: tokens,
+              manifest: existingManifest,
+              candidate: existingCandidate,
+            ),
+          ],
           const SizedBox(height: 16),
           // If the user already chose the disk upstream (flash-target),
           // show a single "About to back up <disk>" card instead of
@@ -668,6 +701,85 @@ class _EmmcBackupScreenState extends ConsumerState<EmmcBackupScreen> {
   bool _isSha256Hex(String? value) {
     if (value == null || value.length != 64) return false;
     return RegExp(r'^[0-9a-fA-F]{64}$').hasMatch(value);
+  }
+
+  DiskInfo? _findDisk(List<DiskInfo> disks, String id) {
+    for (final disk in disks) {
+      if (disk.id == id) return disk;
+    }
+    return null;
+  }
+}
+
+class _ExistingBackupCard extends StatelessWidget {
+  const _ExistingBackupCard({
+    required this.tokens,
+    required this.manifest,
+    required this.candidate,
+  });
+
+  final DeckhandTokens tokens;
+  final EmmcBackupManifest? manifest;
+  final EmmcBackupImageCandidate? candidate;
+
+  @override
+  Widget build(BuildContext context) {
+    final path = manifest?.imagePath ?? candidate?.imagePath ?? '';
+    final indexed = manifest != null;
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: tokens.ok.withValues(alpha: 0.06),
+        border: Border.all(color: tokens.ok.withValues(alpha: 0.35)),
+        borderRadius: BorderRadius.circular(DeckhandTokens.r2),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.check_circle_outline, size: 17, color: tokens.ok),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  indexed
+                      ? 'Indexed backup already exists'
+                      : 'Complete backup already exists',
+                  style: TextStyle(
+                    fontFamily: DeckhandTokens.fontSans,
+                    fontSize: DeckhandTokens.tSm,
+                    fontWeight: FontWeight.w600,
+                    color: tokens.ok,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  indexed
+                      ? 'Deckhand found a manifest for this disk. You can still make another backup if you want a newer rollback point.'
+                      : 'Deckhand found a full-size image for this disk. Verify it on the previous screen to index it as an exact rollback image.',
+                  style: TextStyle(
+                    fontFamily: DeckhandTokens.fontSans,
+                    fontSize: DeckhandTokens.tXs,
+                    color: tokens.text2,
+                    height: 1.4,
+                  ),
+                ),
+                const SizedBox(height: 5),
+                Text(
+                  path,
+                  style: TextStyle(
+                    fontFamily: DeckhandTokens.fontMono,
+                    fontSize: 10,
+                    color: tokens.text3,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 
