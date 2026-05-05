@@ -10,6 +10,7 @@ import '../providers.dart';
 import '../theming/deckhand_tokens.dart';
 import '../utils/disk_display.dart';
 import '../widgets/deckhand_panel.dart';
+import '../widgets/host_approval_gate.dart';
 import '../widgets/network_panel.dart';
 import '../widgets/profile_text.dart';
 import '../widgets/wizard_log_view.dart';
@@ -63,13 +64,19 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> {
     final controller = ref.read(wizardControllerProvider);
     final sub = controller.events.listen(_onEvent);
     try {
-      await controller.startExecution();
+      await HostApprovalGate.runGuarded(
+        ref,
+        context,
+        action: controller.startExecution,
+      );
+      if (!mounted) return;
       setState(() {
         _done = true;
         _currentStepKind = null;
         _currentStepId = null;
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _failed = true;
         _error = '$e';
@@ -178,11 +185,7 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> {
           message: flattenProfileText(message),
           buttons: [
             for (final a in buttons)
-              (
-                id: a.id,
-                label: a.label,
-                severity: _severityFor(a.label),
-              ),
+              (id: a.id, label: a.label, severity: _severityFor(a.label)),
           ],
         ),
       ),
@@ -235,8 +238,7 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> {
                       RadioListTile<String>(
                         value: o.id,
                         title: Text(o.label),
-                        subtitle:
-                            o.subtitle == null ? null : Text(o.subtitle!),
+                        subtitle: o.subtitle == null ? null : Text(o.subtitle!),
                       ),
                   ],
                 ),
@@ -245,7 +247,8 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> {
           ),
           actions: [
             FilledButton(
-              onPressed: () => Navigator.of(context, rootNavigator: true).pop(choice),
+              onPressed: () =>
+                  Navigator.of(context, rootNavigator: true).pop(choice),
               child: Text(t.progress.choose_one_ok),
             ),
           ],
@@ -264,8 +267,7 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> {
   ///   5. `options_from: stack.webui.choices` (web UI choices)
   /// Unknown paths fail loud with a log line so profile authors get
   /// a usable error instead of a silent empty dialog.
-  List<({String id, String label, String? subtitle})>
-      _resolveChooseOneOptions(
+  List<({String id, String label, String? subtitle})> _resolveChooseOneOptions(
     Map<String, dynamic> step,
     PrinterProfile? profile,
   ) {
@@ -285,47 +287,47 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> {
     switch (from) {
       case 'os.fresh_install_options':
         return profile.os.freshInstallOptions
-            .map((o) => (
-                  id: o.id,
-                  label: o.displayName,
-                  subtitle: o.notes,
-                ))
+            .map((o) => (id: o.id, label: o.displayName, subtitle: o.notes))
             .toList();
       case 'firmware.choices':
         return profile.firmware.choices
-            .map((c) => (
-                  id: c.id,
-                  label: c.displayName,
-                  subtitle: c.description,
-                ))
+            .map(
+              (c) => (id: c.id, label: c.displayName, subtitle: c.description),
+            )
             .toList();
       case 'screens':
         return profile.screens
-            .map((s) => (
-                  id: s.id,
-                  label: s.displayName ?? s.id,
-                  subtitle: s.raw['description'] as String?,
-                ))
+            .map(
+              (s) => (
+                id: s.id,
+                label: s.displayName ?? s.id,
+                subtitle: s.raw['description'] as String?,
+              ),
+            )
             .toList();
       case 'addons':
         return profile.addons
-            .map((a) => (
-                  id: a.id,
-                  label: a.displayName ?? a.id,
-                  subtitle: a.raw['description'] as String?,
-                ))
+            .map(
+              (a) => (
+                id: a.id,
+                label: a.displayName ?? a.id,
+                subtitle: a.raw['description'] as String?,
+              ),
+            )
             .toList();
       case 'mcus':
         return profile.mcus
-            .map((m) => (
-                  id: m.id,
-                  label: m.displayName ?? m.id,
-                  subtitle: m.raw['description'] as String?,
-                ))
+            .map(
+              (m) => (
+                id: m.id,
+                label: m.displayName ?? m.id,
+                subtitle: m.raw['description'] as String?,
+              ),
+            )
             .toList();
       case 'stack.webui.choices':
-        final choices = ((profile.stack.webui?['choices'] as List?) ??
-            const []).cast<Map>();
+        final choices = ((profile.stack.webui?['choices'] as List?) ?? const [])
+            .cast<Map>();
         return choices.map((c) {
           final m = c.cast<String, dynamic>();
           return (
@@ -345,9 +347,7 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> {
           (
             id: '',
             label: t.progress.choose_one_unknown_label,
-            subtitle: t.progress.choose_one_unknown_subtitle(
-              field: from,
-            ),
+            subtitle: t.progress.choose_one_unknown_subtitle(field: from),
           ),
         ];
     }
@@ -400,9 +400,7 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> {
       barrierDismissible: false,
       child: StatefulBuilder(
         builder: (context, setLocal) => AlertDialog(
-          title: Text(
-            step['title'] as String? ?? t.progress.disk_picker_title,
-          ),
+          title: Text(step['title'] as String? ?? t.progress.disk_picker_title),
           content: SizedBox(
             width: 480,
             child: RadioGroup<String>(
@@ -430,7 +428,8 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> {
               child: Text(t.progress.disk_picker_cancel),
             ),
             FilledButton(
-              onPressed: () => Navigator.of(context, rootNavigator: true).pop(choice),
+              onPressed: () =>
+                  Navigator.of(context, rootNavigator: true).pop(choice),
               child: Text(t.progress.disk_picker_confirm),
             ),
           ],
@@ -573,9 +572,7 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> {
       primaryAction: WizardAction(
         label: _done
             ? t.progress.action_finish
-            : (_failed
-                ? t.progress.action_close
-                : t.progress.action_running),
+            : (_failed ? t.progress.action_close : t.progress.action_running),
         onPressed: _done
             ? () => context.go('/done')
             : (_failed ? () => context.go('/') : null),
@@ -751,11 +748,7 @@ class _PaneTabCell extends StatelessWidget {
 
 enum _PromptSeverity { recommended, neutral, destructive }
 
-typedef _PromptOption = ({
-  String id,
-  String label,
-  _PromptSeverity severity,
-});
+typedef _PromptOption = ({String id, String label, _PromptSeverity severity});
 
 /// Custom prompt-dialog card. Replaces Material's [AlertDialog] —
 /// AlertDialog runs its action row through [OverflowBar] which wraps
@@ -848,10 +841,8 @@ class _DeckhandPromptCard extends StatelessWidget {
                       label: b.label,
                       severity: b.severity,
                       tokens: tokens,
-                      onPressed: () => Navigator.of(
-                        context,
-                        rootNavigator: true,
-                      ).pop(b.id),
+                      onPressed: () =>
+                          Navigator.of(context, rootNavigator: true).pop(b.id),
                     ),
                 ],
               ),
@@ -884,8 +875,7 @@ class _PromptButton extends StatelessWidget {
     // mix of FilledButton + TextButton made the non-recommended
     // options read as plain links and lost the affordance for
     // anything except the primary path.
-    const padding =
-        EdgeInsets.symmetric(horizontal: 16, vertical: 12);
+    const padding = EdgeInsets.symmetric(horizontal: 16, vertical: 12);
     switch (severity) {
       case _PromptSeverity.recommended:
         return FilledButton(

@@ -143,6 +143,7 @@ Map<String, dynamic> testProfileJson({
   Map<String, dynamic>? stack,
   Map<String, dynamic>? os,
   List<Map<String, dynamic>>? stockKeepSteps,
+  List<Map<String, dynamic>>? freshFlashSteps,
 }) => {
   'profile_id': 'test-printer',
   'profile_version': '0.1.0',
@@ -171,6 +172,8 @@ Map<String, dynamic> testProfileJson({
   'stack': ?stack,
   'flows': {
     'stock_keep': {'enabled': true, 'steps': stockKeepSteps ?? const []},
+    if (freshFlashSteps != null)
+      'fresh_flash': {'enabled': true, 'steps': freshFlashSteps},
   },
 };
 
@@ -178,6 +181,8 @@ Map<String, dynamic> testProfileJson({
 /// widget tests to mount screens that read from the provider.
 WizardController stubWizardController({
   required Map<String, dynamic> profileJson,
+  UpstreamService? upstream,
+  SecurityService? security,
 }) {
   return WizardController(
     profiles: _StubProfileService(PrinterProfile.fromJson(profileJson)),
@@ -185,8 +190,8 @@ WizardController stubWizardController({
     flash: _StubFlash(),
     discovery: _StubDiscovery(),
     moonraker: _StubMoonraker(),
-    upstream: _StubUpstream(),
-    security: _StubSecurity(),
+    upstream: upstream ?? _StubUpstream(),
+    security: security ?? _StubSecurity(),
   );
 }
 
@@ -203,8 +208,8 @@ List<Override> overrideForController(
   flashServiceProvider.overrideWithValue(_StubFlash()),
   discoveryServiceProvider.overrideWithValue(_StubDiscovery()),
   moonrakerServiceProvider.overrideWithValue(_StubMoonraker()),
-  upstreamServiceProvider.overrideWithValue(_StubUpstream()),
-  securityServiceProvider.overrideWithValue(_StubSecurity()),
+  upstreamServiceProvider.overrideWithValue(controller.upstream),
+  securityServiceProvider.overrideWithValue(controller.security),
   doctorServiceProvider.overrideWithValue(doctor ?? _StubDoctor.healthy()),
   wizardControllerProvider.overrideWithValue(controller),
 ];

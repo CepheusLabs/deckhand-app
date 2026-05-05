@@ -18,14 +18,13 @@ import '../widgets/wizard_scaffold.dart';
 /// commit ergonomics here are bespoke:
 ///
 ///  * Type the disk name to enable the wipe button.
-///  * Press-and-hold for 2.5 seconds to actually commit.
+///  * Click wipe, then confirm the modal.
 ///
 /// Two safety gates instead of two checkboxes — the prior version's
 /// "I have backed up / I understand" checkboxes were too easy to
 /// click through. Typing a disk name is muscle memory only when
-/// you've actually looked at the target card; holding for 2.5s
-/// rules out the stray Enter / accidental click that the keyboard
-/// shortcut used to allow.
+/// you've actually looked at the target card; the modal gives one
+/// final explicit confirmation before the destructive handoff.
 ///
 /// `Esc` is intercepted in the wrapping `CallbackShortcuts` so the
 /// user can still bail out with the keyboard even though the
@@ -37,36 +36,24 @@ class FlashConfirmScreen extends ConsumerStatefulWidget {
   ConsumerState<FlashConfirmScreen> createState() => _FlashConfirmScreenState();
 }
 
-class _FlashConfirmScreenState extends ConsumerState<FlashConfirmScreen>
-    with SingleTickerProviderStateMixin {
+class _FlashConfirmScreenState extends ConsumerState<FlashConfirmScreen> {
   late final TextEditingController _typed;
-  late final AnimationController _hold;
 
   @override
   void initState() {
     super.initState();
     _typed = TextEditingController()
       ..addListener(() {
-        // Triggers a rebuild so the hold button enables/disables and
+        // Triggers a rebuild so the wipe button enables/disables and
         // the input swaps between the unmatched / matched colour
         // schemes. Cheap; runs only on user keystrokes.
         if (mounted) setState(() {});
       });
-    _hold =
-        AnimationController(
-          vsync: this,
-          duration: const Duration(milliseconds: 2500),
-        )..addStatusListener((status) {
-          if (status == AnimationStatus.completed && mounted) {
-            _commit();
-          }
-        });
   }
 
   @override
   void dispose() {
     _typed.dispose();
-    _hold.dispose();
     super.dispose();
   }
 
@@ -84,27 +71,44 @@ class _FlashConfirmScreenState extends ConsumerState<FlashConfirmScreen>
   bool _isMatched(String expected) =>
       expected.isNotEmpty && _typed.text.trim() == expected;
 
-  void _startHold() {
-    // The hold button only forwards pointer-down events when the
-    // typed-confirm matches (see `_HoldToWipeButton.onPointerDown`),
-    // so we don't re-gate here.
-    _hold.forward();
-  }
-
-  void _cancelHold() {
-    if (_hold.status == AnimationStatus.completed) return;
-    _hold.reset();
-  }
-
   Future<void> _commit() async {
-    // The hold-to-fire animation has reached completion — the user
-    // has held the button uninterrupted for 2.5s. Switch the wizard
-    // into fresh-flash mode and hand off to the unified progress
-    // screen, which owns the rest of the pipeline (download, write,
-    // verify, first-boot).
     ref.read(wizardControllerProvider).setFlow(WizardFlow.freshFlash);
     if (!mounted) return;
     context.go('/progress');
+  }
+
+  Future<void> _confirmCommit(DiskInfo? disk) async {
+    if (disk == null || !_isMatched(_expectedDiskName(disk))) return;
+    final tokens = DeckhandTokens.of(context);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        icon: Icon(Icons.warning_amber_rounded, color: tokens.bad),
+        title: const Text('Confirm wipe and flash'),
+        content: Text(
+          'Deckhand will erase ${diskDisplayName(disk)} and write the '
+          'selected OS image. This cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton.icon(
+            style: FilledButton.styleFrom(
+              backgroundColor: tokens.bad,
+              foregroundColor: const Color(0xFFFCFCFC),
+            ),
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            icon: const Icon(Icons.local_fire_department, size: 16),
+            label: const Text('Wipe and flash now'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) {
+      await _commit();
+    }
   }
 
   @override
@@ -179,13 +183,11 @@ class _FlashConfirmScreenState extends ConsumerState<FlashConfirmScreen>
                   expectedName: expectedName,
                   typed: _typed,
                   matched: matched,
-                  holdController: _hold,
                   backupManifest: existingManifest,
                   backupCandidate: existingCandidate,
-                  onStartHold: _startHold,
-                  onCancelHold: _cancelHold,
                   onBack: () => context.go('/choose-os'),
                   onBackup: () => context.go('/emmc-backup'),
+                  onWipe: () => _confirmCommit(disk),
                 ),
           secondaryActions: loadingBody
               ? [
@@ -235,13 +237,11 @@ class _DangerBody extends StatelessWidget {
     required this.expectedName,
     required this.typed,
     required this.matched,
-    required this.holdController,
     required this.backupManifest,
     required this.backupCandidate,
-    required this.onStartHold,
-    required this.onCancelHold,
     required this.onBack,
     required this.onBackup,
+    required this.onWipe,
   });
 
   final DiskInfo? disk;
@@ -249,13 +249,11 @@ class _DangerBody extends StatelessWidget {
   final String expectedName;
   final TextEditingController typed;
   final bool matched;
-  final AnimationController holdController;
   final EmmcBackupManifest? backupManifest;
   final EmmcBackupImageCandidate? backupCandidate;
-  final VoidCallback onStartHold;
-  final VoidCallback onCancelHold;
   final VoidCallback onBack;
   final VoidCallback onBackup;
+  final VoidCallback onWipe;
 
   @override
   Widget build(BuildContext context) {
@@ -312,10 +310,8 @@ class _DangerBody extends StatelessWidget {
                 expected: expectedName,
                 typed: typed,
                 matched: matched,
-                holdController: holdController,
-                onStartHold: onStartHold,
-                onCancelHold: onCancelHold,
                 onBack: onBack,
+                onWipe: onWipe,
               ),
             ],
           ),
@@ -1070,19 +1066,15 @@ class _ConfirmBlock extends StatelessWidget {
     required this.expected,
     required this.typed,
     required this.matched,
-    required this.holdController,
-    required this.onStartHold,
-    required this.onCancelHold,
     required this.onBack,
+    required this.onWipe,
   });
 
   final String expected;
   final TextEditingController typed;
   final bool matched;
-  final AnimationController holdController;
-  final VoidCallback onStartHold;
-  final VoidCallback onCancelHold;
   final VoidCallback onBack;
+  final VoidCallback onWipe;
 
   @override
   Widget build(BuildContext context) {
@@ -1189,12 +1181,7 @@ class _ConfirmBlock extends StatelessWidget {
                   label: const Text("Back, don't wipe"),
                 ),
                 const Spacer(),
-                _HoldToWipeButton(
-                  matched: matched,
-                  holdController: holdController,
-                  onStart: onStartHold,
-                  onCancel: onCancelHold,
-                ),
+                _WipeAndFlashButton(matched: matched, onPressed: onWipe),
               ],
             ),
           ),
@@ -1204,108 +1191,38 @@ class _ConfirmBlock extends StatelessWidget {
   }
 }
 
-/// Hold-to-fire button. Disabled until [matched]. On press, the
-/// internal [holdController] runs forward over 2.5s; releasing
-/// before completion resets the animation. Completion triggers the
-/// commit callback wired in `_FlashConfirmScreenState`.
-class _HoldToWipeButton extends StatelessWidget {
-  const _HoldToWipeButton({
-    required this.matched,
-    required this.holdController,
-    required this.onStart,
-    required this.onCancel,
-  });
+class _WipeAndFlashButton extends StatelessWidget {
+  const _WipeAndFlashButton({required this.matched, required this.onPressed});
 
   final bool matched;
-  final AnimationController holdController;
-  final VoidCallback onStart;
-  final VoidCallback onCancel;
+  final VoidCallback onPressed;
 
   @override
   Widget build(BuildContext context) {
     final tokens = DeckhandTokens.of(context);
-    return AnimatedBuilder(
-      animation: holdController,
-      builder: (context, _) {
-        final progress = holdController.value;
-        final firing = progress > 0;
-        // Disabled state uses neutral grays (ink2 bg, line border,
-        // text4 fg) so it reads as "you can't click this yet"
-        // rather than "active, just lighter red". Active uses the
-        // saturated bad red. Firing uses the same red but with the
-        // progress fill animating across.
-        final bg = matched ? tokens.bad : tokens.ink2;
-        final borderColor = matched ? tokens.bad : tokens.line;
-        final fg = matched ? const Color(0xFFFCFCFC) : tokens.text4;
-        return Listener(
-          onPointerDown: matched ? (_) => onStart() : null,
-          onPointerUp: (_) => onCancel(),
-          onPointerCancel: (_) => onCancel(),
-          child: MouseRegion(
-            cursor: matched
-                ? SystemMouseCursors.click
-                : SystemMouseCursors.forbidden,
-            child: Container(
-              height: 40,
-              clipBehavior: Clip.hardEdge,
-              decoration: BoxDecoration(
-                color: bg,
-                border: Border.all(color: borderColor),
-                borderRadius: BorderRadius.circular(DeckhandTokens.r2),
-              ),
-              child: Stack(
-                alignment: Alignment.center,
-                children: [
-                  // Filling progress bar — left-anchored scaleX
-                  // tracks the hold animation. Underlies the label.
-                  Positioned.fill(
-                    child: Align(
-                      alignment: Alignment.centerLeft,
-                      child: FractionallySizedBox(
-                        widthFactor: progress,
-                        heightFactor: 1,
-                        child: Container(color: tokens.bad),
-                      ),
-                    ),
-                  ),
-                  // Centered label. Stack.alignment=center positions
-                  // this Row at the middle of the button regardless
-                  // of the icon+text intrinsic width.
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 22),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.local_fire_department,
-                          size: 14,
-                          color: firing ? const Color(0xFFFCFCFC) : fg,
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          firing
-                              ? 'Hold…'
-                              : matched
-                              ? 'Hold to wipe and flash'
-                              : 'Wipe and flash',
-                          style: TextStyle(
-                            fontFamily: DeckhandTokens.fontSans,
-                            fontSize: 14,
-                            fontWeight: FontWeight.w500,
-                            letterSpacing: 0.01 * 14,
-                            color: firing ? const Color(0xFFFCFCFC) : fg,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        );
-      },
+    return FilledButton.icon(
+      style: FilledButton.styleFrom(
+        backgroundColor: tokens.bad,
+        foregroundColor: const Color(0xFFFCFCFC),
+        disabledBackgroundColor: tokens.ink2,
+        disabledForegroundColor: tokens.text4,
+        minimumSize: const Size(190, 40),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(DeckhandTokens.r2),
+          side: BorderSide(color: matched ? tokens.bad : tokens.line),
+        ),
+      ),
+      onPressed: matched ? onPressed : null,
+      icon: const Icon(Icons.local_fire_department, size: 15),
+      label: const Text(
+        'Wipe and flash',
+        style: TextStyle(
+          fontFamily: DeckhandTokens.fontSans,
+          fontSize: 14,
+          fontWeight: FontWeight.w600,
+          letterSpacing: 0.1,
+        ),
+      ),
     );
   }
 }

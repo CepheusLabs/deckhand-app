@@ -215,63 +215,67 @@ void main() {
       },
     );
 
-    testWidgets(
-      'FlashConfirmScreen requires exact disk name and completed hold',
-      (tester) async {
-        tester.view.physicalSize = const Size(1280, 1600);
-        tester.view.devicePixelRatio = 1;
-        addTearDown(tester.view.resetPhysicalSize);
-        addTearDown(tester.view.resetDevicePixelRatio);
+    testWidgets('FlashConfirmScreen confirms wipe with a modal', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(1280, 1600);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
 
-        final controller = stubWizardController(profileJson: _profileJson());
-        await controller.loadProfile('test-printer');
-        await controller.setDecision('flash.disk', 'disk-emmc');
-        await controller.setDecision('flash.os', 'debian-bookworm');
+      final controller = stubWizardController(profileJson: _profileJson());
+      await controller.loadProfile('test-printer');
+      await controller.setDecision('flash.disk', 'disk-emmc');
+      await controller.setDecision('flash.os', 'debian-bookworm');
 
-        await tester.pumpWidget(
-          testHarness(
-            controller: controller,
-            child: const FlashConfirmScreen(),
-            initialLocation: '/flash-confirm',
-            extraOverrides: [
-              flashServiceProvider.overrideWithValue(_FlashDisks()),
-            ],
-          ),
-        );
-        await tester.pumpAndSettle();
+      await tester.pumpWidget(
+        testHarness(
+          controller: controller,
+          child: const FlashConfirmScreen(),
+          initialLocation: '/flash-confirm',
+          extraOverrides: [
+            flashServiceProvider.overrideWithValue(_FlashDisks()),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
 
-        await tester.enterText(find.byType(TextField), 'disk-emmc');
-        await tester.pump();
-        expect(find.text('EXPECTED: Printer eMMC'), findsOneWidget);
-        await tester.ensureVisible(find.text('Wipe and flash'));
-        await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField), 'disk-emmc');
+      await tester.pump();
+      expect(find.text('EXPECTED: Printer eMMC'), findsOneWidget);
+      await tester.ensureVisible(find.text('Wipe and flash'));
+      await tester.pumpAndSettle();
 
-        final blockedGesture = await tester.startGesture(
-          tester.getCenter(find.text('Wipe and flash')),
-        );
-        await tester.pump(const Duration(milliseconds: 2600));
-        await blockedGesture.up();
-        await tester.pump();
-        expect(controller.state.flow, WizardFlow.none);
+      await tester.tap(find.text('Wipe and flash'));
+      await tester.pumpAndSettle();
+      expect(find.text('Confirm wipe and flash'), findsNothing);
+      expect(controller.state.flow, WizardFlow.none);
 
-        await tester.enterText(find.byType(TextField), 'Printer eMMC');
-        await tester.pump();
-        expect(find.text('MATCH · WIPE ARMED'), findsOneWidget);
-        await tester.ensureVisible(find.text('Hold to wipe and flash'));
-        await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField), 'Printer eMMC');
+      await tester.pump();
+      expect(find.text('MATCH · WIPE ARMED'), findsOneWidget);
+      expect(find.text('Hold to wipe and flash'), findsNothing);
+      await tester.ensureVisible(find.text('Wipe and flash'));
+      await tester.pumpAndSettle();
 
-        final commitGesture = await tester.startGesture(
-          tester.getCenter(find.text('Hold to wipe and flash')),
-        );
-        for (var i = 0; i < 27; i++) {
-          await tester.pump(const Duration(milliseconds: 100));
-        }
-        await commitGesture.up();
-        await tester.pump();
+      await tester.tap(find.text('Wipe and flash'));
+      await tester.pumpAndSettle();
+      expect(find.text('Confirm wipe and flash'), findsOneWidget);
+      expect(find.textContaining('Printer eMMC'), findsWidgets);
+      expect(controller.state.flow, WizardFlow.none);
 
-        expect(controller.state.flow, WizardFlow.freshFlash);
-      },
-    );
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+      expect(find.text('Confirm wipe and flash'), findsNothing);
+      expect(controller.state.flow, WizardFlow.none);
+
+      await tester.tap(find.text('Wipe and flash'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Wipe and flash now'));
+      await tester.pump();
+
+      expect(controller.state.flow, WizardFlow.freshFlash);
+    });
   });
 }
 
