@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 
 import '../providers.dart';
 import '../theming/deckhand_tokens.dart';
+import '../widgets/deckhand_loading.dart';
 import '../widgets/wizard_scaffold.dart';
 import 'manage_tuning_panel.dart';
 
@@ -249,7 +250,7 @@ class _StatusTabState extends ConsumerState<_StatusTab> {
           if (snap.connectionState != ConnectionState.done) {
             return const Padding(
               padding: EdgeInsets.symmetric(vertical: 16),
-              child: Center(child: CircularProgressIndicator()),
+              child: Center(child: DeckhandSpinner(size: 24, strokeWidth: 2)),
             );
           }
           final s = snap.data!;

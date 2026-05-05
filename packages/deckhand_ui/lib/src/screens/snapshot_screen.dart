@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 
 import '../providers.dart';
 import '../theming/deckhand_tokens.dart';
+import '../widgets/deckhand_loading.dart';
 import '../widgets/wizard_scaffold.dart';
 
 /// S145-snapshot — capture the user's hand-edited config before Flow A
@@ -747,7 +748,7 @@ class _SizeCell extends StatelessWidget {
       return SizedBox(
         width: 12,
         height: 12,
-        child: CircularProgressIndicator(strokeWidth: 1.5, color: tokens.text4),
+        child: DeckhandSpinner(size: 12, strokeWidth: 1.5, color: tokens.text4),
       );
     }
     if (missing) {

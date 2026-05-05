@@ -8,6 +8,7 @@ import 'package:go_router/go_router.dart';
 import '../i18n/translations.g.dart';
 import '../providers.dart';
 import '../theming/deckhand_tokens.dart';
+import '../widgets/deckhand_loading.dart';
 import '../widgets/host_approval_gate.dart';
 import '../widgets/id_tag.dart';
 import '../widgets/status_pill.dart';
@@ -46,7 +47,12 @@ class _PickPrinterScreenState extends ConsumerState<PickPrinterScreen> {
         Widget body;
         ProfileRegistryEntry? selectedEntry;
         if (snap.connectionState != ConnectionState.done) {
-          body = const Center(child: CircularProgressIndicator());
+          body = const DeckhandLoadingBlock(
+            title: 'Loading printer profiles',
+            message:
+                'Deckhand is loading the approved profile registry before '
+                'showing printer choices.',
+          );
         } else if (snap.hasError) {
           body = _ErrorBox(
             message: 'Failed to load printer registry: ${snap.error}',
@@ -164,11 +170,7 @@ class _Body extends StatelessWidget {
               child: TextField(
                 onChanged: onQuery,
                 decoration: InputDecoration(
-                  prefixIcon: Icon(
-                    Icons.search,
-                    size: 16,
-                    color: tokens.text4,
-                  ),
+                  prefixIcon: Icon(Icons.search, size: 16, color: tokens.text4),
                   hintText: 'Search $registrySize profiles…',
                 ),
               ),
@@ -215,11 +217,7 @@ class _Body extends StatelessWidget {
         const SizedBox(height: 20),
         Row(
           children: [
-            Icon(
-              Icons.menu_book_outlined,
-              size: 14,
-              color: tokens.text3,
-            ),
+            Icon(Icons.menu_book_outlined, size: 14, color: tokens.text3),
             const SizedBox(width: 8),
             Text(
               'My printer isn\'t here — ',
@@ -257,8 +255,7 @@ class _Body extends StatelessWidget {
                     // U+2192 glyph — the unicode arrow is banned from
                     // the printer picker (regression guard from a
                     // prior copy bug).
-                    Icon(Icons.arrow_forward,
-                        size: 12, color: tokens.accent),
+                    Icon(Icons.arrow_forward, size: 12, color: tokens.accent),
                   ],
                 ),
               ),
@@ -337,13 +334,10 @@ class _SpecCardState extends State<_SpecCard> {
     final borderColor = selected
         ? tokens.accent
         : _hovering
-            ? tokens.rule
-            : tokens.line;
+        ? tokens.rule
+        : tokens.line;
     final backgroundColor = selected
-        ? Color.alphaBlend(
-            tokens.accent.withValues(alpha: 0.04),
-            tokens.ink1,
-          )
+        ? Color.alphaBlend(tokens.accent.withValues(alpha: 0.04), tokens.ink1)
         : tokens.ink1;
 
     return MouseRegion(
@@ -376,14 +370,14 @@ class _SpecCardState extends State<_SpecCard> {
                     ),
                   ]
                 : _hovering
-                    ? [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.18),
-                          blurRadius: 16,
-                          offset: const Offset(0, 4),
-                        ),
-                      ]
-                    : null,
+                ? [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.18),
+                      blurRadius: 16,
+                      offset: const Offset(0, 4),
+                    ),
+                  ]
+                : null,
           ),
           child: Stack(
             children: [
@@ -576,9 +570,7 @@ class _Footer extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.only(top: 10),
       decoration: BoxDecoration(
-        border: Border(
-          top: BorderSide(color: tokens.lineSoft),
-        ),
+        border: Border(top: BorderSide(color: tokens.lineSoft)),
       ),
       child: Row(
         children: [
@@ -629,11 +621,7 @@ class _SelBadge extends StatelessWidget {
           ),
         ],
       ),
-      child: Icon(
-        Icons.check,
-        size: 12,
-        color: tokens.accentFg,
-      ),
+      child: Icon(Icons.check, size: 12, color: tokens.accentFg),
     );
   }
 }

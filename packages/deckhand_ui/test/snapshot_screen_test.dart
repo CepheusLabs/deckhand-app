@@ -97,7 +97,7 @@ void main() {
           child: const SnapshotScreen(),
           initialLocation: '/snapshot',
           extraOverrides: [
-            flashServiceProvider.overrideWithValue(_OneDiskFlash()),
+            flashServiceProvider.overrideWithValue(const _OneDiskFlash()),
             elevatedHelperServiceProvider.overrideWithValue(helper),
             securityServiceProvider.overrideWithValue(security),
             emmcBackupManifestsProvider.overrideWith((_) async => [manifest]),

@@ -7,6 +7,7 @@ import '../i18n/translations.g.dart';
 import '../providers.dart';
 import '../theming/deckhand_tokens.dart';
 import '../utils/disk_display.dart';
+import '../widgets/deckhand_loading.dart';
 import '../widgets/wizard_scaffold.dart';
 
 class FlashTargetScreen extends ConsumerStatefulWidget {
@@ -52,7 +53,13 @@ class _FlashTargetScreenState extends ConsumerState<FlashTargetScreen> {
           if (disksAsync.isLoading) {
             return const Padding(
               padding: EdgeInsets.symmetric(vertical: 32),
-              child: Center(child: CircularProgressIndicator()),
+              child: DeckhandLoadingBlock(
+                kind: DeckhandLoaderKind.emmcPins,
+                title: 'Scanning disks',
+                message:
+                    'Deckhand is enumerating removable drives and blocking '
+                    'system disks before selection.',
+              ),
             );
           }
           if (disksAsync.hasError) {

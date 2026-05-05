@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers.dart';
+import 'deckhand_loading.dart';
 
 /// Tiny status row for S10-welcome that watches the shared
 /// [preflightReportProvider] and shows a single-line summary with a
@@ -27,18 +28,22 @@ class PreflightStrip extends ConsumerWidget {
         icon: const SizedBox(
           width: 14,
           height: 14,
-          child: CircularProgressIndicator(strokeWidth: 2),
+          child: DeckhandSpinner(size: 14, strokeWidth: 2),
         ),
         label: 'Preflight: running…',
         color: theme.colorScheme.onSurfaceVariant,
         tooltipMessage: _runningTooltip,
       ),
       error: (e, _) => _Row(
-        icon: Icon(Icons.help_outline,
-            size: 18, color: theme.colorScheme.onSurfaceVariant),
+        icon: Icon(
+          Icons.help_outline,
+          size: 18,
+          color: theme.colorScheme.onSurfaceVariant,
+        ),
         label: 'Preflight: unavailable ($e)',
         color: theme.colorScheme.onSurfaceVariant,
-        tooltipMessage: 'The doctor service did not respond. Retry to ask '
+        tooltipMessage:
+            'The doctor service did not respond. Retry to ask '
             'again. Mid-session hiccups are usually transient.',
         onRetry: () => ref.invalidate(preflightReportProvider),
       ),
@@ -46,8 +51,11 @@ class PreflightStrip extends ConsumerWidget {
         final tooltipMessage = _summarizeChecks(report);
         if (report.passed && report.warnings.isEmpty) {
           return _Row(
-            icon: Icon(Icons.check_circle_outline,
-                size: 18, color: theme.colorScheme.primary),
+            icon: Icon(
+              Icons.check_circle_outline,
+              size: 18,
+              color: theme.colorScheme.primary,
+            ),
             label: 'Preflight: ready',
             color: theme.colorScheme.primary,
             tooltipMessage: tooltipMessage,
@@ -58,8 +66,11 @@ class PreflightStrip extends ConsumerWidget {
           // No FAILs, but at least one WARN. Yellow but unblocking.
           final n = report.warnings.length;
           return _Row(
-            icon: const Icon(Icons.info_outline,
-                size: 18, color: Colors.orange),
+            icon: const Icon(
+              Icons.info_outline,
+              size: 18,
+              color: Colors.orange,
+            ),
             label: 'Preflight: ready ($n warning${n == 1 ? '' : 's'})',
             color: Colors.orange,
             tooltipMessage: tooltipMessage,
@@ -68,9 +79,13 @@ class PreflightStrip extends ConsumerWidget {
         }
         final n = report.failures.length;
         return _Row(
-          icon: Icon(Icons.error_outline,
-              size: 18, color: theme.colorScheme.error),
-          label: 'Preflight: $n issue${n == 1 ? '' : 's'} — '
+          icon: Icon(
+            Icons.error_outline,
+            size: 18,
+            color: theme.colorScheme.error,
+          ),
+          label:
+              'Preflight: $n issue${n == 1 ? '' : 's'} — '
               '${report.failures.first.name}',
           color: theme.colorScheme.error,
           tooltipMessage: tooltipMessage,
@@ -198,10 +213,9 @@ class _Row extends StatelessWidget {
             const SizedBox(width: 8),
             Text(
               label,
-              style: Theme.of(context)
-                  .textTheme
-                  .bodySmall
-                  ?.copyWith(color: color),
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: color),
             ),
           ],
         ),
@@ -217,7 +231,9 @@ class _Row extends StatelessWidget {
             TextButton(onPressed: onRetry, child: const Text('Retry')),
           if (onViewReport != null)
             TextButton(
-                onPressed: onViewReport, child: const Text('View report')),
+              onPressed: onViewReport,
+              child: const Text('View report'),
+            ),
         ],
       ),
     );

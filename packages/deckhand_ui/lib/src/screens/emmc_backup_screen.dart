@@ -12,6 +12,7 @@ import '../providers.dart';
 import '../theming/deckhand_tokens.dart';
 import '../utils/disk_display.dart';
 import '../widgets/danger_card.dart';
+import '../widgets/deckhand_loading.dart';
 import '../widgets/wizard_progress_bar.dart';
 import '../widgets/wizard_scaffold.dart';
 
@@ -842,7 +843,9 @@ class _DisksTable extends StatelessWidget {
               if (snap.connectionState != ConnectionState.done) {
                 return const Padding(
                   padding: EdgeInsets.symmetric(vertical: 24),
-                  child: Center(child: CircularProgressIndicator()),
+                  child: Center(
+                    child: DeckhandSpinner(size: 24, strokeWidth: 2),
+                  ),
                 );
               }
               if (snap.hasError) {
@@ -1192,13 +1195,10 @@ class _InheritedPickCard extends StatelessWidget {
               if (snap.connectionState != ConnectionState.done) {
                 return Row(
                   children: [
-                    SizedBox(
-                      width: 12,
-                      height: 12,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 1.5,
-                        color: tokens.text4,
-                      ),
+                    DeckhandSpinner(
+                      size: 12,
+                      strokeWidth: 1.5,
+                      color: tokens.text4,
                     ),
                     const SizedBox(width: 10),
                     Text(

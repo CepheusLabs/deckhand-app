@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 
 import '../providers.dart';
 import '../theming/deckhand_tokens.dart';
+import '../widgets/deckhand_loading.dart';
 import '../widgets/id_tag.dart';
 import '../widgets/preflight_strip.dart';
 import '../widgets/resume_gate.dart';
@@ -29,8 +30,7 @@ class WelcomeScreen extends ConsumerWidget {
     // in is just bad affordance.
     final preflight = ref.watch(preflightReportProvider);
     final ready = !preflight.isLoading;
-    final primaryLabel =
-        preflight.isLoading ? 'Checking preflight…' : 'Start';
+    final primaryLabel = preflight.isLoading ? 'Checking preflight…' : 'Start';
 
     final tokens = DeckhandTokens.of(context);
     final saved = ref.watch(savedWizardSnapshotProvider).value;
@@ -103,10 +103,7 @@ class _WelcomePanels extends StatelessWidget {
           Expanded(child: newInstall),
           const SizedBox(width: 16),
           Expanded(
-            child: _ResumePanel(
-              tokens: tokens,
-              saved: saved!,
-            ),
+            child: _ResumePanel(tokens: tokens, saved: saved!),
           ),
         ],
       ),
@@ -159,9 +156,7 @@ class _ResumePanelState extends ConsumerState<_ResumePanel> {
     if (_restoring) return;
     setState(() => _restoring = true);
     try {
-      await ref
-          .read(wizardControllerProvider)
-          .restore(widget.saved.state);
+      await ref.read(wizardControllerProvider).restore(widget.saved.state);
     } on ResumeFailedException catch (e) {
       if (!mounted) return;
       setState(() => _restoring = false);
@@ -250,24 +245,22 @@ class _ResumePanelState extends ConsumerState<_ResumePanel> {
   Widget build(BuildContext context) {
     final tokens = widget.tokens;
     final state = widget.saved.state;
-    final profileLabel =
-        state.profileId.isEmpty ? 'unknown printer' : state.profileId;
+    final profileLabel = state.profileId.isEmpty
+        ? 'unknown printer'
+        : state.profileId;
     final stepLabel = _stepIdTagLabel(state.currentStep);
     final ageLabel = _relativeTimeShort(widget.saved.savedAt);
     return _PanelShell(
       tokens: tokens,
       eyebrow: 'RESUME',
       headline: 'You have one in-progress install.',
-      body: 'Picks up where you left off; probes of the printer re-run so '
+      body:
+          'Picks up where you left off; probes of the printer re-run so '
           'nothing happens without you confirming.',
       extra: Wrap(
         spacing: 6,
         runSpacing: 6,
-        children: [
-          IdTag(profileLabel),
-          IdTag(stepLabel),
-          IdTag(ageLabel),
-        ],
+        children: [IdTag(profileLabel), IdTag(stepLabel), IdTag(ageLabel)],
       ),
       action: Row(
         mainAxisSize: MainAxisSize.min,
@@ -283,7 +276,7 @@ class _ResumePanelState extends ConsumerState<_ResumePanel> {
                 ? const SizedBox(
                     width: 12,
                     height: 12,
-                    child: CircularProgressIndicator(strokeWidth: 1.5),
+                    child: DeckhandSpinner(size: 12, strokeWidth: 1.5),
                   )
                 : const Icon(Icons.arrow_forward, size: 14),
             label: Text(_restoring ? 'Resuming…' : 'Resume'),
@@ -357,10 +350,7 @@ class _PanelShell extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 14),
-          if (extra != null) ...[
-            extra!,
-            const SizedBox(height: 14),
-          ],
+          if (extra != null) ...[extra!, const SizedBox(height: 14)],
           Text(
             body,
             style: TextStyle(
@@ -432,6 +422,17 @@ String _relativeTimeShort(DateTime when) {
 }
 
 String _monthShort(int m) => const [
-      '', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
-    ][m];
+  '',
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec',
+][m];

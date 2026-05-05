@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import '../providers.dart';
 import '../theming/deckhand_tokens.dart';
 import '../utils/disk_display.dart';
+import '../widgets/deckhand_loading.dart';
 import '../widgets/wizard_scaffold.dart';
 
 /// S220 — Last check before we wipe a disk.
@@ -125,12 +126,12 @@ class _FlashConfirmScreenState extends ConsumerState<FlashConfirmScreen>
 
     final expectedName = _expectedDiskName(disk);
     final matched = _isMatched(expectedName);
+    final manifestsAsync = ref.watch(emmcBackupManifestsProvider);
     final manifests =
-        ref.watch(emmcBackupManifestsProvider).valueOrNull ??
-        const <EmmcBackupManifest>[];
+        manifestsAsync.valueOrNull ?? const <EmmcBackupManifest>[];
+    final candidatesAsync = ref.watch(emmcBackupImageCandidatesProvider);
     final candidates =
-        ref.watch(emmcBackupImageCandidatesProvider).valueOrNull ??
-        const <EmmcBackupImageCandidate>[];
+        candidatesAsync.valueOrNull ?? const <EmmcBackupImageCandidate>[];
     final existingManifest = disk == null
         ? null
         : findMatchingEmmcBackup(
@@ -145,6 +146,13 @@ class _FlashConfirmScreenState extends ConsumerState<FlashConfirmScreen>
             profileId: controller.state.profileId,
             disk: disk,
           );
+    final waitingForDisk =
+        diskId != null && disk == null && disksAsync.isLoading;
+    final waitingForBackups =
+        disk != null &&
+        ((manifestsAsync.isLoading && !manifestsAsync.hasValue) ||
+            (candidatesAsync.isLoading && !candidatesAsync.hasValue));
+    final loadingBody = waitingForDisk || waitingForBackups;
 
     // Esc still goes back even though the scaffold's Back button is
     // suppressed — wired here so the keyboard escape hatch survives
@@ -163,23 +171,58 @@ class _FlashConfirmScreenState extends ConsumerState<FlashConfirmScreen>
               'This is the only screen with a destructive primary. We '
               'surface every fact you need so you don\'t second-guess '
               'the decision afterwards.',
-          body: _DangerBody(
-            disk: disk,
-            osId: osId,
-            expectedName: expectedName,
-            typed: _typed,
-            matched: matched,
-            holdController: _hold,
-            backupManifest: existingManifest,
-            backupCandidate: existingCandidate,
-            onStartHold: _startHold,
-            onCancelHold: _cancelHold,
-            onBack: () => context.go('/choose-os'),
-            onBackup: () => context.go('/emmc-backup'),
-          ),
+          body: loadingBody
+              ? _FlashConfirmLoading(waitingForDisk: waitingForDisk)
+              : _DangerBody(
+                  disk: disk,
+                  osId: osId,
+                  expectedName: expectedName,
+                  typed: _typed,
+                  matched: matched,
+                  holdController: _hold,
+                  backupManifest: existingManifest,
+                  backupCandidate: existingCandidate,
+                  onStartHold: _startHold,
+                  onCancelHold: _cancelHold,
+                  onBack: () => context.go('/choose-os'),
+                  onBackup: () => context.go('/emmc-backup'),
+                ),
+          secondaryActions: loadingBody
+              ? [
+                  WizardAction(
+                    label: "Back, don't wipe",
+                    isBack: true,
+                    onPressed: () => context.go('/choose-os'),
+                  ),
+                ]
+              : const [],
           // Footer action bar suppressed — the commit-bar inside the
           // body owns the commit ergonomics for this screen.
         ),
+      ),
+    );
+  }
+}
+
+class _FlashConfirmLoading extends StatelessWidget {
+  const _FlashConfirmLoading({required this.waitingForDisk});
+
+  final bool waitingForDisk;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: DeckhandLoadingBlock(
+        kind: DeckhandLoaderKind.emmcPins,
+        title: waitingForDisk
+            ? 'Loading selected disk'
+            : 'Checking backup records',
+        message: waitingForDisk
+            ? 'Deckhand is re-enumerating disks before it shows the '
+                  'destructive confirmation.'
+            : 'Deckhand is scanning local backup manifests and full-size '
+                  'images before it recommends another backup.',
       ),
     );
   }

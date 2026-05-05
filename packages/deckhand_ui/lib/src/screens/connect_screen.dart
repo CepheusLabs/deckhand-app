@@ -9,6 +9,7 @@ import 'package:go_router/go_router.dart';
 import '../i18n/translations.g.dart';
 import '../providers.dart';
 import '../theming/deckhand_tokens.dart';
+import '../widgets/deckhand_loading.dart';
 import '../widgets/status_pill.dart';
 import '../widgets/wizard_scaffold.dart';
 
@@ -753,14 +754,7 @@ class _ConnectingFocus extends StatelessWidget {
                   border: Border.all(color: tokens.accent, width: 2),
                 ),
                 alignment: Alignment.center,
-                child: SizedBox(
-                  width: 48,
-                  height: 48,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: tokens.accent,
-                  ),
-                ),
+                child: const DeckhandSpinner(size: 48, strokeWidth: 2),
               ),
               const SizedBox(height: 22),
               Text(
@@ -1054,11 +1048,7 @@ class _TabbedBody extends StatelessWidget {
                       if (scanning)
                         const Padding(
                           padding: EdgeInsets.only(right: 8),
-                          child: SizedBox(
-                            width: 14,
-                            height: 14,
-                            child: CircularProgressIndicator(strokeWidth: 1.5),
-                          ),
+                          child: DeckhandSpinner(strokeWidth: 1.5),
                         ),
                       TextButton.icon(
                         icon: const Icon(Icons.refresh, size: 14),

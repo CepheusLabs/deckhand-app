@@ -8,6 +8,7 @@ import 'package:go_router/go_router.dart';
 import '../i18n/translations.g.dart';
 import '../providers.dart';
 import '../theming/deckhand_tokens.dart';
+import '../widgets/deckhand_loading.dart';
 import '../widgets/profile_text.dart';
 import '../widgets/wizard_scaffold.dart';
 
@@ -107,7 +108,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   Future<void> _saveLocalDir() async {
     final raw = _localDirController.text.trim();
     if (raw.isNotEmpty) {
-      final ok = await Directory(raw).exists() &&
+      final ok =
+          await Directory(raw).exists() &&
           await File('$raw/registry.yaml').exists();
       if (!ok) {
         setState(() {
@@ -132,9 +134,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           ? 'Cleared · using anonymous 60/hour bucket'
           : 'Saved · using authenticated GitHub bucket';
     });
-    _toast(raw.isEmpty
-        ? 'GitHub token cleared.'
-        : 'GitHub token saved to secure storage.');
+    _toast(
+      raw.isEmpty
+          ? 'GitHub token cleared.'
+          : 'GitHub token saved to secure storage.',
+    );
   }
 
   Future<void> _saveFlashSettings() async {
@@ -166,9 +170,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
   void _toast(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
@@ -209,8 +213,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         // SettingsLinkButton uses context.push). On a deep-link or
         // direct '/settings' load the stack is empty, so fall back
         // to the welcome screen so Back is never a no-op.
-        onPressed: () =>
-            context.canPop() ? context.pop() : context.go('/'),
+        onPressed: () => context.canPop() ? context.pop() : context.go('/'),
         isBack: true,
       ),
     );
@@ -270,8 +273,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               isDense: true,
             ),
             keyboardType: TextInputType.number,
-            onChanged: (_) =>
-                setState(() => _cacheRetentionError = null),
+            onChanged: (_) => setState(() => _cacheRetentionError = null),
           ),
         ),
         const SizedBox(height: 16),
@@ -300,7 +302,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             child: SizedBox(
               height: 14,
               width: 14,
-              child: CircularProgressIndicator(strokeWidth: 2),
+              child: DeckhandSpinner(size: 14, strokeWidth: 2),
             ),
           );
         }
@@ -468,10 +470,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         const _SettingsDivider(),
         const _FieldLabel('LANGUAGE'),
         const SizedBox(height: 6),
-        _LocalePickerTile(
-          settings: settings,
-          onChanged: () => setState(() {}),
-        ),
+        _LocalePickerTile(settings: settings, onChanged: () => setState(() {})),
       ],
     );
   }
@@ -510,15 +509,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             isDense: true,
             suffixIcon: IconButton(
               icon: Icon(
-                _githubTokenObscured
-                    ? Icons.visibility
-                    : Icons.visibility_off,
+                _githubTokenObscured ? Icons.visibility : Icons.visibility_off,
                 size: 18,
               ),
               tooltip: _githubTokenObscured ? 'Show' : 'Hide',
-              onPressed: () => setState(
-                () => _githubTokenObscured = !_githubTokenObscured,
-              ),
+              onPressed: () =>
+                  setState(() => _githubTokenObscured = !_githubTokenObscured),
             ),
           ),
         ),
@@ -539,8 +535,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             FilledButton.icon(
               icon: const Icon(Icons.save, size: 16),
               label: const Text('Save token'),
-              onPressed:
-                  _githubTokenLoaded ? _saveGithubToken : null,
+              onPressed: _githubTokenLoaded ? _saveGithubToken : null,
             ),
             const SizedBox(width: 8),
             OutlinedButton.icon(
@@ -578,7 +573,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 child: SizedBox(
                   height: 14,
                   width: 14,
-                  child: CircularProgressIndicator(strokeWidth: 2),
+                  child: DeckhandSpinner(size: 14, strokeWidth: 2),
                 ),
               );
             }
@@ -607,10 +602,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               child: Column(
                 children: [
                   for (final h in hosts)
-                    _AllowListRow(
-                      host: h,
-                      onRevoke: () => _revokeHost(h),
-                    ),
+                    _AllowListRow(host: h, onRevoke: () => _revokeHost(h)),
                 ],
               ),
             );
@@ -699,11 +691,7 @@ class _TabRailItem extends StatelessWidget {
         ),
         child: Row(
           children: [
-            Icon(
-              icon,
-              size: 16,
-              color: selected ? tokens.text : tokens.text3,
-            ),
+            Icon(icon, size: 16, color: selected ? tokens.text : tokens.text3),
             const SizedBox(width: 8),
             Text(
               label,

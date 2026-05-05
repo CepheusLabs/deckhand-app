@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers.dart';
 import '../theming/deckhand_tokens.dart';
+import '../widgets/deckhand_loading.dart';
 import '../widgets/deckhand_panel.dart';
 
 class ManageTuningPanel extends ConsumerStatefulWidget {
@@ -94,11 +95,10 @@ class _ManageTuningPanelState extends ConsumerState<ManageTuningPanel> {
       future: _snapshot,
       builder: (context, snap) {
         if (snap.connectionState != ConnectionState.done) {
-          return const DeckhandPanel(
-            child: Padding(
-              padding: EdgeInsets.symmetric(vertical: 16),
-              child: Center(child: CircularProgressIndicator()),
-            ),
+          return const DeckhandLoadingBlock(
+            kind: DeckhandLoaderKind.oscilloscope,
+            title: 'Loading printer tuning',
+            message: 'Reading live Klipper status before enabling controls.',
           );
         }
         final snapshot = snap.data ?? const _TuningSnapshot.disconnected();
@@ -370,7 +370,7 @@ class _ManagedConfigPanel extends StatelessWidget {
                     ? const SizedBox(
                         width: 14,
                         height: 14,
-                        child: CircularProgressIndicator(strokeWidth: 2),
+                        child: DeckhandSpinner(size: 14, strokeWidth: 2),
                       )
                     : const Icon(Icons.visibility_outlined, size: 16),
                 label: const Text('Preview'),
@@ -730,7 +730,7 @@ class _ScriptButton extends StatelessWidget {
           ? const SizedBox(
               width: 14,
               height: 14,
-              child: CircularProgressIndicator(strokeWidth: 2),
+              child: DeckhandSpinner(size: 14, strokeWidth: 2),
             )
           : Icon(icon, size: 16),
       label: Text(label),

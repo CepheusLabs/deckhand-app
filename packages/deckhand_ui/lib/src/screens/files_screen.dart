@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import '../i18n/translations.g.dart';
 import '../providers.dart';
 import '../theming/deckhand_tokens.dart';
+import '../widgets/deckhand_loading.dart';
 import '../widgets/wizard_scaffold.dart';
 
 /// Stock-OS leftover files the profile declares can be cleaned up.
@@ -129,7 +130,9 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
         label: t.common.action_continue,
         onPressed: () async {
           for (final f in files) {
-            await ref.read(wizardControllerProvider).setDecision(
+            await ref
+                .read(wizardControllerProvider)
+                .setDecision(
                   'file.${f.id}',
                   _deleteSelected.contains(f.id) ? 'delete' : 'keep',
                 );
@@ -371,10 +374,7 @@ class _SectionHeader extends StatelessWidget {
 }
 
 class _SummaryStrip extends StatelessWidget {
-  const _SummaryStrip({
-    required this.queuedCount,
-    required this.totalPresent,
-  });
+  const _SummaryStrip({required this.queuedCount, required this.totalPresent});
   final int queuedCount;
   final int totalPresent;
 
@@ -460,14 +460,7 @@ class _ProbeLoadingBanner extends StatelessWidget {
       ),
       child: Row(
         children: [
-          SizedBox(
-            width: 14,
-            height: 14,
-            child: CircularProgressIndicator(
-              strokeWidth: 2,
-              color: tokens.info,
-            ),
-          ),
+          DeckhandSpinner(size: 14, strokeWidth: 2, color: tokens.info),
           const SizedBox(width: 10),
           Expanded(
             child: Text(

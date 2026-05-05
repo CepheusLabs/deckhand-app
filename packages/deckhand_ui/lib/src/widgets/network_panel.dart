@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers.dart';
+import 'deckhand_loading.dart';
 
 /// Live "what just got fetched" panel for S900-progress. Subscribes
 /// to [SecurityService.egressEvents] and renders one row per request,
@@ -83,15 +84,13 @@ class _EgressTile extends StatelessWidget {
     final inflight = !event.isComplete;
     final color = event.error != null
         ? theme.colorScheme.error
-        : (inflight
-            ? theme.colorScheme.primary
-            : theme.colorScheme.onSurface);
+        : (inflight ? theme.colorScheme.primary : theme.colorScheme.onSurface);
     return ExpansionTile(
       leading: inflight
           ? const SizedBox(
               width: 16,
               height: 16,
-              child: CircularProgressIndicator(strokeWidth: 2),
+              child: DeckhandSpinner(size: 16, strokeWidth: 2),
             )
           : Icon(
               event.error != null

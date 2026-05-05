@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:deckhand_core/deckhand_core.dart';
 import 'package:deckhand_ui/src/providers.dart';
 import 'package:deckhand_ui/src/screens/choose_os_screen.dart';
@@ -125,6 +127,93 @@ void main() {
       expect(find.text('Back up the disk first'), findsNothing);
       expect(find.text('START BACKUP'), findsNothing);
     });
+
+    testWidgets('FlashConfirmScreen waits for selected disk before rendering', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(1280, 1600);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final controller = stubWizardController(profileJson: _profileJson());
+      await controller.loadProfile('test-printer');
+      await controller.setDecision('flash.disk', 'disk-emmc');
+      await controller.setDecision('flash.os', 'debian-bookworm');
+      final flash = _PendingFlashDisks();
+
+      await tester.pumpWidget(
+        testHarness(
+          controller: controller,
+          child: const FlashConfirmScreen(),
+          initialLocation: '/flash-confirm',
+          extraOverrides: [flashServiceProvider.overrideWithValue(flash)],
+        ),
+      );
+      await tester.pump();
+
+      expect(find.textContaining('Loading selected disk'), findsOneWidget);
+      expect(find.textContaining('<no disk>'), findsNothing);
+      expect(find.text('Back up the disk first'), findsNothing);
+      expect(find.text("Back, don't wipe"), findsOneWidget);
+
+      flash.complete();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      await tester.pump();
+
+      expect(find.textContaining('Loading selected disk'), findsNothing);
+      expect(find.text('Printer eMMC'), findsWidgets);
+    });
+
+    testWidgets(
+      'FlashConfirmScreen waits for backup records before recommending backup',
+      (tester) async {
+        tester.view.physicalSize = const Size(1280, 1600);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        final controller = stubWizardController(profileJson: _profileJson());
+        await controller.loadProfile('test-printer');
+        await controller.setDecision('flash.disk', 'disk-emmc');
+        await controller.setDecision('flash.os', 'debian-bookworm');
+        final manifests = Completer<List<EmmcBackupManifest>>();
+        final candidates = Completer<List<EmmcBackupImageCandidate>>();
+
+        await tester.pumpWidget(
+          testHarness(
+            controller: controller,
+            child: const FlashConfirmScreen(),
+            initialLocation: '/flash-confirm',
+            extraOverrides: [
+              flashServiceProvider.overrideWithValue(_FlashDisks()),
+              emmcBackupManifestsProvider.overrideWith((_) => manifests.future),
+              emmcBackupImageCandidatesProvider.overrideWith(
+                (_) => candidates.future,
+              ),
+            ],
+          ),
+        );
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+
+        expect(find.textContaining('Checking backup records'), findsOneWidget);
+        expect(find.text('Back up the disk first'), findsNothing);
+        expect(find.text('TARGET DISK — WILL BE ERASED'), findsNothing);
+        expect(find.text("Back, don't wipe"), findsOneWidget);
+
+        manifests.complete(const []);
+        candidates.complete(const []);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+        await tester.pump();
+
+        expect(find.textContaining('Checking backup records'), findsNothing);
+        expect(find.text('Back up the disk first'), findsOneWidget);
+        expect(find.text('TARGET DISK — WILL BE ERASED'), findsOneWidget);
+      },
+    );
 
     testWidgets(
       'FlashConfirmScreen requires exact disk name and completed hold',
@@ -273,4 +362,13 @@ class _FlashDisks implements FlashService {
     required String confirmationToken,
     bool verifyAfterWrite = true,
   }) => const Stream.empty();
+}
+
+class _PendingFlashDisks extends _FlashDisks {
+  final _completer = Completer<List<DiskInfo>>();
+
+  void complete() => _completer.complete(super.listDisks());
+
+  @override
+  Future<List<DiskInfo>> listDisks() => _completer.future;
 }

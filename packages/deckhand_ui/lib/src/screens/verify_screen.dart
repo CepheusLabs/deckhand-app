@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import '../i18n/translations.g.dart';
 import '../providers.dart';
 import '../theming/deckhand_tokens.dart';
+import '../widgets/deckhand_loading.dart';
 import '../widgets/profile_text.dart';
 import '../widgets/status_pill.dart';
 import '../widgets/wizard_scaffold.dart';
@@ -55,22 +56,22 @@ class _VerifyScreenState extends ConsumerState<VerifyScreen> {
   }
 
   Future<bool?> _confirmDelete(DeckhandBackup b) => showDialog<bool>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: Text(t.verify.delete_confirm_title),
-          content: Text(t.verify.delete_confirm_body(path: b.backupPath)),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(false),
-              child: Text(t.common.action_cancel),
-            ),
-            FilledButton.tonal(
-              onPressed: () => Navigator.of(ctx).pop(true),
-              child: Text(t.verify.delete_confirm_action),
-            ),
-          ],
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: Text(t.verify.delete_confirm_title),
+      content: Text(t.verify.delete_confirm_body(path: b.backupPath)),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(ctx).pop(false),
+          child: Text(t.common.action_cancel),
         ),
-      );
+        FilledButton.tonal(
+          onPressed: () => Navigator.of(ctx).pop(true),
+          child: Text(t.verify.delete_confirm_action),
+        ),
+      ],
+    ),
+  );
 
   Future<void> _preview(DeckhandBackup b) async {
     final controller = ref.read(wizardControllerProvider);
@@ -86,10 +87,7 @@ class _VerifyScreenState extends ConsumerState<VerifyScreen> {
           child: SingleChildScrollView(
             child: SelectableText(
               content ?? t.verify.preview_unreadable,
-              style: const TextStyle(
-                fontFamily: 'monospace',
-                fontSize: 12,
-              ),
+              style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
             ),
           ),
         ),
@@ -107,6 +105,7 @@ class _VerifyScreenState extends ConsumerState<VerifyScreen> {
   /// first build; changes persist on Prune-click so the next session
   /// reuses the user's preference.
   int _pruneDays = 30;
+
   /// When true, the single newest backup per original-path survives
   /// the prune regardless of age. Safety net for "I pruned every
   /// backup and now have no snapshot to roll back to."
@@ -128,7 +127,9 @@ class _VerifyScreenState extends ConsumerState<VerifyScreen> {
     settings.pruneKeepNewestPerTarget = _keepLatestPerTarget;
     await settings.save();
 
-    final n = await ref.read(wizardControllerProvider).pruneBackups(
+    final n = await ref
+        .read(wizardControllerProvider)
+        .pruneBackups(
           olderThan: Duration(days: _pruneDays),
           keepLatestPerTarget: _keepLatestPerTarget,
         );
@@ -137,9 +138,11 @@ class _VerifyScreenState extends ConsumerState<VerifyScreen> {
         ? ' (kept the newest snapshot for each target)'
         : '';
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(
-        'Pruned $n backup(s) older than $_pruneDays days$keepSuffix.',
-      )),
+      SnackBar(
+        content: Text(
+          'Pruned $n backup(s) older than $_pruneDays days$keepSuffix.',
+        ),
+      ),
     );
   }
 
@@ -190,8 +193,10 @@ class _VerifyScreenState extends ConsumerState<VerifyScreen> {
                   children: [
                     Row(
                       children: [
-                        Icon(Icons.restore,
-                            color: theme.colorScheme.onSecondaryContainer),
+                        Icon(
+                          Icons.restore,
+                          color: theme.colorScheme.onSecondaryContainer,
+                        ),
                         const SizedBox(width: 8),
                         Text(
                           t.verify.backups_heading,
@@ -229,8 +234,7 @@ class _VerifyScreenState extends ConsumerState<VerifyScreen> {
                     _PruneControls(
                       days: _pruneDays,
                       keepLatestPerTarget: _keepLatestPerTarget,
-                      onDaysChanged: (v) =>
-                          setState(() => _pruneDays = v),
+                      onDaysChanged: (v) => setState(() => _pruneDays = v),
                       onKeepLatestChanged: (v) =>
                           setState(() => _keepLatestPerTarget = v),
                       onPrune: _pruneOld,
@@ -250,7 +254,9 @@ class _VerifyScreenState extends ConsumerState<VerifyScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      t.verify.legacy_backups_heading(count: legacyBackups.length),
+                      t.verify.legacy_backups_heading(
+                        count: legacyBackups.length,
+                      ),
                       style: theme.textTheme.titleSmall,
                     ),
                     const SizedBox(height: 4),
@@ -285,7 +291,9 @@ class _VerifyScreenState extends ConsumerState<VerifyScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      t.verify.foreign_backups_heading(count: foreignBackups.length),
+                      t.verify.foreign_backups_heading(
+                        count: foreignBackups.length,
+                      ),
                       style: theme.textTheme.titleSmall,
                     ),
                     const SizedBox(height: 4),
@@ -336,7 +344,11 @@ class _VerifyScreenState extends ConsumerState<VerifyScreen> {
         },
       ),
       secondaryActions: [
-        WizardAction(label: t.common.action_back, onPressed: () => context.go('/connect'), isBack: true),
+        WizardAction(
+          label: t.common.action_back,
+          onPressed: () => context.go('/connect'),
+          isBack: true,
+        ),
       ],
     );
   }
@@ -383,10 +395,7 @@ class _VerifyScreenState extends ConsumerState<VerifyScreen> {
       'process_running' => t.verify.check_kind_process_running,
       _ => t.verify.check_kind_custom,
     };
-    final lines = <String>[
-      '$label - $kindLabel',
-      if (note.isNotEmpty) note,
-    ];
+    final lines = <String>['$label - $kindLabel', if (note.isNotEmpty) note];
     return lines.join('\n');
   }
 }
@@ -571,7 +580,7 @@ class _BackupTile extends StatelessWidget {
                   ? const SizedBox(
                       width: 12,
                       height: 12,
-                      child: CircularProgressIndicator(strokeWidth: 2),
+                      child: DeckhandSpinner(size: 12, strokeWidth: 2),
                     )
                   : const Icon(Icons.restore, size: 16),
               label: Text(
@@ -609,9 +618,9 @@ class _ProbesPanel extends StatelessWidget {
   final List<DetectionRule> detections;
   final String? vendor;
   final String Function(String kind, Map<String, dynamic> raw, String? vendor)
-      titleFor;
+  titleFor;
   final String Function(String kind, Map<String, dynamic> raw, bool required)
-      explainFor;
+  explainFor;
 
   @override
   Widget build(BuildContext context) {
@@ -729,7 +738,8 @@ class _ProbesPanel extends StatelessWidget {
   /// detection kind. Profile-defined kinds we don't recognise fall
   /// back to em-dash so the row still aligns visually.
   static String _commandFor(String kind, Map<String, dynamic> raw) {
-    String? quoted(Object? v) => v == null ? null : "'${v.toString().replaceAll("'", r"'\''")}'";
+    String? quoted(Object? v) =>
+        v == null ? null : "'${v.toString().replaceAll("'", r"'\''")}'";
     switch (kind) {
       case 'file_exists':
         final path = raw['path'] as String?;
@@ -747,7 +757,9 @@ class _ProbesPanel extends StatelessWidget {
         return pattern == null ? 'pgrep -af' : 'pgrep -af ${quoted(pattern)}';
       case 'moonraker_object':
         final obj = raw['object'] as String?;
-        return obj == null ? 'moonraker.list_objects' : 'moonraker.list_objects → ${quoted(obj)}';
+        return obj == null
+            ? 'moonraker.list_objects'
+            : 'moonraker.list_objects → ${quoted(obj)}';
       default:
         return '—';
     }

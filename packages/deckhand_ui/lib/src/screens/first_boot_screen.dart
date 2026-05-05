@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 
 import '../providers.dart';
 import '../theming/deckhand_tokens.dart';
+import '../widgets/deckhand_loading.dart';
 import '../widgets/wizard_scaffold.dart';
 
 class FirstBootScreen extends ConsumerStatefulWidget {
@@ -43,10 +44,9 @@ class _FirstBootScreenState extends ConsumerState<FirstBootScreen> {
       const Duration(seconds: 1),
       (_) => setState(() {}),
     );
-    final ok = await ref.read(discoveryServiceProvider).waitForSsh(
-          host: host,
-          timeout: _pollTimeout,
-        );
+    final ok = await ref
+        .read(discoveryServiceProvider)
+        .waitForSsh(host: host, timeout: _pollTimeout);
     _ticker?.cancel();
     if (!mounted) return;
     setState(() {
@@ -94,17 +94,12 @@ class _FirstBootScreenState extends ConsumerState<FirstBootScreen> {
             );
           }
           return Column(
-            children: [
-              steps,
-              const SizedBox(height: 12),
-              indicator,
-            ],
+            children: [steps, const SizedBox(height: 12), indicator],
           );
         },
       ),
       primaryAction: WizardAction(
-        label:
-            _ready ? 'Continue' : (_waiting ? 'Waiting…' : 'Start polling'),
+        label: _ready ? 'Continue' : (_waiting ? 'Waiting…' : 'Start polling'),
         onPressed: _ready
             ? () => context.go('/first-boot-setup')
             : (_waiting ? null : _startPolling),
@@ -162,8 +157,7 @@ class _StepsPanel extends StatelessWidget {
                     decoration: BoxDecoration(
                       color: tokens.ink2,
                       border: Border.all(color: tokens.line),
-                      borderRadius:
-                          BorderRadius.circular(DeckhandTokens.r2),
+                      borderRadius: BorderRadius.circular(DeckhandTokens.r2),
                     ),
                     alignment: Alignment.center,
                     child: Text(
@@ -255,14 +249,7 @@ class _WaitingPanel extends StatelessWidget {
                         size: 36,
                         color: tokens.ok,
                       )
-                    : SizedBox(
-                        width: 40,
-                        height: 40,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: tokens.accent,
-                        ),
-                      ),
+                    : const DeckhandSpinner(size: 40, strokeWidth: 2),
               ),
             ),
           ),
@@ -327,8 +314,10 @@ class _RingPainter extends CustomPainter {
       ..strokeCap = StrokeCap.butt;
     final inset = strokeWidth / 2;
     final rect = Rect.fromLTWH(
-      inset, inset,
-      size.width - strokeWidth, size.height - strokeWidth,
+      inset,
+      inset,
+      size.width - strokeWidth,
+      size.height - strokeWidth,
     );
     if (!dashed) {
       canvas.drawArc(rect, 0, 2 * math.pi, false, paint);
