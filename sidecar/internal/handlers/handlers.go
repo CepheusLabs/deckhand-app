@@ -377,20 +377,32 @@ func Register(s *rpc.Server, cancel context.CancelFunc, version string) {
 			if err := json.Unmarshal(raw, &req); err != nil {
 				return nil, fmt.Errorf("decode params: %w", err)
 			}
-			if err := validateDownloadDestPath(req.Dest); err != nil {
+			dest, err := validateDownloadDestPolicy(req.Dest)
+			if err != nil {
 				return nil, rpc.NewError(rpc.CodeGeneric, "%v", err)
 			}
-			if err := os.MkdirAll(filepath.Dir(req.Dest), 0o700); err != nil {
+			if err := os.MkdirAll(filepath.Dir(dest), 0o700); err != nil {
 				return nil, rpc.NewError(rpc.CodeGeneric, "create download dir: %v", err)
 			}
-			if err := validateDownloadDestPath(req.Dest); err != nil {
+			dest, err = validateDownloadDestPolicy(dest)
+			if err != nil {
 				return nil, rpc.NewError(rpc.CodeGeneric, "%v", err)
 			}
-			sha, err := osimg.Download(ctx, req.URL, req.Dest, req.ExpectedSha, note)
+			reused, reusedSha, err := reuseOrClearDownloadDest(dest, req.ExpectedSha)
+			if err != nil {
+				return nil, rpc.NewError(rpc.CodeGeneric, "%v", err)
+			}
+			if reused {
+				return map[string]any{"sha256": reusedSha, "path": dest, "reused": true}, nil
+			}
+			if err := validateDownloadDestPath(dest); err != nil {
+				return nil, rpc.NewError(rpc.CodeGeneric, "%v", err)
+			}
+			sha, err := osimg.Download(ctx, req.URL, dest, req.ExpectedSha, note)
 			if err != nil {
 				return nil, err
 			}
-			return map[string]any{"sha256": sha, "path": req.Dest}, nil
+			return map[string]any{"sha256": sha, "path": dest, "reused": false}, nil
 		},
 	})
 
@@ -714,38 +726,49 @@ func validateReadImageOutputPath(output string) error {
 	return nil
 }
 
-// validateDownloadDestPath restricts os.download to Deckhand-owned OS
-// image caches and rejects pre-existing final or partial files. The
-// sidecar downloader still opens temp files with O_EXCL, but the policy
-// check here keeps the RPC from being a generic "write file" primitive.
-func validateDownloadDestPath(dest string) error {
+// validateDownloadDestPolicy restricts os.download to Deckhand-owned OS
+// image caches. It intentionally allows pre-existing final / partial
+// files so the handler can hash-and-reuse matching cached images or
+// safely clear stale cache files after this policy has passed.
+func validateDownloadDestPolicy(dest string) (string, error) {
 	if dest == "" {
-		return fmt.Errorf("dest is required")
+		return "", fmt.Errorf("dest is required")
 	}
 	if err := rejectDeviceOutputPath(dest); err != nil {
-		return err
+		return "", err
 	}
 	clean, err := filepath.Abs(filepath.Clean(dest))
 	if err != nil {
-		return fmt.Errorf("resolve dest %q: %w", dest, err)
+		return "", fmt.Errorf("resolve dest %q: %w", dest, err)
 	}
 	if strings.Contains(clean, "..") {
-		return fmt.Errorf("dest %q contains traversal", dest)
+		return "", fmt.Errorf("dest %q contains traversal", dest)
 	}
 	if filepath.Ext(clean) != ".img" {
-		return fmt.Errorf("dest %q must end in .img", dest)
+		return "", fmt.Errorf("dest %q must end in .img", dest)
 	}
 	allowedRoots := managedDownloadRoots()
 	if !isDirectChildOfAnyRoot(clean, allowedRoots) {
-		return fmt.Errorf("dest %q is not under a Deckhand-managed OS image directory", dest)
+		return "", fmt.Errorf("dest %q is not under a Deckhand-managed OS image directory", dest)
 	}
 	parent := filepath.Dir(clean)
 	if info, err := os.Lstat(parent); err == nil {
 		if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
-			return fmt.Errorf("download root %q must be a real directory", parent)
+			return "", fmt.Errorf("download root %q must be a real directory", parent)
 		}
 	} else if !os.IsNotExist(err) {
-		return fmt.Errorf("inspect download root %q: %w", parent, err)
+		return "", fmt.Errorf("inspect download root %q: %w", parent, err)
+	}
+	return clean, nil
+}
+
+// validateDownloadDestPath keeps the final osimg.Download call on an
+// empty path. osimg.Download also opens the .part file with O_EXCL, but
+// this preflight produces clearer RPC errors.
+func validateDownloadDestPath(dest string) error {
+	clean, err := validateDownloadDestPolicy(dest)
+	if err != nil {
+		return err
 	}
 	if _, err := os.Lstat(clean); err == nil {
 		return fmt.Errorf("dest %q already exists", dest)
@@ -757,6 +780,64 @@ func validateDownloadDestPath(dest string) error {
 		return fmt.Errorf("partial dest %q already exists", part)
 	} else if !os.IsNotExist(err) {
 		return fmt.Errorf("inspect partial dest %q: %w", part, err)
+	}
+	return nil
+}
+
+func reuseOrClearDownloadDest(dest, expectedSha string) (bool, string, error) {
+	if reused, actual, err := reuseExistingDownload(dest, expectedSha); err != nil || reused {
+		if err != nil {
+			return false, "", err
+		}
+		if err := removeDownloadPart(dest); err != nil {
+			return false, "", err
+		}
+		return true, actual, nil
+	}
+	if err := removeDownloadPart(dest); err != nil {
+		return false, "", err
+	}
+	return false, "", nil
+}
+
+func reuseExistingDownload(dest, expectedSha string) (bool, string, error) {
+	info, err := os.Lstat(dest)
+	if os.IsNotExist(err) {
+		return false, "", nil
+	}
+	if err != nil {
+		return false, "", fmt.Errorf("inspect dest %q: %w", dest, err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
+		return false, "", fmt.Errorf("dest %q must be a regular file", dest)
+	}
+	actual, err := hash.SHA256(dest)
+	if err != nil {
+		return false, "", fmt.Errorf("hash cached image: %w", err)
+	}
+	if actual == expectedSha {
+		return true, actual, nil
+	}
+	if err := os.Remove(dest); err != nil {
+		return false, "", fmt.Errorf("remove stale cached image %q: %w", dest, err)
+	}
+	return false, actual, nil
+}
+
+func removeDownloadPart(dest string) error {
+	part := dest + ".part"
+	info, err := os.Lstat(part)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("inspect partial dest %q: %w", part, err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
+		return fmt.Errorf("partial dest %q must be a regular file", part)
+	}
+	if err := os.Remove(part); err != nil {
+		return fmt.Errorf("remove stale partial dest %q: %w", part, err)
 	}
 	return nil
 }

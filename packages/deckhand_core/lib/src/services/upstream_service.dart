@@ -50,12 +50,14 @@ class OsDownloadProgress {
     required this.phase,
     this.sha256,
     this.path,
+    this.reused = false,
   });
   final int bytesDone;
   final int bytesTotal;
   final OsDownloadPhase phase;
   final String? sha256;
   final String? path;
+  final bool reused;
 
   double get fraction => bytesTotal == 0 ? 0 : bytesDone / bytesTotal;
 }

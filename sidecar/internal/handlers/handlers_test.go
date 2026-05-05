@@ -4,6 +4,8 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"io"
 	"os"
@@ -345,24 +347,110 @@ func TestReadImageOutputPolicyRejectsUnsafeOutputs(t *testing.T) {
 
 func TestDownloadDestPolicyRejectsUnmanagedAndExistingPaths(t *testing.T) {
 	outside := filepath.Join(t.TempDir(), "image.img")
-	if err := validateDownloadDestPath(outside); err == nil {
+	if _, err := validateDownloadDestPolicy(outside); err == nil {
 		t.Fatalf("expected unmanaged temp path to be rejected")
 	}
 
 	root := filepath.Join(os.TempDir(), downloadTempRootName)
-	t.Cleanup(func() { _ = os.RemoveAll(root) })
-	dest := filepath.Join(root, "image.img")
-	if err := validateDownloadDestPath(dest); err != nil {
-		t.Fatalf("expected managed download path to pass: %v", err)
-	}
 	if err := os.MkdirAll(root, 0o700); err != nil {
 		t.Fatalf("mkdir root: %v", err)
+	}
+	name := "deckhand-test-" + strings.ReplaceAll(t.Name(), "/", "-") + ".img"
+	dest := filepath.Join(root, name)
+	t.Cleanup(func() {
+		_ = os.Remove(dest)
+		_ = os.Remove(dest + ".part")
+	})
+	if err := validateDownloadDestPath(dest); err != nil {
+		t.Fatalf("expected managed download path to pass: %v", err)
 	}
 	if err := os.WriteFile(dest, []byte("existing"), 0o600); err != nil {
 		t.Fatalf("write existing dest: %v", err)
 	}
+	if _, err := validateDownloadDestPolicy(dest); err != nil {
+		t.Fatalf("expected policy to allow existing managed cache file: %v", err)
+	}
 	if err := validateDownloadDestPath(dest); err == nil {
 		t.Fatalf("expected existing download dest to be rejected")
+	}
+}
+
+func TestOsDownloadReusesVerifiedExistingImage(t *testing.T) {
+	root := filepath.Join(os.TempDir(), downloadTempRootName)
+	if err := os.MkdirAll(root, 0o700); err != nil {
+		t.Fatalf("mkdir root: %v", err)
+	}
+	body := []byte("already downloaded")
+	sum := sha256.Sum256(body)
+	expected := hex.EncodeToString(sum[:])
+	dest := filepath.Join(root, "deckhand-test-reuse-"+strings.ReplaceAll(t.Name(), "/", "-")+".img")
+	t.Cleanup(func() {
+		_ = os.Remove(dest)
+		_ = os.Remove(dest + ".part")
+	})
+	if err := os.WriteFile(dest, body, 0o600); err != nil {
+		t.Fatalf("write cached dest: %v", err)
+	}
+
+	resp := dispatch(t, map[string]any{
+		"jsonrpc": "2.0",
+		"id":      "os-reuse",
+		"method":  "os.download",
+		"params": map[string]any{
+			"url":    "https://example.invalid/should-not-be-fetched.img",
+			"dest":   dest,
+			"sha256": expected,
+		},
+	})
+	if _, hasErr := resp["error"]; hasErr {
+		t.Fatalf("expected cached reuse, got error %+v", resp["error"])
+	}
+	result, ok := resp["result"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected result object, got %+v", resp)
+	}
+	if reused, _ := result["reused"].(bool); !reused {
+		t.Fatalf("expected reused=true, got %+v", result)
+	}
+	if got, _ := result["sha256"].(string); got != expected {
+		t.Fatalf("sha mismatch: got %s want %s", got, expected)
+	}
+}
+
+func TestReuseOrClearDownloadDestDeletesOnlyAfterPolicy(t *testing.T) {
+	root := filepath.Join(os.TempDir(), downloadTempRootName)
+	if err := os.MkdirAll(root, 0o700); err != nil {
+		t.Fatalf("mkdir root: %v", err)
+	}
+	dest := filepath.Join(root, "deckhand-test-stale-"+strings.ReplaceAll(t.Name(), "/", "-")+".img")
+	part := dest + ".part"
+	t.Cleanup(func() {
+		_ = os.Remove(dest)
+		_ = os.Remove(part)
+	})
+	if err := os.WriteFile(dest, []byte("stale"), 0o600); err != nil {
+		t.Fatalf("write stale dest: %v", err)
+	}
+	if err := os.WriteFile(part, []byte("partial"), 0o600); err != nil {
+		t.Fatalf("write partial dest: %v", err)
+	}
+
+	clean, err := validateDownloadDestPolicy(dest)
+	if err != nil {
+		t.Fatalf("expected managed path to pass policy: %v", err)
+	}
+	reused, _, err := reuseOrClearDownloadDest(clean, strings.Repeat("a", 64))
+	if err != nil {
+		t.Fatalf("reuseOrClearDownloadDest: %v", err)
+	}
+	if reused {
+		t.Fatalf("expected stale file not to be reused")
+	}
+	if _, err := os.Lstat(dest); !os.IsNotExist(err) {
+		t.Fatalf("expected stale dest removed, got %v", err)
+	}
+	if _, err := os.Lstat(part); !os.IsNotExist(err) {
+		t.Fatalf("expected stale partial removed, got %v", err)
 	}
 }
 

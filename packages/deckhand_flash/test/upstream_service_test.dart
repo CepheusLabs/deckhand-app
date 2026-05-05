@@ -194,6 +194,75 @@ void main() {
         'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
       );
     });
+
+    test('reuses an existing image when its sha256 matches', () async {
+      final tmp = await Directory.systemTemp.createTemp('deckhand-upstream-');
+      addTearDown(() async => tmp.delete(recursive: true));
+      final dest = p.join(tmp.path, 'image.img');
+      final expected =
+          'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+      final sidecar = _FakeSidecar(
+        hash: expected,
+        streamEvents: [
+          SidecarResult({'sha256': expected, 'path': dest, 'reused': true}),
+        ],
+      );
+      final security = _AllowAllSecurity();
+      final svc = SidecarUpstreamService(sidecar: sidecar, security: security);
+
+      final events = await svc
+          .osDownload(
+            url: 'https://example.com/image.img',
+            destPath: dest,
+            expectedSha256: expected,
+          )
+          .toList();
+
+      expect(events, hasLength(1));
+      expect(events.single.phase, OsDownloadPhase.done);
+      expect(events.single.reused, isTrue);
+      expect(events.single.path, dest);
+      expect(sidecar.hashPaths, isEmpty);
+      expect(sidecar.streamingCalls, hasLength(1));
+      expect(security.checkedHosts, ['example.com']);
+      final manifest = await File(
+        '$dest.deckhand-download.json',
+      ).readAsString();
+      expect(manifest, contains('"reused_at"'));
+      expect(manifest, contains(expected));
+    });
+
+    test('records completed downloads in the image manifest', () async {
+      final tmp = await Directory.systemTemp.createTemp('deckhand-upstream-');
+      addTearDown(() async => tmp.delete(recursive: true));
+      final dest = p.join(tmp.path, 'image.img');
+      final expected =
+          'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+      final sidecar = _FakeSidecar(
+        hash: expected,
+        streamEvents: [
+          SidecarResult({'sha256': expected, 'path': dest, 'reused': false}),
+        ],
+      );
+      final security = _AllowAllSecurity();
+      final svc = SidecarUpstreamService(sidecar: sidecar, security: security);
+
+      await svc
+          .osDownload(
+            url: 'https://example.com/image.img',
+            destPath: dest,
+            expectedSha256: expected,
+          )
+          .toList();
+
+      expect(sidecar.streamingCalls, hasLength(1));
+      expect(security.checkedHosts, ['example.com']);
+      final manifest = await File(
+        '$dest.deckhand-download.json',
+      ).readAsString();
+      expect(manifest, contains('"downloaded_at"'));
+      expect(manifest, contains(expected));
+    });
   });
 }
 
@@ -237,9 +306,11 @@ class _FakeGitHubAdapter implements HttpClientAdapter {
 }
 
 class _FakeSidecar implements SidecarConnection {
-  _FakeSidecar({required this.hash});
+  _FakeSidecar({required this.hash, List<SidecarEvent>? streamEvents})
+    : _streamEvents = streamEvents ?? const [];
 
   final String hash;
+  final List<SidecarEvent> _streamEvents;
   final hashPaths = <String>[];
   final streamingCalls = <({String method, Map<String, dynamic> params})>[];
 
@@ -259,9 +330,11 @@ class _FakeSidecar implements SidecarConnection {
   Stream<SidecarEvent> callStreaming(
     String method,
     Map<String, dynamic> params,
-  ) {
+  ) async* {
     streamingCalls.add((method: method, params: params));
-    return const Stream.empty();
+    for (final event in _streamEvents) {
+      yield event;
+    }
   }
 
   @override

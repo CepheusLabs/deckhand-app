@@ -326,7 +326,7 @@ Future<void> _runOsDownloadImpl(
   final dest =
       step['dest'] as String? ??
       p.join(Directory.systemTemp.path, 'deckhand-os-images', '${opt.id}.img');
-  c._log(step, '[os] downloading ${opt.url} -> $dest');
+  c._log(step, '[os] preparing ${opt.url} -> $dest');
 
   final stepId = step['id'] as String? ?? 'os_download';
   String? sha;
@@ -339,11 +339,14 @@ Future<void> _runOsDownloadImpl(
     if (ev.phase == OsDownloadPhase.done) {
       sha = ev.sha256;
       actualPath = ev.path ?? actualPath;
+      if (ev.reused) {
+        c._log(step, '[os] using cached image $actualPath');
+      }
       c._emit(
         StepProgress(
           stepId: stepId,
           percent: 1.0,
-          message: 'download complete',
+          message: ev.reused ? 'using cached image' : 'download complete',
         ),
       );
     } else if (ev.phase == OsDownloadPhase.failed) {

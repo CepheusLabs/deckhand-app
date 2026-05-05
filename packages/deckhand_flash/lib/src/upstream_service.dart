@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:deckhand_core/deckhand_core.dart';
@@ -140,14 +141,50 @@ class SidecarUpstreamService implements UpstreamService {
       throw UpstreamException('OS image downloads require a 64-hex sha256');
     }
     await requireHostApproved(_security, url);
-    yield* sidecar
-        .callStreaming('os.download', {
-          'url': url,
-          'dest': destPath,
-          'sha256': normalizedExpected,
-        })
-        .transform(_osDownloadTransformer);
+    await for (final progress
+        in sidecar
+            .callStreaming('os.download', {
+              'url': url,
+              'dest': destPath,
+              'sha256': normalizedExpected,
+            })
+            .transform(_osDownloadTransformer)) {
+      if (progress.phase == OsDownloadPhase.done) {
+        await _writeDownloadManifest(
+          url: url,
+          destPath: progress.path ?? destPath,
+          expectedSha256: normalizedExpected,
+          actualSha256: progress.sha256 ?? normalizedExpected,
+          reused: progress.reused,
+        );
+      }
+      yield progress;
+    }
   }
+
+  Future<void> _writeDownloadManifest({
+    required String url,
+    required String destPath,
+    required String expectedSha256,
+    required String actualSha256,
+    required bool reused,
+  }) async {
+    final manifest = File(_manifestPath(destPath));
+    await manifest.parent.create(recursive: true);
+    final now = DateTime.now().toUtc().toIso8601String();
+    await manifest.writeAsString(
+      const JsonEncoder.withIndent('  ').convert({
+        'schema_version': 1,
+        'url': url,
+        'path': destPath,
+        'expected_sha256': expectedSha256,
+        'actual_sha256': actualSha256,
+        if (reused) 'reused_at': now else 'downloaded_at': now,
+      }),
+    );
+  }
+
+  String _manifestPath(String destPath) => '$destPath.deckhand-download.json';
 
   bool _matches(String name, String pattern) {
     // Very simple glob: `*.zip` / `*fluidd*.zip`. No regex surface.
@@ -224,6 +261,7 @@ final _osDownloadTransformer =
                 phase: OsDownloadPhase.done,
                 sha256: result['sha256'] as String?,
                 path: result['path'] as String?,
+                reused: result['reused'] as bool? ?? false,
               ),
             );
         }
