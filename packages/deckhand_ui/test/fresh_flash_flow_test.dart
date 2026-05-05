@@ -76,6 +76,56 @@ void main() {
       expect(controller.decision<String>('flash.os'), 'debian-bookworm');
     });
 
+    testWidgets('FlashConfirmScreen reflects an existing full-size backup', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(1280, 1600);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final controller = stubWizardController(profileJson: _profileJson());
+      await controller.loadProfile('test-printer');
+      await controller.setDecision('flash.disk', 'disk-emmc');
+      await controller.setDecision('flash.os', 'debian-bookworm');
+
+      await tester.pumpWidget(
+        testHarness(
+          controller: controller,
+          child: const FlashConfirmScreen(),
+          initialLocation: '/flash-confirm',
+          extraOverrides: [
+            flashServiceProvider.overrideWithValue(_FlashDisks()),
+            emmcBackupManifestsProvider.overrideWith((_) async => const []),
+            emmcBackupImageCandidatesProvider.overrideWith(
+              (_) async => [
+                EmmcBackupImageCandidate(
+                  imagePath: r'C:\Deckhand\deckhand-cli-backup.img',
+                  imageBytes: 32 * 1024 * 1024 * 1024,
+                  modifiedAt: DateTime(2026, 5, 4),
+                  inferredProfileId: null,
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      await tester.pump();
+
+      expect(
+        find.textContaining('Complete backup already exists'),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining(r'C:\Deckhand\deckhand-cli-backup.img'),
+        findsOneWidget,
+      );
+      expect(find.text('Back up the disk first'), findsNothing);
+      expect(find.text('START BACKUP'), findsNothing);
+    });
+
     testWidgets(
       'FlashConfirmScreen requires exact disk name and completed hold',
       (tester) async {

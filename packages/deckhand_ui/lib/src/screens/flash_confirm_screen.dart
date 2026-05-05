@@ -51,14 +51,15 @@ class _FlashConfirmScreenState extends ConsumerState<FlashConfirmScreen>
         // schemes. Cheap; runs only on user keystrokes.
         if (mounted) setState(() {});
       });
-    _hold = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 2500),
-    )..addStatusListener((status) {
-        if (status == AnimationStatus.completed && mounted) {
-          _commit();
-        }
-      });
+    _hold =
+        AnimationController(
+          vsync: this,
+          duration: const Duration(milliseconds: 2500),
+        )..addStatusListener((status) {
+          if (status == AnimationStatus.completed && mounted) {
+            _commit();
+          }
+        });
   }
 
   @override
@@ -124,6 +125,26 @@ class _FlashConfirmScreenState extends ConsumerState<FlashConfirmScreen>
 
     final expectedName = _expectedDiskName(disk);
     final matched = _isMatched(expectedName);
+    final manifests =
+        ref.watch(emmcBackupManifestsProvider).valueOrNull ??
+        const <EmmcBackupManifest>[];
+    final candidates =
+        ref.watch(emmcBackupImageCandidatesProvider).valueOrNull ??
+        const <EmmcBackupImageCandidate>[];
+    final existingManifest = disk == null
+        ? null
+        : findMatchingEmmcBackup(
+            manifests: manifests,
+            profileId: controller.state.profileId,
+            disk: disk,
+          );
+    final existingCandidate = disk == null
+        ? null
+        : findMatchingEmmcBackupImageCandidate(
+            candidates: candidates,
+            profileId: controller.state.profileId,
+            disk: disk,
+          );
 
     // Esc still goes back even though the scaffold's Back button is
     // suppressed — wired here so the keyboard escape hatch survives
@@ -149,6 +170,8 @@ class _FlashConfirmScreenState extends ConsumerState<FlashConfirmScreen>
             typed: _typed,
             matched: matched,
             holdController: _hold,
+            backupManifest: existingManifest,
+            backupCandidate: existingCandidate,
             onStartHold: _startHold,
             onCancelHold: _cancelHold,
             onBack: () => context.go('/choose-os'),
@@ -170,6 +193,8 @@ class _DangerBody extends StatelessWidget {
     required this.typed,
     required this.matched,
     required this.holdController,
+    required this.backupManifest,
+    required this.backupCandidate,
     required this.onStartHold,
     required this.onCancelHold,
     required this.onBack,
@@ -182,6 +207,8 @@ class _DangerBody extends StatelessWidget {
   final TextEditingController typed;
   final bool matched;
   final AnimationController holdController;
+  final EmmcBackupManifest? backupManifest;
+  final EmmcBackupImageCandidate? backupCandidate;
   final VoidCallback onStartHold;
   final VoidCallback onCancelHold;
   final VoidCallback onBack;
@@ -222,17 +249,17 @@ class _DangerBody extends StatelessWidget {
           // Corner brackets — the "viewfinder" frame at the top of
           // the panel that signals "you're in a different mode now."
           Positioned(top: 14, left: 14, child: _CornerBracket(tokens, true)),
-          Positioned(
-            top: 14,
-            right: 14,
-            child: _CornerBracket(tokens, false),
-          ),
+          Positioned(top: 14, right: 14, child: _CornerBracket(tokens, false)),
           Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               _Banner(),
               const SizedBox(height: 18),
-              _BackupCta(onTap: onBackup),
+              _BackupCta(
+                onTap: onBackup,
+                manifest: backupManifest,
+                candidate: backupCandidate,
+              ),
               const SizedBox(height: 18),
               _DangerGrid(disk: disk, osId: osId),
               const SizedBox(height: 18),
@@ -329,7 +356,6 @@ class _CornerBracketPainter extends CustomPainter {
       old.color != color || old.leftSide != leftSide;
 }
 
-
 class _Banner extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
@@ -346,10 +372,7 @@ class _Banner extends StatelessWidget {
       tokens.bad.withValues(alpha: 0.14),
       panelBg,
     );
-    final tagBg = Color.alphaBlend(
-      tokens.bad.withValues(alpha: 0.08),
-      panelBg,
-    );
+    final tagBg = Color.alphaBlend(tokens.bad.withValues(alpha: 0.08), panelBg);
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
@@ -416,27 +439,54 @@ class _Banner extends StatelessWidget {
   }
 }
 
-/// Prominent escape-hatch CTA inviting the user to capture a full
-/// disk image before any wipe. The 3px accent rail used to be
-/// expressed via `Border(left: width: 3, top/right/bottom: width: 1)`
-/// combined with `borderRadius` — Flutter silently refuses to paint
-/// children when a rounded box has non-uniform border widths, which
-/// was the entire reason the CTA kept rendering as an empty tinted
-/// rectangle across three different wrapper rewrites. Now: uniform
-/// 1px border, with the rail as a sibling Container in an
+/// Prominent backup status/escape-hatch card. The 3px accent rail
+/// used to be expressed via `Border(left: width: 3, top/right/bottom:
+/// width: 1)` combined with `borderRadius` — Flutter silently refuses
+/// to paint children when a rounded box has non-uniform border widths,
+/// which was the entire reason the CTA kept rendering as an empty
+/// tinted rectangle across three different wrapper rewrites. Now:
+/// uniform 1px border, with the rail as a sibling Container in an
 /// `IntrinsicHeight` Row that stretches to the row's height.
 class _BackupCta extends StatelessWidget {
-  const _BackupCta({required this.onTap});
+  const _BackupCta({
+    required this.onTap,
+    required this.manifest,
+    required this.candidate,
+  });
   final VoidCallback onTap;
+  final EmmcBackupManifest? manifest;
+  final EmmcBackupImageCandidate? candidate;
 
   @override
   Widget build(BuildContext context) {
     final tokens = DeckhandTokens.of(context);
-    final accent = tokens.accent;
-    final bg = Color.alphaBlend(
-      accent.withValues(alpha: 0.08),
-      tokens.ink0,
-    );
+    final indexed = manifest != null;
+    final hasBackup = manifest != null || candidate != null;
+    final accent = hasBackup ? tokens.ok : tokens.accent;
+    final path = manifest?.imagePath ?? candidate?.imagePath;
+    final title = indexed
+        ? 'Indexed backup already exists'
+        : hasBackup
+        ? 'Complete backup already exists'
+        : 'Back up the disk first';
+    final badge = indexed
+        ? 'INDEXED'
+        : hasBackup
+        ? 'FOUND'
+        : 'RECOMMENDED';
+    final body = indexed
+        ? 'Deckhand found an exact rollback image for this disk. You can '
+              'still make another backup if you want a newer restore point.'
+        : hasBackup
+        ? 'Deckhand found a full-size image for this disk. Open the '
+              'backup step if you want to verify and index it as exact.'
+        : 'Reads the entire disk to an image on this host before any '
+              'wipe. Returns here when finished.';
+    final actionLabel = hasBackup ? 'VIEW BACKUP' : 'START BACKUP';
+    final icon = hasBackup
+        ? Icons.check_circle_outline
+        : Icons.inventory_2_outlined;
+    final bg = Color.alphaBlend(accent.withValues(alpha: 0.08), tokens.ink0);
     return MouseRegion(
       cursor: SystemMouseCursors.click,
       child: GestureDetector(
@@ -446,10 +496,7 @@ class _BackupCta extends StatelessWidget {
           clipBehavior: Clip.antiAlias,
           decoration: BoxDecoration(
             color: bg,
-            border: Border.all(
-              color: accent.withValues(alpha: 0.45),
-              width: 1,
-            ),
+            border: Border.all(color: accent.withValues(alpha: 0.45), width: 1),
             borderRadius: BorderRadius.circular(DeckhandTokens.r3),
           ),
           child: IntrinsicHeight(
@@ -464,100 +511,111 @@ class _BackupCta extends StatelessWidget {
                     padding: const EdgeInsets.fromLTRB(15, 16, 18, 16),
                     child: Row(
                       children: [
-              Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  color: accent.withValues(alpha: 0.18),
-                  border: Border.all(
-                    color: accent.withValues(alpha: 0.5),
-                  ),
-                  shape: BoxShape.circle,
-                ),
-                alignment: Alignment.center,
-                child: Icon(
-                  Icons.inventory_2_outlined,
-                  color: accent,
-                  size: 20,
-                ),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Flexible(
-                          child: Text(
-                            'Back up the disk first',
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontFamily: DeckhandTokens.fontSans,
-                              fontSize: 14,
-                              fontWeight: FontWeight.w500,
-                              letterSpacing: -0.005 * 14,
-                              color: tokens.text,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
                         Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 7,
-                            vertical: 3,
-                          ),
+                          width: 44,
+                          height: 44,
                           decoration: BoxDecoration(
-                            color: accent.withValues(alpha: 0.14),
-                            borderRadius: BorderRadius.circular(3),
-                          ),
-                          child: Text(
-                            'RECOMMENDED',
-                            style: TextStyle(
-                              fontFamily: DeckhandTokens.fontMono,
-                              fontSize: 9,
-                              letterSpacing: 0.12 * 9,
-                              color: accent,
+                            color: accent.withValues(alpha: 0.18),
+                            border: Border.all(
+                              color: accent.withValues(alpha: 0.5),
                             ),
+                            shape: BoxShape.circle,
+                          ),
+                          alignment: Alignment.center,
+                          child: Icon(icon, color: accent, size: 20),
+                        ),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Flexible(
+                                    child: Text(
+                                      title,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        fontFamily: DeckhandTokens.fontSans,
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w500,
+                                        letterSpacing: -0.005 * 14,
+                                        color: tokens.text,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 7,
+                                      vertical: 3,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: accent.withValues(alpha: 0.14),
+                                      borderRadius: BorderRadius.circular(3),
+                                    ),
+                                    child: Text(
+                                      badge,
+                                      style: TextStyle(
+                                        fontFamily: DeckhandTokens.fontMono,
+                                        fontSize: 9,
+                                        letterSpacing: 0.12 * 9,
+                                        color: accent,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                body,
+                                style: TextStyle(
+                                  fontFamily: DeckhandTokens.fontSans,
+                                  fontSize: 12,
+                                  color: tokens.text3,
+                                  height: 1.4,
+                                ),
+                              ),
+                              if (path != null && path.isNotEmpty) ...[
+                                const SizedBox(height: 5),
+                                Text(
+                                  path,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontFamily: DeckhandTokens.fontMono,
+                                    fontSize: 10,
+                                    color: tokens.text3,
+                                  ),
+                                ),
+                              ],
+                            ],
                           ),
                         ),
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Reads the entire disk to an image on this '
-                      'host before any wipe. Returns here when '
-                      'finished.',
-                      style: TextStyle(
-                        fontFamily: DeckhandTokens.fontSans,
-                        fontSize: 12,
-                        color: tokens.text3,
-                        height: 1.4,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 12),
-              FilledButton.icon(
-                style: FilledButton.styleFrom(
-                  backgroundColor: accent,
-                  foregroundColor: tokens.accentFg,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 10,
-                  ),
-                  textStyle: const TextStyle(
-                    fontFamily: DeckhandTokens.fontMono,
-                    fontSize: 11,
-                    letterSpacing: 0.08 * 11,
-                  ),
-                ),
-                onPressed: onTap,
-                icon: const Icon(Icons.arrow_forward, size: 11),
-                label: const Text('START BACKUP'),
-              ),
+                        const SizedBox(width: 12),
+                        FilledButton.icon(
+                          style: FilledButton.styleFrom(
+                            backgroundColor: accent,
+                            foregroundColor: hasBackup
+                                ? const Color(0xFFFCFCFC)
+                                : tokens.accentFg,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 14,
+                              vertical: 10,
+                            ),
+                            textStyle: const TextStyle(
+                              fontFamily: DeckhandTokens.fontMono,
+                              fontSize: 11,
+                              letterSpacing: 0.08 * 11,
+                            ),
+                          ),
+                          onPressed: onTap,
+                          icon: Icon(
+                            hasBackup ? Icons.open_in_new : Icons.arrow_forward,
+                            size: 11,
+                          ),
+                          label: Text(actionLabel),
+                        ),
                       ], // inner Row.children
                     ), // inner Row
                   ), // Padding
@@ -619,10 +677,7 @@ class _TargetCard extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(20, 18, 20, 18),
       decoration: BoxDecoration(
         color: tokens.ink0,
-        border: Border.all(
-          color: tokens.bad.withValues(alpha: 0.5),
-          width: 2,
-        ),
+        border: Border.all(color: tokens.bad.withValues(alpha: 0.5), width: 2),
         borderRadius: BorderRadius.circular(DeckhandTokens.r3),
         boxShadow: [
           BoxShadow(
@@ -773,9 +828,7 @@ class _PartitionRow extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 5),
       decoration: BoxDecoration(
-        border: Border(
-          bottom: BorderSide(color: tokens.lineSoft),
-        ),
+        border: Border(bottom: BorderSide(color: tokens.lineSoft)),
       ),
       child: Row(
         children: [
@@ -929,10 +982,7 @@ class _SafeStrip extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
-        color: Color.alphaBlend(
-          tokens.ok.withValues(alpha: 0.08),
-          tokens.ink0,
-        ),
+        color: Color.alphaBlend(tokens.ok.withValues(alpha: 0.08), tokens.ink0),
         border: Border.all(color: tokens.ok.withValues(alpha: 0.3)),
         borderRadius: BorderRadius.circular(DeckhandTokens.r2),
       ),
@@ -1046,20 +1096,17 @@ class _ConfirmBlock extends StatelessWidget {
                       )
                     : tokens.ink1,
                 border: OutlineInputBorder(
-                  borderRadius:
-                      BorderRadius.circular(DeckhandTokens.r2),
+                  borderRadius: BorderRadius.circular(DeckhandTokens.r2),
                   borderSide: BorderSide(color: tokens.line),
                 ),
                 enabledBorder: OutlineInputBorder(
-                  borderRadius:
-                      BorderRadius.circular(DeckhandTokens.r2),
+                  borderRadius: BorderRadius.circular(DeckhandTokens.r2),
                   borderSide: BorderSide(
                     color: matched ? tokens.ok : tokens.line,
                   ),
                 ),
                 focusedBorder: OutlineInputBorder(
-                  borderRadius:
-                      BorderRadius.circular(DeckhandTokens.r2),
+                  borderRadius: BorderRadius.circular(DeckhandTokens.r2),
                   borderSide: BorderSide(
                     color: matched ? tokens.ok : tokens.bad,
                     width: 2,
@@ -1190,34 +1237,30 @@ class _HoldToWipeButton extends StatelessWidget {
                         Icon(
                           Icons.local_fire_department,
                           size: 14,
-                          color: firing
-                              ? const Color(0xFFFCFCFC)
-                              : fg,
+                          color: firing ? const Color(0xFFFCFCFC) : fg,
                         ),
                         const SizedBox(width: 8),
                         Text(
                           firing
                               ? 'Hold…'
                               : matched
-                                  ? 'Hold to wipe and flash'
-                                  : 'Wipe and flash',
+                              ? 'Hold to wipe and flash'
+                              : 'Wipe and flash',
                           style: TextStyle(
                             fontFamily: DeckhandTokens.fontSans,
                             fontSize: 14,
                             fontWeight: FontWeight.w500,
                             letterSpacing: 0.01 * 14,
-                            color: firing
-                                ? const Color(0xFFFCFCFC)
-                                : fg,
+                            color: firing ? const Color(0xFFFCFCFC) : fg,
                           ),
                         ),
                       ],
-                      ),
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
+          ),
         );
       },
     );
