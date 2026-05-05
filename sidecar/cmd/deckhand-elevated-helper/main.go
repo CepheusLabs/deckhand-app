@@ -189,9 +189,12 @@ func runReadImage(args []string) {
 	if err != nil {
 		fatalf("validate target: %v", err)
 	}
+	if err := requireRawDeviceAccess(); err != nil {
+		fatalf("check privileges: %v", err)
+	}
 	emitJSON(map[string]any{"event": "preparing", "device": devicePath, "output": *output})
 
-	src, err := os.Open(devicePath)
+	src, err := openDeviceForRead(devicePath)
 	if err != nil {
 		fatalf("open device: %v", err)
 	}
@@ -299,9 +302,12 @@ func runHashDevice(args []string) {
 	if err != nil {
 		fatalf("validate target: %v", err)
 	}
+	if err := requireRawDeviceAccess(); err != nil {
+		fatalf("check privileges: %v", err)
+	}
 	emitJSON(map[string]any{"event": "preparing", "device": devicePath})
 
-	src, err := os.Open(devicePath)
+	src, err := openDeviceForRead(devicePath)
 	if err != nil {
 		fatalf("open device: %v", err)
 	}
@@ -483,6 +489,9 @@ func runWriteImage(args []string) {
 	if err != nil {
 		fatalf("validate target: %v", err)
 	}
+	if err := requireRawDeviceAccess(); err != nil {
+		fatalf("check privileges: %v", err)
+	}
 	emitJSON(map[string]any{"event": "preparing", "device": devicePath, "image": *image})
 
 	src, err := os.Open(*image)
@@ -497,11 +506,17 @@ func runWriteImage(args []string) {
 		total = info.Size()
 	}
 
-	// O_WRONLY (not O_RDWR): the verify pass reopens with os.Open. Asking
+	releaseTarget, err := prepareWriteTarget(devicePath)
+	if err != nil {
+		fatalf("prepare target: %v", err)
+	}
+	defer releaseTarget()
+
+	// O_WRONLY (not O_RDWR): the verify pass reopens for read. Asking
 	// for only the access level we actually need makes auditing clearer
 	// and avoids rejections on systems that have different read/write
 	// permissions for the same device node.
-	dst, err := os.OpenFile(devicePath, os.O_WRONLY, 0)
+	dst, err := openDeviceForWrite(devicePath)
 	if err != nil {
 		fatalf("open device: %v", err)
 	}
@@ -572,7 +587,7 @@ func runWriteImage(args []string) {
 }
 
 func verifyDevice(devicePath string, expectBytes int64, cancelFile string) (string, error) {
-	f, err := os.Open(devicePath)
+	f, err := openDeviceForRead(devicePath)
 	if err != nil {
 		return "", fmt.Errorf("open for verify: %w", err)
 	}

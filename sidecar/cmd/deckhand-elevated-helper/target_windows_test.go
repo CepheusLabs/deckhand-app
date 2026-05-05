@@ -46,3 +46,28 @@ func TestTargetToDevicePath_Windows_Rejects(t *testing.T) {
 		})
 	}
 }
+
+func TestPhysicalDriveNumber_Windows(t *testing.T) {
+	cases := map[string]uint32{
+		"PhysicalDrive0":      0,
+		"physicaldrive10":     10,
+		`\\.\PHYSICALDRIVE42`: 42,
+	}
+	for input, want := range cases {
+		t.Run(input, func(t *testing.T) {
+			got, err := physicalDriveNumber(input)
+			if err != nil {
+				t.Fatalf("expected accept, got error: %v", err)
+			}
+			if got != want {
+				t.Fatalf("got %d, want %d", got, want)
+			}
+		})
+	}
+}
+
+func TestPhysicalDriveNumber_WindowsRejectsInvalidTarget(t *testing.T) {
+	if got, err := physicalDriveNumber(`\\.\C:`); err == nil {
+		t.Fatalf("expected reject, got %d", got)
+	}
+}
