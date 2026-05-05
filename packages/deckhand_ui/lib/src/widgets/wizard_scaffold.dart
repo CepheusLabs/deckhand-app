@@ -32,10 +32,12 @@ class WizardScaffold extends StatelessWidget {
     this.helperText,
     this.primaryAction,
     this.secondaryActions = const [],
+    this.maxContentWidth = 1080,
   });
 
   final String title;
   final Widget body;
+  final double maxContentWidth;
 
   /// Source-spec screen ID like `S15-pick-printer`. Reserved for
   /// future analytics / dev overlay use — does NOT render in the
@@ -59,7 +61,8 @@ class WizardScaffold extends StatelessWidget {
       if (primary?.onPressed != null && !primary!.destructive)
         LogicalKeySet(LogicalKeyboardKey.enter): const _ActivatePrimaryIntent(),
       if (primary?.onPressed != null && !primary!.destructive)
-        LogicalKeySet(LogicalKeyboardKey.numpadEnter): const _ActivatePrimaryIntent(),
+        LogicalKeySet(LogicalKeyboardKey.numpadEnter):
+            const _ActivatePrimaryIntent(),
       if (back?.onPressed != null)
         LogicalKeySet(LogicalKeyboardKey.escape): const _ActivateBackIntent(),
     };
@@ -81,10 +84,7 @@ class WizardScaffold extends StatelessWidget {
       shortcuts: shortcuts,
       child: Actions(
         actions: actions,
-        child: Focus(
-          autofocus: true,
-          child: _buildScaffold(context, theme),
-        ),
+        child: Focus(autofocus: true, child: _buildScaffold(context, theme)),
       ),
     );
   }
@@ -110,102 +110,99 @@ class WizardScaffold extends StatelessWidget {
       backgroundColor: tokens.ink0,
       body: GridBackground(
         child: Column(
-        children: [
-          const DryRunBanner(),
-          Expanded(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(32, 24, 32, 48),
-              child: Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 1080),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const DeckhandStepper(),
-                      _ScreenHead(
-                        title: title,
-                        helperText: helperText,
-                      ),
-                      body,
-                    ],
+          children: [
+            const DryRunBanner(),
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(32, 24, 32, 48),
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(maxWidth: maxContentWidth),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const DeckhandStepper(),
+                        _ScreenHead(title: title, helperText: helperText),
+                        body,
+                      ],
+                    ),
                   ),
                 ),
               ),
             ),
-          ),
-          if (primaryAction != null || secondaryActions.isNotEmpty)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
-              decoration: BoxDecoration(
-                color: tokens.ink1,
-                border: Border(
-                  top: BorderSide(color: tokens.line),
+            if (primaryAction != null || secondaryActions.isNotEmpty)
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 32,
+                  vertical: 16,
                 ),
-              ),
-              child: Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 1080),
-                  child: Row(
-                    children: [
-                      for (final a in secondaryActions) ...[
-                        if (a.isBack)
-                          OutlinedButton.icon(
-                            onPressed: a.onPressed,
-                            icon: const Icon(Icons.arrow_back, size: 14),
-                            label: Text(a.label),
-                          )
-                        else
-                          TextButton(
-                            onPressed: a.onPressed,
-                            child: Text(a.label),
-                          ),
-                        const SizedBox(width: 8),
-                      ],
-                      const Spacer(),
-                      if (primaryAction != null)
-                        // Destructive actions advertise themselves to
-                        // assistive tech so a screen-reader user hears
-                        // "flash disk, warning: destructive" before
-                        // activating the button.
-                        Semantics(
-                          button: true,
-                          enabled: primaryAction!.onPressed != null,
-                          label: primaryAction!.destructive
-                              ? '${primaryAction!.label}, destructive'
-                              : primaryAction!.label,
-                          child: ExcludeSemantics(
-                            child: FilledButton.icon(
-                              onPressed: primaryAction!.onPressed,
-                              style: primaryAction!.destructive
-                                  ? FilledButton.styleFrom(
-                                      backgroundColor: theme.colorScheme.error,
-                                      foregroundColor: theme.colorScheme.onError,
-                                    )
-                                  : null,
-                              icon: primaryAction!.destructive
-                                  ? const SizedBox.shrink()
-                                  : const Icon(Icons.arrow_forward, size: 14),
-                              label: Text(primaryAction!.label),
+                decoration: BoxDecoration(
+                  color: tokens.ink1,
+                  border: Border(top: BorderSide(color: tokens.line)),
+                ),
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(maxWidth: maxContentWidth),
+                    child: Row(
+                      children: [
+                        for (final a in secondaryActions) ...[
+                          if (a.isBack)
+                            OutlinedButton.icon(
+                              onPressed: a.onPressed,
+                              icon: const Icon(Icons.arrow_back, size: 14),
+                              label: Text(a.label),
+                            )
+                          else
+                            TextButton(
+                              onPressed: a.onPressed,
+                              child: Text(a.label),
+                            ),
+                          const SizedBox(width: 8),
+                        ],
+                        const Spacer(),
+                        if (primaryAction != null)
+                          // Destructive actions advertise themselves to
+                          // assistive tech so a screen-reader user hears
+                          // "flash disk, warning: destructive" before
+                          // activating the button.
+                          Semantics(
+                            button: true,
+                            enabled: primaryAction!.onPressed != null,
+                            label: primaryAction!.destructive
+                                ? '${primaryAction!.label}, destructive'
+                                : primaryAction!.label,
+                            child: ExcludeSemantics(
+                              child: FilledButton.icon(
+                                onPressed: primaryAction!.onPressed,
+                                style: primaryAction!.destructive
+                                    ? FilledButton.styleFrom(
+                                        backgroundColor:
+                                            theme.colorScheme.error,
+                                        foregroundColor:
+                                            theme.colorScheme.onError,
+                                      )
+                                    : null,
+                                icon: primaryAction!.destructive
+                                    ? const SizedBox.shrink()
+                                    : const Icon(Icons.arrow_forward, size: 14),
+                                label: Text(primaryAction!.label),
+                              ),
                             ),
                           ),
-                        ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               ),
-            ),
-        ],
-      ),
+          ],
+        ),
       ),
     );
   }
 }
 
 class _ScreenHead extends StatelessWidget {
-  const _ScreenHead({
-    required this.title,
-    required this.helperText,
-  });
+  const _ScreenHead({required this.title, required this.helperText});
 
   final String title;
   final String? helperText;

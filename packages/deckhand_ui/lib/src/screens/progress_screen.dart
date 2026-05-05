@@ -9,11 +9,10 @@ import '../i18n/translations.g.dart';
 import '../providers.dart';
 import '../theming/deckhand_tokens.dart';
 import '../utils/disk_display.dart';
-import '../widgets/deckhand_panel.dart';
+import '../widgets/deckhand_prompt_card.dart';
 import '../widgets/host_approval_gate.dart';
-import '../widgets/network_panel.dart';
 import '../widgets/profile_text.dart';
-import '../widgets/wizard_log_view.dart';
+import '../widgets/progress_run_workspace.dart';
 import '../widgets/wizard_progress_bar.dart';
 import '../widgets/wizard_scaffold.dart';
 
@@ -26,6 +25,7 @@ class ProgressScreen extends ConsumerStatefulWidget {
 
 class _ProgressScreenState extends ConsumerState<ProgressScreen> {
   final _log = <String>[];
+  final _stepStatusById = <String, RunStepStatus>{};
   // Distinct request IDs seen from egressEvents. The Network tab's
   // badge reads this so the count reflects actual outbound HTTP
   // traffic, not the log-line counter it used to mistakenly mirror.
@@ -93,6 +93,7 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> {
       case StepStarted(:final stepId):
         setState(() {
           _log.add('> starting $stepId');
+          _stepStatusById[stepId] = RunStepStatus.active;
           _currentStepId = stepId;
           _currentStepKind = _lookupStepKind(stepId);
           _currentFraction = null;
@@ -101,17 +102,24 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> {
       case StepCompleted(:final stepId):
         setState(() {
           _log.add('[ok] $stepId');
+          _stepStatusById[stepId] = RunStepStatus.done;
           if (_currentStepId == stepId) {
             _currentFraction = null;
             _currentProgressMessage = null;
           }
         });
       case StepFailed(:final stepId, :final error):
-        setState(() => _log.add('[fail] $stepId - $error'));
+        setState(() {
+          _log.add('[fail] $stepId - $error');
+          _stepStatusById[stepId] = RunStepStatus.failed;
+        });
       case StepLog(:final line):
         setState(() => _log.add(line));
       case StepWarning(:final stepId, :final message):
-        setState(() => _log.add('[warn] $stepId - $message'));
+        setState(() {
+          _log.add('[warn] $stepId - $message');
+          _stepStatusById.putIfAbsent(stepId, () => RunStepStatus.warning);
+        });
       case StepProgress(:final percent, :final message):
         setState(() {
           _currentFraction = percent.clamp(0, 1).toDouble();
@@ -180,7 +188,7 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> {
     return _showFadedDialog<String>(
       barrierDismissible: false,
       child: Center(
-        child: _DeckhandPromptCard(
+        child: DeckhandPromptCard(
           title: title,
           message: flattenProfileText(message),
           buttons: [
@@ -194,19 +202,19 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> {
 
   /// Heuristic — profile authors signal hierarchy through the label
   /// suffix today (`(recommended)` / `(not recommended)`). Translating
-  /// that to a [_PromptSeverity] lets the dialog render a primary
+  /// that to a [PromptSeverity] lets the dialog render a primary
   /// FilledButton for the recommended path and a warning-tinted text
   /// button for the destructive escape hatch, instead of three
   /// indistinguishable TextButtons.
-  _PromptSeverity _severityFor(String label) {
+  PromptSeverity _severityFor(String label) {
     final l = label.toLowerCase();
     if (l.contains('not recommended') ||
         l.contains('skip') ||
         l.contains('destructive')) {
-      return _PromptSeverity.destructive;
+      return PromptSeverity.destructive;
     }
-    if (l.contains('recommended')) return _PromptSeverity.recommended;
-    return _PromptSeverity.neutral;
+    if (l.contains('recommended')) return PromptSeverity.recommended;
+    return PromptSeverity.neutral;
   }
 
   Future<String?> _showChooseOneDialog(Map<String, dynamic> step) async {
@@ -491,9 +499,35 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> {
     };
   }
 
+  List<RunStep> _flowSteps() {
+    final controller = ref.read(wizardControllerProvider);
+    final profile = controller.profile;
+    if (profile == null) return const [];
+    final flow = controller.state.flow == WizardFlow.stockKeep
+        ? profile.flows.stockKeep
+        : profile.flows.freshFlash;
+    final rawSteps = flow?.steps ?? const <Map<String, dynamic>>[];
+    return [
+      for (final step in rawSteps)
+        RunStep(
+          id: step['id'] as String? ?? '',
+          kind: step['kind'] as String? ?? '',
+        ),
+    ].where((step) => step.id.isNotEmpty).toList();
+  }
+
+  RunStepStatus _statusForStep(RunStep step) =>
+      _stepStatusById[step.id] ?? RunStepStatus.queued;
+
+  double _workspaceHeight(BuildContext context) {
+    final viewport = MediaQuery.sizeOf(context).height;
+    final target = viewport - 380;
+    return target.clamp(420, 680).toDouble();
+  }
+
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
+    final flowSteps = _flowSteps();
     // The header used to be conditional on `(fraction != null ||
     // message != null)`, which made the entire `STEP · <id>` strip
     // disappear during steps that don't emit StepProgress (most SSH
@@ -507,7 +541,10 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> {
     return WizardScaffold(
       screenId: 'S900-progress',
       title: _titleForState(),
-      helperText: _error,
+      helperText: _failed
+          ? 'The run stopped before Deckhand changed anything further. Review the failed step below.'
+          : null,
+      maxContentWidth: 1440,
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -529,42 +566,28 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> {
             ),
             const SizedBox(height: 18),
           ],
+          if (_failed) ...[
+            RunBanner(
+              title: 'Run stopped',
+              message: _error ?? 'Unknown error',
+              severity: RunBannerSeverity.error,
+            ),
+            const SizedBox(height: 16),
+          ] else if (_done) ...[
+            const RunBanner(
+              title: 'Run complete',
+              message: 'Deckhand finished every queued step.',
+              severity: RunBannerSeverity.success,
+            ),
+            const SizedBox(height: 16),
+          ],
           SizedBox(
-            height: 380,
-            child: DefaultTabController(
-              length: 2,
-              child: DeckhandPanel.flush(
-                child: Column(
-                  children: [
-                    _PaneTabs(
-                      tokens: tokens,
-                      tabs: [
-                        _PaneTab(
-                          label: 'Log',
-                          icon: Icons.terminal,
-                          countLabel: 'live',
-                        ),
-                        _PaneTab(
-                          label: 'Network',
-                          icon: Icons.wifi,
-                          countLabel: '${_seenEgressIds.length}',
-                        ),
-                      ],
-                    ),
-                    Expanded(
-                      child: TabBarView(
-                        children: [
-                          Semantics(
-                            label: t.progress.semantics_log_label,
-                            child: WizardLogView(lines: _log),
-                          ),
-                          const NetworkPanel(),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+            height: _workspaceHeight(context),
+            child: ProgressRunWorkspace(
+              steps: flowSteps,
+              statusFor: _statusForStep,
+              log: _log,
+              networkCount: _seenEgressIds.length,
             ),
           ),
         ],
@@ -604,7 +627,7 @@ class _ProgressHeader extends StatelessWidget {
               fontFamily: DeckhandTokens.fontMono,
               fontSize: 10,
               color: tokens.text3,
-              letterSpacing: 0.04 * 10,
+              letterSpacing: 0,
             ),
           ),
         ),
@@ -615,7 +638,7 @@ class _ProgressHeader extends StatelessWidget {
               fontFamily: DeckhandTokens.fontMono,
               fontSize: 10,
               color: tokens.text3,
-              letterSpacing: 0.04 * 10,
+              letterSpacing: 0,
             ),
           ),
         if (message != null) ...[
@@ -634,279 +657,5 @@ class _ProgressHeader extends StatelessWidget {
         ],
       ],
     );
-  }
-}
-
-class _PaneTab {
-  _PaneTab({required this.label, required this.icon, required this.countLabel});
-  final String label;
-  final IconData icon;
-  final String countLabel;
-}
-
-class _PaneTabs extends StatelessWidget {
-  const _PaneTabs({required this.tokens, required this.tabs});
-  final DeckhandTokens tokens;
-  final List<_PaneTab> tabs;
-
-  @override
-  Widget build(BuildContext context) {
-    final controller = DefaultTabController.of(context);
-    return AnimatedBuilder(
-      animation: controller,
-      builder: (context, _) {
-        return Container(
-          decoration: BoxDecoration(
-            color: tokens.ink2,
-            border: Border(bottom: BorderSide(color: tokens.line)),
-          ),
-          child: Row(
-            children: [
-              for (var i = 0; i < tabs.length; i++)
-                _PaneTabCell(
-                  tab: tabs[i],
-                  isActive: controller.index == i,
-                  tokens: tokens,
-                  onTap: () => controller.animateTo(i),
-                ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-}
-
-class _PaneTabCell extends StatelessWidget {
-  const _PaneTabCell({
-    required this.tab,
-    required this.isActive,
-    required this.tokens,
-    required this.onTap,
-  });
-  final _PaneTab tab;
-  final bool isActive;
-  final DeckhandTokens tokens;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-        decoration: BoxDecoration(
-          color: isActive ? tokens.ink1 : Colors.transparent,
-          border: Border(
-            top: BorderSide(
-              color: isActive ? tokens.accent : Colors.transparent,
-              width: 2,
-            ),
-            right: BorderSide(color: tokens.line),
-          ),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              tab.icon,
-              size: 14,
-              color: isActive ? tokens.text : tokens.text3,
-            ),
-            const SizedBox(width: 8),
-            Text(
-              tab.label,
-              style: TextStyle(
-                fontFamily: DeckhandTokens.fontSans,
-                fontSize: DeckhandTokens.tSm,
-                color: isActive ? tokens.text : tokens.text3,
-              ),
-            ),
-            const SizedBox(width: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-              decoration: BoxDecoration(
-                color: isActive ? tokens.accent : tokens.ink3,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Text(
-                tab.countLabel,
-                style: TextStyle(
-                  fontFamily: DeckhandTokens.fontMono,
-                  fontSize: 9,
-                  color: isActive ? tokens.accentFg : tokens.text2,
-                  letterSpacing: 0.04 * 9,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-enum _PromptSeverity { recommended, neutral, destructive }
-
-typedef _PromptOption = ({String id, String label, _PromptSeverity severity});
-
-/// Custom prompt-dialog card. Replaces Material's [AlertDialog] —
-/// AlertDialog runs its action row through [OverflowBar] which wraps
-/// to a vertical stack as soon as the labels won't fit horizontally,
-/// which they reliably don't with three confirmation choices like
-/// "Back up now (recommended)". The vertically-stacked button list
-/// reads as a chaotic menu, not a confirmation prompt.
-///
-/// This card lays the actions out as an explicit two-group row:
-/// destructive escape hatches on the left, neutral + primary on the
-/// right. The primary (recommended) action is rendered as a filled
-/// accent button so the user's eye lands on it first. Falls back to
-/// [Wrap] only when the row genuinely overflows (very long labels +
-/// narrow window) — the rare case is graceful, not the default.
-class _DeckhandPromptCard extends StatelessWidget {
-  const _DeckhandPromptCard({
-    required this.title,
-    required this.message,
-    required this.buttons,
-  });
-
-  final String title;
-  final String message;
-  final List<_PromptOption> buttons;
-
-  @override
-  Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
-    // Order: destructive first, neutral middle, recommended last.
-    // [OverflowBar] preserves this order as left-to-right when the row
-    // fits, and as top-to-bottom when it has to stack — so the
-    // recommended action ends up bottom-right (closest to the user's
-    // dominant-hand thumb) in both layouts. Severity colors carry the
-    // hierarchy when "Skip" sits visually next to the primary instead
-    // of being far-left.
-    final ordered = [
-      ...buttons.where((b) => b.severity == _PromptSeverity.destructive),
-      ...buttons.where((b) => b.severity == _PromptSeverity.neutral),
-      ...buttons.where((b) => b.severity == _PromptSeverity.recommended),
-    ];
-    return ConstrainedBox(
-      constraints: const BoxConstraints(maxWidth: 600),
-      child: Material(
-        color: tokens.ink1,
-        elevation: 8,
-        borderRadius: BorderRadius.circular(DeckhandTokens.r3),
-        child: Container(
-          decoration: BoxDecoration(
-            border: Border.all(color: tokens.line),
-            borderRadius: BorderRadius.circular(DeckhandTokens.r3),
-          ),
-          padding: const EdgeInsets.fromLTRB(28, 24, 28, 22),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                title,
-                style: TextStyle(
-                  fontFamily: DeckhandTokens.fontSans,
-                  fontSize: DeckhandTokens.tXl,
-                  fontWeight: FontWeight.w600,
-                  color: tokens.text,
-                  letterSpacing: -0.01 * DeckhandTokens.tXl,
-                ),
-              ),
-              const SizedBox(height: 14),
-              Text(
-                message,
-                style: TextStyle(
-                  fontFamily: DeckhandTokens.fontSans,
-                  fontSize: DeckhandTokens.tMd,
-                  color: tokens.text2,
-                  height: 1.55,
-                ),
-              ),
-              const SizedBox(height: 24),
-              // OverflowBar gracefully falls back to a vertical stack
-              // when the action labels don't fit on one row. A bare
-              // Row would overflow with the bright yellow-and-black
-              // "RIGHT OVERFLOWED BY N PIXELS" debug stripe.
-              OverflowBar(
-                alignment: MainAxisAlignment.end,
-                spacing: 8,
-                overflowSpacing: 8,
-                overflowAlignment: OverflowBarAlignment.end,
-                children: [
-                  for (final b in ordered)
-                    _PromptButton(
-                      label: b.label,
-                      severity: b.severity,
-                      tokens: tokens,
-                      onPressed: () =>
-                          Navigator.of(context, rootNavigator: true).pop(b.id),
-                    ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// Internal button wrapper — keeps the three styles co-located.
-class _PromptButton extends StatelessWidget {
-  const _PromptButton({
-    required this.label,
-    required this.severity,
-    required this.tokens,
-    required this.onPressed,
-  });
-
-  final String label;
-  final _PromptSeverity severity;
-  final DeckhandTokens tokens;
-  final VoidCallback onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    // All three styles are real buttons (with a border or fill) so
-    // the user can immediately see "this is clickable" — the previous
-    // mix of FilledButton + TextButton made the non-recommended
-    // options read as plain links and lost the affordance for
-    // anything except the primary path.
-    const padding = EdgeInsets.symmetric(horizontal: 16, vertical: 12);
-    switch (severity) {
-      case _PromptSeverity.recommended:
-        return FilledButton(
-          onPressed: onPressed,
-          style: FilledButton.styleFrom(
-            backgroundColor: tokens.accent,
-            foregroundColor: tokens.accentFg,
-            padding: padding,
-          ),
-          child: Text(label),
-        );
-      case _PromptSeverity.destructive:
-        return OutlinedButton(
-          onPressed: onPressed,
-          style: OutlinedButton.styleFrom(
-            foregroundColor: tokens.bad,
-            side: BorderSide(color: tokens.bad.withValues(alpha: 0.55)),
-            padding: padding,
-          ),
-          child: Text(label),
-        );
-      case _PromptSeverity.neutral:
-        return OutlinedButton(
-          onPressed: onPressed,
-          style: OutlinedButton.styleFrom(
-            foregroundColor: tokens.text,
-            side: BorderSide(color: tokens.line),
-            padding: padding,
-          ),
-          child: Text(label),
-        );
-    }
   }
 }

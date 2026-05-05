@@ -11,24 +11,67 @@ import '../theming/deckhand_tokens.dart';
 /// gutter with a tag column that turns the screen into something
 /// resembling a developer console rather than a generic install
 /// progress bar.
-class WizardLogView extends StatelessWidget {
+class WizardLogView extends StatefulWidget {
   const WizardLogView({super.key, required this.lines});
 
   final List<String> lines;
 
   @override
+  State<WizardLogView> createState() => _WizardLogViewState();
+}
+
+class _WizardLogViewState extends State<WizardLogView> {
+  final _controller = ScrollController();
+
+  @override
+  void didUpdateWidget(covariant WizardLogView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.lines.length != oldWidget.lines.length) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!_controller.hasClients) return;
+        _controller.animateTo(
+          _controller.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 140),
+          curve: Curves.easeOut,
+        );
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final tokens = DeckhandTokens.of(context);
-    return ListView.builder(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      itemCount: lines.length,
-      itemBuilder: (context, i) => _LogLine(
-        raw: lines[i],
-        tokens: tokens,
-        // Approximate "now-ish" timestamp ordinal — the controller
-        // doesn't currently emit timestamps with each line, so we
-        // synthesize a stable index-based marker for visual rhythm.
-        ordinal: i,
+    if (widget.lines.isEmpty) {
+      return Center(
+        child: Text(
+          'Waiting for the first log line...',
+          style: TextStyle(
+            fontFamily: DeckhandTokens.fontMono,
+            fontSize: DeckhandTokens.tSm,
+            color: tokens.text3,
+          ),
+        ),
+      );
+    }
+    return SelectionArea(
+      child: ListView.builder(
+        controller: _controller,
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        itemCount: widget.lines.length,
+        itemBuilder: (context, i) => _LogLine(
+          raw: widget.lines[i],
+          tokens: tokens,
+          // Approximate "now-ish" timestamp ordinal — the controller
+          // doesn't currently emit timestamps with each line, so we
+          // synthesize a stable index-based marker for visual rhythm.
+          ordinal: i,
+        ),
       ),
     );
   }
@@ -53,10 +96,25 @@ class _LogLine extends StatelessWidget {
       _LogKind.warn => tokens.warn,
       _LogKind.exec => tokens.accent,
       _LogKind.info => tokens.info,
+      _LogKind.input => tokens.text3,
       _LogKind.dim => tokens.text4,
     };
+    final rowBg = switch (parsed.kind) {
+      _LogKind.fail => tokens.bad.withValues(alpha: 0.06),
+      _LogKind.warn => tokens.warn.withValues(alpha: 0.06),
+      _ => Colors.transparent,
+    };
+    final rowBorder = switch (parsed.kind) {
+      _LogKind.fail => tokens.bad,
+      _LogKind.warn => tokens.warn,
+      _ => Colors.transparent,
+    };
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 1),
+      decoration: BoxDecoration(
+        color: rowBg,
+        border: Border(left: BorderSide(color: rowBorder, width: 2)),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -68,7 +126,7 @@ class _LogLine extends StatelessWidget {
                 fontFamily: DeckhandTokens.fontMono,
                 fontSize: DeckhandTokens.tXs,
                 color: tokens.text4,
-                height: 1.7,
+                height: 1.6,
               ),
             ),
           ),
@@ -81,8 +139,8 @@ class _LogLine extends StatelessWidget {
                 fontFamily: DeckhandTokens.fontMono,
                 fontSize: DeckhandTokens.tXs,
                 color: tagColor,
-                height: 1.7,
-                letterSpacing: 0.04 * DeckhandTokens.tXs,
+                height: 1.6,
+                letterSpacing: 0,
               ),
             ),
           ),
@@ -94,7 +152,7 @@ class _LogLine extends StatelessWidget {
                 fontFamily: DeckhandTokens.fontMono,
                 fontSize: DeckhandTokens.tXs,
                 color: tokens.text2,
-                height: 1.7,
+                height: 1.6,
               ),
             ),
           ),
@@ -126,11 +184,17 @@ class _LogLine extends StatelessWidget {
     if (raw.startsWith('> ')) {
       return _Parsed(_LogKind.info, 'EXEC', raw.substring(2));
     }
+    if (raw.startsWith('[input] ')) {
+      return _Parsed(_LogKind.input, 'INPUT', raw.substring(8));
+    }
+    if (raw.startsWith('[os] ')) {
+      return _Parsed(_LogKind.info, 'OS', raw.substring(5));
+    }
     return _Parsed(_LogKind.dim, '...', raw);
   }
 }
 
-enum _LogKind { ok, fail, warn, exec, info, dim }
+enum _LogKind { ok, fail, warn, exec, info, input, dim }
 
 class _Parsed {
   _Parsed(this.kind, this.tag, this.msg);
