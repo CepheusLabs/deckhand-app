@@ -20,7 +20,7 @@ class FirstBootScreen extends ConsumerStatefulWidget {
 class _FirstBootScreenState extends ConsumerState<FirstBootScreen> {
   bool _waiting = false;
   bool _ready = false;
-  String _status = 'waiting…';
+  String _status = 'Choose the printer after it boots.';
   DateTime? _pollStart;
   Timer? _ticker;
 
@@ -34,7 +34,10 @@ class _FirstBootScreenState extends ConsumerState<FirstBootScreen> {
 
   Future<void> _startPolling() async {
     final host = ref.read(wizardControllerProvider).state.sshHost;
-    if (host == null) return;
+    if (host == null || host.trim().isEmpty) {
+      if (mounted) context.go('/connect');
+      return;
+    }
     setState(() {
       _waiting = true;
       _pollStart = DateTime.now();
@@ -58,21 +61,22 @@ class _FirstBootScreenState extends ConsumerState<FirstBootScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final host = ref.watch(wizardControllerProvider).state.sshHost ?? '<host>';
+    final host = ref.watch(wizardControllerProvider).state.sshHost;
+    final hasHost = host != null && host.trim().isNotEmpty;
     return WizardScaffold(
       screenId: 'S240-first-boot',
       title: 'Boot the printer.',
       helperText:
-          'Once Deckhand sees an SSH listener on the printer it\'ll '
-          'continue automatically. Worst case it gives up after ten '
-          'minutes — power-on issues stop the wizard cleanly rather '
-          'than hanging forever.',
+          'Put the flashed eMMC back in the printer, power it on, then '
+          'choose the printer once it appears on the network. Deckhand '
+          'only waits for SSH after a printer is selected.',
       body: LayoutBuilder(
         builder: (context, constraints) {
           final twoCol = constraints.maxWidth >= 720;
-          final steps = _StepsPanel();
+          final steps = _StepsPanel(hasHost: hasHost);
           final indicator = _WaitingPanel(
             host: host,
+            hasHost: hasHost,
             waiting: _waiting,
             ready: _ready,
             status: _status,
@@ -99,10 +103,16 @@ class _FirstBootScreenState extends ConsumerState<FirstBootScreen> {
         },
       ),
       primaryAction: WizardAction(
-        label: _ready ? 'Continue' : (_waiting ? 'Waiting…' : 'Start polling'),
+        label: _ready
+            ? 'Continue'
+            : (_waiting
+                  ? 'Waiting…'
+                  : (hasHost ? 'Start polling' : 'Choose printer')),
         onPressed: _ready
             ? () => context.go('/first-boot-setup')
-            : (_waiting ? null : _startPolling),
+            : (_waiting
+                  ? null
+                  : (hasHost ? _startPolling : () => context.go('/connect'))),
       ),
       secondaryActions: [
         WizardAction(
@@ -116,14 +126,21 @@ class _FirstBootScreenState extends ConsumerState<FirstBootScreen> {
 }
 
 class _StepsPanel extends StatelessWidget {
+  const _StepsPanel({required this.hasHost});
+
+  final bool hasHost;
+
   @override
   Widget build(BuildContext context) {
     final tokens = DeckhandTokens.of(context);
-    const steps = [
+    final steps = [
       'Unplug the USB adapter from your computer.',
       'Put the eMMC module back in the printer.',
       'Power the printer on.',
-      'Click "Start polling" — Deckhand will wait for SSH for up to 10 minutes.',
+      if (hasHost)
+        'Click "Start polling" — Deckhand will wait for SSH for up to 10 minutes.'
+      else
+        'Choose the printer once it appears on the network.',
     ];
     return Container(
       padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
@@ -196,6 +213,7 @@ class _StepsPanel extends StatelessWidget {
 class _WaitingPanel extends StatelessWidget {
   const _WaitingPanel({
     required this.host,
+    required this.hasHost,
     required this.waiting,
     required this.ready,
     required this.status,
@@ -203,7 +221,8 @@ class _WaitingPanel extends StatelessWidget {
     required this.timeout,
   });
 
-  final String host;
+  final String? host;
+  final bool hasHost;
   final bool waiting;
   final bool ready;
   final String status;
@@ -257,7 +276,9 @@ class _WaitingPanel extends StatelessWidget {
           Text(
             ready
                 ? 'SSH is up.'
-                : (waiting ? 'Waiting for SSH…' : 'Ready to poll'),
+                : (waiting
+                      ? 'Waiting for SSH…'
+                      : (hasHost ? 'Ready to poll' : 'Printer not selected')),
             style: TextStyle(
               fontFamily: DeckhandTokens.fontMono,
               fontSize: DeckhandTokens.tMd,
@@ -268,7 +289,7 @@ class _WaitingPanel extends StatelessWidget {
           const SizedBox(height: 6),
           Text(
             waiting
-                ? '$host:22 · $elapsedStr elapsed · $remainingStr remaining'
+                ? '${host ?? 'printer'}:22 · $elapsedStr elapsed · $remainingStr remaining'
                 : status,
             style: TextStyle(
               fontFamily: DeckhandTokens.fontMono,

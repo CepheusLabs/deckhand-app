@@ -284,10 +284,11 @@ class _RecordingSecurity implements SecurityService {
     value: 'hash-token-0123456789abcdef',
     expiresAt: DateTime.now().add(ttl),
     operation: operation,
+    target: target,
   );
 
   @override
-  bool consumeToken(String value, String operation) {
+  bool consumeToken(String value, String operation, {required String target}) {
     consumed.add((value, operation));
     return true;
   }

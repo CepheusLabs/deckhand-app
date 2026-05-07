@@ -25,6 +25,8 @@ class _PickPrinterScreenState extends ConsumerState<PickPrinterScreen> {
   Future<ProfileRegistry>? _registryFuture;
   String? _selectedId;
   String _query = '';
+  bool _loadingProfile = false;
+  String? _loadProfileError;
 
   Future<ProfileRegistry> _fetchRegistry(BuildContext context) {
     // The fetch goes through HostApprovalGate so the network allow-
@@ -76,8 +78,14 @@ class _PickPrinterScreenState extends ConsumerState<PickPrinterScreen> {
             visible: filtered,
             query: _query,
             selectedId: _selectedId,
+            loadingProfile: _loadingProfile,
+            loadProfileError: _loadProfileError,
             onQuery: (q) => setState(() => _query = q),
-            onSelect: (id) => setState(() => _selectedId = id),
+            onSelect: (id) => setState(() {
+              _selectedId = id;
+              _loadProfileError = null;
+            }),
+            onRetry: _selectedId == null ? null : _loadSelectedProfile,
           );
         }
         final primaryLabel = selectedEntry == null
@@ -93,23 +101,9 @@ class _PickPrinterScreenState extends ConsumerState<PickPrinterScreen> {
           body: body,
           primaryAction: WizardAction(
             label: primaryLabel,
-            onPressed: _selectedId == null
+            onPressed: _selectedId == null || _loadingProfile
                 ? null
-                : () async {
-                    final controller = ref.read(wizardControllerProvider);
-                    await HostApprovalGate.runGuarded<void>(
-                      ref,
-                      context,
-                      // `force: true` wipes the on-disk profile cache
-                      // before re-cloning. Cheap (a sub-second shallow
-                      // clone) and removes the "I just pushed a fix to
-                      // deckhand-profiles, why isn't it showing up?"
-                      // confusion.
-                      action: () =>
-                          controller.loadProfile(_selectedId!, force: true),
-                    );
-                    if (context.mounted) context.go('/choose-path');
-                  },
+                : _loadSelectedProfile,
           ),
           secondaryActions: [
             WizardAction(
@@ -121,6 +115,45 @@ class _PickPrinterScreenState extends ConsumerState<PickPrinterScreen> {
         );
       },
     );
+  }
+
+  Future<void> _loadSelectedProfile() async {
+    final selectedId = _selectedId;
+    if (selectedId == null || _loadingProfile) return;
+    setState(() {
+      _loadingProfile = true;
+      _loadProfileError = null;
+    });
+    try {
+      final controller = ref.read(wizardControllerProvider);
+      await HostApprovalGate.runGuarded<void>(
+        ref,
+        context,
+        // `force: true` wipes the on-disk profile cache before
+        // re-cloning. Cheap and removes stale-profile confusion.
+        action: () => controller.loadProfile(selectedId, force: true),
+      );
+      if (!mounted) return;
+      final approved = await HostApprovalGate.ensureHostsApproved(
+        ref,
+        context,
+        candidates: profileNetworkHosts(controller.profile!),
+      );
+      if (!mounted) return;
+      if (!approved) {
+        setState(
+          () => _loadProfileError =
+              'Network access was not approved for this profile.',
+        );
+        return;
+      }
+      context.go('/choose-path');
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _loadProfileError = '$e');
+    } finally {
+      if (mounted) setState(() => _loadingProfile = false);
+    }
   }
 
   List<ProfileRegistryEntry> _filter(
@@ -146,16 +179,22 @@ class _Body extends StatelessWidget {
     required this.visible,
     required this.query,
     required this.selectedId,
+    required this.loadingProfile,
+    required this.loadProfileError,
     required this.onQuery,
     required this.onSelect,
+    required this.onRetry,
   });
 
   final int registrySize;
   final List<ProfileRegistryEntry> visible;
   final String query;
   final String? selectedId;
+  final bool loadingProfile;
+  final String? loadProfileError;
   final void Function(String) onQuery;
   final void Function(String) onSelect;
+  final VoidCallback? onRetry;
 
   @override
   Widget build(BuildContext context) {
@@ -214,6 +253,14 @@ class _Body extends StatelessWidget {
               );
             },
           ),
+        if (loadingProfile || loadProfileError != null) ...[
+          const SizedBox(height: 14),
+          _ProfileLoadStatus(
+            loading: loadingProfile,
+            error: loadProfileError,
+            onRetry: onRetry,
+          ),
+        ],
         const SizedBox(height: 20),
         Row(
           children: [
@@ -299,6 +346,63 @@ class _Body extends StatelessWidget {
       // the user can copy it manually if launching the browser
       // fails (rare on a desktop env).
     }
+  }
+}
+
+class _ProfileLoadStatus extends StatelessWidget {
+  const _ProfileLoadStatus({
+    required this.loading,
+    required this.error,
+    required this.onRetry,
+  });
+
+  final bool loading;
+  final String? error;
+  final VoidCallback? onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = DeckhandTokens.of(context);
+    final color = error == null ? tokens.info : tokens.bad;
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.08),
+        border: Border.all(color: color.withValues(alpha: 0.35)),
+        borderRadius: BorderRadius.circular(DeckhandTokens.r2),
+      ),
+      child: Row(
+        children: [
+          if (loading)
+            const SizedBox(
+              width: 16,
+              height: 16,
+              child: DeckhandSpinner(size: 16, strokeWidth: 2),
+            )
+          else
+            Icon(Icons.error_outline, size: 16, color: color),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              loading ? 'Loading selected printer profile...' : error!,
+              style: TextStyle(
+                fontFamily: DeckhandTokens.fontSans,
+                fontSize: DeckhandTokens.tSm,
+                color: error == null ? tokens.text3 : tokens.bad,
+              ),
+            ),
+          ),
+          if (error != null) ...[
+            const SizedBox(width: 12),
+            TextButton.icon(
+              icon: const Icon(Icons.refresh, size: 14),
+              label: const Text('Retry'),
+              onPressed: onRetry,
+            ),
+          ],
+        ],
+      ),
+    );
   }
 }
 

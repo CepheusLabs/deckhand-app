@@ -6,8 +6,9 @@ import 'helpers.dart';
 
 void main() {
   group('ChoosePathScreen', () {
-    testWidgets('renders both path cards and defaults to stockKeep',
-        (tester) async {
+    testWidgets('renders both path cards and defaults to stockKeep', (
+      tester,
+    ) async {
       final controller = stubWizardController(profileJson: testProfileJson());
       await controller.loadProfile('test-printer');
       await tester.pumpWidget(
@@ -27,8 +28,7 @@ void main() {
       expect(find.text('Back'), findsOneWidget);
     });
 
-    testWidgets('Continue writes the default stockKeep flow',
-        (tester) async {
+    testWidgets('Continue writes the default stockKeep flow', (tester) async {
       final controller = stubWizardController(profileJson: testProfileJson());
       await controller.loadProfile('test-printer');
       await tester.pumpWidget(
@@ -45,6 +45,26 @@ void main() {
       // Screen defaults to stockKeep on first render; Continue
       // records that default on the controller.
       expect(controller.state.flow, WizardFlow.stockKeep);
+    });
+
+    testWidgets('seeds from existing freshFlash flow on resume', (
+      tester,
+    ) async {
+      final controller = stubWizardController(profileJson: testProfileJson());
+      await controller.loadProfile('test-printer');
+      controller.setFlow(WizardFlow.freshFlash);
+      await tester.pumpWidget(
+        testHarness(
+          controller: controller,
+          child: const ChoosePathScreen(),
+          initialLocation: '/choose-path',
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Continue'));
+      await tester.pumpAndSettle();
+      expect(controller.state.flow, WizardFlow.freshFlash);
     });
   });
 }

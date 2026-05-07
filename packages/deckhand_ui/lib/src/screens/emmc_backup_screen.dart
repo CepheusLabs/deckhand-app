@@ -29,7 +29,12 @@ final _technicalDiskMessageRe = RegExp(
 /// decision `snapshot.emmc_backup_path` and bounces back to /snapshot
 /// with the eMMC-acknowledged checkbox auto-ticked.
 class EmmcBackupScreen extends ConsumerStatefulWidget {
-  const EmmcBackupScreen({super.key});
+  const EmmcBackupScreen({super.key, this.returnRoute});
+
+  /// Optional override for non-wizard entry points such as Manage.
+  /// When omitted, the screen returns to the install route implied by
+  /// the active wizard flow.
+  final String? returnRoute;
 
   @override
   ConsumerState<EmmcBackupScreen> createState() => _EmmcBackupScreenState();
@@ -181,7 +186,11 @@ class _EmmcBackupScreenState extends ConsumerState<EmmcBackupScreen> {
           operation: 'disks.read_image',
           target: id,
         );
-        if (!security.consumeToken(token.value, 'disks.read_image')) {
+        if (!security.consumeToken(
+          token.value,
+          'disks.read_image',
+          target: id,
+        )) {
           throw StateError(
             'confirmation token was rejected before helper launch',
           );
@@ -373,6 +382,8 @@ class _EmmcBackupScreenState extends ConsumerState<EmmcBackupScreen> {
   /// fresh-flash → /flash-confirm (the destructive S220 confirmation),
   /// stock-keep → /snapshot (the S145 banner that offered the backup).
   String _returnRoute() {
+    final explicit = widget.returnRoute;
+    if (explicit != null && explicit.isNotEmpty) return explicit;
     final flow = ref.read(wizardControllerProvider).state.flow;
     return flow == WizardFlow.freshFlash ? '/flash-confirm' : '/snapshot';
   }

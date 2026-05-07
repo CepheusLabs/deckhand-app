@@ -1,40 +1,21 @@
 import 'package:deckhand_core/deckhand_core.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../providers.dart';
 import 'deckhand_loading.dart';
 
 /// Live "what just got fetched" panel for S900-progress. Subscribes
 /// to [SecurityService.egressEvents] and renders one row per request,
 /// updating in place as completion events arrive. See
 /// [docs/ARCHITECTURE.md] (egress visualization) for the design.
-class NetworkPanel extends ConsumerStatefulWidget {
-  const NetworkPanel({super.key});
+class NetworkPanel extends StatelessWidget {
+  const NetworkPanel({super.key, required this.events});
 
-  @override
-  ConsumerState<NetworkPanel> createState() => _NetworkPanelState();
-}
-
-class _NetworkPanelState extends ConsumerState<NetworkPanel> {
-  /// Event-by-id store. Completion events overwrite the start event
-  /// so the row updates in place rather than appearing twice.
-  final _events = <String, EgressEvent>{};
-
-  @override
-  void initState() {
-    super.initState();
-    final security = ref.read(securityServiceProvider);
-    security.egressEvents.listen((e) {
-      if (!mounted) return;
-      setState(() => _events[e.requestId] = e);
-    });
-  }
+  final List<EgressEvent> events;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    if (_events.isEmpty) {
+    if (events.isEmpty) {
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(16),
@@ -63,12 +44,12 @@ class _NetworkPanelState extends ConsumerState<NetworkPanel> {
         ),
       );
     }
-    final events = _events.values.toList()
+    final sorted = List<EgressEvent>.of(events)
       ..sort((a, b) => a.startedAt.compareTo(b.startedAt));
     return ListView.separated(
-      itemCount: events.length,
+      itemCount: sorted.length,
       separatorBuilder: (_, _) => const Divider(height: 1),
-      itemBuilder: (_, i) => _EgressTile(event: events[i]),
+      itemBuilder: (_, i) => _EgressTile(event: sorted[i]),
     );
   }
 }

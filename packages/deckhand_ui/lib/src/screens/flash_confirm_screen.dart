@@ -27,8 +27,9 @@ import '../widgets/wizard_scaffold.dart';
 /// final explicit confirmation before the destructive handoff.
 ///
 /// `Esc` is intercepted in the wrapping `CallbackShortcuts` so the
-/// user can still bail out with the keyboard even though the
-/// scaffold isn't rendering a Back button.
+/// user can still bail out with the keyboard. Loading/problem states
+/// also render a visible scaffold back action because the body-level
+/// commit bar is not present yet.
 class FlashConfirmScreen extends ConsumerStatefulWidget {
   const FlashConfirmScreen({super.key});
 
@@ -157,6 +158,11 @@ class _FlashConfirmScreenState extends ConsumerState<FlashConfirmScreen> {
         ((manifestsAsync.isLoading && !manifestsAsync.hasValue) ||
             (candidatesAsync.isLoading && !candidatesAsync.hasValue));
     final loadingBody = waitingForDisk || waitingForBackups;
+    final Object? blockingError =
+        disksAsync.error ??
+        (manifestsAsync.hasError ? manifestsAsync.error : null) ??
+        (candidatesAsync.hasError ? candidatesAsync.error : null);
+    final missingDisk = !loadingBody && blockingError == null && disk == null;
 
     // Esc still goes back even though the scaffold's Back button is
     // suppressed — wired here so the keyboard escape hatch survives
@@ -177,6 +183,20 @@ class _FlashConfirmScreenState extends ConsumerState<FlashConfirmScreen> {
               'the decision afterwards.',
           body: loadingBody
               ? _FlashConfirmLoading(waitingForDisk: waitingForDisk)
+              : blockingError != null
+              ? _FlashConfirmProblem(
+                  title: 'Cannot prepare flash confirmation',
+                  message: '$blockingError',
+                  onBack: () => context.go('/choose-os'),
+                )
+              : missingDisk
+              ? _FlashConfirmProblem(
+                  title: 'No selected disk available',
+                  message: diskId == null
+                      ? 'Choose a disk before opening the destructive confirmation.'
+                      : 'The previously selected disk is not currently visible. Reconnect it or choose another disk.',
+                  onBack: () => context.go('/flash-target'),
+                )
               : _DangerBody(
                   disk: disk,
                   osId: osId,
@@ -189,12 +209,14 @@ class _FlashConfirmScreenState extends ConsumerState<FlashConfirmScreen> {
                   onBackup: () => context.go('/emmc-backup'),
                   onWipe: () => _confirmCommit(disk),
                 ),
-          secondaryActions: loadingBody
+          secondaryActions: loadingBody || blockingError != null || missingDisk
               ? [
                   WizardAction(
                     label: "Back, don't wipe",
                     isBack: true,
-                    onPressed: () => context.go('/choose-os'),
+                    onPressed: () => context.go(
+                      missingDisk ? '/flash-target' : '/choose-os',
+                    ),
                   ),
                 ]
               : const [],
@@ -225,6 +247,67 @@ class _FlashConfirmLoading extends StatelessWidget {
                   'destructive confirmation.'
             : 'Deckhand is scanning local backup manifests and full-size '
                   'images before it recommends another backup.',
+      ),
+    );
+  }
+}
+
+class _FlashConfirmProblem extends StatelessWidget {
+  const _FlashConfirmProblem({
+    required this.title,
+    required this.message,
+    required this.onBack,
+  });
+
+  final String title;
+  final String message;
+  final VoidCallback onBack;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = DeckhandTokens.of(context);
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: tokens.ink1,
+        border: Border.all(color: tokens.bad.withValues(alpha: 0.45)),
+        borderRadius: BorderRadius.circular(DeckhandTokens.r3),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.error_outline, size: 18, color: tokens.bad),
+              const SizedBox(width: 10),
+              Text(
+                title,
+                style: TextStyle(
+                  fontFamily: DeckhandTokens.fontSans,
+                  fontSize: DeckhandTokens.tLg,
+                  fontWeight: FontWeight.w500,
+                  color: tokens.text,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            message,
+            style: TextStyle(
+              fontFamily: DeckhandTokens.fontSans,
+              fontSize: DeckhandTokens.tSm,
+              color: tokens.text3,
+              height: 1.45,
+            ),
+          ),
+          const SizedBox(height: 16),
+          OutlinedButton.icon(
+            onPressed: onBack,
+            icon: const Icon(Icons.arrow_back, size: 14),
+            label: const Text('Choose another disk'),
+          ),
+        ],
       ),
     );
   }
@@ -294,7 +377,7 @@ class _DangerBody extends StatelessWidget {
           Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              _Banner(),
+              _Banner(disk: disk),
               const SizedBox(height: 18),
               _BackupCta(
                 onTap: onBackup,
@@ -396,6 +479,10 @@ class _CornerBracketPainter extends CustomPainter {
 }
 
 class _Banner extends StatelessWidget {
+  const _Banner({required this.disk});
+
+  final DiskInfo? disk;
+
   @override
   Widget build(BuildContext context) {
     final tokens = DeckhandTokens.of(context);
@@ -412,6 +499,17 @@ class _Banner extends StatelessWidget {
       panelBg,
     );
     final tagBg = Color.alphaBlend(tokens.bad.withValues(alpha: 0.08), panelBg);
+    final partitionCount = disk?.partitions.length;
+    final destructionCopy = switch (partitionCount) {
+      null =>
+        'The selected disk will be permanently overwritten. '
+            'There is no undo.',
+      0 => 'The entire disk will be permanently overwritten. There is no undo.',
+      1 => 'One partition will be permanently destroyed. There is no undo.',
+      _ =>
+        '$partitionCount partitions will be permanently destroyed. '
+            'There is no undo.',
+    };
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
@@ -444,8 +542,7 @@ class _Banner extends StatelessWidget {
               ),
               const SizedBox(height: 2),
               Text(
-                'Three partitions will be permanently destroyed. There '
-                'is no undo.',
+                destructionCopy,
                 style: TextStyle(
                   fontFamily: DeckhandTokens.fontSans,
                   fontSize: 13,
@@ -829,7 +926,7 @@ class _TargetCard extends StatelessWidget {
   /// Headline label — same logic the prior screens use so the user
   /// types the name they actually saw on flash-target.
   String _friendlyName(DiskInfo? d) {
-    if (d == null) return '<no disk>';
+    if (d == null) return 'No disk selected';
     return diskDisplayName(d);
   }
 
@@ -969,7 +1066,7 @@ class _SourceCard extends StatelessWidget {
               _SourceStat(k: 'WRITE', v: 'elevated helper'),
               _SourceStat(k: 'VERIFY', v: 'sha256 + read-back'),
               _SourceStat(k: 'PARTS', v: 'recreated from image'),
-              _SourceStat(k: 'ETA', v: '~14 min'),
+              _SourceStat(k: 'ETA', v: 'unavailable'),
             ],
           ),
         ],

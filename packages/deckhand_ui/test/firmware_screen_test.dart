@@ -6,8 +6,9 @@ import 'helpers.dart';
 
 void main() {
   group('FirmwareScreen', () {
-    testWidgets('renders every firmware choice with its display_name',
-        (tester) async {
+    testWidgets('renders every firmware choice with its display_name', (
+      tester,
+    ) async {
       final controller = stubWizardController(
         profileJson: {
           ...testProfileJson(),
@@ -47,8 +48,9 @@ void main() {
       expect(find.text('Recommended'), findsOneWidget);
     });
 
-    testWidgets('git repo + ref are NOT rendered in the card subtitle',
-        (tester) async {
+    testWidgets('git repo + ref are NOT rendered in the card subtitle', (
+      tester,
+    ) async {
       final controller = stubWizardController(
         profileJson: {
           ...testProfileJson(),
@@ -83,8 +85,9 @@ void main() {
       expect(find.textContaining(' @ main'), findsNothing);
     });
 
-    testWidgets('Continue advances to /webui after recording firmware choice',
-        (tester) async {
+    testWidgets('Continue advances to /webui after recording firmware choice', (
+      tester,
+    ) async {
       final controller = stubWizardController(
         profileJson: {
           ...testProfileJson(),
@@ -115,6 +118,48 @@ void main() {
       await tester.tap(find.widgetWithText(FilledButton, 'Continue'));
       await tester.pumpAndSettle();
       expect(controller.decision<String>('firmware'), 'kalico');
+    });
+
+    testWidgets('seeds from existing firmware decision before default', (
+      tester,
+    ) async {
+      final controller = stubWizardController(
+        profileJson: {
+          ...testProfileJson(),
+          'firmware': {
+            'choices': [
+              {
+                'id': 'kalico',
+                'display_name': 'Kalico',
+                'repo': 'https://github.com/KalicoCrew/kalico',
+                'ref': 'main',
+                'recommended': true,
+              },
+              {
+                'id': 'klipper',
+                'display_name': 'Klipper',
+                'repo': 'https://github.com/Klipper3d/klipper',
+                'ref': 'master',
+              },
+            ],
+            'default_choice': 'kalico',
+          },
+        },
+      );
+      await controller.loadProfile('test-printer');
+      await controller.setDecision('firmware', 'klipper');
+      await tester.pumpWidget(
+        testHarness(
+          controller: controller,
+          child: const FirmwareScreen(),
+          initialLocation: '/firmware',
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.widgetWithText(FilledButton, 'Continue'));
+      await tester.pumpAndSettle();
+      expect(controller.decision<String>('firmware'), 'klipper');
     });
   });
 }

@@ -21,6 +21,15 @@ class _ChoosePathScreenState extends ConsumerState<ChoosePathScreen> {
   WizardFlow _choice = WizardFlow.stockKeep;
 
   @override
+  void initState() {
+    super.initState();
+    final saved = ref.read(wizardControllerProvider).state.flow;
+    if (saved != WizardFlow.none) {
+      _choice = saved;
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     return WizardScaffold(
       screenId: 'S40-choose-path',
@@ -65,7 +74,10 @@ class _ChoosePathScreenState extends ConsumerState<ChoosePathScreen> {
             details: const [
               _PathDetail(label: 'flow', value: 'fresh-flash'),
               _PathDetail(label: 'reversible', value: 'no'),
-              _PathDetail(label: 'duration', value: '~14 min flash + ~22 min install'),
+              _PathDetail(
+                label: 'duration',
+                value: '~14 min flash + ~22 min install',
+              ),
             ],
             warningKind: _PathWarn.bad,
             warning:
@@ -85,13 +97,7 @@ class _ChoosePathScreenState extends ConsumerState<ChoosePathScreen> {
               ),
             );
           }
-          return Column(
-            children: [
-              keep,
-              const SizedBox(height: 12),
-              fresh,
-            ],
-          );
+          return Column(children: [keep, const SizedBox(height: 12), fresh]);
         },
       ),
       primaryAction: WizardAction(

@@ -1,7 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:deckhand_core/deckhand_core.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter/services.dart';
 
 import '../i18n/translations.g.dart';
+import '../providers.dart';
 import '../theming/deckhand_tokens.dart';
+import 'deckhand_loading.dart';
 import 'deckhand_panel.dart';
 import 'network_panel.dart';
 import 'wizard_log_view.dart';
@@ -89,20 +94,20 @@ class ProgressRunWorkspace extends StatelessWidget {
     required this.steps,
     required this.statusFor,
     required this.log,
-    required this.networkCount,
+    required this.networkEvents,
   });
 
   final List<RunStep> steps;
   final RunStepStatus Function(RunStep step) statusFor;
   final List<String> log;
-  final int networkCount;
+  final List<EgressEvent> networkEvents;
 
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
         final stepRail = _StepRail(steps: steps, statusFor: statusFor);
-        final logPane = _LogNetworkPane(log: log, networkCount: networkCount);
+        final logPane = _LogNetworkPane(log: log, networkEvents: networkEvents);
         if (constraints.maxWidth < 840) {
           return Column(
             children: [
@@ -266,6 +271,9 @@ class _StepStatusIcon extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (status == RunStepStatus.active) {
+      return DeckhandSpinner(size: 16, strokeWidth: 2, color: color);
+    }
     final icon = switch (status) {
       RunStepStatus.done => Icons.check,
       RunStepStatus.warning => Icons.priority_high,
@@ -277,15 +285,19 @@ class _StepStatusIcon extends StatelessWidget {
   }
 }
 
-class _LogNetworkPane extends StatelessWidget {
-  const _LogNetworkPane({required this.log, required this.networkCount});
+class _LogNetworkPane extends ConsumerWidget {
+  const _LogNetworkPane({required this.log, required this.networkEvents});
 
   final List<String> log;
-  final int networkCount;
+  final List<EgressEvent> networkEvents;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final tokens = DeckhandTokens.of(context);
+    final developerMode = ref.watch(deckhandSettingsProvider).developerMode;
+    final logMode = developerMode
+        ? WizardLogMode.developer
+        : WizardLogMode.user;
     return DefaultTabController(
       length: 2,
       child: DeckhandPanel.flush(
@@ -294,6 +306,9 @@ class _LogNetworkPane extends StatelessWidget {
             _PaneTabs(
               tokens: tokens,
               trailingLabel: 'session.log · ${log.length} lines',
+              onCopyLog: log.isEmpty
+                  ? null
+                  : () => _copyLog(context, log, logMode),
               tabs: [
                 _PaneTab(
                   label: 'Log',
@@ -303,7 +318,7 @@ class _LogNetworkPane extends StatelessWidget {
                 _PaneTab(
                   label: 'Network',
                   icon: Icons.wifi,
-                  countLabel: '$networkCount',
+                  countLabel: '${networkEvents.length}',
                 ),
               ],
             ),
@@ -312,9 +327,9 @@ class _LogNetworkPane extends StatelessWidget {
                 children: [
                   Semantics(
                     label: t.progress.semantics_log_label,
-                    child: WizardLogView(lines: log),
+                    child: WizardLogView(lines: log, mode: logMode),
                   ),
-                  const NetworkPanel(),
+                  NetworkPanel(events: networkEvents),
                 ],
               ),
             ),
@@ -322,6 +337,20 @@ class _LogNetworkPane extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  Future<void> _copyLog(
+    BuildContext context,
+    List<String> lines,
+    WizardLogMode mode,
+  ) async {
+    await Clipboard.setData(
+      ClipboardData(text: formatWizardLogForClipboard(lines, mode)),
+    );
+    if (!context.mounted) return;
+    ScaffoldMessenger.maybeOf(
+      context,
+    )?.showSnackBar(const SnackBar(content: Text('Log copied')));
   }
 }
 
@@ -337,10 +366,12 @@ class _PaneTabs extends StatelessWidget {
     required this.tokens,
     required this.tabs,
     required this.trailingLabel,
+    required this.onCopyLog,
   });
   final DeckhandTokens tokens;
   final List<_PaneTab> tabs;
   final String trailingLabel;
+  final VoidCallback? onCopyLog;
 
   @override
   Widget build(BuildContext context) {
@@ -363,6 +394,13 @@ class _PaneTabs extends StatelessWidget {
                   onTap: () => controller.animateTo(i),
                 ),
               const Spacer(),
+              IconButton(
+                tooltip: 'Copy log',
+                icon: const Icon(Icons.content_copy, size: 14),
+                color: tokens.text3,
+                disabledColor: tokens.text4.withValues(alpha: 0.5),
+                onPressed: onCopyLog,
+              ),
               Padding(
                 padding: const EdgeInsets.only(right: 12),
                 child: Text(

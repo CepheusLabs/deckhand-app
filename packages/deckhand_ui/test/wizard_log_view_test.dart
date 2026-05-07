@@ -1,0 +1,72 @@
+import 'package:deckhand_ui/src/widgets/wizard_log_view.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+
+import 'helpers.dart';
+
+void main() {
+  testWidgets('renders friendly wrapped log messages by default', (
+    tester,
+  ) async {
+    final controller = stubWizardController(profileJson: testProfileJson());
+    await controller.loadProfile('test-printer');
+
+    await tester.pumpWidget(
+      testHarness(
+        controller: controller,
+        child: const WizardLogView(
+          lines: [
+            '> starting choose_os_image',
+            '[os] preparing https://github.com/armbian/community/releases/download/26.2.0-trunk.821/Armbian_community_26.2.0-trunk.821_Mkspi_trixie_current_6.18.26_minimal.img.xz -> C:/Users/test/AppData/Local/Deckhand/os-images/armbian-trixie-minimal.img',
+            '[flash] writing C:/Users/test/AppData/Local/Deckhand/os-images/armbian-trixie-minimal.img -> Generic STORAGE DEVICE (verify=true)',
+            '[run-state] skipping install_stack; already completed',
+            '[input] using existing decision: armbian-trixie-minimal',
+          ],
+        ),
+      ),
+    );
+
+    expect(find.text('STEP'), findsOneWidget);
+    expect(find.text('OS'), findsOneWidget);
+    expect(find.text('FLASH'), findsOneWidget);
+    expect(find.textContaining('Choose the OS image'), findsOneWidget);
+    expect(
+      find.textContaining('Preparing the OS image download'),
+      findsOneWidget,
+    );
+    expect(
+      find.textContaining('Writing the OS image to Generic STORAGE DEVICE'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('using existing decision'), findsNothing);
+    final message = tester.widget<Text>(
+      find.textContaining('Preparing the OS image download'),
+    );
+    expect(message.softWrap, isTrue);
+    expect(message.overflow, TextOverflow.visible);
+  });
+
+  testWidgets('can render raw developer log strings', (tester) async {
+    final controller = stubWizardController(profileJson: testProfileJson());
+    await controller.loadProfile('test-printer');
+
+    await tester.pumpWidget(
+      testHarness(
+        controller: controller,
+        child: const WizardLogView(
+          mode: WizardLogMode.developer,
+          lines: [
+            '> starting choose_target_disk',
+            '[input] using existing decision: armbian-trixie-minimal',
+          ],
+        ),
+      ),
+    );
+
+    expect(find.textContaining('starting choose_target_disk'), findsOneWidget);
+    expect(
+      find.textContaining('using existing decision: armbian-trixie-minimal'),
+      findsOneWidget,
+    );
+  });
+}

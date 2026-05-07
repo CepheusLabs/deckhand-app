@@ -7,18 +7,20 @@ import '../theming/deckhand_tokens.dart';
 ///
 /// When [fraction] is null, the bar shows an indeterminate sweep.
 /// When non-null in [0..1], the fill animates to that width and a
-/// diagonal-stripe overlay slides across to signal "still active."
+/// diagonal-stripe overlay can slide across to signal "still active."
 class WizardProgressBar extends StatefulWidget {
   const WizardProgressBar({
     super.key,
     required this.fraction,
     this.showTicks = true,
     this.tickCount = 20,
+    this.animateStripes = true,
   });
 
   final double? fraction;
   final bool showTicks;
   final int tickCount;
+  final bool animateStripes;
 
   @override
   State<WizardProgressBar> createState() => _WizardProgressBarState();
@@ -34,7 +36,23 @@ class _WizardProgressBarState extends State<WizardProgressBar>
     _stripes = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1200),
-    )..repeat();
+    );
+    _syncAnimation();
+  }
+
+  @override
+  void didUpdateWidget(covariant WizardProgressBar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _syncAnimation();
+  }
+
+  void _syncAnimation() {
+    final shouldAnimate = widget.fraction == null || widget.animateStripes;
+    if (shouldAnimate && !_stripes.isAnimating) {
+      _stripes.repeat();
+    } else if (!shouldAnimate && _stripes.isAnimating) {
+      _stripes.stop();
+    }
   }
 
   @override
@@ -133,7 +151,7 @@ class _WizardProgressBarState extends State<WizardProgressBar>
                 // path because the sliding bar already conveys
                 // "active" and stripes layered on top of a moving
                 // chunk read as visual noise.
-                if (widget.fraction != null)
+                if (widget.fraction != null && widget.animateStripes)
                   AnimatedBuilder(
                     animation: _stripes,
                     builder: (context, _) {
@@ -214,9 +232,7 @@ class _Ticks extends StatelessWidget {
                         child: Container(
                           width: 1,
                           height: i % 5 == 0 ? 6 : 4,
-                          color: i % 5 == 0
-                              ? tokens.text3
-                              : tokens.rule,
+                          color: i % 5 == 0 ? tokens.text3 : tokens.rule,
                         ),
                       ),
                       if (i % 5 == 0)

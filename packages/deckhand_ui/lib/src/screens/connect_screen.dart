@@ -209,6 +209,8 @@ class _ConnectScreenState extends ConsumerState<ConnectScreen> {
 
   Future<void> _connect(
     String host, {
+    int? port,
+    String? preferredUser,
     bool acceptHostKey = false,
     String? acceptedHostFingerprint,
   }) async {
@@ -219,11 +221,26 @@ class _ConnectScreenState extends ConsumerState<ConnectScreen> {
     });
     try {
       final controller = ref.read(wizardControllerProvider);
-      await controller.connectSsh(
-        host: host,
-        acceptHostKey: acceptHostKey,
-        acceptedHostFingerprint: acceptedHostFingerprint,
-      );
+      final savedCredential = preferredUser == null
+          ? null
+          : _defaultCredentialForUser(controller.profile, preferredUser);
+      if (savedCredential == null) {
+        await controller.connectSsh(
+          host: host,
+          port: port,
+          acceptHostKey: acceptHostKey,
+          acceptedHostFingerprint: acceptedHostFingerprint,
+        );
+      } else {
+        await controller.connectSshWithPassword(
+          host: host,
+          port: port,
+          user: savedCredential.user,
+          password: savedCredential.password!,
+          acceptHostKey: acceptHostKey,
+          acceptedHostFingerprint: acceptedHostFingerprint,
+        );
+      }
       // Persist to the Saved tab so a relaunch surfaces this host
       // one click away. session.user is what actually authenticated
       // (default-credential fallback may have used a non-stock user)
@@ -236,7 +253,9 @@ class _ConnectScreenState extends ConsumerState<ConnectScreen> {
             SavedHost(
               host: host,
               port: session.port,
-              user: session.user,
+              user: session.user.isNotEmpty
+                  ? session.user
+                  : (preferredUser ?? ''),
               lastUsed: DateTime.now(),
             ),
           );
@@ -247,7 +266,15 @@ class _ConnectScreenState extends ConsumerState<ConnectScreen> {
         // not block navigation to /verify on an otherwise-successful
         // connect.
       }
-      if (mounted) context.go('/verify');
+      if (mounted) {
+        final state = controller.state;
+        final nextRoute =
+            state.flow == WizardFlow.freshFlash &&
+                state.currentStep == 'first-boot'
+            ? '/first-boot-setup'
+            : '/verify';
+        context.go(nextRoute);
+      }
     } on HostKeyUnpinnedException catch (e) {
       // First-time connect to this host. Show the fingerprint and ask
       // the user to confirm before we pin it and retry.
@@ -262,6 +289,8 @@ class _ConnectScreenState extends ConsumerState<ConnectScreen> {
       if (accept == true && mounted) {
         await _connect(
           host,
+          port: port,
+          preferredUser: preferredUser,
           acceptHostKey: true,
           acceptedHostFingerprint: e.fingerprint,
         );
@@ -297,7 +326,9 @@ class _ConnectScreenState extends ConsumerState<ConnectScreen> {
           // retry proceed — worst case the user sees the unpinned
           // dialog instead of an immediate connect.
         }
-        if (mounted) await _connect(host);
+        if (mounted) {
+          await _connect(host, port: port, preferredUser: preferredUser);
+        }
         return;
       }
       if (mounted) setState(() => _error = e.userTitle);
@@ -311,6 +342,19 @@ class _ConnectScreenState extends ConsumerState<ConnectScreen> {
         });
       }
     }
+  }
+
+  SshDefaultCredential? _defaultCredentialForUser(
+    PrinterProfile? profile,
+    String user,
+  ) {
+    if (profile == null) return null;
+    for (final credential in profile.ssh.defaultCredentials) {
+      if (credential.user == user && credential.password != null) {
+        return credential;
+      }
+    }
+    return null;
   }
 
   Future<bool?> _showHostKeyDialog({
@@ -474,7 +518,8 @@ class _ConnectScreenState extends ConsumerState<ConnectScreen> {
               savedChild: _SavedTabBody(
                 hosts: ref.watch(deckhandSettingsProvider).savedHosts,
                 error: _error,
-                onConnect: (h) => _connect(h.host),
+                onConnect: (h) =>
+                    _connect(h.host, port: h.port, preferredUser: h.user),
                 onForget: (h) {
                   final settings = ref.read(deckhandSettingsProvider);
                   settings.forgetSavedHost(host: h.host, user: h.user);

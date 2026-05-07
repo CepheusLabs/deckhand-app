@@ -25,6 +25,12 @@ void main() {
       expect(find.text('NEW INSTALL'), findsOneWidget);
       expect(find.text('Set up a printer from scratch.'), findsOneWidget);
       expect(find.text('Start a new install'), findsOneWidget);
+      expect(find.text('RECOVERY'), findsOneWidget);
+      expect(find.text('Restore an eMMC backup.'), findsOneWidget);
+      expect(
+        find.widgetWithText(OutlinedButton, 'Restore eMMC backup'),
+        findsOneWidget,
+      );
 
       // The bottom-of-screen Start affordance still wires to the
       // same destination so keyboard/Enter advances the wizard.
@@ -85,6 +91,7 @@ void main() {
 
       // Resume + Discard actions are present and enabled.
       expect(find.widgetWithText(FilledButton, 'Resume'), findsOneWidget);
+      expect(find.widgetWithText(OutlinedButton, 'Manage'), findsOneWidget);
       expect(find.widgetWithText(TextButton, 'Discard'), findsOneWidget);
     });
   });

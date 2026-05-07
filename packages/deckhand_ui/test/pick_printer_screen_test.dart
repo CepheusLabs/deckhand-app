@@ -1,4 +1,6 @@
+import 'package:deckhand_core/deckhand_core.dart';
 import 'package:deckhand_ui/src/screens/pick_printer_screen.dart';
+import 'package:deckhand_ui/src/providers.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'helpers.dart';
@@ -26,5 +28,214 @@ void main() {
       // was a Phase 8 correctness fix; this test keeps it enforced.
       expect(find.textContaining('\u2192'), findsNothing);
     });
+
+    testWidgets('renders registry hardware specs on printer cards', (
+      tester,
+    ) async {
+      final controller = stubWizardController(profileJson: testProfileJson());
+      await controller.loadProfile('test-printer');
+      await tester.pumpWidget(
+        testHarness(
+          controller: controller,
+          child: const PickPrinterScreen(),
+          initialLocation: '/pick-printer',
+          extraOverrides: [
+            profileServiceProvider.overrideWithValue(
+              const _RegistryProfileService(
+                ProfileRegistry(
+                  entries: [
+                    ProfileRegistryEntry(
+                      id: 'test-printer',
+                      displayName: 'Test Printer',
+                      manufacturer: 'Acme',
+                      model: 'Robo',
+                      status: 'beta',
+                      directory: 'printers/test-printer',
+                      sbc: 'RK3328',
+                      kinematics: 'CoreXY',
+                      mcu: 'STM32F407',
+                      extras: 'ChromaKit',
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+
+      expect(find.text('RK3328'), findsOneWidget);
+      expect(find.text('CoreXY'), findsOneWidget);
+      expect(find.text('STM32F407'), findsOneWidget);
+      expect(find.text('ChromaKit'), findsOneWidget);
+    });
+
+    testWidgets('approves selected profile network hosts in one prompt', (
+      tester,
+    ) async {
+      final profileJson = {
+        ...testProfileJson(
+          os: {
+            'fresh_install_options': [
+              {
+                'id': 'debian',
+                'display_name': 'Debian',
+                'url': 'https://downloads.example.com/debian.img.xz',
+                'sha256':
+                    'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+              },
+            ],
+          },
+        ),
+        'required_hosts': ['api.github.com', 'github.com'],
+      };
+      final security = _RecordingSecurity();
+      final controller = stubWizardController(
+        profileJson: profileJson,
+        security: security,
+      );
+      await controller.loadProfile('test-printer');
+      await tester.pumpWidget(
+        testHarness(
+          controller: controller,
+          child: const PickPrinterScreen(),
+          initialLocation: '/pick-printer',
+          extraOverrides: [
+            profileServiceProvider.overrideWithValue(
+              const _RegistryProfileService(
+                ProfileRegistry(
+                  entries: [
+                    ProfileRegistryEntry(
+                      id: 'test-printer',
+                      displayName: 'Test Printer',
+                      manufacturer: 'Acme',
+                      model: 'Robo',
+                      status: 'beta',
+                      directory: 'printers/test-printer',
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+      await tester.tap(find.text('Test Printer'));
+      await tester.pump();
+      await tester.tap(find.text('Continue with Test Printer'));
+      for (var i = 0; i < 10; i++) {
+        await tester.pump(const Duration(milliseconds: 50));
+      }
+
+      expect(find.text('Allow profile network access?'), findsOneWidget);
+      expect(find.text('api.github.com'), findsOneWidget);
+      expect(find.text('downloads.example.com'), findsOneWidget);
+      expect(find.text('github.com'), findsOneWidget);
+      expect(security.approvedHosts, isEmpty);
+
+      await tester.tap(find.text('Allow'));
+      await tester.pumpAndSettle();
+
+      expect(security.approvedHosts, [
+        'api.github.com',
+        'downloads.example.com',
+        'github.com',
+      ]);
+    });
   });
+}
+
+class _RegistryProfileService implements ProfileService {
+  const _RegistryProfileService(this.registry);
+
+  final ProfileRegistry registry;
+
+  @override
+  Future<ProfileRegistry> fetchRegistry({bool force = false}) async => registry;
+
+  @override
+  Future<ProfileCacheEntry> ensureCached({
+    required String profileId,
+    String? ref,
+    bool force = false,
+  }) async => ProfileCacheEntry(
+    profileId: profileId,
+    ref: ref ?? 'main',
+    localPath: '.',
+    resolvedSha: '',
+  );
+
+  @override
+  Future<PrinterProfile> load(ProfileCacheEntry cacheEntry) async =>
+      PrinterProfile.fromJson(testProfileJson());
+}
+
+class _RecordingSecurity implements SecurityService {
+  final approvedHosts = <String>[];
+
+  @override
+  Future<void> approveHost(String host) async => approvedHosts.add(host);
+
+  @override
+  Future<bool> isHostAllowed(String host) async => approvedHosts.contains(host);
+
+  @override
+  Future<Map<String, bool>> requestHostApprovals(List<String> hosts) async => {
+    for (final host in hosts) host: approvedHosts.contains(host),
+  };
+
+  @override
+  Future<ConfirmationToken> issueConfirmationToken({
+    required String operation,
+    required String target,
+    Duration ttl = const Duration(seconds: 60),
+  }) async => ConfirmationToken(
+    value: 'test-token-0123456789abcdef',
+    expiresAt: DateTime.now().add(ttl),
+    operation: operation,
+    target: target,
+  );
+
+  @override
+  bool consumeToken(String value, String operation, {required String target}) =>
+      true;
+
+  @override
+  Future<void> revokeHost(String host) async => approvedHosts.remove(host);
+
+  @override
+  Future<List<String>> listApprovedHosts() async => approvedHosts.toList();
+
+  @override
+  Future<void> pinHostFingerprint({
+    required String host,
+    required String fingerprint,
+  }) async {}
+
+  @override
+  Future<String?> pinnedHostFingerprint(String host) async => null;
+
+  @override
+  Future<void> forgetHostFingerprint(String host) async {}
+
+  @override
+  Future<Map<String, String>> listPinnedFingerprints() async => const {};
+
+  @override
+  Future<String?> getGitHubToken() async => null;
+
+  @override
+  Future<void> setGitHubToken(String? token) async {}
+
+  @override
+  Stream<EgressEvent> get egressEvents => const Stream.empty();
+
+  @override
+  void recordEgress(EgressEvent event) {}
 }

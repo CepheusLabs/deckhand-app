@@ -339,7 +339,11 @@ class _SnapshotScreenState extends ConsumerState<SnapshotScreen> {
         operation: 'disks.hash_device',
         target: disk.id,
       );
-      if (!security.consumeToken(token.value, 'disks.hash_device')) {
+      if (!security.consumeToken(
+        token.value,
+        'disks.hash_device',
+        target: disk.id,
+      )) {
         throw StateError(
           'confirmation token was rejected before helper launch',
         );

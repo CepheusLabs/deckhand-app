@@ -44,6 +44,8 @@ Widget testHarness({
         '/progress',
         '/done',
         '/manage',
+        '/manage-emmc-backup',
+        '/emmc-restore',
         '/settings',
       ])
         GoRoute(path: path, builder: (_, _) => child),
@@ -112,6 +114,7 @@ Widget testHarnessWithSettings({
         '/progress',
         '/done',
         '/manage',
+        '/emmc-restore',
         '/settings',
       ])
         GoRoute(path: path, builder: (_, _) => child),
@@ -429,9 +432,11 @@ class _StubSecurity implements SecurityService {
     value: 'stub-token-0123456789abcdef',
     expiresAt: DateTime.now().add(ttl),
     operation: operation,
+    target: target,
   );
   @override
-  bool consumeToken(String value, String operation) => true;
+  bool consumeToken(String value, String operation, {required String target}) =>
+      true;
   @override
   Future<bool> isHostAllowed(String host) async => true;
   @override

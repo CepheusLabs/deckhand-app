@@ -20,23 +20,35 @@ class ChooseOsScreen extends ConsumerStatefulWidget {
 
 class _ChooseOsScreenState extends ConsumerState<ChooseOsScreen> {
   String? _choice;
+  bool _seeded = false;
+
+  void _seedChoice(List<OsImageOption> options) {
+    if (_seeded) return;
+    final controller = ref.read(wizardControllerProvider);
+    final saved = controller.decision<String>('flash.os');
+    if (saved != null && saved.isNotEmpty) {
+      _choice = saved;
+      _seeded = true;
+      return;
+    }
+    OsImageOption? pick;
+    for (final OsImageOption o in options) {
+      if (o.recommended) {
+        pick = o;
+        break;
+      }
+    }
+    pick ??= options.isEmpty ? null : options.first;
+    _choice = pick?.id;
+    _seeded = true;
+  }
 
   @override
   Widget build(BuildContext context) {
     final options =
         ref.watch(wizardControllerProvider).profile?.os.freshInstallOptions ??
         const <OsImageOption>[];
-    if (_choice == null) {
-      OsImageOption? pick;
-      for (final OsImageOption o in options) {
-        if (o.recommended) {
-          pick = o;
-          break;
-        }
-      }
-      pick ??= options.isEmpty ? null : options.first;
-      _choice = pick?.id;
-    }
+    _seedChoice(options);
 
     return WizardScaffold(
       screenId: 'S210-choose-os',
@@ -261,24 +273,20 @@ class _ShaRow extends StatelessWidget {
             IconButton(
               tooltip: 'copy full sha256',
               padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(
-                minWidth: 22,
-                minHeight: 22,
-              ),
+              constraints: const BoxConstraints(minWidth: 22, minHeight: 22),
               iconSize: 12,
               splashRadius: 14,
               onPressed: () {
                 Clipboard.setData(ClipboardData(text: full));
                 final messenger = ScaffoldMessenger.maybeOf(context);
-                messenger?.showSnackBar(const SnackBar(
-                  content: Text('sha256 copied to clipboard'),
-                  duration: Duration(seconds: 2),
-                ));
+                messenger?.showSnackBar(
+                  const SnackBar(
+                    content: Text('sha256 copied to clipboard'),
+                    duration: Duration(seconds: 2),
+                  ),
+                );
               },
-              icon: Icon(
-                Icons.content_copy,
-                color: tokens.text4,
-              ),
+              icon: Icon(Icons.content_copy, color: tokens.text4),
             ),
         ],
       ),

@@ -50,6 +50,8 @@ class WelcomeScreen extends ConsumerWidget {
             saved: saved,
             onStart: () => context.go('/pick-printer'),
           ),
+          const SizedBox(height: 16),
+          _MaintenancePanel(tokens: tokens),
           const SizedBox(height: 18),
           const PreflightStrip(),
         ],
@@ -150,16 +152,29 @@ class _ResumePanel extends ConsumerStatefulWidget {
 }
 
 class _ResumePanelState extends ConsumerState<_ResumePanel> {
-  bool _restoring = false;
+  String? _busyAction;
 
   Future<void> _resume() async {
-    if (_restoring) return;
-    setState(() => _restoring = true);
+    final target =
+        routeForResumeStep(widget.saved.state.currentStep) ?? '/pick-printer';
+    await _openSavedSession(target: target, action: 'resume');
+  }
+
+  Future<void> _manage() async {
+    await _openSavedSession(target: '/manage', action: 'manage');
+  }
+
+  Future<void> _openSavedSession({
+    required String target,
+    required String action,
+  }) async {
+    if (_busyAction != null) return;
+    setState(() => _busyAction = action);
     try {
       await ref.read(wizardControllerProvider).restore(widget.saved.state);
     } on ResumeFailedException catch (e) {
       if (!mounted) return;
-      setState(() => _restoring = false);
+      setState(() => _busyAction = null);
       await showDialog<void>(
         context: context,
         builder: (ctx) => AlertDialog(
@@ -188,22 +203,11 @@ class _ResumePanelState extends ConsumerState<_ResumePanel> {
     // Without invalidate, navigating back to welcome would still
     // render the RESUME card pointing at state we already restored.
     ref.invalidate(savedWizardSnapshotProvider);
-    // Defensive fallback: if the saved currentStep isn't in
-    // routeForResumeStep's table (e.g. a future step name that
-    // shipped before the route map was updated), bounce to
-    // /pick-printer so the user lands SOMEWHERE actionable instead
-    // of staring at a Resume button that silently does nothing.
-    // The earlier behaviour was to no-op on null target, which left
-    // the user on welcome with the panel still wanting to be
-    // clicked again — observed in the wild for currentStep
-    // 'emmc-backup' before that route was added to the map.
-    final target =
-        routeForResumeStep(widget.saved.state.currentStep) ?? '/pick-printer';
     if (mounted) context.go(target);
   }
 
   Future<void> _discard() async {
-    if (_restoring) return;
+    if (_busyAction != null) return;
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -245,6 +249,7 @@ class _ResumePanelState extends ConsumerState<_ResumePanel> {
   Widget build(BuildContext context) {
     final tokens = widget.tokens;
     final state = widget.saved.state;
+    final busy = _busyAction != null;
     final profileLabel = state.profileId.isEmpty
         ? 'unknown printer'
         : state.profileId;
@@ -262,26 +267,63 @@ class _ResumePanelState extends ConsumerState<_ResumePanel> {
         runSpacing: 6,
         children: [IdTag(profileLabel), IdTag(stepLabel), IdTag(ageLabel)],
       ),
-      action: Row(
-        mainAxisSize: MainAxisSize.min,
+      action: Wrap(
+        spacing: 8,
+        runSpacing: 8,
         children: [
           TextButton(
-            onPressed: _restoring ? null : _discard,
+            onPressed: busy ? null : _discard,
             child: const Text('Discard'),
           ),
-          const SizedBox(width: 8),
+          if (state.profileId.isNotEmpty) ...[
+            OutlinedButton.icon(
+              onPressed: busy ? null : _manage,
+              icon: _busyAction == 'manage'
+                  ? const SizedBox(
+                      width: 12,
+                      height: 12,
+                      child: DeckhandSpinner(size: 12, strokeWidth: 1.5),
+                    )
+                  : const Icon(Icons.tune, size: 14),
+              label: Text(_busyAction == 'manage' ? 'Opening…' : 'Manage'),
+            ),
+          ],
           FilledButton.icon(
-            onPressed: _restoring ? null : _resume,
-            icon: _restoring
+            onPressed: busy ? null : _resume,
+            icon: _busyAction == 'resume'
                 ? const SizedBox(
                     width: 12,
                     height: 12,
                     child: DeckhandSpinner(size: 12, strokeWidth: 1.5),
                   )
                 : const Icon(Icons.arrow_forward, size: 14),
-            label: Text(_restoring ? 'Resuming…' : 'Resume'),
+            label: Text(_busyAction == 'resume' ? 'Resuming…' : 'Resume'),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _MaintenancePanel extends StatelessWidget {
+  const _MaintenancePanel({required this.tokens});
+
+  final DeckhandTokens tokens;
+
+  @override
+  Widget build(BuildContext context) {
+    return _PanelShell(
+      tokens: tokens,
+      eyebrow: 'RECOVERY',
+      headline: 'Restore an eMMC backup.',
+      body:
+          'Writes a Deckhand full-disk backup image back to an attached '
+          'eMMC adapter. Use this to roll back after a failed flash or '
+          'when you need the printer returned to a known image.',
+      action: OutlinedButton.icon(
+        onPressed: () => context.go('/emmc-restore'),
+        icon: const Icon(Icons.restore, size: 14),
+        label: const Text('Restore eMMC backup'),
       ),
     );
   }

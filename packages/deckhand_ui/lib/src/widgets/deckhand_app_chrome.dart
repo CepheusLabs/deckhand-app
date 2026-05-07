@@ -1,6 +1,7 @@
 import 'package:deckhand_core/deckhand_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../providers.dart';
 import '../theming/deckhand_tokens.dart';
@@ -61,10 +62,7 @@ class DeckhandAppChrome extends ConsumerWidget {
             items: [
               DeckhandFootbarItem(label: 'sidecar', value: version),
               if (wizard != null && wizard.profileId.isNotEmpty)
-                DeckhandFootbarItem(
-                  label: 'profile',
-                  value: wizard.profileId,
-                ),
+                DeckhandFootbarItem(label: 'profile', value: wizard.profileId),
             ],
             trailing: [
               if (hostLabel != null)
@@ -129,11 +127,7 @@ class _TopBar extends StatelessWidget {
           ),
           if (printerLabel != null) ...[
             const SizedBox(width: 14),
-            Container(
-              width: 1,
-              height: 16,
-              color: tokens.lineSoft,
-            ),
+            Container(width: 1, height: 16, color: tokens.lineSoft),
             const SizedBox(width: 14),
             // ConstrainedBox (rather than Flexible) so the label
             // takes only its intrinsic width — Flexible's default
@@ -155,6 +149,14 @@ class _TopBar extends StatelessWidget {
             ),
           ],
           const Spacer(),
+          if (printerLabel != null) ...[
+            TextButton.icon(
+              icon: const Icon(Icons.tune, size: 14),
+              label: const Text('Manage'),
+              onPressed: () => context.go('/manage'),
+            ),
+            const SizedBox(width: 4),
+          ],
           const SettingsLinkButton(),
           const SizedBox(width: 4),
           const ThemeToggleButton(),

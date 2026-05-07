@@ -22,6 +22,15 @@ class _WebuiScreenState extends ConsumerState<WebuiScreen> {
   final _selected = <String>{};
   bool _neither = false;
   bool _seeded = false;
+  bool _userChanged = false;
+  String? _autoSeedSignature;
+
+  void _replaceSelection(Iterable<String> ids) {
+    _selected
+      ..clear()
+      ..addAll(ids.where((id) => id.isNotEmpty));
+    _neither = false;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -35,18 +44,37 @@ class _WebuiScreenState extends ConsumerState<WebuiScreen> {
     final allowNone = webui['allow_none'] == true;
     final probe = controller.printerState;
 
-    // Seed once on first build. Prefer "whatever is already installed
-    // on this specific printer" over the profile's declared defaults -
-    // that way users returning to a partly-configured machine don't
-    // accidentally un-select the UI they're already running.
+    final saved = controller.state.decisions['webui'];
+    final choiceIds = choices
+        .map((c) => c['id'] as String?)
+        .whereType<String>()
+        .toSet();
+    final installed = [
+      for (final raw in choices)
+        if (probe.stackInstalls[raw['id']]?.installed == true)
+          raw['id'] as String,
+    ];
+    final autoIds = installed.isNotEmpty ? installed : defaultChoices;
+    final autoSeedSignature = '${choiceIds.join('|')}::${autoIds.join('|')}';
+
+    // Seed from persisted wizard decisions before applying profile or
+    // probe defaults. If the user has not touched this screen during
+    // this mount, keep auto defaults responsive to inventory/probe
+    // changes; once they click, preserve their explicit choice.
     if (!_seeded) {
-      final installed = [
-        for (final raw in choices)
-          if (probe.stackInstalls[raw['id']]?.installed == true)
-            raw['id'] as String,
-      ];
-      _selected.addAll(installed.isNotEmpty ? installed : defaultChoices);
+      if (saved is List) {
+        _replaceSelection(saved.whereType<String>());
+        _neither = _selected.isEmpty && allowNone;
+      } else {
+        _replaceSelection(autoIds);
+      }
       _seeded = true;
+      _autoSeedSignature = autoSeedSignature;
+    } else if (!_userChanged &&
+        saved == null &&
+        _autoSeedSignature != autoSeedSignature) {
+      _replaceSelection(autoIds);
+      _autoSeedSignature = autoSeedSignature;
     }
 
     final hasSelection = _selected.isNotEmpty;
@@ -59,8 +87,10 @@ class _WebuiScreenState extends ConsumerState<WebuiScreen> {
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (!canContinue) _RequirementBanner(message: t.webui.requirement_missing),
-          if (canContinue) _RequirementBanner(message: t.webui.requirement_ok, ok: true),
+          if (!canContinue)
+            _RequirementBanner(message: t.webui.requirement_missing),
+          if (canContinue)
+            _RequirementBanner(message: t.webui.requirement_ok, ok: true),
           const SizedBox(height: 16),
           LayoutBuilder(
             builder: (context, constraints) {
@@ -71,18 +101,16 @@ class _WebuiScreenState extends ConsumerState<WebuiScreen> {
               // available choice is in `_selected`. Selecting it
               // selects all; deselecting clears all.
               final showBoth = choices.length == 2;
-              final allIds = choices
-                  .map((c) => c['id'] as String?)
-                  .whereType<String>()
-                  .toSet();
-              final bothSelected = !_neither &&
+              final allIds = choiceIds;
+              final bothSelected =
+                  !_neither &&
                   allIds.isNotEmpty &&
                   _selected.containsAll(allIds);
               final cols = width >= 960
                   ? 3
                   : width >= 640
-                      ? 2
-                      : 1;
+                  ? 2
+                  : 1;
               return EqualHeightGrid(
                 columns: cols,
                 children: [
@@ -93,12 +121,12 @@ class _WebuiScreenState extends ConsumerState<WebuiScreen> {
                       // visually mark the discrete cards as
                       // selected too — they're functionally part
                       // of the same set.
-                      selected:
-                          !_neither && _selected.contains(raw['id']),
+                      selected: !_neither && _selected.contains(raw['id']),
                       installed: probe.stackInstalls[raw['id']],
                       descriptionBuilder: _userFacingBlurb,
                       onTap: () => setState(() {
                         final id = raw['id'] as String;
+                        _userChanged = true;
                         _neither = false;
                         if (_selected.contains(id)) {
                           _selected.remove(id);
@@ -111,10 +139,10 @@ class _WebuiScreenState extends ConsumerState<WebuiScreen> {
                     _BothCard(
                       selected: bothSelected,
                       ports: choices
-                          .map((c) =>
-                              (c['default_port'] ?? '?').toString())
+                          .map((c) => (c['default_port'] ?? '?').toString())
                           .join(', '),
                       onTap: () => setState(() {
+                        _userChanged = true;
                         _neither = false;
                         if (bothSelected) {
                           _selected.clear();
@@ -134,6 +162,7 @@ class _WebuiScreenState extends ConsumerState<WebuiScreen> {
             _NeitherTile(
               checked: _neither,
               onChanged: (v) => setState(() {
+                _userChanged = true;
                 _neither = v;
                 if (v) _selected.clear();
               }),
@@ -145,7 +174,9 @@ class _WebuiScreenState extends ConsumerState<WebuiScreen> {
         label: t.common.action_continue,
         onPressed: canContinue
             ? () async {
-                await ref.read(wizardControllerProvider).setDecision(
+                await ref
+                    .read(wizardControllerProvider)
+                    .setDecision(
                       'webui',
                       _neither ? const <String>[] : _selected.toList(),
                     );
@@ -256,11 +287,7 @@ class _WebuiCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              Icon(
-                Icons.visibility_outlined,
-                size: 18,
-                color: tokens.accent,
-              ),
+              Icon(Icons.visibility_outlined, size: 18, color: tokens.accent),
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
@@ -300,10 +327,7 @@ class _WebuiCard extends StatelessWidget {
           const SizedBox(height: 10),
           _MetaRow(label: 'port', value: port == null ? '—' : port.toString()),
           if (raw['asset_pattern'] != null)
-            _MetaRow(
-              label: 'asset',
-              value: raw['asset_pattern'].toString(),
-            ),
+            _MetaRow(label: 'asset', value: raw['asset_pattern'].toString()),
         ],
       ),
     );
@@ -379,11 +403,7 @@ class _BothCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              Icon(
-                Icons.dynamic_feed_outlined,
-                size: 18,
-                color: tokens.accent,
-              ),
+              Icon(Icons.dynamic_feed_outlined, size: 18, color: tokens.accent),
               const SizedBox(width: 10),
               Expanded(
                 child: Text(

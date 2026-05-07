@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:deckhand_core/deckhand_core.dart';
@@ -26,8 +27,9 @@ enum _SettingsTab { general, connections, profiles, appearance, advanced }
 ///  * Profiles — local override directory vs. fetching from GitHub.
 ///    Persists to [DeckhandSettings.localProfilesDir].
 ///  * Appearance — system / light / dark theme picker + UI locale.
-///  * Advanced — GitHub access token (lifts the GitHub rate-limit
-///    ceiling) + network allow-list of approved egress hosts.
+///  * Advanced — developer mode, GitHub access token (lifts the
+///    GitHub rate-limit ceiling) + network allow-list of approved
+///    egress hosts.
 ///
 /// The tabbed layout mirrors the design language: a 200px left
 /// rail of icon+label rows, with the active tab's content rendered
@@ -52,6 +54,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   String? _githubTokenStatus;
 
   bool _verifyAfterWrite = true;
+  bool _developerMode = false;
   late final TextEditingController _cacheRetentionController;
   String? _cacheRetentionError;
 
@@ -67,6 +70,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     );
     _githubTokenController = TextEditingController();
     _verifyAfterWrite = settings.verifyAfterWrite;
+    _developerMode = settings.developerMode;
     _cacheRetentionController = TextEditingController(
       text: settings.cacheRetentionDays.toString(),
     );
@@ -83,18 +87,27 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   }
 
   Future<void> _hydrateGithubToken() async {
-    final security = ref.read(securityServiceProvider);
-    final existing = await security.getGitHubToken();
-    if (!mounted) return;
-    setState(() {
-      _githubTokenLoaded = true;
-      if (existing != null) {
-        _githubTokenController.text = existing;
-        _githubTokenStatus = 'Saved · using authenticated GitHub bucket';
-      } else {
-        _githubTokenStatus = 'No token saved · using anonymous 60/hour bucket';
-      }
-    });
+    try {
+      final security = ref.read(securityServiceProvider);
+      final existing = await security.getGitHubToken();
+      if (!mounted) return;
+      setState(() {
+        _githubTokenLoaded = true;
+        if (existing != null) {
+          _githubTokenController.text = existing;
+          _githubTokenStatus = 'Saved · using authenticated GitHub bucket';
+        } else {
+          _githubTokenStatus =
+              'No token saved · using anonymous 60/hour bucket';
+        }
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _githubTokenLoaded = true;
+        _githubTokenStatus = 'Secure storage error: $e';
+      });
+    }
   }
 
   void _refreshHostLists() {
@@ -127,18 +140,33 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
   Future<void> _saveGithubToken() async {
     final raw = _githubTokenController.text.trim();
-    final security = ref.read(securityServiceProvider);
-    await security.setGitHubToken(raw.isEmpty ? null : raw);
-    setState(() {
-      _githubTokenStatus = raw.isEmpty
-          ? 'Cleared · using anonymous 60/hour bucket'
-          : 'Saved · using authenticated GitHub bucket';
-    });
-    _toast(
-      raw.isEmpty
-          ? 'GitHub token cleared.'
-          : 'GitHub token saved to secure storage.',
-    );
+    try {
+      final security = ref.read(securityServiceProvider);
+      await security.setGitHubToken(raw.isEmpty ? null : raw);
+      setState(() {
+        _githubTokenStatus = raw.isEmpty
+            ? 'Cleared · using anonymous 60/hour bucket'
+            : 'Saved · using authenticated GitHub bucket';
+      });
+      _toast(
+        raw.isEmpty
+            ? 'GitHub token cleared.'
+            : 'GitHub token saved to secure storage.',
+      );
+    } catch (e) {
+      setState(() => _githubTokenStatus = 'Secure storage error: $e');
+    }
+  }
+
+  Future<void> _setDeveloperMode(bool value) async {
+    setState(() => _developerMode = value);
+    final settings = ref.read(deckhandSettingsProvider);
+    settings.developerMode = value;
+    try {
+      await settings.save();
+    } catch (e) {
+      _toast('Could not save developer mode: $e');
+    }
   }
 
   Future<void> _saveFlashSettings() async {
@@ -305,6 +333,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               child: DeckhandSpinner(size: 14, strokeWidth: 2),
             ),
           );
+        }
+        if (snap.hasError) {
+          return _SecurityStoreError(message: '${snap.error}');
         }
         final pins = snap.data ?? const <String, String>{};
         return Column(
@@ -482,6 +513,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        _RowSwitch(
+          title: 'Developer mode',
+          subtitle:
+              'Show raw step ids, exact session log strings, paths, '
+              'URLs, and diagnostic details instead of simplified run '
+              'status text.',
+          value: _developerMode,
+          onChanged: (v) => unawaited(_setDeveloperMode(v)),
+        ),
+        const _SettingsDivider(),
         const _FieldLabel('GITHUB API TOKEN'),
         const SizedBox(height: 6),
         Text(
@@ -576,6 +617,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   child: DeckhandSpinner(size: 14, strokeWidth: 2),
                 ),
               );
+            }
+            if (snap.hasError) {
+              return _SecurityStoreError(message: '${snap.error}');
             }
             final hosts = snap.data ?? const <String>[];
             if (hosts.isEmpty) {
@@ -855,6 +899,44 @@ class _ConnectionRow extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _SecurityStoreError extends StatelessWidget {
+  const _SecurityStoreError({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = DeckhandTokens.of(context);
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: tokens.bad.withValues(alpha: 0.08),
+        border: Border.all(color: tokens.bad.withValues(alpha: 0.35)),
+        borderRadius: BorderRadius.circular(DeckhandTokens.r2),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.error_outline, size: 16, color: tokens.bad),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'Secure storage error: $message',
+              style: TextStyle(
+                fontFamily: DeckhandTokens.fontSans,
+                fontSize: DeckhandTokens.tSm,
+                color: tokens.bad,
+                height: 1.4,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

@@ -26,15 +26,17 @@ class ProgressScreen extends ConsumerStatefulWidget {
 class _ProgressScreenState extends ConsumerState<ProgressScreen> {
   final _log = <String>[];
   final _stepStatusById = <String, RunStepStatus>{};
-  // Distinct request IDs seen from egressEvents. The Network tab's
-  // badge reads this so the count reflects actual outbound HTTP
-  // traffic, not the log-line counter it used to mistakenly mirror.
-  final _seenEgressIds = <String>{};
+  // Distinct request IDs seen from egressEvents. Completion events
+  // replace the corresponding start event so the Network panel can
+  // render stable rows even if the user opens the tab after the
+  // request finished.
+  final _egressById = <String, EgressEvent>{};
   StreamSubscription<EgressEvent>? _egressSub;
   bool _done = false;
   bool _failed = false;
   String? _error;
   double? _currentFraction;
+  bool _currentProgressIndeterminate = false;
   String? _currentProgressMessage;
   // What step kind is live right now? Drives the title so the user
   // sees "Downloading image" during os_download, "Writing image"
@@ -42,6 +44,7 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> {
   // when we're halfway through an eMMC write.
   String? _currentStepKind;
   String? _currentStepId;
+  StreamSubscription<WizardEvent>? _wizardSub;
 
   @override
   void initState() {
@@ -49,21 +52,36 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> {
     final security = ref.read(securityServiceProvider);
     _egressSub = security.egressEvents.listen((e) {
       if (!mounted) return;
-      setState(() => _seenEgressIds.add(e.requestId));
+      setState(() => _egressById[e.requestId] = e);
     });
     _startExecution();
   }
 
   @override
   void dispose() {
+    _wizardSub?.cancel();
     _egressSub?.cancel();
     super.dispose();
   }
 
   Future<void> _startExecution() async {
     final controller = ref.read(wizardControllerProvider);
-    final sub = controller.events.listen(_onEvent);
+    _wizardSub = controller.events.listen(_onEvent);
     try {
+      final profile = controller.profile;
+      if (profile != null) {
+        final approved = await HostApprovalGate.ensureHostsApproved(
+          ref,
+          context,
+          candidates: profileNetworkHosts(profile),
+        );
+        if (!approved) {
+          throw StepExecutionException(
+            'Network access was not approved for this profile.',
+          );
+        }
+      }
+      if (!mounted) return;
       await HostApprovalGate.runGuarded(
         ref,
         context,
@@ -74,7 +92,19 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> {
         _done = true;
         _currentStepKind = null;
         _currentStepId = null;
+        _currentProgressIndeterminate = false;
       });
+    } on WizardHandoffRequiredException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _done = false;
+        _failed = false;
+        _error = null;
+        _currentStepKind = null;
+        _currentStepId = null;
+        _currentProgressIndeterminate = false;
+      });
+      context.go(e.route);
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -82,13 +112,16 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> {
         _error = '$e';
         _currentStepKind = null;
         _currentStepId = null;
+        _currentProgressIndeterminate = false;
       });
     } finally {
-      await sub.cancel();
+      await _wizardSub?.cancel();
+      _wizardSub = null;
     }
   }
 
   void _onEvent(WizardEvent e) {
+    if (!mounted) return;
     switch (e) {
       case StepStarted(:final stepId):
         setState(() {
@@ -97,6 +130,7 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> {
           _currentStepId = stepId;
           _currentStepKind = _lookupStepKind(stepId);
           _currentFraction = null;
+          _currentProgressIndeterminate = false;
           _currentProgressMessage = null;
         });
       case StepCompleted(:final stepId):
@@ -105,6 +139,7 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> {
           _stepStatusById[stepId] = RunStepStatus.done;
           if (_currentStepId == stepId) {
             _currentFraction = null;
+            _currentProgressIndeterminate = false;
             _currentProgressMessage = null;
           }
         });
@@ -122,7 +157,8 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> {
         });
       case StepProgress(:final percent, :final message):
         setState(() {
-          _currentFraction = percent.clamp(0, 1).toDouble();
+          _currentProgressIndeterminate = percent == null;
+          _currentFraction = percent?.clamp(0, 1).toDouble();
           _currentProgressMessage = message;
         });
       case UserInputRequired(:final stepId, :final step):
@@ -221,7 +257,7 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> {
     final profile = ref.read(wizardControllerProvider).profile;
     final options = _resolveChooseOneOptions(step, profile);
     if (options.isEmpty) return null;
-    String? choice = options.first.id;
+    String? choice = options.first.id.isEmpty ? null : options.first.id;
     return _showFadedDialog<String>(
       barrierDismissible: false,
       child: StatefulBuilder(
@@ -255,8 +291,10 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> {
           ),
           actions: [
             FilledButton(
-              onPressed: () =>
-                  Navigator.of(context, rootNavigator: true).pop(choice),
+              onPressed: choice == null || choice!.isEmpty
+                  ? null
+                  : () =>
+                        Navigator.of(context, rootNavigator: true).pop(choice),
               child: Text(t.progress.choose_one_ok),
             ),
           ],
@@ -477,6 +515,10 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> {
   String _titleForState() {
     if (_failed) return t.progress.title_failed;
     if (_done) return t.progress.title_done;
+    if (_currentStepKind == 'os_download' &&
+        (_currentProgressMessage?.startsWith('extracting image') ?? false)) {
+      return 'Extracting image';
+    }
     return switch (_currentStepKind) {
       'os_download' => t.progress.phase_os_download,
       'flash_disk' => t.progress.phase_flash_disk,
@@ -519,6 +561,27 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> {
   RunStepStatus _statusForStep(RunStep step) =>
       _stepStatusById[step.id] ?? RunStepStatus.queued;
 
+  double _overallProgressFraction(List<RunStep> steps) {
+    if (steps.isEmpty) return 0;
+    var completedUnits = 0.0;
+    for (final step in steps) {
+      final status = _statusForStep(step);
+      if (status == RunStepStatus.done) {
+        completedUnits += 1;
+      } else if (status == RunStepStatus.active) {
+        completedUnits += _currentFraction?.clamp(0, 1).toDouble() ?? 0;
+      }
+    }
+    return (completedUnits / steps.length).clamp(0, 1).toDouble();
+  }
+
+  int? _activeStepNumber(List<RunStep> steps) {
+    final stepId = _currentStepId;
+    if (stepId == null) return null;
+    final index = steps.indexWhere((step) => step.id == stepId);
+    return index < 0 ? null : index + 1;
+  }
+
   double _workspaceHeight(BuildContext context) {
     final viewport = MediaQuery.sizeOf(context).height;
     final target = viewport - 380;
@@ -538,6 +601,12 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> {
     // optional — they fall back to an indeterminate bar when the
     // active step isn't reporting a fraction.
     final hasActiveStep = _currentStepId != null && !_done && !_failed;
+    final progressFraction = hasActiveStep
+        ? (_currentProgressIndeterminate
+              ? null
+              : (_currentFraction ?? _overallProgressFraction(flowSteps)))
+        : null;
+    final activeStepNumber = _activeStepNumber(flowSteps);
     return WizardScaffold(
       screenId: 'S900-progress',
       title: _titleForState(),
@@ -550,19 +619,22 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> {
         children: [
           if (hasActiveStep) ...[
             _ProgressHeader(
-              fraction: _currentFraction,
+              fraction: progressFraction,
               message: _currentProgressMessage,
               stepId: _currentStepId,
+              activeStepNumber: activeStepNumber,
+              totalSteps: flowSteps.length,
             ),
             const SizedBox(height: 16),
             Semantics(
               label: t.progress.semantics_progress_label,
-              value: _currentFraction == null
-                  ? t.progress.semantics_progress_indeterminate
-                  : t.progress.semantics_progress_percent(
-                      percent: ((_currentFraction ?? 0) * 100).round(),
-                    ),
-              child: WizardProgressBar(fraction: _currentFraction),
+              value: t.progress.semantics_progress_percent(
+                percent: ((progressFraction ?? 0) * 100).round(),
+              ),
+              child: WizardProgressBar(
+                fraction: progressFraction,
+                animateStripes: false,
+              ),
             ),
             const SizedBox(height: 18),
           ],
@@ -587,7 +659,7 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> {
               steps: flowSteps,
               statusFor: _statusForStep,
               log: _log,
-              networkCount: _seenEgressIds.length,
+              networkEvents: _egressById.values.toList(growable: false),
             ),
           ),
         ],
@@ -609,20 +681,30 @@ class _ProgressHeader extends StatelessWidget {
     required this.fraction,
     required this.message,
     required this.stepId,
+    required this.activeStepNumber,
+    required this.totalSteps,
   });
   final double? fraction;
   final String? message;
   final String? stepId;
+  final int? activeStepNumber;
+  final int totalSteps;
 
   @override
   Widget build(BuildContext context) {
     final tokens = DeckhandTokens.of(context);
     final pct = fraction == null ? null : (fraction! * 100).toStringAsFixed(1);
+    final stepLabel = switch ((stepId, activeStepNumber)) {
+      (final id?, final stepNumber?) when totalSteps > 0 =>
+        'STEP $stepNumber/$totalSteps · $id',
+      (final id?, _) => 'STEP · $id',
+      _ => '',
+    };
     return Row(
       children: [
         Expanded(
           child: Text(
-            stepId == null ? '' : 'STEP · $stepId',
+            stepLabel,
             style: TextStyle(
               fontFamily: DeckhandTokens.fontMono,
               fontSize: 10,

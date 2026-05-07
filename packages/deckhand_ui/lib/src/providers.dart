@@ -224,6 +224,11 @@ final printerConfigServiceProvider = Provider<PrinterConfigService?>(
 /// archive step alongside [archiveServiceProvider].
 final snapshotsDirProvider = Provider<String?>((_) => null);
 
+/// Where on the host verified OS images land. Production wiring sets
+/// this to the sidecar-managed persistent cache root so downloads can
+/// be reused across app launches.
+final osImagesDirProvider = Provider<String?>((_) => null);
+
 /// Cached host-disk enumeration. Populated lazily by whichever screen
 /// asks first (flash-target on freshFlash, emmc-backup on either
 /// flow). Once cached, both screens share the same future — no
@@ -301,6 +306,7 @@ final wizardControllerProvider = Provider<WizardController>((ref) {
     elevatedHelper: ref.watch(elevatedHelperServiceProvider),
     archive: ref.watch(archiveServiceProvider),
     snapshotsDir: ref.watch(snapshotsDirProvider),
+    osImagesDir: ref.watch(osImagesDirProvider),
     deckhandVersion: ref.watch(deckhandVersionProvider),
   );
   ref.onDispose(controller.dispose);

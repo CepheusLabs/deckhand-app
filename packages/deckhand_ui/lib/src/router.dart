@@ -31,10 +31,7 @@ import 'widgets/deckhand_app_chrome.dart';
 /// The default go_router transition on Windows is the Material
 /// slide-from-right, which feels abrupt for a wizard. A short fade
 /// (180 ms) keeps each step visually adjacent instead.
-CustomTransitionPage<T> _fadePage<T>(
-  Widget child, {
-  LocalKey? key,
-}) {
+CustomTransitionPage<T> _fadePage<T>(Widget child, {LocalKey? key}) {
   return CustomTransitionPage<T>(
     key: key,
     child: child,
@@ -55,8 +52,7 @@ CustomTransitionPage<T> _fadePage<T>(
 
 GoRoute _fade(String path, Widget Function() child) => GoRoute(
   path: path,
-  pageBuilder: (context, state) =>
-      _fadePage(child(), key: state.pageKey),
+  pageBuilder: (context, state) => _fadePage(child(), key: state.pageKey),
 );
 
 GoRouter buildDeckhandRouter() => GoRouter(
@@ -105,6 +101,11 @@ GoRouter buildDeckhandRouter() => GoRouter(
         _fade('/progress', () => const ProgressScreen()),
         _fade('/done', () => const DoneScreen()),
         _fade('/manage', () => const ManageScreen()),
+        _fade(
+          '/manage-emmc-backup',
+          () => const EmmcBackupScreen(returnRoute: '/manage'),
+        ),
+        _fade('/emmc-restore', () => const EmmcRestoreScreen()),
         _fade('/settings', () => const SettingsScreen()),
       ],
     ),

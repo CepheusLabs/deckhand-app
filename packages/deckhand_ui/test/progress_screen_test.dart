@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:deckhand_core/deckhand_core.dart';
 import 'package:deckhand_ui/src/screens/progress_screen.dart';
+import 'package:deckhand_ui/src/widgets/wizard_progress_bar.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'helpers.dart';
@@ -122,7 +124,7 @@ void main() {
 
     testWidgets('host approval prompt retries execution', (tester) async {
       final security = _PromptingSecurity();
-      final upstream = _HostBlockedUpstream();
+      final upstream = _HostBlockedUpstream(security);
       final controller = stubWizardController(
         security: security,
         upstream: upstream,
@@ -159,21 +161,394 @@ void main() {
         await tester.pump(const Duration(milliseconds: 50));
       }
 
-      expect(find.text('Allow network access?'), findsOneWidget);
+      expect(find.text('Allow profile network access?'), findsOneWidget);
       expect(find.textContaining('armbian.lv.auroradev.org'), findsWidgets);
-      expect(upstream.attempts, 1);
+      expect(upstream.attempts, 0);
 
       await tester.tap(find.text('Allow'));
-      await tester.pumpAndSettle();
+      for (var i = 0; i < 10; i++) {
+        await tester.pump(const Duration(milliseconds: 50));
+      }
 
       expect(security.approvedHosts, contains('armbian.lv.auroradev.org'));
-      expect(upstream.attempts, 2);
+      expect(upstream.attempts, 1);
       expect(find.text('All done'), findsOneWidget);
+    });
+
+    testWidgets('resumed progress pre-approves profile network hosts', (
+      tester,
+    ) async {
+      final security = _PromptingSecurity();
+      final upstream = _HostBlockedUpstream(security);
+      final controller = stubWizardController(
+        security: security,
+        upstream: upstream,
+        profileJson: testProfileJson(
+          os: {
+            'fresh_install_options': [
+              {
+                'id': 'trixie',
+                'display_name': 'Debian',
+                'url': 'https://downloads.example.com/image.img',
+                'sha256':
+                    'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+                'recommended': true,
+              },
+            ],
+          },
+          freshFlashSteps: [
+            {'id': 'download_os', 'kind': 'os_download'},
+          ],
+        ),
+      );
+      await controller.loadProfile('test-printer');
+      controller.setFlow(WizardFlow.freshFlash);
+      await controller.setDecision('flash.os', 'trixie');
+
+      await tester.pumpWidget(
+        testHarness(
+          controller: controller,
+          child: const ProgressScreen(),
+          initialLocation: '/progress',
+        ),
+      );
+      for (var i = 0; i < 10; i++) {
+        await tester.pump(const Duration(milliseconds: 50));
+      }
+
+      expect(find.text('Allow profile network access?'), findsOneWidget);
+      expect(find.textContaining('downloads.example.com'), findsWidgets);
+      expect(upstream.attempts, 0);
+
+      await tester.tap(find.text('Allow'));
+      for (var i = 0; i < 10; i++) {
+        await tester.pump(const Duration(milliseconds: 50));
+      }
+
+      expect(security.approvedHosts, ['downloads.example.com']);
+      expect(upstream.attempts, 1);
+      expect(find.text('All done'), findsOneWidget);
+    });
+
+    testWidgets('active progress header uses determinate step progress', (
+      tester,
+    ) async {
+      final releaseDownload = Completer<void>();
+      final upstream = _HoldingProgressUpstream(releaseDownload);
+      final controller = stubWizardController(
+        upstream: upstream,
+        profileJson: testProfileJson(
+          os: {
+            'fresh_install_options': [
+              {
+                'id': 'trixie',
+                'display_name': 'Debian',
+                'url': 'https://downloads.example.com/image.img',
+                'sha256':
+                    'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+                'recommended': true,
+              },
+            ],
+          },
+          freshFlashSteps: [
+            {'id': 'download_os', 'kind': 'os_download'},
+          ],
+        ),
+      );
+      await controller.loadProfile('test-printer');
+      controller.setFlow(WizardFlow.freshFlash);
+      await controller.setDecision('flash.os', 'trixie');
+
+      await tester.pumpWidget(
+        testHarness(
+          controller: controller,
+          child: const ProgressScreen(),
+          initialLocation: '/progress',
+        ),
+      );
+      for (var i = 0; i < 10; i++) {
+        await tester.pump(const Duration(milliseconds: 50));
+      }
+
+      expect(find.text('STEP 1/1 · download_os'), findsOneWidget);
+      expect(find.text('50.0%'), findsOneWidget);
+      expect(find.textContaining('5.0 MiB / 10.0 MiB'), findsOneWidget);
+
+      final bar = tester.widget<WizardProgressBar>(
+        find.byType(WizardProgressBar),
+      );
+      expect(bar.fraction, 0.5);
+      expect(bar.animateStripes, isFalse);
+
+      releaseDownload.complete();
+      for (var i = 0; i < 10; i++) {
+        await tester.pump(const Duration(milliseconds: 50));
+      }
+      expect(find.text('All done'), findsOneWidget);
+    });
+
+    testWidgets('extracting without a reported total is indeterminate', (
+      tester,
+    ) async {
+      final releaseDownload = Completer<void>();
+      final upstream = _HoldingExtractionUpstream(releaseDownload);
+      final controller = stubWizardController(
+        upstream: upstream,
+        profileJson: testProfileJson(
+          os: {
+            'fresh_install_options': [
+              {
+                'id': 'trixie',
+                'display_name': 'Debian',
+                'url': 'https://downloads.example.com/image.img.xz',
+                'sha256':
+                    'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+                'recommended': true,
+              },
+            ],
+          },
+          freshFlashSteps: [
+            {'id': 'download_os', 'kind': 'os_download'},
+          ],
+        ),
+      );
+      await controller.loadProfile('test-printer');
+      controller.setFlow(WizardFlow.freshFlash);
+      await controller.setDecision('flash.os', 'trixie');
+
+      await tester.pumpWidget(
+        testHarness(
+          controller: controller,
+          child: const ProgressScreen(),
+          initialLocation: '/progress',
+        ),
+      );
+      for (var i = 0; i < 10; i++) {
+        await tester.pump(const Duration(milliseconds: 50));
+      }
+
+      expect(find.text('Extracting image'), findsOneWidget);
+      expect(find.text('0.0%'), findsNothing);
+      expect(find.textContaining('8.0 MiB'), findsOneWidget);
+
+      final bar = tester.widget<WizardProgressBar>(
+        find.byType(WizardProgressBar),
+      );
+      expect(bar.fraction, isNull);
+      expect(bar.animateStripes, isFalse);
+
+      releaseDownload.complete();
+      for (var i = 0; i < 10; i++) {
+        await tester.pump(const Duration(milliseconds: 50));
+      }
+      expect(find.text('All done'), findsOneWidget);
+    });
+
+    testWidgets('host approval prompt can approve sequential hosts', (
+      tester,
+    ) async {
+      final security = _PromptingSecurity();
+      final upstream = _MultiHostBlockedUpstream([
+        'api.github.com',
+        'github-releases.githubusercontent.com',
+      ]);
+      final controller = stubWizardController(
+        security: security,
+        upstream: upstream,
+        profileJson: testProfileJson(
+          os: {
+            'fresh_install_options': [
+              {
+                'id': 'trixie',
+                'display_name': 'Debian',
+                'url': 'https://github.com/armbian/community/image.img',
+                'sha256':
+                    'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+                'recommended': true,
+              },
+            ],
+          },
+          freshFlashSteps: [
+            {'id': 'download_os', 'kind': 'os_download'},
+          ],
+        ),
+      );
+      await controller.loadProfile('test-printer');
+      controller.setFlow(WizardFlow.freshFlash);
+      await controller.setDecision('flash.os', 'trixie');
+
+      await tester.pumpWidget(
+        testHarness(
+          controller: controller,
+          child: const ProgressScreen(),
+          initialLocation: '/progress',
+        ),
+      );
+      for (var i = 0; i < 10; i++) {
+        await tester.pump(const Duration(milliseconds: 50));
+      }
+
+      expect(find.text('Allow profile network access?'), findsOneWidget);
+      expect(find.textContaining('github.com'), findsWidgets);
+      await tester.tap(find.text('Allow'));
+      for (var i = 0; i < 10; i++) {
+        await tester.pump(const Duration(milliseconds: 50));
+      }
+
+      expect(find.textContaining('api.github.com'), findsWidgets);
+      await tester.tap(find.text('Allow'));
+      for (var i = 0; i < 10; i++) {
+        await tester.pump(const Duration(milliseconds: 50));
+      }
+
+      expect(
+        find.textContaining('github-releases.githubusercontent.com'),
+        findsWidgets,
+      );
+      await tester.tap(find.text('Allow'));
+      for (var i = 0; i < 10; i++) {
+        await tester.pump(const Duration(milliseconds: 50));
+      }
+
+      expect(security.approvedHosts, [
+        'github.com',
+        'api.github.com',
+        'github-releases.githubusercontent.com',
+      ]);
+      expect(upstream.attempts, 3);
+      expect(find.text('All done'), findsOneWidget);
+    });
+
+    testWidgets('unknown choose_one options block OK', (tester) async {
+      final controller = stubWizardController(
+        profileJson: testProfileJson(
+          stockKeepSteps: [
+            {
+              'id': 'bad_choice',
+              'kind': 'choose_one',
+              'options_from': 'missing.options',
+            },
+          ],
+        ),
+      );
+      await controller.loadProfile('test-printer');
+      controller.setFlow(WizardFlow.stockKeep);
+      await tester.pumpWidget(
+        testHarness(
+          controller: controller,
+          child: const ProgressScreen(),
+          initialLocation: '/progress',
+        ),
+      );
+      for (var i = 0; i < 10; i++) {
+        await tester.pump(const Duration(milliseconds: 50));
+      }
+
+      expect(find.text('Options unavailable'), findsOneWidget);
+      final ok = tester.widget<FilledButton>(
+        find.widgetWithText(FilledButton, 'OK'),
+      );
+      expect(ok.onPressed, isNull);
     });
   });
 }
 
-class _HostBlockedUpstream implements UpstreamService {
+class _HoldingProgressUpstream implements UpstreamService {
+  _HoldingProgressUpstream(this.releaseDownload);
+
+  final Completer<void> releaseDownload;
+
+  @override
+  Stream<OsDownloadProgress> osDownload({
+    required String url,
+    required String destPath,
+    String? expectedSha256,
+  }) async* {
+    yield OsDownloadProgress(
+      bytesDone: 5 * 1024 * 1024,
+      bytesTotal: 10 * 1024 * 1024,
+      phase: OsDownloadPhase.downloading,
+      path: destPath,
+    );
+    await releaseDownload.future;
+    yield OsDownloadProgress(
+      bytesDone: 10 * 1024 * 1024,
+      bytesTotal: 10 * 1024 * 1024,
+      phase: OsDownloadPhase.done,
+      sha256: expectedSha256,
+      path: destPath,
+    );
+  }
+
+  @override
+  Future<UpstreamFetchResult> gitFetch({
+    required String repoUrl,
+    required String ref,
+    required String destPath,
+    int depth = 1,
+  }) async => UpstreamFetchResult(localPath: destPath, resolvedRef: ref);
+
+  @override
+  Future<UpstreamFetchResult> releaseFetch({
+    required String repoSlug,
+    required String assetPattern,
+    required String destPath,
+    required String expectedSha256,
+    String? tag,
+  }) async =>
+      UpstreamFetchResult(localPath: destPath, resolvedRef: tag ?? 'latest');
+}
+
+class _HoldingExtractionUpstream implements UpstreamService {
+  _HoldingExtractionUpstream(this.releaseDownload);
+
+  final Completer<void> releaseDownload;
+
+  @override
+  Stream<OsDownloadProgress> osDownload({
+    required String url,
+    required String destPath,
+    String? expectedSha256,
+  }) async* {
+    yield OsDownloadProgress(
+      bytesDone: 8 * 1024 * 1024,
+      bytesTotal: 0,
+      phase: OsDownloadPhase.extracting,
+      path: destPath,
+    );
+    await releaseDownload.future;
+    yield OsDownloadProgress(
+      bytesDone: 10 * 1024 * 1024,
+      bytesTotal: 10 * 1024 * 1024,
+      phase: OsDownloadPhase.done,
+      sha256: expectedSha256,
+      path: destPath,
+    );
+  }
+
+  @override
+  Future<UpstreamFetchResult> gitFetch({
+    required String repoUrl,
+    required String ref,
+    required String destPath,
+    int depth = 1,
+  }) async => UpstreamFetchResult(localPath: destPath, resolvedRef: ref);
+
+  @override
+  Future<UpstreamFetchResult> releaseFetch({
+    required String repoSlug,
+    required String assetPattern,
+    required String destPath,
+    required String expectedSha256,
+    String? tag,
+  }) async =>
+      UpstreamFetchResult(localPath: destPath, resolvedRef: tag ?? 'latest');
+}
+
+class _MultiHostBlockedUpstream implements UpstreamService {
+  _MultiHostBlockedUpstream(this.hosts);
+
+  final List<String> hosts;
   int attempts = 0;
 
   @override
@@ -183,12 +558,55 @@ class _HostBlockedUpstream implements UpstreamService {
     String? expectedSha256,
   }) async* {
     attempts++;
-    if (attempts == 1) {
-      throw const HostNotApprovedException(
-        host: 'armbian.lv.auroradev.org',
+    final hostIndex = attempts - 1;
+    if (hostIndex < hosts.length) {
+      throw HostNotApprovedException(
+        host: hosts[hostIndex],
         reason: 'host is not on the user-approved allowlist',
       );
     }
+    yield OsDownloadProgress(
+      bytesDone: 1,
+      bytesTotal: 1,
+      phase: OsDownloadPhase.done,
+      sha256: expectedSha256,
+      path: destPath,
+    );
+  }
+
+  @override
+  Future<UpstreamFetchResult> gitFetch({
+    required String repoUrl,
+    required String ref,
+    required String destPath,
+    int depth = 1,
+  }) async => UpstreamFetchResult(localPath: destPath, resolvedRef: ref);
+
+  @override
+  Future<UpstreamFetchResult> releaseFetch({
+    required String repoSlug,
+    required String assetPattern,
+    required String destPath,
+    required String expectedSha256,
+    String? tag,
+  }) async =>
+      UpstreamFetchResult(localPath: destPath, resolvedRef: tag ?? 'latest');
+}
+
+class _HostBlockedUpstream implements UpstreamService {
+  _HostBlockedUpstream(this.security);
+
+  final SecurityService security;
+  int attempts = 0;
+
+  @override
+  Stream<OsDownloadProgress> osDownload({
+    required String url,
+    required String destPath,
+    String? expectedSha256,
+  }) async* {
+    attempts++;
+    await requireHostApproved(security, url);
     yield OsDownloadProgress(
       bytesDone: 1,
       bytesTotal: 1,
@@ -235,14 +653,16 @@ class _PromptingSecurity implements SecurityService {
     value: 'test-token-0123456789abcdef',
     expiresAt: DateTime.now().add(ttl),
     operation: operation,
+    target: target,
   );
 
   @override
-  bool consumeToken(String value, String operation) => true;
+  bool consumeToken(String value, String operation, {required String target}) =>
+      true;
 
   @override
   Future<Map<String, bool>> requestHostApprovals(List<String> hosts) async => {
-    for (final host in hosts) host: true,
+    for (final host in hosts) host: approvedHosts.contains(host),
   };
 
   @override

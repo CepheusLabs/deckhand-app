@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:io';
+
 import 'package:deckhand_core/deckhand_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -6,7 +9,9 @@ import 'package:go_router/go_router.dart';
 
 import '../providers.dart';
 import '../theming/deckhand_tokens.dart';
+import '../utils/disk_display.dart';
 import '../widgets/deckhand_loading.dart';
+import '../widgets/wizard_progress_bar.dart';
 import '../widgets/wizard_scaffold.dart';
 import 'manage_tuning_panel.dart';
 
@@ -20,9 +25,8 @@ import 'manage_tuning_panel.dart';
 ///    quick links (copy Mainsail URL, copy SSH host).
 ///  * Backup — kicks the user into the existing eMMC backup
 ///    flow at `/emmc-backup`.
-///  * Restore — placeholder; the underlying flash-from-image
-///    pipeline isn't wired here yet, so the tab is honest about
-///    being not-yet-implemented rather than offering a fake button.
+///  * Restore — writes a previously captured full-eMMC backup image
+///    back to a selected removable target through the elevated helper.
 ///  * Flash MCU — same story; MCU detection + reflashing is a
 ///    distinct service surface that doesn't exist yet.
 ///  * Re-run wizard — jumps back to S40 with the printer's
@@ -36,6 +40,33 @@ class ManageScreen extends ConsumerStatefulWidget {
 
   @override
   ConsumerState<ManageScreen> createState() => _ManageScreenState();
+}
+
+/// Direct rollback surface for restoring a full eMMC image without
+/// requiring the user to enter an in-progress install's Manage view.
+///
+/// This intentionally reuses the same restore tab body as Manage so
+/// the future printer-registry submodule only has to route users into
+/// one restore implementation.
+class EmmcRestoreScreen extends StatelessWidget {
+  const EmmcRestoreScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return WizardScaffold(
+      screenId: 'MGR-restore',
+      title: 'Restore an eMMC backup.',
+      helperText:
+          'Writes a Deckhand backup image back to a selected eMMC adapter. '
+          'Use this when you need to roll a printer back to a known image.',
+      body: const _RestoreTab(),
+      primaryAction: WizardAction(
+        label: 'Done',
+        onPressed: () => context.go('/'),
+        isBack: true,
+      ),
+    );
+  }
 }
 
 enum _ManageTab { status, tune, backup, restore, mcu, wizard }
@@ -460,7 +491,7 @@ class _BackupTab extends StatelessWidget {
           const SizedBox(height: 8),
           Text(
             'Pull a complete byte-for-byte image of the printer\'s eMMC '
-            'over SSH. SHA256-verified on completion. Recommended before '
+            'to local storage. SHA256-verified on completion. Recommended before '
             'any destructive change — flash, reconfigure, or migrate.',
             style: TextStyle(
               fontFamily: DeckhandTokens.fontSans,
@@ -475,7 +506,7 @@ class _BackupTab extends StatelessWidget {
             child: FilledButton.icon(
               icon: const Icon(Icons.inventory_2_outlined, size: 16),
               label: const Text('Open backup flow'),
-              onPressed: () => context.go('/emmc-backup'),
+              onPressed: () => context.go('/manage-emmc-backup'),
             ),
           ),
         ],
@@ -485,24 +516,985 @@ class _BackupTab extends StatelessWidget {
 }
 
 // ---------------------------------------------------------------------
-// Restore tab — explicit "not implemented yet" panel rather than a
-// fake button. Per the project's principle, half-wired UI is worse
-// than honest scoping.
+// Restore tab — full eMMC image restore via elevated helper.
 // ---------------------------------------------------------------------
-class _RestoreTab extends StatelessWidget {
+class _RestoreTab extends ConsumerStatefulWidget {
   const _RestoreTab();
+
+  @override
+  ConsumerState<_RestoreTab> createState() => _RestoreTabState();
+}
+
+class _RestoreImage {
+  const _RestoreImage.manifest(this.manifest) : candidate = null;
+
+  const _RestoreImage.candidate(this.candidate) : manifest = null;
+
+  final EmmcBackupManifest? manifest;
+  final EmmcBackupImageCandidate? candidate;
+
+  bool get indexed => manifest != null;
+
+  String get imagePath => manifest?.imagePath ?? candidate!.imagePath;
+
+  int get imageBytes => manifest?.imageBytes ?? candidate!.imageBytes;
+
+  DateTime get createdAt => manifest?.createdAt ?? candidate!.modifiedAt;
+
+  String? get profileId => manifest?.profileId ?? candidate?.inferredProfileId;
+
+  String get manifestSha256 => manifest?.imageSha256 ?? '';
+
+  EmmcBackupDiskIdentity? get diskIdentity => manifest?.disk;
+}
+
+class _RestoreTabState extends ConsumerState<_RestoreTab> {
+  final _typed = TextEditingController();
+  StreamSubscription<FlashProgress>? _restoreSub;
+  String? _selectedImagePath;
+  String? _selectedDiskId;
+  FlashProgress? _progress;
+  String? _error;
+  bool _checking = false;
+  bool _done = false;
+  bool _cancelRequested = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _typed.addListener(() {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _restoreSub?.cancel();
+    _typed.dispose();
+    super.dispose();
+  }
+
+  bool get _busy =>
+      _checking || (_progress != null && !_done && _error == null);
+
   @override
   Widget build(BuildContext context) {
-    return const _ComingSoonPanel(
-      label: 'RESTORE FROM BACKUP',
-      body:
-          'Reverse of fresh-flash using a previously-captured .img. '
-          'Not yet wired in the desktop client — the underlying '
-          'image-write pipeline exists but the picker and dry-run '
-          'preview around it are still TODO. Use the backup tab to '
-          'capture an image; restore will land in a follow-up.',
+    final manifestsAsync = ref.watch(emmcBackupManifestsProvider);
+    final candidatesAsync = ref.watch(emmcBackupImageCandidatesProvider);
+    final disksAsync = ref.watch(disksProvider);
+    final backupDir = ref.watch(emmcBackupsDirProvider);
+    final tokens = DeckhandTokens.of(context);
+
+    if ((manifestsAsync.isLoading && !manifestsAsync.hasValue) ||
+        (candidatesAsync.isLoading && !candidatesAsync.hasValue)) {
+      return const Padding(
+        padding: EdgeInsets.only(top: 8),
+        child: DeckhandLoadingBlock(
+          kind: DeckhandLoaderKind.emmcPins,
+          title: 'Loading backups',
+          message:
+              'Deckhand is scanning local eMMC backup manifests before restore.',
+        ),
+      );
+    }
+    if (manifestsAsync.hasError) {
+      return _RestoreProblem(message: '${manifestsAsync.error}');
+    }
+    if (candidatesAsync.hasError) {
+      return _RestoreProblem(message: '${candidatesAsync.error}');
+    }
+
+    final manifests =
+        manifestsAsync.valueOrNull ?? const <EmmcBackupManifest>[];
+    final candidates =
+        candidatesAsync.valueOrNull ?? const <EmmcBackupImageCandidate>[];
+    final images = _restoreImagesFrom(
+      manifests: manifests,
+      candidates: candidates,
+    );
+    if (images.isEmpty) {
+      return _Panel(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const _MonoLabel('RESTORE EMMC IMAGE'),
+            const SizedBox(height: 8),
+            Text(
+              'No eMMC backup images were found. Deckhand looked for '
+              'manifest-indexed backups and standalone .img files in:',
+              style: TextStyle(
+                fontFamily: DeckhandTokens.fontSans,
+                fontSize: DeckhandTokens.tMd,
+                color: tokens.text2,
+                height: 1.5,
+              ),
+            ),
+            const SizedBox(height: 10),
+            _MutedBox(
+              text: backupDir?.trim().isNotEmpty == true
+                  ? backupDir!.trim()
+                  : 'No backup directory is configured for this build.',
+            ),
+            const SizedBox(height: 10),
+            Text(
+              'Put the backup image in that folder, or make a new eMMC '
+              'backup from the Backup tab. Restore stays on this recovery '
+              'screen so canceling never drops into an install step.',
+              style: TextStyle(
+                fontFamily: DeckhandTokens.fontSans,
+                fontSize: DeckhandTokens.tSm,
+                color: tokens.text3,
+                height: 1.45,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (disksAsync.isLoading && !disksAsync.hasValue) {
+      return const Padding(
+        padding: EdgeInsets.only(top: 8),
+        child: DeckhandLoadingBlock(
+          kind: DeckhandLoaderKind.emmcPins,
+          title: 'Scanning disks',
+          message: 'Deckhand is enumerating removable drives before restore.',
+        ),
+      );
+    }
+    if (disksAsync.hasError) {
+      return _RestoreProblem(message: '${disksAsync.error}');
+    }
+
+    final disks = disksAsync.valueOrNull ?? const <DiskInfo>[];
+    final image = _selectedImage(images);
+    final target = image == null ? null : _selectedDisk(disks, image);
+    final expected = target == null ? '' : diskDisplayName(target);
+    final typedMatches = expected.isNotEmpty && _typed.text.trim() == expected;
+    final canRestore =
+        !_busy && image != null && target != null && typedMatches;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _Panel(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  const _MonoLabel('RESTORE EMMC IMAGE'),
+                  const Spacer(),
+                  TextButton.icon(
+                    onPressed: _busy
+                        ? null
+                        : () {
+                            ref.invalidate(emmcBackupManifestsProvider);
+                            ref.invalidate(emmcBackupImageCandidatesProvider);
+                            ref.invalidate(disksProvider);
+                          },
+                    icon: const Icon(Icons.refresh, size: 14),
+                    label: const Text('Refresh'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Text(
+                'Select a Deckhand backup image, pick the eMMC adapter to '
+                'overwrite, then restore it through the elevated helper. '
+                'Deckhand verifies the backup hash before writing.',
+                style: TextStyle(
+                  fontFamily: DeckhandTokens.fontSans,
+                  fontSize: DeckhandTokens.tMd,
+                  color: tokens.text2,
+                  height: 1.5,
+                ),
+              ),
+              const SizedBox(height: 18),
+              _SectionHeader(
+                label: 'BACKUP IMAGE',
+                trailing:
+                    '${images.length} image${images.length == 1 ? '' : 's'}',
+              ),
+              const SizedBox(height: 8),
+              for (final restoreImage in images)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: _RestoreChoiceTile(
+                    selected: identical(restoreImage, image),
+                    icon: Icons.image_outlined,
+                    title: _restoreImageTitle(restoreImage),
+                    subtitle: _restoreImageSubtitle(restoreImage),
+                    danger: false,
+                    onTap: _busy
+                        ? null
+                        : () => setState(() {
+                            _selectedImagePath = restoreImage.imagePath;
+                            _selectedDiskId = null;
+                            _typed.clear();
+                            _error = null;
+                            _done = false;
+                            _progress = null;
+                          }),
+                  ),
+                ),
+              const SizedBox(height: 10),
+              _SectionHeader(
+                label: 'TARGET EMMC',
+                trailing: '${disks.length} disk${disks.length == 1 ? '' : 's'}',
+              ),
+              const SizedBox(height: 8),
+              if (disks.isEmpty)
+                const _MutedBox(
+                  text:
+                      'No disks are visible. Connect the eMMC adapter and refresh.',
+                )
+              else
+                for (final d in disks)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: _RestoreChoiceTile(
+                      selected: identical(d, target),
+                      icon: Icons.album_outlined,
+                      title: diskDisplaySummary(d),
+                      subtitle: _restoreDiskSubtitle(d, image),
+                      danger: true,
+                      onTap: _busy || !_restoreDiskSelectable(d, image)
+                          ? null
+                          : () => setState(() {
+                              _selectedDiskId = d.id;
+                              _typed.clear();
+                              _error = null;
+                              _done = false;
+                              _progress = null;
+                            }),
+                    ),
+                  ),
+              const SizedBox(height: 12),
+              _RestoreConfirmBlock(
+                expected: expected,
+                typed: _typed,
+                matched: typedMatches,
+                busy: _busy,
+                done: _done,
+                onRestore: canRestore
+                    ? () => _confirmRestore(image, target)
+                    : null,
+                onCancel: _busy ? _cancelRestore : null,
+              ),
+            ],
+          ),
+        ),
+        if (_checking || _progress != null || _error != null || _done) ...[
+          const SizedBox(height: 12),
+          _RestoreProgressPanel(
+            checking: _checking,
+            progress: _progress,
+            error: _error,
+            done: _done,
+          ),
+        ],
+      ],
     );
   }
+
+  _RestoreImage? _selectedImage(List<_RestoreImage> images) {
+    if (images.isEmpty) return null;
+    final selected = _selectedImagePath;
+    if (selected != null) {
+      for (final image in images) {
+        if (image.imagePath == selected) return image;
+      }
+    }
+    return images.first;
+  }
+
+  DiskInfo? _selectedDisk(List<DiskInfo> disks, _RestoreImage image) {
+    final selected = _selectedDiskId;
+    if (selected != null) {
+      for (final disk in disks) {
+        if (disk.id == selected && _restoreDiskSelectable(disk, image)) {
+          return disk;
+        }
+      }
+    }
+    final identity = image.diskIdentity;
+    if (identity != null) {
+      for (final disk in disks) {
+        if (disk.removable && identity.matches(disk)) return disk;
+      }
+    }
+    for (final disk in disks) {
+      if (_restoreDiskSelectable(disk, image)) return disk;
+    }
+    return null;
+  }
+
+  Future<void> _confirmRestore(_RestoreImage image, DiskInfo disk) async {
+    final tokens = DeckhandTokens.of(context);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        icon: Icon(Icons.warning_amber_rounded, color: tokens.bad),
+        title: const Text('Restore eMMC backup'),
+        content: Text(
+          'Deckhand will erase ${diskDisplayName(disk)} and restore:\n\n'
+          '${image.imagePath}\n\n'
+          '${image.indexed ? 'Deckhand will verify the backup manifest hash before writing.' : 'This image has no Deckhand manifest. Deckhand will hash the file before writing and requires the target size to match.'}\n\n'
+          'This overwrites the selected eMMC. The host computer and other '
+          'drives are not touched.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton.icon(
+            style: FilledButton.styleFrom(
+              backgroundColor: tokens.bad,
+              foregroundColor: const Color(0xFFFCFCFC),
+            ),
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            icon: const Icon(Icons.restore, size: 16),
+            label: const Text('Restore image now'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) {
+      await _startRestore(image, disk);
+    }
+  }
+
+  Future<void> _startRestore(_RestoreImage restoreImage, DiskInfo disk) async {
+    await _restoreSub?.cancel();
+    if (!mounted) return;
+    _cancelRequested = false;
+    setState(() {
+      _checking = true;
+      _progress = const FlashProgress(
+        bytesDone: 0,
+        bytesTotal: 0,
+        phase: FlashPhase.preparing,
+        message: 'checking backup image',
+      );
+      _error = null;
+      _done = false;
+    });
+
+    try {
+      if (!disk.removable) {
+        throw StateError('Target disk is not removable.');
+      }
+      final image = File(restoreImage.imagePath);
+      if (!await image.exists()) {
+        throw StateError(
+          'Backup image no longer exists: ${restoreImage.imagePath}',
+        );
+      }
+      final length = await image.length();
+      if (length != restoreImage.imageBytes) {
+        throw StateError(
+          'Backup image size changed. Expected '
+          '${_formatBytes(restoreImage.imageBytes)}, found ${_formatBytes(length)}.',
+        );
+      }
+      if (disk.sizeBytes != restoreImage.imageBytes) {
+        throw StateError(
+          '${diskDisplayName(disk)} does not match the backup image size. '
+          'Choose the eMMC this backup came from.',
+        );
+      }
+
+      final flash = ref.read(flashServiceProvider);
+      final actualSha = (await flash.sha256(
+        restoreImage.imagePath,
+      )).trim().toLowerCase();
+      if (_cancelRequested) return;
+      if (!_isSha256Hex(actualSha)) {
+        throw StateError('Backup image hash is not a valid SHA-256.');
+      }
+      final manifestSha = restoreImage.manifestSha256.trim().toLowerCase();
+      if (restoreImage.indexed && actualSha != manifestSha) {
+        throw StateError(
+          'Backup image hash does not match its manifest. Refusing to restore.',
+        );
+      }
+      final expectedSha = restoreImage.indexed ? manifestSha : actualSha;
+
+      final verdict = await flash.safetyCheck(diskId: disk.id);
+      if (_cancelRequested) return;
+      if (!verdict.allowed) {
+        final reasons = verdict.blockingReasons.isEmpty
+            ? 'No blocking reason returned.'
+            : verdict.blockingReasons.join('; ');
+        throw StateError('Disk safety check blocked restore: $reasons');
+      }
+      if (verdict.warnings.isNotEmpty && mounted) {
+        final proceed = await _confirmSafetyWarnings(verdict.warnings);
+        if (proceed != true) {
+          if (mounted) {
+            setState(() {
+              _checking = false;
+              _progress = null;
+            });
+          }
+          return;
+        }
+      }
+
+      final helper = ref.read(elevatedHelperServiceProvider);
+      if (helper == null) {
+        throw StateError('Elevated helper is not configured.');
+      }
+      if (_cancelRequested) return;
+      final security = ref.read(securityServiceProvider);
+      final token = await security.issueConfirmationToken(
+        operation: 'write_image',
+        target: disk.id,
+      );
+      if (_cancelRequested) return;
+      if (!security.consumeToken(token.value, 'write_image', target: disk.id)) {
+        throw StateError('Confirmation token was rejected before restore.');
+      }
+
+      if (!mounted) return;
+      setState(() => _checking = false);
+      _restoreSub = helper
+          .writeImage(
+            imagePath: restoreImage.imagePath,
+            diskId: disk.id,
+            confirmationToken: token.value,
+            verifyAfterWrite: true,
+            expectedSha256: expectedSha,
+          )
+          .listen(
+            (event) {
+              if (!mounted) return;
+              setState(() {
+                _progress = event.bytesTotal > 0
+                    ? event
+                    : FlashProgress(
+                        bytesDone: event.bytesDone,
+                        bytesTotal: restoreImage.imageBytes,
+                        phase: event.phase,
+                        message: event.message,
+                      );
+                if (event.phase == FlashPhase.done) {
+                  _done = true;
+                  ref.invalidate(disksProvider);
+                }
+                if (event.phase == FlashPhase.failed) {
+                  _error = event.message ?? 'Restore failed.';
+                }
+              });
+            },
+            onError: (Object e, StackTrace st) {
+              if (!mounted) return;
+              setState(() {
+                _checking = false;
+                _error = _friendlyRestoreError(e);
+              });
+            },
+            onDone: () {
+              if (!mounted) return;
+              setState(() => _checking = false);
+            },
+          );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _checking = false;
+        _error = _friendlyRestoreError(e);
+        _progress = const FlashProgress(
+          bytesDone: 0,
+          bytesTotal: 0,
+          phase: FlashPhase.failed,
+        );
+      });
+    }
+  }
+
+  Future<bool?> _confirmSafetyWarnings(List<String> warnings) {
+    final tokens = DeckhandTokens.of(context);
+    return showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        icon: Icon(Icons.warning_amber_rounded, color: tokens.warn),
+        title: const Text('Review disk warning'),
+        content: Text(
+          'Deckhand can continue, but the live disk safety check reported:\n\n'
+          '${warnings.join('\n')}\n\n'
+          'Continue only if this is the eMMC backup target.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Continue restore'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _cancelRestore() async {
+    _cancelRequested = true;
+    await _restoreSub?.cancel();
+    if (!mounted) return;
+    setState(() {
+      _checking = false;
+      _progress = null;
+      _error = 'Restore canceled.';
+    });
+  }
+}
+
+class _RestoreProblem extends StatelessWidget {
+  const _RestoreProblem({required this.message});
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = DeckhandTokens.of(context);
+    return _Panel(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.error_outline, size: 18, color: tokens.bad),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              message,
+              style: TextStyle(
+                fontFamily: DeckhandTokens.fontSans,
+                fontSize: DeckhandTokens.tSm,
+                color: tokens.bad,
+                height: 1.45,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SectionHeader extends StatelessWidget {
+  const _SectionHeader({required this.label, required this.trailing});
+  final String label;
+  final String trailing;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = DeckhandTokens.of(context);
+    return Row(
+      children: [
+        _MonoLabel(label),
+        const Spacer(),
+        Text(
+          trailing,
+          style: TextStyle(
+            fontFamily: DeckhandTokens.fontMono,
+            fontSize: DeckhandTokens.tXs,
+            color: tokens.text4,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _RestoreChoiceTile extends StatelessWidget {
+  const _RestoreChoiceTile({
+    required this.selected,
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.danger,
+    required this.onTap,
+  });
+
+  final bool selected;
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final bool danger;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = DeckhandTokens.of(context);
+    final enabled = onTap != null;
+    final accent = danger && selected ? tokens.bad : tokens.accent;
+    return MouseRegion(
+      cursor: enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
+      child: Opacity(
+        opacity: enabled ? 1 : 0.46,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(DeckhandTokens.r2),
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+            decoration: BoxDecoration(
+              color: selected
+                  ? Color.alphaBlend(
+                      accent.withValues(alpha: 0.08),
+                      tokens.ink0,
+                    )
+                  : tokens.ink2,
+              border: Border.all(
+                color: selected ? accent.withValues(alpha: 0.55) : tokens.line,
+              ),
+              borderRadius: BorderRadius.circular(DeckhandTokens.r2),
+            ),
+            child: Row(
+              children: [
+                Icon(icon, size: 16, color: selected ? accent : tokens.text3),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontFamily: DeckhandTokens.fontSans,
+                          fontSize: DeckhandTokens.tSm,
+                          fontWeight: FontWeight.w500,
+                          color: tokens.text,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        subtitle,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontFamily: DeckhandTokens.fontMono,
+                          fontSize: DeckhandTokens.tXs,
+                          color: tokens.text3,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Icon(
+                  selected
+                      ? Icons.radio_button_checked
+                      : Icons.radio_button_unchecked,
+                  size: 18,
+                  color: selected ? accent : tokens.text4,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _MutedBox extends StatelessWidget {
+  const _MutedBox({required this.text});
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = DeckhandTokens.of(context);
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: tokens.ink2,
+        border: Border.all(color: tokens.line),
+        borderRadius: BorderRadius.circular(DeckhandTokens.r2),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          fontFamily: DeckhandTokens.fontSans,
+          fontSize: DeckhandTokens.tSm,
+          color: tokens.text3,
+          height: 1.45,
+        ),
+      ),
+    );
+  }
+}
+
+class _RestoreConfirmBlock extends StatelessWidget {
+  const _RestoreConfirmBlock({
+    required this.expected,
+    required this.typed,
+    required this.matched,
+    required this.busy,
+    required this.done,
+    required this.onRestore,
+    required this.onCancel,
+  });
+
+  final String expected;
+  final TextEditingController typed;
+  final bool matched;
+  final bool busy;
+  final bool done;
+  final VoidCallback? onRestore;
+  final VoidCallback? onCancel;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = DeckhandTokens.of(context);
+    final border = matched ? tokens.ok : tokens.line;
+    final enabled = expected.isNotEmpty && !busy && !done;
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: tokens.ink2,
+        border: Border.all(color: border.withValues(alpha: 0.65)),
+        borderRadius: BorderRadius.circular(DeckhandTokens.r2),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const _MonoLabel('TYPE THE TARGET DISK NAME TO ENABLE RESTORE'),
+          const SizedBox(height: 8),
+          TextField(
+            controller: typed,
+            enabled: enabled,
+            decoration: InputDecoration(
+              hintText: expected.isEmpty ? 'select a target disk' : expected,
+              border: const OutlineInputBorder(),
+              isDense: true,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            expected.isEmpty
+                ? 'EXPECTED: —'
+                : matched
+                ? 'MATCH · RESTORE ARMED'
+                : 'EXPECTED: $expected',
+            style: TextStyle(
+              fontFamily: DeckhandTokens.fontMono,
+              fontSize: DeckhandTokens.tXs,
+              color: matched ? tokens.ok : tokens.text4,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              if (onCancel != null)
+                OutlinedButton.icon(
+                  onPressed: onCancel,
+                  icon: const Icon(Icons.close, size: 14),
+                  label: const Text('Cancel restore'),
+                ),
+              const Spacer(),
+              FilledButton.icon(
+                style: FilledButton.styleFrom(
+                  backgroundColor: tokens.bad,
+                  foregroundColor: const Color(0xFFFCFCFC),
+                ),
+                onPressed: onRestore,
+                icon: const Icon(Icons.restore, size: 16),
+                label: Text(done ? 'Restore complete' : 'Restore backup'),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RestoreProgressPanel extends StatelessWidget {
+  const _RestoreProgressPanel({
+    required this.checking,
+    required this.progress,
+    required this.error,
+    required this.done,
+  });
+
+  final bool checking;
+  final FlashProgress? progress;
+  final String? error;
+  final bool done;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = DeckhandTokens.of(context);
+    final p = progress;
+    final failed = error != null;
+    final title = failed
+        ? 'RESTORE STOPPED'
+        : done
+        ? 'RESTORE COMPLETE'
+        : checking
+        ? 'CHECKING BACKUP'
+        : _phaseLabel(p?.phase);
+    final fraction = p == null || p.bytesTotal <= 0
+        ? null
+        : p.fraction.clamp(0.0, 1.0).toDouble();
+    final accent = failed
+        ? tokens.bad
+        : done
+        ? tokens.ok
+        : tokens.accent;
+
+    return _Panel(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Icon(
+                failed
+                    ? Icons.error_outline
+                    : done
+                    ? Icons.check_circle_outline
+                    : Icons.restore,
+                size: 16,
+                color: accent,
+              ),
+              const SizedBox(width: 8),
+              _MonoLabel(title),
+              const Spacer(),
+              if (p != null && p.bytesTotal > 0)
+                Text(
+                  '${(p.fraction * 100).clamp(0, 100).toStringAsFixed(1)}%',
+                  style: TextStyle(
+                    fontFamily: DeckhandTokens.fontMono,
+                    fontSize: DeckhandTokens.tXs,
+                    color: tokens.text3,
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          WizardProgressBar(
+            fraction: failed || done ? 1.0 : fraction,
+            animateStripes: !failed && !done,
+          ),
+          const SizedBox(height: 8),
+          Text(
+            failed
+                ? error!
+                : p == null
+                ? 'Preparing restore.'
+                : '${_formatBytes(p.bytesDone)} of '
+                      '${_formatBytes(p.bytesTotal)}'
+                      '${p.message == null ? '' : ' · ${p.message}'}',
+            style: TextStyle(
+              fontFamily: DeckhandTokens.fontMono,
+              fontSize: DeckhandTokens.tXs,
+              color: failed ? tokens.bad : tokens.text3,
+              height: 1.45,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+List<_RestoreImage> _restoreImagesFrom({
+  required List<EmmcBackupManifest> manifests,
+  required List<EmmcBackupImageCandidate> candidates,
+}) {
+  final manifestPaths = {
+    for (final manifest in manifests) manifest.imagePath.toLowerCase(),
+  };
+  final images = <_RestoreImage>[
+    for (final manifest in manifests) _RestoreImage.manifest(manifest),
+    for (final candidate in candidates)
+      if (!manifestPaths.contains(candidate.imagePath.toLowerCase()))
+        _RestoreImage.candidate(candidate),
+  ];
+  images.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+  return images;
+}
+
+String _restoreImageTitle(_RestoreImage image) {
+  final local = image.createdAt.toLocal();
+  final stamp =
+      '${local.year.toString().padLeft(4, '0')}-'
+      '${local.month.toString().padLeft(2, '0')}-'
+      '${local.day.toString().padLeft(2, '0')} '
+      '${local.hour.toString().padLeft(2, '0')}:'
+      '${local.minute.toString().padLeft(2, '0')}';
+  final source = image.indexed ? 'indexed backup' : 'unindexed image';
+  return '$stamp · ${_formatBytes(image.imageBytes)} · $source';
+}
+
+String _restoreImageSubtitle(_RestoreImage image) {
+  final profile = image.profileId == null || image.profileId!.isEmpty
+      ? 'unknown profile'
+      : image.profileId!;
+  if (image.indexed) {
+    final sha = image.manifestSha256.length >= 12
+        ? image.manifestSha256.substring(0, 12)
+        : image.manifestSha256;
+    return '$profile · sha256 $sha… · ${image.imagePath}';
+  }
+  return '$profile · unindexed image · ${image.imagePath}';
+}
+
+String _restoreDiskSubtitle(DiskInfo disk, _RestoreImage? image) {
+  final parts = disk.partitions.isEmpty
+      ? 'no partitions'
+      : '${disk.partitions.length} partition'
+            '${disk.partitions.length == 1 ? '' : 's'}';
+  final match = !disk.removable
+      ? 'not removable'
+      : image != null && disk.sizeBytes != image.imageBytes
+      ? 'size mismatch'
+      : image?.diskIdentity?.matches(disk) == true
+      ? 'matches backup'
+      : 'manual target';
+  return '$parts · ${diskTechnicalLabel(disk)} · $match';
+}
+
+bool _restoreDiskSelectable(DiskInfo disk, _RestoreImage? image) {
+  if (!disk.removable) return false;
+  if (image == null) return true;
+  return disk.sizeBytes == image.imageBytes;
+}
+
+final _sha256Re = RegExp(r'^[0-9a-f]{64}$');
+
+bool _isSha256Hex(String value) => _sha256Re.hasMatch(value);
+
+String _formatBytes(int bytes) {
+  if (bytes <= 0) return '0 B';
+  final gib = bytes / (1 << 30);
+  if (gib >= 1) return '${gib.toStringAsFixed(2)} GiB';
+  final mib = bytes / (1 << 20);
+  if (mib >= 1) return '${mib.toStringAsFixed(1)} MiB';
+  final kib = bytes / 1024;
+  if (kib >= 1) return '${kib.toStringAsFixed(1)} KiB';
+  return '$bytes B';
+}
+
+String _phaseLabel(FlashPhase? phase) => switch (phase) {
+  FlashPhase.preparing => 'PREPARING RESTORE',
+  FlashPhase.writing => 'WRITING IMAGE',
+  FlashPhase.verifying => 'VERIFYING IMAGE',
+  FlashPhase.done => 'RESTORE COMPLETE',
+  FlashPhase.failed => 'RESTORE STOPPED',
+  null => 'RESTORING IMAGE',
+};
+
+String _friendlyRestoreError(Object error) {
+  final raw = error.toString();
+  const prefix = 'Exception: ';
+  final trimmed = raw.startsWith(prefix) ? raw.substring(prefix.length) : raw;
+  return trimmed
+      .replaceFirst('StateError: ', '')
+      .replaceFirst('ElevatedHelperException: ', '');
 }
 
 // ---------------------------------------------------------------------
