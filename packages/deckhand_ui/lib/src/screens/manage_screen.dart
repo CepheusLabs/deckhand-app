@@ -626,11 +626,8 @@ class _RestoreTabState extends ConsumerState<_RestoreTab> {
     final images = _restoreImagesFrom(
       manifests: manifests,
       candidates: candidates,
-      disks: disks,
     );
     if (images.isEmpty) {
-      final foundOnlyUnmatchedCandidates =
-          manifests.isEmpty && candidates.isNotEmpty;
       return _Panel(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -638,12 +635,8 @@ class _RestoreTabState extends ConsumerState<_RestoreTab> {
             const _MonoLabel('RESTORE EMMC IMAGE'),
             const SizedBox(height: 8),
             Text(
-              foundOnlyUnmatchedCandidates
-                  ? 'No restorable eMMC backup images matched the attached '
-                        'removable disks. Deckhand hides loose .img files when '
-                        'their size does not match a visible eMMC target.'
-                  : 'No eMMC backup images were found. Deckhand looked for '
-                        'manifest-indexed backups and standalone .img files in:',
+              'No eMMC backup images were found. Deckhand looked for '
+              'manifest-indexed backups and standalone .img files in:',
               style: TextStyle(
                 fontFamily: DeckhandTokens.fontSans,
                 fontSize: DeckhandTokens.tMd,
@@ -659,14 +652,10 @@ class _RestoreTabState extends ConsumerState<_RestoreTab> {
             ),
             const SizedBox(height: 10),
             Text(
-              foundOnlyUnmatchedCandidates
-                  ? 'Connect the eMMC adapter you want to restore to and '
-                        'refresh. Partial or canceled backup files stay hidden '
-                        'so they cannot be selected by mistake.'
-                  : 'Put the backup image in that folder, or make a new eMMC '
-                        'backup from the Backup tab. Restore stays on this '
-                        'recovery screen so canceling never drops into an '
-                        'install step.',
+              'Put the backup image in that folder, or make a new eMMC '
+              'backup from the Backup tab. Restore stays on this '
+              'recovery screen so canceling never drops into an '
+              'install step.',
               style: TextStyle(
                 fontFamily: DeckhandTokens.fontSans,
                 fontSize: DeckhandTokens.tSm,
@@ -851,7 +840,7 @@ class _RestoreTabState extends ConsumerState<_RestoreTab> {
         content: Text(
           'Deckhand will erase ${diskDisplayName(disk)} and restore:\n\n'
           '${image.imagePath}\n\n'
-          '${image.indexed ? 'Deckhand will verify the backup manifest hash before writing.' : 'This image has no Deckhand manifest. Deckhand will hash the file before writing and requires the target size to match.'}\n\n'
+          '${image.indexed ? 'Deckhand will verify the backup manifest hash before writing.' : 'This image has no Deckhand manifest. Deckhand will hash the file before writing.'}\n\n'
           'This overwrites the selected eMMC. The host computer and other '
           'drives are not touched.',
         ),
@@ -910,10 +899,10 @@ class _RestoreTabState extends ConsumerState<_RestoreTab> {
           '${_formatBytes(restoreImage.imageBytes)}, found ${_formatBytes(length)}.',
         );
       }
-      if (disk.sizeBytes != restoreImage.imageBytes) {
+      if (disk.sizeBytes < restoreImage.imageBytes) {
         throw StateError(
-          '${diskDisplayName(disk)} does not match the backup image size. '
-          'Choose the eMMC this backup came from.',
+          '${diskDisplayName(disk)} is smaller than the backup image. '
+          'Choose an eMMC that is the same size or larger.',
         );
       }
 
@@ -1415,20 +1404,14 @@ class _RestoreProgressPanel extends StatelessWidget {
 List<_RestoreImage> _restoreImagesFrom({
   required List<EmmcBackupManifest> manifests,
   required List<EmmcBackupImageCandidate> candidates,
-  required List<DiskInfo> disks,
 }) {
   final manifestPaths = {
     for (final manifest in manifests) manifest.imagePath.toLowerCase(),
   };
-  final removableDiskSizes = {
-    for (final disk in disks)
-      if (disk.removable) disk.sizeBytes,
-  };
   final images = <_RestoreImage>[
     for (final manifest in manifests) _RestoreImage.manifest(manifest),
     for (final candidate in candidates)
-      if (!manifestPaths.contains(candidate.imagePath.toLowerCase()) &&
-          removableDiskSizes.contains(candidate.imageBytes))
+      if (!manifestPaths.contains(candidate.imagePath.toLowerCase()))
         _RestoreImage.candidate(candidate),
   ];
   images.sort((a, b) => b.createdAt.compareTo(a.createdAt));
@@ -1467,10 +1450,12 @@ String _restoreDiskSubtitle(DiskInfo disk, _RestoreImage? image) {
             '${disk.partitions.length == 1 ? '' : 's'}';
   final match = !disk.removable
       ? 'not removable'
-      : image != null && disk.sizeBytes != image.imageBytes
-      ? 'size mismatch'
+      : image != null && disk.sizeBytes < image.imageBytes
+      ? 'target too small'
       : image?.diskIdentity?.matches(disk) == true
       ? 'matches backup'
+      : image != null && disk.sizeBytes > image.imageBytes
+      ? 'larger target'
       : 'manual target';
   return '$parts · ${diskTechnicalLabel(disk)} · $match';
 }
@@ -1478,7 +1463,7 @@ String _restoreDiskSubtitle(DiskInfo disk, _RestoreImage? image) {
 bool _restoreDiskSelectable(DiskInfo disk, _RestoreImage? image) {
   if (!disk.removable) return false;
   if (image == null) return true;
-  return disk.sizeBytes == image.imageBytes;
+  return disk.sizeBytes >= image.imageBytes;
 }
 
 final _sha256Re = RegExp(r'^[0-9a-f]{64}$');

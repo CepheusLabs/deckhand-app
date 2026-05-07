@@ -140,4 +140,65 @@ void main() {
       expect(match?.imagePath, image.path);
     },
   );
+
+  test('backup image paths are organized by profile and timestamp', () {
+    final path = emmcBackupImagePath(
+      rootDir: r'C:\Deckhand\emmc-backups',
+      profileId: 'Phrozen Arco!',
+      createdAt: DateTime.utc(2026, 5, 7, 18, 19, 20),
+    );
+
+    expect(
+      path,
+      p.join(
+        r'C:\Deckhand\emmc-backups',
+        'phrozen-arco',
+        '2026-05-07T18-19-20Z',
+        'emmc.img',
+      ),
+    );
+  });
+
+  test('scanners include organized backup subfolders', () async {
+    final dir = await Directory.systemTemp.createTemp('deckhand_emmc_nested_');
+    addTearDown(() async {
+      if (await dir.exists()) await dir.delete(recursive: true);
+    });
+
+    final image = File(
+      emmcBackupImagePath(
+        rootDir: dir.path,
+        profileId: 'phrozen-arco',
+        createdAt: DateTime.utc(2026, 5, 7, 18, 19, 20),
+      ),
+    );
+    await image.parent.create(recursive: true);
+    await image.writeAsBytes(List<int>.filled(4096, 7), flush: true);
+    final manifest = EmmcBackupManifest.create(
+      profileId: 'phrozen-arco',
+      imagePath: image.path,
+      imageBytes: 4096,
+      imageSha256: 'd' * 64,
+      disk: disk,
+      deckhandVersion: 'dev',
+    );
+    await writeEmmcBackupManifest(manifest);
+
+    final loose = File(
+      p.join(dir.path, 'sovol-zero', '2026-05-07T19-00-00Z', 'emmc.img'),
+    );
+    await loose.parent.create(recursive: true);
+    await loose.writeAsBytes(List<int>.filled(2048, 3), flush: true);
+
+    final manifests = await scanEmmcBackupManifests(dir.path);
+    final candidates = await scanEmmcBackupImageCandidates(dir.path);
+
+    expect(manifests.map((m) => m.imagePath), contains(image.path));
+    expect(candidates.map((c) => c.imagePath), contains(image.path));
+    expect(candidates.map((c) => c.imagePath), contains(loose.path));
+    expect(
+      candidates.firstWhere((c) => c.imagePath == loose.path).inferredProfileId,
+      'sovol-zero',
+    );
+  });
 }

@@ -326,11 +326,6 @@ func TestReadImageOutputPolicyRejectsUnsafeOutputs(t *testing.T) {
 			output: filepath.Join(root, "printer.bin"),
 			want:   "must end in .img",
 		},
-		{
-			name:   "nested below backup root",
-			output: filepath.Join(root, "nested", "printer.img"),
-			want:   "emmc-backups directory",
-		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -342,6 +337,21 @@ func TestReadImageOutputPolicyRejectsUnsafeOutputs(t *testing.T) {
 				t.Fatalf("expected %q in error, got %q", tc.want, err.Error())
 			}
 		})
+	}
+}
+
+func TestReadImageOutputPolicyAllowsNestedBackupFolders(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "emmc-backups")
+	nested := filepath.Join(root, "phrozen-arco", "2026-05-07T18-19-20Z")
+	if err := os.MkdirAll(nested, 0o700); err != nil {
+		t.Fatalf("mkdir nested: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, backupRootMarker), []byte("ok\n"), 0o600); err != nil {
+		t.Fatalf("write marker: %v", err)
+	}
+
+	if err := validateReadImageOutputPath(filepath.Join(nested, "emmc.img")); err != nil {
+		t.Fatalf("expected nested output to pass: %v", err)
 	}
 }
 

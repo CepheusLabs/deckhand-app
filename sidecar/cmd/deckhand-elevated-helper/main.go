@@ -408,13 +408,13 @@ func validateBackupOutputPath(root, output string) error {
 	if !info.Mode().IsRegular() {
 		return fmt.Errorf("backup root marker %q is not a regular file", marker)
 	}
-	if filepath.Dir(cleanOutput) != cleanRoot {
-		return fmt.Errorf("output %q must be a direct child of %q", output, cleanRoot)
-	}
 	if filepath.Ext(cleanOutput) != ".img" {
 		return fmt.Errorf("output %q must use .img extension", output)
 	}
 	if err := rejectDeviceOutput(cleanOutput); err != nil {
+		return err
+	}
+	if err := validateBackupOutputParent(cleanRoot, cleanOutput); err != nil {
 		return err
 	}
 	if info, err := os.Lstat(cleanOutput); err == nil {
@@ -424,6 +424,38 @@ func validateBackupOutputPath(root, output string) error {
 		return fmt.Errorf("output %q already exists", output)
 	} else if !os.IsNotExist(err) {
 		return fmt.Errorf("inspect output: %w", err)
+	}
+	return nil
+}
+
+func validateBackupOutputParent(cleanRoot, cleanOutput string) error {
+	parent := filepath.Dir(cleanOutput)
+	rel, err := filepath.Rel(cleanRoot, parent)
+	if err != nil {
+		return fmt.Errorf("resolve output parent: %w", err)
+	}
+	if rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) || filepath.IsAbs(rel) {
+		return fmt.Errorf("output %q must be under %q", cleanOutput, cleanRoot)
+	}
+	if rel == "." {
+		return nil
+	}
+	cur := cleanRoot
+	for _, part := range strings.Split(rel, string(os.PathSeparator)) {
+		if part == "" || part == "." {
+			continue
+		}
+		cur = filepath.Join(cur, part)
+		info, err := os.Lstat(cur)
+		if err != nil {
+			return fmt.Errorf("inspect output directory %q: %w", cur, err)
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("output directory %q is a symlink", cur)
+		}
+		if !info.IsDir() {
+			return fmt.Errorf("output directory %q is not a directory", cur)
+		}
 	}
 	return nil
 }

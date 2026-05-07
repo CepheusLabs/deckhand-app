@@ -86,16 +86,15 @@ func TestValidateBackupOutputPathRejectsSymlinkRoot(t *testing.T) {
 	}
 }
 
-func TestValidateBackupOutputPathRejectsNestedChild(t *testing.T) {
+func TestValidateBackupOutputPathAllowsNestedImageChild(t *testing.T) {
 	root := makeBackupRoot(t)
-	nested := filepath.Join(root, "nested")
+	nested := filepath.Join(root, "phrozen-arco", "2026-05-07T18-19-20Z")
 	if err := os.MkdirAll(nested, 0o700); err != nil {
 		t.Fatal(err)
 	}
 
-	err := validateBackupOutputPath(root, filepath.Join(nested, "backup.img"))
-	if err == nil || !strings.Contains(err.Error(), "direct child") {
-		t.Fatalf("expected direct-child error, got %v", err)
+	if err := validateBackupOutputPath(root, filepath.Join(nested, "emmc.img")); err != nil {
+		t.Fatalf("validateBackupOutputPath() error = %v", err)
 	}
 }
 
@@ -104,8 +103,25 @@ func TestValidateBackupOutputPathRejectsSiblingTraversal(t *testing.T) {
 	outside := filepath.Join(filepath.Dir(root), "outside.img")
 
 	err := validateBackupOutputPath(root, outside)
-	if err == nil || !strings.Contains(err.Error(), "direct child") {
-		t.Fatalf("expected direct-child error, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "under") {
+		t.Fatalf("expected under-root error, got %v", err)
+	}
+}
+
+func TestValidateBackupOutputPathRejectsSymlinkAncestor(t *testing.T) {
+	root := makeBackupRoot(t)
+	realDir := filepath.Join(root, "real")
+	if err := os.MkdirAll(realDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	linkDir := filepath.Join(root, "linked")
+	if err := os.Symlink(realDir, linkDir); err != nil {
+		t.Skipf("symlink not supported in this test environment: %v", err)
+	}
+
+	err := validateBackupOutputPath(root, filepath.Join(linkDir, "backup.img"))
+	if err == nil || !strings.Contains(err.Error(), "symlink") {
+		t.Fatalf("expected symlink-ancestor error, got %v", err)
 	}
 }
 

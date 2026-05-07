@@ -1,10 +1,12 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:deckhand_core/deckhand_core.dart';
 import 'package:deckhand_ui/src/providers.dart';
 import 'package:deckhand_ui/src/screens/emmc_backup_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:path/path.dart' as p;
 
 import 'helpers.dart';
 
@@ -18,6 +20,7 @@ void main() {
       await controller.setDecision('flash.disk', 'disk-1');
       final security = _RecordingSecurity(consumeResult: true);
       final helper = _RecordingElevatedHelper();
+      final backupRoot = _createTempBackupRoot();
 
       await tester.pumpWidget(
         testHarness(
@@ -28,25 +31,27 @@ void main() {
             flashServiceProvider.overrideWithValue(_OneDiskFlash()),
             elevatedHelperServiceProvider.overrideWithValue(helper),
             securityServiceProvider.overrideWithValue(security),
-            emmcBackupsDirProvider.overrideWithValue(
-              '/deckhand/state/emmc-backups',
-            ),
+            emmcBackupsDirProvider.overrideWithValue(backupRoot),
           ],
         ),
       );
-      await tester.pump();
+      await tester.pumpAndSettle();
 
-      await tester.tap(find.text('Back up this disk'));
-      await tester.pump();
+      await _tapStartBackup(tester);
       await tester.pump(const Duration(milliseconds: 50));
 
       expect(security.consumed, [
         ('read-token-0123456789abcdef', 'disks.read_image'),
       ]);
       expect(helper.readCalls, 1);
-      expect(helper.lastOutputPath, startsWith('/deckhand/state/emmc-backups'));
+      expect(helper.lastOutputPath, startsWith(backupRoot));
+      expect(
+        p.basename(p.dirname(p.dirname(helper.lastOutputPath!))),
+        'test-printer',
+      );
+      expect(p.basename(helper.lastOutputPath!), 'emmc.img');
       expect(helper.lastOutputPath, endsWith('.img'));
-      expect(helper.lastOutputRoot, '/deckhand/state/emmc-backups');
+      expect(helper.lastOutputRoot, backupRoot);
     });
 
     testWidgets('keeps destination picker enabled with elevated helper', (
@@ -55,6 +60,7 @@ void main() {
       final controller = stubWizardController(profileJson: testProfileJson());
       await controller.loadProfile('test-printer');
       await controller.setDecision('flash.disk', 'disk-1');
+      final backupRoot = _createTempBackupRoot();
 
       await tester.pumpWidget(
         testHarness(
@@ -66,9 +72,7 @@ void main() {
             elevatedHelperServiceProvider.overrideWithValue(
               _RecordingElevatedHelper(),
             ),
-            emmcBackupsDirProvider.overrideWithValue(
-              '/deckhand/state/emmc-backups',
-            ),
+            emmcBackupsDirProvider.overrideWithValue(backupRoot),
           ],
         ),
       );
@@ -86,6 +90,8 @@ void main() {
       final controller = stubWizardController(profileJson: testProfileJson());
       await controller.loadProfile('test-printer');
       await controller.setDecision('flash.disk', 'disk-1');
+      final backupRoot = _createTempBackupRoot();
+      final candidatePath = p.join(backupRoot, 'test.img');
 
       await tester.pumpWidget(
         testHarness(
@@ -97,13 +103,11 @@ void main() {
             elevatedHelperServiceProvider.overrideWithValue(
               _RecordingElevatedHelper(),
             ),
-            emmcBackupsDirProvider.overrideWithValue(
-              '/deckhand/state/emmc-backups',
-            ),
+            emmcBackupsDirProvider.overrideWithValue(backupRoot),
             emmcBackupImageCandidatesProvider.overrideWith(
               (_) async => [
                 EmmcBackupImageCandidate(
-                  imagePath: '/deckhand/state/emmc-backups/test.img',
+                  imagePath: candidatePath,
                   imageBytes: 4096,
                   modifiedAt: DateTime(2026, 5, 4),
                   inferredProfileId: 'test-printer',
@@ -119,10 +123,7 @@ void main() {
         find.textContaining('Complete backup already exists'),
         findsOneWidget,
       );
-      expect(
-        find.textContaining('/deckhand/state/emmc-backups/test.img'),
-        findsOneWidget,
-      );
+      expect(find.textContaining(candidatePath), findsOneWidget);
     });
 
     testWidgets('allows cancel while a backup is copying', (tester) async {
@@ -130,6 +131,7 @@ void main() {
       await controller.loadProfile('test-printer');
       await controller.setDecision('flash.disk', 'disk-1');
       final helper = _StreamingElevatedHelper();
+      final backupRoot = _createTempBackupRoot();
 
       await tester.pumpWidget(
         testHarness(
@@ -139,16 +141,13 @@ void main() {
           extraOverrides: [
             flashServiceProvider.overrideWithValue(_OneDiskFlash()),
             elevatedHelperServiceProvider.overrideWithValue(helper),
-            emmcBackupsDirProvider.overrideWithValue(
-              '/deckhand/state/emmc-backups',
-            ),
+            emmcBackupsDirProvider.overrideWithValue(backupRoot),
           ],
         ),
       );
-      await tester.pump();
+      await tester.pumpAndSettle();
 
-      await tester.tap(find.text('Back up this disk'));
-      await tester.pump(const Duration(milliseconds: 50));
+      await _tapStartBackup(tester);
       helper.add(
         const FlashProgress(
           bytesDone: 1024,
@@ -178,6 +177,7 @@ void main() {
       await controller.loadProfile('test-printer');
       await controller.setDecision('flash.disk', 'disk-1');
       final helper = _StreamingElevatedHelper();
+      final backupRoot = _createTempBackupRoot();
 
       await tester.pumpWidget(
         testHarness(
@@ -187,16 +187,13 @@ void main() {
           extraOverrides: [
             flashServiceProvider.overrideWithValue(_OneDiskFlash()),
             elevatedHelperServiceProvider.overrideWithValue(helper),
-            emmcBackupsDirProvider.overrideWithValue(
-              '/deckhand/state/emmc-backups',
-            ),
+            emmcBackupsDirProvider.overrideWithValue(backupRoot),
           ],
         ),
       );
-      await tester.pump();
+      await tester.pumpAndSettle();
 
-      await tester.tap(find.text('Back up this disk'));
-      await tester.pump(const Duration(milliseconds: 50));
+      await _tapStartBackup(tester);
       helper.add(
         const FlashProgress(
           bytesDone: 1024,
@@ -226,6 +223,7 @@ void main() {
       await controller.loadProfile('test-printer');
       await controller.setDecision('flash.disk', 'disk-1');
       final helper = _StreamingElevatedHelper();
+      final backupRoot = _createTempBackupRoot();
 
       await tester.pumpWidget(
         testHarness(
@@ -235,16 +233,13 @@ void main() {
           extraOverrides: [
             flashServiceProvider.overrideWithValue(_OneDiskFlash()),
             elevatedHelperServiceProvider.overrideWithValue(helper),
-            emmcBackupsDirProvider.overrideWithValue(
-              '/deckhand/state/emmc-backups',
-            ),
+            emmcBackupsDirProvider.overrideWithValue(backupRoot),
           ],
         ),
       );
-      await tester.pump();
+      await tester.pumpAndSettle();
 
-      await tester.tap(find.text('Back up this disk'));
-      await tester.pump(const Duration(milliseconds: 50));
+      await _tapStartBackup(tester);
       helper.add(
         const FlashProgress(
           bytesDone: 0,
@@ -265,6 +260,7 @@ void main() {
       await controller.setDecision('flash.disk', 'disk-1');
       final helper = _RecordingElevatedHelper();
       EmmcBackupManifest? writtenManifest;
+      final backupRoot = _createTempBackupRoot();
 
       await tester.pumpWidget(
         testHarness(
@@ -274,9 +270,7 @@ void main() {
           extraOverrides: [
             flashServiceProvider.overrideWithValue(_OneDiskFlash()),
             elevatedHelperServiceProvider.overrideWithValue(helper),
-            emmcBackupsDirProvider.overrideWithValue(
-              '/deckhand/state/emmc-backups',
-            ),
+            emmcBackupsDirProvider.overrideWithValue(backupRoot),
             emmcBackupManifestWriterProvider.overrideWithValue((
               manifest,
             ) async {
@@ -286,10 +280,9 @@ void main() {
           ],
         ),
       );
-      await tester.pump();
+      await tester.pumpAndSettle();
 
-      await tester.tap(find.text('Back up this disk'));
-      await tester.pump();
+      await _tapStartBackup(tester);
       await tester.pump(const Duration(milliseconds: 50));
       await tester.tap(find.text('Continue'));
       await tester.pump();
@@ -314,6 +307,7 @@ void main() {
       await controller.setDecision('flash.disk', 'disk-1');
       final security = _RecordingSecurity(consumeResult: false);
       final helper = _RecordingElevatedHelper();
+      final backupRoot = _createTempBackupRoot();
 
       await tester.pumpWidget(
         testHarness(
@@ -324,16 +318,13 @@ void main() {
             flashServiceProvider.overrideWithValue(_OneDiskFlash()),
             elevatedHelperServiceProvider.overrideWithValue(helper),
             securityServiceProvider.overrideWithValue(security),
-            emmcBackupsDirProvider.overrideWithValue(
-              '/deckhand/state/emmc-backups',
-            ),
+            emmcBackupsDirProvider.overrideWithValue(backupRoot),
           ],
         ),
       );
-      await tester.pump();
+      await tester.pumpAndSettle();
 
-      await tester.tap(find.text('Back up this disk'));
-      await tester.pump();
+      await _tapStartBackup(tester);
       await tester.pump(const Duration(milliseconds: 50));
 
       expect(security.consumed, [
@@ -352,6 +343,7 @@ void main() {
         final controller = stubWizardController(profileJson: testProfileJson());
         await controller.loadProfile('test-printer');
         await controller.setDecision('flash.disk', 'missing-disk');
+        final backupRoot = _createTempBackupRoot();
 
         await tester.pumpWidget(
           testHarness(
@@ -360,9 +352,7 @@ void main() {
             initialLocation: '/snapshot',
             extraOverrides: [
               flashServiceProvider.overrideWithValue(_NoDiskFlash()),
-              emmcBackupsDirProvider.overrideWithValue(
-                '/deckhand/state/emmc-backups',
-              ),
+              emmcBackupsDirProvider.overrideWithValue(backupRoot),
             ],
           ),
         );
@@ -381,6 +371,7 @@ void main() {
       final controller = stubWizardController(profileJson: testProfileJson());
       await controller.loadProfile('test-printer');
       await controller.setDecision('flash.disk', 'PhysicalDrive3');
+      final backupRoot = _createTempBackupRoot();
 
       await tester.pumpWidget(
         testHarness(
@@ -389,9 +380,7 @@ void main() {
           initialLocation: '/snapshot',
           extraOverrides: [
             flashServiceProvider.overrideWithValue(_NoDiskFlash()),
-            emmcBackupsDirProvider.overrideWithValue(
-              '/deckhand/state/emmc-backups',
-            ),
+            emmcBackupsDirProvider.overrideWithValue(backupRoot),
           ],
         ),
       );
@@ -401,6 +390,24 @@ void main() {
       expect(find.text('PhysicalDrive3'), findsNothing);
     });
   });
+}
+
+String _createTempBackupRoot() {
+  final dir = Directory.systemTemp.createTempSync('deckhand-emmc-backups-');
+  addTearDown(() {
+    try {
+      dir.deleteSync(recursive: true);
+    } catch (_) {}
+  });
+  return dir.path;
+}
+
+Future<void> _tapStartBackup(WidgetTester tester) async {
+  await tester.tap(find.text('Back up this disk'));
+  await tester.runAsync(
+    () => Future<void>.delayed(const Duration(milliseconds: 20)),
+  );
+  await tester.pump();
 }
 
 class _OneDiskFlash implements FlashService {

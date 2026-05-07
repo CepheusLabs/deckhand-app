@@ -268,7 +268,7 @@ void main() {
     expect(button.onPressed, isNotNull);
   });
 
-  testWidgets('direct eMMC restore hides partial unindexed image candidates', (
+  testWidgets('direct eMMC restore can use smaller images for drive upgrades', (
     tester,
   ) async {
     await tester.binding.setSurfaceSize(const Size(1400, 1000));
@@ -277,22 +277,16 @@ void main() {
     final disk = const DiskInfo(
       id: 'PhysicalDrive3',
       path: r'\\.\PHYSICALDRIVE3',
-      sizeBytes: 8 * 1024 * 1024,
+      sizeBytes: 16 * 1024 * 1024,
       bus: 'USB',
       model: 'Generic STORAGE DEVICE',
       removable: true,
       partitions: [],
     );
-    final fullCandidate = EmmcBackupImageCandidate(
-      imagePath: r'C:\Deckhand\emmc-backups\restore-full.img',
-      imageBytes: disk.sizeBytes,
+    final smallerCandidate = EmmcBackupImageCandidate(
+      imagePath: r'C:\Deckhand\emmc-backups\restore-smaller.img',
+      imageBytes: 8 * 1024 * 1024,
       modifiedAt: DateTime.utc(2026, 5, 4, 12),
-      inferredProfileId: 'phrozen-arco',
-    );
-    final partialCandidate = EmmcBackupImageCandidate(
-      imagePath: r'C:\Deckhand\emmc-backups\restore-partial.img',
-      imageBytes: 4 * 1024 * 1024,
-      modifiedAt: DateTime.utc(2026, 5, 4, 13),
       inferredProfileId: 'phrozen-arco',
     );
 
@@ -307,7 +301,7 @@ void main() {
         extraOverrides: [
           emmcBackupManifestsProvider.overrideWith((ref) async => const []),
           emmcBackupImageCandidatesProvider.overrideWith(
-            (ref) async => [partialCandidate, fullCandidate],
+            (ref) async => [smallerCandidate],
           ),
           flashServiceProvider.overrideWithValue(
             _RestoreFlash(
@@ -322,8 +316,18 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 250));
 
-    expect(find.textContaining('restore-full.img'), findsOneWidget);
-    expect(find.textContaining('restore-partial.img'), findsNothing);
+    expect(find.textContaining('restore-smaller.img'), findsOneWidget);
+    expect(find.textContaining('Generic STORAGE DEVICE'), findsWidgets);
+
+    await tester.enterText(
+      find.byType(TextField).last,
+      'Generic STORAGE DEVICE',
+    );
+    await tester.pump();
+    final button = tester.widget<FilledButton>(
+      find.widgetWithText(FilledButton, 'Restore backup'),
+    );
+    expect(button.onPressed, isNotNull);
   });
 }
 

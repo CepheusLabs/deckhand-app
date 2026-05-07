@@ -697,10 +697,38 @@ func validateReadImageOutputPath(output string) error {
 	if filepath.Ext(clean) != ".img" {
 		return fmt.Errorf("output %q must end in .img", output)
 	}
-	root := filepath.Dir(clean)
-	if filepath.Base(root) != "emmc-backups" {
-		return fmt.Errorf("output %q must be inside Deckhand's emmc-backups directory", output)
+	root, err := backupRootForOutput(clean)
+	if err != nil {
+		return err
 	}
+	if err := validateMarkedBackupRoot(root); err != nil {
+		return err
+	}
+	if err := validateBackupOutputAncestry(root, filepath.Dir(clean)); err != nil {
+		return err
+	}
+	if _, err := os.Lstat(clean); err == nil {
+		return fmt.Errorf("output %q already exists", output)
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("inspect output %q: %w", output, err)
+	}
+	return nil
+}
+
+func backupRootForOutput(output string) (string, error) {
+	for dir := filepath.Dir(output); ; dir = filepath.Dir(dir) {
+		if filepath.Base(dir) == "emmc-backups" {
+			return dir, nil
+		}
+		next := filepath.Dir(dir)
+		if samePath(next, dir) {
+			break
+		}
+	}
+	return "", fmt.Errorf("output %q must be inside Deckhand's emmc-backups directory", output)
+}
+
+func validateMarkedBackupRoot(root string) error {
 	rootInfo, err := os.Lstat(root)
 	if err != nil {
 		return fmt.Errorf("backup root %q is not available: %w", root, err)
@@ -716,10 +744,36 @@ func validateReadImageOutputPath(output string) error {
 	if markerInfo.Mode()&os.ModeSymlink != 0 || !markerInfo.Mode().IsRegular() {
 		return fmt.Errorf("backup root marker %q must be a regular file", marker)
 	}
-	if _, err := os.Lstat(clean); err == nil {
-		return fmt.Errorf("output %q already exists", output)
-	} else if !os.IsNotExist(err) {
-		return fmt.Errorf("inspect output %q: %w", output, err)
+	return nil
+}
+
+func validateBackupOutputAncestry(root, parent string) error {
+	rel, err := filepath.Rel(root, parent)
+	if err != nil {
+		return fmt.Errorf("resolve output ancestry: %w", err)
+	}
+	if rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) || filepath.IsAbs(rel) {
+		return fmt.Errorf("output parent %q must be under %q", parent, root)
+	}
+	if rel == "." {
+		return nil
+	}
+	cur := root
+	for _, part := range strings.Split(rel, string(os.PathSeparator)) {
+		if part == "" || part == "." {
+			continue
+		}
+		cur = filepath.Join(cur, part)
+		info, err := os.Lstat(cur)
+		if err != nil {
+			return fmt.Errorf("inspect output directory %q: %w", cur, err)
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("output directory %q is a symlink", cur)
+		}
+		if !info.IsDir() {
+			return fmt.Errorf("output directory %q is not a directory", cur)
+		}
 	}
 	return nil
 }

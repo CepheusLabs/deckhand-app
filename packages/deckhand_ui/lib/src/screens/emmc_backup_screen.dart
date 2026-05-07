@@ -125,16 +125,20 @@ class _EmmcBackupScreenState extends ConsumerState<EmmcBackupScreen> {
       );
       return;
     }
-    final stamp = DateTime.now()
-        .toUtc()
-        .toIso8601String()
-        .replaceAll(':', '-')
-        .replaceAll('.', '-');
     final controller = ref.read(wizardControllerProvider);
     final profileId = controller.state.profileId;
-    final filename =
-        '${profileId.isEmpty ? 'printer' : profileId}-emmc-$stamp.img';
-    final outputPath = p.join(dir, filename);
+    final outputPath = emmcBackupImagePath(
+      rootDir: dir,
+      profileId: profileId,
+      createdAt: DateTime.now().toUtc(),
+    );
+    try {
+      Directory(p.dirname(outputPath)).createSync(recursive: true);
+    } catch (_) {
+      // Best effort only. The real helper and direct sidecar fallback
+      // still validate/open the output path and surface a concrete
+      // error if the directory is not writable.
+    }
 
     // Look up the disk size from the cached enumeration so we can
     // (a) pass it as a --total-bytes hint to the elevated helper —

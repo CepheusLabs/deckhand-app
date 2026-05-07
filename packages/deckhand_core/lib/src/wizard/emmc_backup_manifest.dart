@@ -9,6 +9,25 @@ const int emmcBackupManifestSchema = 1;
 
 String emmcBackupManifestPath(String imagePath) => '$imagePath.manifest.json';
 
+String emmcBackupImagePath({
+  required String rootDir,
+  required String profileId,
+  required DateTime createdAt,
+}) {
+  final profileSlug = _slugSegment(profileId);
+  final utc = createdAt.toUtc();
+  final stamp =
+      '${utc.year.toString().padLeft(4, '0')}-'
+      '${utc.month.toString().padLeft(2, '0')}-'
+      '${utc.day.toString().padLeft(2, '0')}T'
+      '${utc.hour.toString().padLeft(2, '0')}-'
+      '${utc.minute.toString().padLeft(2, '0')}-'
+      '${utc.second.toString().padLeft(2, '0')}Z';
+  return _pathContextForRoot(
+    rootDir,
+  ).join(rootDir, profileSlug, stamp, 'emmc.img');
+}
+
 class EmmcBackupManifest {
   const EmmcBackupManifest({
     required this.schemaVersion,
@@ -197,7 +216,7 @@ Future<List<EmmcBackupManifest>> scanEmmcBackupManifests(String dir) async {
   final root = Directory(dir);
   if (!await root.exists()) return const [];
   final manifests = <EmmcBackupManifest>[];
-  await for (final entity in root.list(followLinks: false)) {
+  await for (final entity in root.list(recursive: true, followLinks: false)) {
     if (entity is! File || !entity.path.endsWith('.manifest.json')) {
       continue;
     }
@@ -218,7 +237,7 @@ Future<List<EmmcBackupImageCandidate>> scanEmmcBackupImageCandidates(
   final root = Directory(dir);
   if (!await root.exists()) return const [];
   final candidates = <EmmcBackupImageCandidate>[];
-  await for (final entity in root.list(followLinks: false)) {
+  await for (final entity in root.list(recursive: true, followLinks: false)) {
     if (entity is! File || !entity.path.toLowerCase().endsWith('.img')) {
       continue;
     }
@@ -266,10 +285,33 @@ EmmcBackupImageCandidate? findMatchingEmmcBackupImageCandidate({
 String? inferEmmcBackupProfileId(String imagePath) {
   final base = p.basename(imagePath);
   final lower = base.toLowerCase();
+  if (lower == 'emmc.img') {
+    final profile = p.basename(p.dirname(p.dirname(imagePath)));
+    if (profile.isNotEmpty && profile != 'emmc-backups') return profile;
+  }
   const marker = '-emmc-';
   final markerIndex = lower.indexOf(marker);
   if (markerIndex <= 0 || !lower.endsWith('.img')) return null;
   return base.substring(0, markerIndex);
+}
+
+String _slugSegment(String raw) {
+  final lower = raw.trim().toLowerCase();
+  final slug = lower
+      .replaceAll(RegExp(r'[^a-z0-9]+'), '-')
+      .replaceAll(RegExp(r'^-+|-+$'), '');
+  return slug.isEmpty ? 'printer' : slug;
+}
+
+p.Context _pathContextForRoot(String rootDir) {
+  final trimmed = rootDir.trim();
+  if (RegExp(r'^[A-Za-z]:[/\\]').hasMatch(trimmed) ||
+      trimmed.startsWith(r'\\') ||
+      trimmed.startsWith('//')) {
+    return p.windows;
+  }
+  if (trimmed.startsWith('/')) return p.posix;
+  return p.context;
 }
 
 Future<EmmcBackupManifest?> _readManifest(File file) async {
