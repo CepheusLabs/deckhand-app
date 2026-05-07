@@ -94,14 +94,21 @@ func RunBackupSmoke(ctx context.Context, w io.Writer, opts BackupSmokeOptions) (
 	}
 
 	outputRoot := strings.TrimSpace(opts.OutputRoot)
+	usingDefaultOutputRoot := false
 	if outputRoot == "" {
 		root, err := defaultBackupOutputRoot()
 		if err != nil {
 			return false, err
 		}
 		outputRoot = root
+		usingDefaultOutputRoot = true
 	}
 	outputRoot = filepath.Clean(outputRoot)
+	if usingDefaultOutputRoot {
+		if err := ensureBackupSmokeRoot(outputRoot); err != nil {
+			return false, err
+		}
+	}
 
 	outputPath := strings.TrimSpace(opts.OutputPath)
 	if outputPath == "" {
@@ -112,15 +119,15 @@ func RunBackupSmoke(ctx context.Context, w io.Writer, opts BackupSmokeOptions) (
 		return false, err
 	}
 
-	eventsPath, err := createTempPath("deckhand-backup-smoke-*.log", "")
+	eventsPath, err := createHelperPrivateTempPath("deckhand-backup-smoke-*.log", "")
 	if err != nil {
 		return false, err
 	}
-	tokenFile, err := createTempPath("deckhand-backup-smoke-*.token", "deckhand-backup-smoke-token\n")
+	tokenFile, err := createHelperPrivateTempPath("deckhand-backup-smoke-*.token", "deckhand-backup-smoke-token\n")
 	if err != nil {
 		return false, err
 	}
-	cancelFile, err := createTempPath("deckhand-backup-smoke-*.cancel", "active\n")
+	cancelFile, err := createHelperPrivateTempPath("deckhand-backup-smoke-*.cancel", "active\n")
 	if err != nil {
 		_ = os.Remove(tokenFile)
 		return false, err
@@ -337,6 +344,40 @@ func defaultBackupOutputPath(root string, now time.Time) string {
 	return filepath.Join(root, "deckhand-cli-backup-"+now.UTC().Format("20060102T150405Z")+".img")
 }
 
+func ensureBackupSmokeRoot(root string) error {
+	cleanRoot, err := filepath.Abs(filepath.Clean(root))
+	if err != nil {
+		return fmt.Errorf("resolve output root: %w", err)
+	}
+	if filepath.Base(cleanRoot) != "emmc-backups" {
+		return fmt.Errorf("output root %q must be an emmc-backups directory", root)
+	}
+	if info, err := os.Lstat(cleanRoot); err == nil {
+		if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
+			return fmt.Errorf("output root %q must be a real directory", root)
+		}
+	} else if os.IsNotExist(err) {
+		if err := os.MkdirAll(cleanRoot, 0o700); err != nil {
+			return fmt.Errorf("create output root: %w", err)
+		}
+	} else {
+		return fmt.Errorf("inspect output root: %w", err)
+	}
+	marker := filepath.Join(cleanRoot, backupSmokeRootMarker)
+	if info, err := os.Lstat(marker); err == nil {
+		if !info.Mode().IsRegular() {
+			return fmt.Errorf("backup root marker %q is not a regular file", marker)
+		}
+		return nil
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("inspect backup root marker: %w", err)
+	}
+	if err := os.WriteFile(marker, []byte("deckhand-emmc-backups/1\n"), 0o600); err != nil {
+		return fmt.Errorf("write backup root marker: %w", err)
+	}
+	return nil
+}
+
 func validateBackupSmokeOutput(root, output string) error {
 	cleanRoot, err := filepath.Abs(filepath.Clean(root))
 	if err != nil {
@@ -385,26 +426,6 @@ func validateBackupSmokeOutput(root, output string) error {
 		}
 	}
 	return nil
-}
-
-func createTempPath(pattern, body string) (string, error) {
-	f, err := os.CreateTemp("", pattern)
-	if err != nil {
-		return "", err
-	}
-	path := f.Name()
-	if body != "" {
-		if _, err := f.WriteString(body); err != nil {
-			_ = f.Close()
-			_ = os.Remove(path)
-			return "", err
-		}
-	}
-	if err := f.Close(); err != nil {
-		_ = os.Remove(path)
-		return "", err
-	}
-	return path, nil
 }
 
 func shouldPrintBackupProgress(progress *backupSmokeProgress, lastPrintedDone int64) bool {

@@ -43,12 +43,10 @@ func RunHelperSmoke(ctx context.Context, w io.Writer, opts HelperSmokeOptions) (
 	ctx, cancel := context.WithTimeout(ctx, opts.Timeout)
 	defer cancel()
 
-	events, err := os.CreateTemp("", "deckhand-helper-smoke-*.log")
+	eventsPath, err := createHelperPrivateTempPath("deckhand-helper-smoke-*.log", "")
 	if err != nil {
 		return false, err
 	}
-	eventsPath := events.Name()
-	_ = events.Close()
 	defer func() {
 		if _, err := os.Stat(eventsPath); err == nil {
 			_ = os.Remove(eventsPath)
@@ -109,8 +107,8 @@ func helperSmokeArgs(eventsPath string, longArgs bool) []string {
 		"--target", "PhysicalDrive3",
 		"--output", filepath.Join(os.TempDir(), "deckhand-helper-smoke.img"),
 		"--output-root", os.TempDir(),
-		"--token-file", filepath.Join(os.TempDir(), "deckhand-helper-smoke.token"),
-		"--cancel-file", filepath.Join(os.TempDir(), "deckhand-helper-smoke.cancel"),
+		"--token-file", filepath.Join(helperPrivateRoot(), "deckhand-helper-smoke.token"),
+		"--cancel-file", filepath.Join(helperPrivateRoot(), "deckhand-helper-smoke.cancel"),
 		"--total-bytes", "7818182656",
 		"--watchdog-pid", fmt.Sprintf("%d", os.Getpid()),
 	)

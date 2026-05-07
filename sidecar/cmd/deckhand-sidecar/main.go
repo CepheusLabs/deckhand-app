@@ -44,6 +44,11 @@ Usage:
                                [--total-bytes N] [--timeout 45m]
                                Launch the elevated helper with a real
                                read-image backup probe.
+  deckhand-sidecar download-os --url URL --sha256 HEX
+                               [--id IMAGE_ID] [--dest PATH]
+                               [--timeout 60m]
+                               Download or reuse a verified OS image in
+                               Deckhand's managed image cache.
   deckhand-sidecar -h|--help   Show this message and exit 0.
   deckhand-sidecar --version   Print the sidecar version and exit 0.
 `
@@ -121,6 +126,39 @@ func main() {
 			})
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "[deckhand-sidecar] backup-smoke: %v\n", err)
+				os.Exit(1)
+			}
+			if !passed {
+				os.Exit(1)
+			}
+			return
+		case "download-os":
+			fs := flag.NewFlagSet("download-os", flag.ExitOnError)
+			rawURL := fs.String("url", "", "HTTPS URL to the compressed or raw OS image")
+			expectedSHA256 := fs.String("sha256", "", "required 64-hex sha256 of the final raw image")
+			imageID := fs.String("id", "", "stable image id used for the managed cache filename")
+			destPath := fs.String("dest", "", "full managed .img destination path; default is Deckhand's OS image cache")
+			timeoutRaw := fs.String("timeout", "60m", "maximum time to wait, for example 10m or 1h")
+			if err := fs.Parse(os.Args[2:]); err != nil {
+				fmt.Fprintf(os.Stderr, "[deckhand-sidecar] download-os: %v\n", err)
+				os.Exit(2)
+			}
+			timeout, err := time.ParseDuration(*timeoutRaw)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "[deckhand-sidecar] download-os: invalid --timeout %q: %v\n", *timeoutRaw, err)
+				os.Exit(2)
+			}
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			passed, err := doctor.RunDownloadOS(ctx, os.Stdout, doctor.DownloadOSOptions{
+				URL:            *rawURL,
+				ExpectedSHA256: *expectedSHA256,
+				DestPath:       *destPath,
+				ImageID:        *imageID,
+				Timeout:        timeout,
+			})
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "[deckhand-sidecar] download-os: %v\n", err)
 				os.Exit(1)
 			}
 			if !passed {

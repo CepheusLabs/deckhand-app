@@ -5,7 +5,11 @@ param(
 
     [switch]$LocalSmokeRelease,
 
-    [switch]$ForceReconfigure
+    [switch]$ForceReconfigure,
+
+    [string]$CMakeGenerator = $env:DECKHAND_CMAKE_GENERATOR,
+
+    [string]$CMakeArchitecture = 'x64'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -60,12 +64,17 @@ if (-not (Test-Path (Join-Path $buildDir 'CMakeCache.txt'))) {
     if ([string]::IsNullOrWhiteSpace($cmake)) {
         $cmake = 'D:\Program Files\Microsoft\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe'
     }
-    Invoke-Checked $cmake @(
+    $cmakeArgs = @(
         '-S', $windowsDir,
-        '-B', $buildDir,
-        '-G', 'Visual Studio 18 2026',
-        '-A', 'x64'
+        '-B', $buildDir
     )
+    if (-not [string]::IsNullOrWhiteSpace($CMakeGenerator)) {
+        $cmakeArgs += @('-G', $CMakeGenerator)
+    }
+    if (-not [string]::IsNullOrWhiteSpace($CMakeArchitecture)) {
+        $cmakeArgs += @('-A', $CMakeArchitecture)
+    }
+    Invoke-Checked $cmake $cmakeArgs
 }
 
 $flutterMode = switch ($Configuration) {

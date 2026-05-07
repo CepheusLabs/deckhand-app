@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:ui' as ui;
 
 import 'package:deckhand_core/deckhand_core.dart';
 import 'package:flutter/material.dart';
@@ -11,7 +12,10 @@ import 'package:window_manager/window_manager.dart';
 /// default size.
 Future<void> applyPersistedWindowGeometry(DeckhandSettings settings) async {
   if (!_isDesktop) return;
-  final saved = settings.windowGeometry;
+  final saved = validRestoredWindowGeometry(
+    settings.windowGeometry,
+    visibleDisplayBounds: _primaryDisplayBounds(),
+  );
   // Sensible defaults if there's nothing on disk yet — match the
   // figma mocks rather than the platform default.
   const defaultSize = Size(1100, 760);
@@ -36,6 +40,50 @@ Future<void> applyPersistedWindowGeometry(DeckhandSettings settings) async {
 bool get _isDesktop =>
     Platform.isWindows || Platform.isMacOS || Platform.isLinux;
 
+/// Returns saved geometry only when its top-left corner and minimum
+/// visible area still land on the current primary display. This avoids
+/// restoring to coordinates from an unplugged monitor.
+@visibleForTesting
+WindowGeometry? validRestoredWindowGeometry(
+  WindowGeometry? saved, {
+  required Rect visibleDisplayBounds,
+}) {
+  if (saved == null) return null;
+  if (saved.width < 900 || saved.height < 600) return null;
+  final x = saved.x;
+  final y = saved.y;
+  if (x == null || y == null) {
+    return WindowGeometry(width: saved.width, height: saved.height);
+  }
+  final window = Rect.fromLTWH(x, y, saved.width, saved.height);
+  final visible = window.intersect(visibleDisplayBounds);
+  if (visible.isEmpty) return null;
+  const minVisible = Size(160, 120);
+  if (visible.width < minVisible.width || visible.height < minVisible.height) {
+    return null;
+  }
+  return saved;
+}
+
+Rect _primaryDisplayBounds() {
+  final dispatcher =
+      WidgetsFlutterBinding.ensureInitialized().platformDispatcher;
+  ui.Display? display;
+  final views = dispatcher.views;
+  if (views.isNotEmpty) {
+    display = views.first.display;
+  }
+  if (display == null) {
+    return const Rect.fromLTWH(0, 0, 1920, 1080);
+  }
+  final ratio = display.devicePixelRatio;
+  return Rect.fromLTWH(
+    0,
+    0,
+    display.size.width / ratio,
+    display.size.height / ratio,
+  );
+}
 
 /// Mounts a [WindowListener] that persists size + position changes
 /// to [DeckhandSettings] on every move/resize. The persisting writes

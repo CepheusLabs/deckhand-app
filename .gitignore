@@ -7,6 +7,7 @@
 .pub/
 build/
 pubspec.lock
+coverage/
 
 # Generated Flutter files
 ios/Flutter/Flutter.framework
@@ -34,4 +35,5 @@ sidecar/cmd/deckhand-elevated-helper/rsrc_windows.syso
 Thumbs.db
 
 # Release artifacts
+dist/
 release-artifacts/

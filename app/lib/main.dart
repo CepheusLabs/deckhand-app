@@ -142,6 +142,19 @@ Future<void> main() async {
       return;
     }
 
+    String osImagesDir;
+    try {
+      final hostInfo = await sidecar.call('host.info', <String, dynamic>{});
+      final sidecarCacheDir = (hostInfo['cache_dir'] as String?)?.trim();
+      osImagesDir = sidecarCacheDir != null && sidecarCacheDir.isNotEmpty
+          ? p.join(sidecarCacheDir, 'Deckhand', 'os-images')
+          : p.join(Directory.systemTemp.path, 'deckhand-os-images');
+    } catch (e, st) {
+      persistenceErrorSink(e, st);
+      osImagesDir = p.join(Directory.systemTemp.path, 'deckhand-os-images');
+    }
+    await Directory(osImagesDir).create(recursive: true);
+
     // Env var still takes precedence over settings (developer override
     // that's more visible than a JSON file). For non-release builds we
     // also auto-detect a sibling `deckhand-builds/` checkout next to
@@ -244,6 +257,7 @@ Future<void> main() async {
           ),
           archiveServiceProvider.overrideWithValue(archiveService),
           snapshotsDirProvider.overrideWithValue(snapshotsDir),
+          osImagesDirProvider.overrideWithValue(osImagesDir),
           emmcBackupsDirProvider.overrideWithValue(emmcBackupsDir),
           debugBundlesDirProvider.overrideWithValue(
             p.join(paths.stateDir, 'debug-bundles'),
@@ -255,7 +269,11 @@ Future<void> main() async {
           discoveryServiceProvider.overrideWithValue(BonsoirDiscoveryService()),
           moonrakerServiceProvider.overrideWithValue(MoonrakerHttpService()),
           upstreamServiceProvider.overrideWithValue(
-            SidecarUpstreamService(sidecar: sidecar, security: security),
+            SidecarUpstreamService(
+              sidecar: sidecar,
+              security: security,
+              osImagesDir: osImagesDir,
+            ),
           ),
           securityServiceProvider.overrideWithValue(security),
           doctorServiceProvider.overrideWithValue(

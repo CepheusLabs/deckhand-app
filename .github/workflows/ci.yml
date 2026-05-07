@@ -6,6 +6,9 @@ on:
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
@@ -16,6 +19,8 @@ jobs:
   # ---------------------------------------------------------------
   sidecar:
     name: Sidecar (${{ matrix.os }})
+    # Self-hosted runners must not execute code from forked PRs.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     strategy:
       fail-fast: false
       matrix:
@@ -152,6 +157,7 @@ jobs:
   # ---------------------------------------------------------------
   flutter:
     name: Flutter packages
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     # Self-hosted only. Flutter analyze/test is platform-agnostic
     # so any runner OS works; we pin to the Linux self-hosted
     # runner because the `app` matrix entry calls
@@ -263,6 +269,7 @@ jobs:
   # ---------------------------------------------------------------
   scripts:
     name: Python scripts
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, linux]
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5
@@ -276,6 +283,7 @@ jobs:
 
   profile-lint:
     name: Profile YAML lint
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, linux]
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5
@@ -287,7 +295,11 @@ jobs:
           cache: true
 
       - name: Shallow-clone deckhand-profiles
-        run: git clone --depth=1 https://github.com/CepheusLabs/deckhand-profiles.git builds
+        env:
+          DECKHAND_PROFILES_REF: ${{ vars.DECKHAND_PROFILES_REF }}
+        run: |
+          ref="${DECKHAND_PROFILES_REF:-main}"
+          git clone --depth=1 --branch "$ref" https://github.com/CepheusLabs/deckhand-profiles.git builds
 
       - name: Pub get
         working-directory: packages/deckhand_profile_lint

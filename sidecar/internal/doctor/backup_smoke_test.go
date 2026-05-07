@@ -7,18 +7,25 @@ import (
 )
 
 func TestBackupSmokeArgsPlacesEventsFileAfterOperation(t *testing.T) {
+	root := helperPrivateRoot()
 	got := backupSmokeArgs(backupSmokeInvocation{
-		EventsPath:  "events.log",
+		EventsPath:  filepath.Join(root, "events.log"),
 		Target:      "PhysicalDrive3",
 		OutputPath:  `C:\Deckhand\emmc-backups\cli.img`,
 		OutputRoot:  `C:\Deckhand\emmc-backups`,
-		TokenFile:   "token.txt",
-		CancelFile:  "cancel.txt",
+		TokenFile:   filepath.Join(root, "token.txt"),
+		CancelFile:  filepath.Join(root, "cancel.txt"),
 		TotalBytes:  7818182656,
 		WatchdogPID: 1234,
 	})
 
-	wantPrefix := []string{"read-image", "--events-file", "events.log", "--target", "PhysicalDrive3"}
+	wantPrefix := []string{
+		"read-image",
+		"--events-file",
+		filepath.Join(root, "events.log"),
+		"--target",
+		"PhysicalDrive3",
+	}
 	if len(got) < len(wantPrefix) {
 		t.Fatalf("backupSmokeArgs() length = %d, want at least %d", len(got), len(wantPrefix))
 	}
@@ -30,8 +37,8 @@ func TestBackupSmokeArgsPlacesEventsFileAfterOperation(t *testing.T) {
 
 	assertArgValue(t, got, "--output", `C:\Deckhand\emmc-backups\cli.img`)
 	assertArgValue(t, got, "--output-root", `C:\Deckhand\emmc-backups`)
-	assertArgValue(t, got, "--token-file", "token.txt")
-	assertArgValue(t, got, "--cancel-file", "cancel.txt")
+	assertArgValue(t, got, "--token-file", filepath.Join(root, "token.txt"))
+	assertArgValue(t, got, "--cancel-file", filepath.Join(root, "cancel.txt"))
 	assertArgValue(t, got, "--total-bytes", "7818182656")
 	assertArgValue(t, got, "--watchdog-pid", "1234")
 }
@@ -81,6 +88,27 @@ func TestRecoverCompletedBackupRequiresExactExpectedSize(t *testing.T) {
 
 	if _, ok := recoverCompletedBackup(output, int64(len("deckhand")+1)); ok {
 		t.Fatalf("recoverCompletedBackup() ok = true for a partial output")
+	}
+}
+
+func TestEnsureBackupSmokeRootCreatesMarkedRoot(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "emmc-backups")
+	if err := ensureBackupSmokeRoot(root); err != nil {
+		t.Fatal(err)
+	}
+
+	marker := filepath.Join(root, backupSmokeRootMarker)
+	info, err := os.Lstat(marker)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !info.Mode().IsRegular() {
+		t.Fatalf("marker mode = %v, want regular file", info.Mode())
+	}
+
+	output := filepath.Join(root, "cli.img")
+	if err := validateBackupSmokeOutput(root, output); err != nil {
+		t.Fatalf("validateBackupSmokeOutput() after ensure root: %v", err)
 	}
 }
 
