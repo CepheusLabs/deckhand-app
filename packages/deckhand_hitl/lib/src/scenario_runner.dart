@@ -85,10 +85,7 @@ class ScenarioRunner {
         sessionName: 'sidecar',
       );
       await sidecarLogger.init();
-      sidecar = SidecarClient(
-        binaryPath: sidecarPath,
-        logger: sidecarLogger,
-      );
+      sidecar = SidecarClient(binaryPath: sidecarPath, logger: sidecarLogger);
       try {
         await sidecar.start();
         record('sidecar.start', true, 'sidecar responded to ping');
@@ -108,8 +105,9 @@ class ScenarioRunner {
           passed,
           passed ? 'all checks passed' : 'one or more FAILs (see report)',
         );
-        await File(p.join(outputDir, 'doctor.txt'))
-            .writeAsString(res['report']?.toString() ?? '');
+        await File(
+          p.join(outputDir, 'doctor.txt'),
+        ).writeAsString(res['report']?.toString() ?? '');
       } on Object catch (e) {
         record('doctor.run', false, 'rpc failed: $e');
       }
@@ -211,7 +209,7 @@ class ScenarioRunner {
           'ssh.connect',
           sshSession != null,
           'connected to ${scenario.printerHost} as ${scenario.sshUser} '
-          '(acceptHostKey=${scenario.acceptHostKey})',
+              '(acceptHostKey=${scenario.acceptHostKey})',
         );
       } on Object catch (e) {
         record('ssh.connect', false, 'failed: $e');
@@ -222,8 +220,11 @@ class ScenarioRunner {
       // 7. Set flow + decisions.
       final flowKind = _flowFromName(scenario.flow);
       if (flowKind == null) {
-        record('scenario.flow', false,
-            'unknown flow ${scenario.flow}; expected stock_keep or fresh_flash');
+        record(
+          'scenario.flow',
+          false,
+          'unknown flow ${scenario.flow}; expected stock_keep or fresh_flash',
+        );
         return _finalize(results, started);
       }
       controller.setFlow(flowKind);
@@ -235,11 +236,9 @@ class ScenarioRunner {
           await controller.setDecision(entry.key, entry.value);
           decisionsApplied++;
         }
-        record('decisions.apply', true,
-            'applied $decisionsApplied decisions');
+        record('decisions.apply', true, 'applied $decisionsApplied decisions');
       } on Object catch (e) {
-        record('decisions.apply', false,
-            'failed after $decisionsApplied: $e');
+        record('decisions.apply', false, 'failed after $decisionsApplied: $e');
         return _finalize(results, started);
       }
 
@@ -269,12 +268,16 @@ class ScenarioRunner {
           case StepWarning(:final stepId, :final message):
             writeEvent('  step $stepId WARN: $message');
           case StepProgress(:final percent, :final message):
-            writeEvent('  step progress ${(percent * 100).toStringAsFixed(0)}% '
-                '${message ?? ''}');
+            final percentLabel = percent == null
+                ? 'unknown'
+                : '${(percent * 100).toStringAsFixed(0)}%';
+            writeEvent('  step progress $percentLabel ${message ?? ''}');
           case UserInputRequired(:final stepId):
             encounteredUserInputs.add(stepId);
-            writeEvent('  step $stepId waiting on user input — '
-                'aborting (scenarios must decide every step up-front)');
+            writeEvent(
+              '  step $stepId waiting on user input — '
+              'aborting (scenarios must decide every step up-front)',
+            );
             // Two-step abort: resolve the pending input so the
             // current step's await unblocks (otherwise it deadlocks),
             // then signal cancellation so the loop bails before the
@@ -305,15 +308,16 @@ class ScenarioRunner {
         await subscription.cancel();
       }
 
-      await File(p.join(outputDir, 'flow.log'))
-          .writeAsString(flowLog.toString());
+      await File(
+        p.join(outputDir, 'flow.log'),
+      ).writeAsString(flowLog.toString());
 
       if (encounteredUserInputs.isNotEmpty) {
         record(
           'flow.no_user_input_required',
           false,
           'scenarios must decide every step up-front; missing: '
-          '${encounteredUserInputs.join(", ")}',
+              '${encounteredUserInputs.join(", ")}',
         );
       } else {
         record('flow.no_user_input_required', true, 'no interactive prompts');
@@ -338,9 +342,7 @@ class ScenarioRunner {
         record(
           'port.$port',
           ok,
-          reachable
-              ? 'reachable (wanted=$want)'
-              : 'unreachable (wanted=$want)',
+          reachable ? 'reachable (wanted=$want)' : 'unreachable (wanted=$want)',
         );
       }
 
@@ -388,8 +390,7 @@ class ScenarioRunner {
               true,
               '${state.steps.length} step(s) recorded',
             );
-            await File(p.join(outputDir, 'run_state.json'))
-                .writeAsString(
+            await File(p.join(outputDir, 'run_state.json')).writeAsString(
               const JsonEncoder.withIndent('  ').convert(state.toJson()),
             );
             for (final entry in scenario.expectedStepStatus.entries) {
@@ -423,14 +424,20 @@ class ScenarioRunner {
         if (sshSession != null && sshService != null) {
           await sshService.disconnect(sshSession);
         }
-      } on Object {/* best-effort */}
+      } on Object {
+        /* best-effort */
+      }
       try {
         await sidecar?.shutdown();
-      } on Object {/* best-effort */}
+      } on Object {
+        /* best-effort */
+      }
       await security?.dispose();
       try {
         await sidecarLogger?.close();
-      } on Object {/* best-effort */}
+      } on Object {
+        /* best-effort */
+      }
     }
 
     return _finalize(results, started);
@@ -454,16 +461,19 @@ class ScenarioRunner {
       ],
       'failed_count': report.failedCount,
     };
-    File(p.join(outputDir, 'manifest.json')).writeAsStringSync(
-      const JsonEncoder.withIndent('  ').convert(manifest),
-    );
+    File(
+      p.join(outputDir, 'manifest.json'),
+    ).writeAsStringSync(const JsonEncoder.withIndent('  ').convert(manifest));
     return report;
   }
 
   static Future<bool> _tcpConnect(String host, int port) async {
     try {
-      final s = await Socket.connect(host, port,
-          timeout: const Duration(seconds: 5));
+      final s = await Socket.connect(
+        host,
+        port,
+        timeout: const Duration(seconds: 5),
+      );
       s.destroy();
       return true;
     } on Object {
@@ -512,11 +522,7 @@ WizardFlow? _flowFromName(String name) {
 }
 
 class AssertionResult {
-  AssertionResult({
-    required this.name,
-    required this.ok,
-    required this.detail,
-  });
+  AssertionResult({required this.name, required this.ok, required this.detail});
 
   final String name;
   final bool ok;

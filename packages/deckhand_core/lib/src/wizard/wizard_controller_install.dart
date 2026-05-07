@@ -15,6 +15,7 @@ Future<void> _runInstallFirmwareImpl(
   _validateHttpsGitRepoImpl(fw.repo, 'firmware repo');
   _validateGitRefImpl(fw.ref, 'firmware ref');
   final install = fw.installPath ?? '~/klipper';
+  c._validateRemoteInstallPath(install, 'firmware install path');
   c._log(step, '[firmware] cloning ${fw.repo} @ ${fw.ref} -> $install');
   // Every profile-supplied value is untrusted input. Paths with `~`
   // need tilde-expansion, so use shellPathEscape; refs and repo URLs
@@ -95,6 +96,7 @@ Future<void> _runInstallFirmwareImpl(
   );
 
   final venv = fw.venvPath ?? '~/klippy-env';
+  c._validateRemoteInstallPath(venv, 'firmware venv path');
   final qVenv = shellPathEscape(venv);
   final venvCmd =
       'PY=\$(command -v python3.11 || command -v python3) && \$PY -m venv $qVenv && '
@@ -233,6 +235,7 @@ Future<void> _runInstallStackImpl(
     if (repo != null && install != null) {
       _validateHttpsGitRepoImpl(repo, '$name repo');
       _validateGitRefImpl(ref, '$name ref');
+      c._validateRemoteInstallPath(install, '$name install path');
       // Source-based install: shallow git clone on the printer.
       final qInstall = shellPathEscape(install);
       final qRef = shellSingleQuote(ref);
@@ -245,6 +248,7 @@ Future<void> _runInstallStackImpl(
         throw StepExecutionException('$name clone failed', stderr: res.stderr);
       }
     } else if (releaseRepo != null && assetPattern != null && install != null) {
+      c._validateRemoteInstallPath(install, '$name install path');
       if (assetSha256 == null || assetSha256.trim().isEmpty) {
         throw StepExecutionException(
           '$name release asset is missing required sha256',

@@ -121,11 +121,22 @@ class DartsshService implements SshService {
     );
   }
 
-  /// Format dartssh2's connection fingerprint as `type MD5:<hex>`.
+  /// Format dartssh2's connection fingerprint without pretending every
+  /// byte shape is MD5. dartssh2 currently supplies the fingerprint
+  /// bytes for the key presented on this SSH connection; the label is
+  /// chosen from the byte length so pins stay understandable.
   /// This is the only value used for trust decisions because it is
   /// the fingerprint of the key presented on this SSH connection.
   String _formatFingerprint(String type, Uint8List fingerprint) {
-    final buf = StringBuffer(type)..write(' MD5:');
+    final label = switch (fingerprint.length) {
+      16 => 'MD5',
+      32 => 'SHA256',
+      _ => 'HEX',
+    };
+    if (label == 'SHA256') {
+      return '$type SHA256:${base64.encode(fingerprint).replaceAll('=', '')}';
+    }
+    final buf = StringBuffer(type)..write(' $label:');
     for (var i = 0; i < fingerprint.length; i++) {
       if (i > 0) buf.write(':');
       buf.write(fingerprint[i].toRadixString(16).padLeft(2, '0'));

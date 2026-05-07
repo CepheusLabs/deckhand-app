@@ -272,6 +272,27 @@ void main() {
       expect(cmd, isNot(contains("got 'undefined'")));
       expect(cmd, contains('base64 -d'));
     });
+
+    test(
+      'tilde remote paths expand through HOME instead of single quotes',
+      () async {
+        final ssh = _CapturingSsh(
+          stdoutReplies: [
+            const SshCommandResult(stdout: '', stderr: '', exitCode: 0),
+          ],
+        );
+        final store = RunStateStore(ssh: ssh);
+        final state = RunState.empty(
+          deckhandVersion: 'v',
+          profileId: 'p',
+          profileCommit: 'c',
+        );
+        await store.save(_testSession, state);
+        final cmd = ssh.commands.single;
+        expect(cmd, contains(r'"$HOME"/'));
+        expect(cmd, isNot(contains("'~/.deckhand")));
+      },
+    );
   });
 }
 

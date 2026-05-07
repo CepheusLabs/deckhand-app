@@ -1,8 +1,19 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:deckhand_core/deckhand_core.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
+
+const _genericUsbDisk = DiskInfo(
+  id: 'PhysicalDrive3',
+  path: r'\\.\PHYSICALDRIVE3',
+  sizeBytes: 7818182656,
+  bus: 'USB',
+  model: 'Generic STORAGE DEVICE',
+  removable: true,
+  partitions: [],
+);
 
 /// End-to-end tests for [WizardController] step execution. We stub every
 /// service so the controller runs in-process without hitting the
@@ -52,6 +63,7 @@ void main() {
     _StubFlashService? flash,
     FakeElevatedHelper? helper,
     FakeSecurity? security,
+    String? osImagesDir,
   }) {
     final profile = PrinterProfile.fromJson(profileJson);
     return WizardController(
@@ -63,8 +75,42 @@ void main() {
       upstream: upstream ?? FakeUpstream(),
       security: security ?? FakeSecurity(),
       elevatedHelper: helper,
+      osImagesDir: osImagesDir,
     );
   }
+
+  group('WizardController.wait_for_ssh handoff', () {
+    test(
+      'pauses fresh flash instead of failing when no SSH host is set',
+      () async {
+        final controller = newController(
+          profileJson: baseProfileJson(
+            freshFlashSteps: [
+              {'id': 'wait_for_ssh', 'kind': 'wait_for_ssh'},
+            ],
+          ),
+        );
+        await controller.loadProfile('test-printer');
+        controller.setFlow(WizardFlow.freshFlash);
+
+        final events = <WizardEvent>[];
+        final sub = controller.events.listen(events.add);
+
+        await expectLater(
+          controller.startExecution(),
+          throwsA(
+            isA<WizardHandoffRequiredException>()
+                .having((e) => e.step, 'step', 'first-boot')
+                .having((e) => e.route, 'route', '/first-boot'),
+          ),
+        );
+        await sub.cancel();
+
+        expect(controller.state.currentStep, 'first-boot');
+        expect(events.whereType<StepFailed>(), isEmpty);
+      },
+    );
+  });
 
   group('WizardController._resolveOrAwaitInput', () {
     test(
@@ -103,26 +149,38 @@ void main() {
     );
 
     test('auto-resolves disk_picker from flash.disk decision', () async {
+      final flash = _StubFlashService(disks: const [_genericUsbDisk]);
       final controller = newController(
         profileJson: baseProfileJson(
           freshFlashSteps: [
             {'id': 'choose_target_disk', 'kind': 'disk_picker'},
           ],
         ),
+        flash: flash,
       );
       await controller.loadProfile('test-printer');
       controller.setFlow(WizardFlow.freshFlash);
       await controller.setDecision('flash.disk', 'PhysicalDrive3');
 
       final inputs = <UserInputRequired>[];
+      final logs = <StepLog>[];
       final sub = controller.events
           .where((e) => e is UserInputRequired)
           .cast<UserInputRequired>()
           .listen(inputs.add);
+      final logSub = controller.events
+          .where((e) => e is StepLog)
+          .cast<StepLog>()
+          .listen(logs.add);
       await controller.startExecution();
       await sub.cancel();
+      await logSub.cancel();
 
       expect(inputs, isEmpty);
+      expect(
+        logs.map((e) => e.line),
+        contains('[input] using existing decision: Generic STORAGE DEVICE'),
+      );
     });
 
     test('emits UserInputRequired when no prior decision was made', () async {
@@ -248,6 +306,42 @@ void main() {
       },
     );
 
+    test('uses configured OS image cache when step has no dest', () async {
+      final cacheDir = await Directory.systemTemp.createTemp(
+        'deckhand-core-os-cache-',
+      );
+      addTearDown(() async => cacheDir.delete(recursive: true));
+      final expectedPath = p.join(cacheDir.path, 'debian-bookworm.img');
+      final upstream = FakeUpstream()
+        ..addDownloadEvent(
+          const OsDownloadProgress(
+            bytesDone: 0,
+            bytesTotal: 0,
+            phase: OsDownloadPhase.done,
+            sha256: validImageSha,
+          ),
+        );
+
+      final controller = newController(
+        profileJson: baseProfileJson(
+          freshFlashSteps: [
+            {'id': 'download_os', 'kind': 'os_download'},
+          ],
+        ),
+        upstream: upstream,
+        osImagesDir: cacheDir.path,
+      );
+      await controller.loadProfile('test-printer');
+      controller.setFlow(WizardFlow.freshFlash);
+      await controller.setDecision('flash.os', 'debian-bookworm');
+
+      await controller.startExecution();
+
+      expect(upstream.downloadCalls, hasLength(1));
+      expect(upstream.downloadCalls.single.destPath, expectedPath);
+      expect(controller.state.decisions['flash.image_path'], expectedPath);
+    });
+
     test(
       'rejects OS image profiles without an authenticated download',
       () async {
@@ -314,7 +408,7 @@ void main() {
     test(
       'delegates to elevated helper, passes confirmation token + sha',
       () async {
-        final flash = _StubFlashService();
+        final flash = _StubFlashService(disks: const [_genericUsbDisk]);
         final helper = FakeElevatedHelper()
           ..addEvent(
             const FlashProgress(
@@ -352,17 +446,63 @@ void main() {
         controller.setFlow(WizardFlow.freshFlash);
         await controller.setDecision('flash.disk', 'PhysicalDrive3');
         await controller.setDecision('flash.image_path', 'C:/tmp/test.img');
-        await controller.setDecision('flash.image_sha256', 'abc123');
+        await controller.setDecision('flash.image_sha256', validImageSha);
+        final logs = <StepLog>[];
+        final logSub = controller.events
+            .where((e) => e is StepLog)
+            .cast<StepLog>()
+            .listen(logs.add);
 
         await controller.startExecution();
+        await logSub.cancel();
 
         expect(helper.calls, hasLength(1));
         expect(flash.safetyChecks, ['PhysicalDrive3']);
         expect(helper.calls.first.diskId, 'PhysicalDrive3');
         expect(helper.calls.first.imagePath, 'C:/tmp/test.img');
         expect(helper.calls.first.verifyAfterWrite, true);
-        expect(helper.calls.first.expectedSha256, 'abc123');
+        expect(helper.calls.first.expectedSha256, validImageSha);
         expect(helper.calls.first.confirmationToken, security.lastTokenValue);
+        expect(
+          logs.map((e) => e.line),
+          contains(
+            '[flash] writing C:/tmp/test.img -> Generic STORAGE DEVICE (verify=true)',
+          ),
+        );
+      },
+    );
+
+    test(
+      'backfills missing flash sha from selected OS option before helper launch',
+      () async {
+        final helper = FakeElevatedHelper()
+          ..addEvent(
+            const FlashProgress(
+              bytesDone: 1,
+              bytesTotal: 1,
+              phase: FlashPhase.done,
+            ),
+          );
+        final controller = newController(
+          profileJson: baseProfileJson(
+            freshFlashSteps: [
+              {'id': 'flash_disk', 'kind': 'flash_disk'},
+            ],
+          ),
+          helper: helper,
+          security: FakeSecurity(),
+        );
+        await controller.loadProfile('test-printer');
+        controller.setFlow(WizardFlow.freshFlash);
+        await controller.setDecision('flash.os', 'debian-bookworm');
+        await controller.setDecision('flash.disk', 'PhysicalDrive3');
+        await controller.setDecision('flash.image_path', 'C:/tmp/test.img');
+
+        await controller.startExecution();
+
+        expect(helper.calls, hasLength(1));
+        expect(helper.calls.single.expectedSha256, validImageSha);
+        expect(controller.state.decisions['flash.image_sha256'], validImageSha);
       },
     );
 
@@ -470,6 +610,7 @@ void main() {
         controller.setFlow(WizardFlow.freshFlash);
         await controller.setDecision('flash.disk', 'PhysicalDrive3');
         await controller.setDecision('flash.image_path', 'C:/tmp/test.img');
+        await controller.setDecision('flash.image_sha256', validImageSha);
         await controller.setDecision(
           'flash.safety_warnings_acknowledged.PhysicalDrive3',
           true,
@@ -563,7 +704,7 @@ void main() {
         expect(
           ssh.runCalls.any(
             (c) => RegExp(
-              r'bash /tmp/deckhand-[0-9a-f]+-build-python\.sh',
+              r"bash '/tmp/deckhand-[0-9a-f]+-build-python\.sh'",
             ).hasMatch(c),
           ),
           isTrue,
@@ -632,20 +773,15 @@ void main() {
         // The run command sets SUDO_ASKPASS + PATH prefix and points
         // at the user-space script (no outer sudo).
         final runCmd = ssh.runCalls.firstWhere(
-          (c) => RegExp(r'bash /tmp/deckhand-[0-9a-f]+-noop\.sh').hasMatch(c),
+          (c) => RegExp(r"bash '/tmp/deckhand-[0-9a-f]+-noop\.sh'").hasMatch(c),
         );
         expect(runCmd, contains('SUDO_ASKPASS=\'/tmp/deckhand-askpass-'));
         expect(runCmd, contains('PATH=\'/tmp/deckhand-bin-'));
         expect(runCmd, isNot(startsWith('-E ')));
         expect(runCmd, contains('--fast'));
 
-        // Cleanup is deferred to controller.dispose() so repeated
-        // script steps reuse the same helper. Verify it happens then.
-        final pre = ssh.runCalls.length;
-        await controller.dispose();
         final cleanup = ssh.runCalls
-            .sublist(pre)
-            .where((c) => c.startsWith('rm -rf'))
+            .where((c) => c.startsWith('rm -rf --'))
             .toList();
         expect(cleanup, hasLength(1));
         expect(cleanup.single, contains('deckhand-askpass-'));
@@ -683,14 +819,14 @@ void main() {
         // overwrite of `lastSudoPassword` can't flake the assertion.
         final call = ssh.stepDetails.firstWhere(
           (d) => RegExp(
-            r'bash /tmp/deckhand-[0-9a-f]+-rebuild\.sh',
+            r"bash '/tmp/deckhand-[0-9a-f]+-rebuild\.sh'",
           ).hasMatch(d.command),
         );
         expect(call.command, contains('SUDO_ASKPASS=\'/tmp/deckhand-askpass-'));
         expect(
           call.command,
           matches(
-            RegExp(r'sudo -A -E bash /tmp/deckhand-[0-9a-f]+-rebuild\.sh'),
+            RegExp(r"sudo -A -E bash '/tmp/deckhand-[0-9a-f]+-rebuild\.sh'"),
           ),
         );
         expect(call.sudoPassword, isNull);
@@ -721,8 +857,8 @@ void main() {
         matches(RegExp(r'^/tmp/deckhand-[0-9a-f]+-pure\.sh$')),
       );
       expect(
-        ssh.steps.single,
-        matches(RegExp(r'^bash /tmp/deckhand-[0-9a-f]+-pure\.sh$')),
+        ssh.steps.where((c) => !c.startsWith('rm -f')).single,
+        matches(RegExp(r"^bash '/tmp/deckhand-[0-9a-f]+-pure\.sh'$")),
       );
     });
 
@@ -791,12 +927,12 @@ void main() {
         // our lastSudoPassword observation.
         final call = ssh.stepDetails.singleWhere(
           (d) => RegExp(
-            r'bash /tmp/deckhand-[0-9a-f]+-rebuild\.sh',
+            r"bash '/tmp/deckhand-[0-9a-f]+-rebuild\.sh'",
           ).hasMatch(d.command),
         );
         expect(
           call.command,
-          matches(RegExp(r'^-E bash /tmp/deckhand-[0-9a-f]+-rebuild\.sh$')),
+          matches(RegExp(r"^-E bash '/tmp/deckhand-[0-9a-f]+-rebuild\.sh'$")),
         );
         expect(call.sudoPassword, 'root');
       },
@@ -1847,6 +1983,252 @@ void main() {
       );
     });
   });
+
+  group('security review regressions', () {
+    test(
+      'apply_files rejects traversal and option-looking delete paths',
+      () async {
+        final ssh = FakeSsh();
+        final controller = newController(
+          profileJson: {
+            ...baseProfileJson(
+              stockKeepSteps: [
+                {'id': 'files', 'kind': 'apply_files'},
+              ],
+            ),
+            'stock_os': {
+              'files': [
+                {
+                  'id': 'bad',
+                  'default_action': 'delete',
+                  'paths': ['/home/root/../etc/passwd', '--no-preserve-root'],
+                },
+              ],
+            },
+          },
+          ssh: ssh,
+        );
+        await controller.loadProfile('test-printer');
+        controller.setFlow(WizardFlow.stockKeep);
+        controller.setSession(
+          const SshSession(id: 'fake', host: 'h', port: 22, user: 'root'),
+        );
+
+        await controller.startExecution();
+
+        expect(ssh.steps.any((c) => c.contains('rm -rf')), isFalse);
+      },
+    );
+
+    test('install_firmware rejects unsafe refs before cloning', () async {
+      final ssh = FakeSsh();
+      final controller = newController(
+        profileJson: {
+          ...baseProfileJson(
+            stockKeepSteps: [
+              {'id': 'fw', 'kind': 'install_firmware'},
+            ],
+          ),
+          'firmware': {
+            'choices': [
+              {
+                'id': 'klipper',
+                'repo': 'https://github.com/Klipper3d/klipper',
+                'ref': 'main;touch pwned',
+                'install_path': '~/klipper;touch pwned',
+              },
+            ],
+          },
+        },
+        ssh: ssh,
+      );
+      await controller.loadProfile('test-printer');
+      controller.setFlow(WizardFlow.stockKeep);
+      await controller.setDecision('firmware', 'klipper');
+      controller.setSession(
+        const SshSession(id: 'fake', host: 'h', port: 22, user: 'root'),
+      );
+
+      await expectLater(
+        controller.startExecution(),
+        throwsA(isA<StepExecutionException>()),
+      );
+      expect(ssh.runCalls.any((c) => c.contains('git clone')), isFalse);
+    });
+
+    test(
+      'script sanitizes basename, quotes path, and cleans temp file',
+      () async {
+        final tmp = await _stageLocalScript('bad name;touch pwned.sh');
+        final ssh = FakeSsh();
+        final controller = newController(
+          profileJson: baseProfileJson(
+            stockKeepSteps: [
+              {'id': 'sh', 'kind': 'script', 'path': tmp, 'askpass': false},
+            ],
+          ),
+          ssh: ssh,
+        );
+        await controller.loadProfile('test-printer');
+        controller.setFlow(WizardFlow.stockKeep);
+        controller.setSession(
+          const SshSession(id: 'fake', host: 'h', port: 22, user: 'root'),
+        );
+
+        await controller.startExecution();
+
+        final remote = ssh.uploadCalls.single.remote;
+        expect(p.basename(remote), isNot(contains(';')));
+        final run = ssh.steps.firstWhere((c) => c.contains('/tmp/deckhand-'));
+        expect(run, contains("'$remote'"));
+        expect(
+          ssh.steps.any((c) => c.startsWith('rm -f -- ') && c.contains(remote)),
+          isTrue,
+        );
+      },
+    );
+
+    test(
+      'completed run-state with same input hash skips step execution',
+      () async {
+        final existing =
+            RunState.empty(
+              deckhandVersion: 'unknown',
+              profileId: 'test-printer',
+              profileCommit: 'deadbeef',
+            ).appending(
+              RunStateStep(
+                id: 'cmd',
+                status: RunStateStatus.completed,
+                startedAt: DateTime.utc(2026, 5, 6),
+                inputHash: canonicalInputHash({
+                  'kind': 'ssh_commands',
+                  'id': 'cmd',
+                  'decisions': const <String, Object?>{},
+                }),
+              ),
+            );
+        final ssh = FakeSsh()
+          ..nextRun = SshCommandResult(
+            stdout: const JsonEncoder().convert(existing.toJson()),
+            stderr: '',
+            exitCode: 0,
+          );
+        final controller = newController(
+          profileJson: baseProfileJson(
+            stockKeepSteps: [
+              {
+                'id': 'cmd',
+                'kind': 'ssh_commands',
+                'commands': ['touch /tmp/should-not-run'],
+              },
+            ],
+          ),
+          ssh: ssh,
+        );
+        await controller.loadProfile('test-printer');
+        controller.setFlow(WizardFlow.stockKeep);
+        controller.setSession(
+          const SshSession(id: 'fake', host: 'h', port: 22, user: 'root'),
+        );
+
+        await controller.startExecution();
+
+        expect(ssh.runCalls.any((c) => c.contains('should-not-run')), isFalse);
+      },
+    );
+
+    test('flash_disk consumes confirmation token bound to target', () async {
+      final security = FakeSecurity();
+      final helper = FakeElevatedHelper();
+      final controller = newController(
+        profileJson: baseProfileJson(
+          freshFlashSteps: [
+            {'id': 'flash', 'kind': 'flash_disk'},
+          ],
+        ),
+        security: security,
+        helper: helper,
+      );
+      await controller.loadProfile('test-printer');
+      controller.setFlow(WizardFlow.freshFlash);
+      await controller.setDecision('flash.disk', 'PhysicalDrive3');
+      await controller.setDecision('flash.image_path', r'C:\image.img');
+      await controller.setDecision('flash.image_sha256', validImageSha);
+
+      await controller.startExecution();
+
+      expect(
+        security.consumed.single,
+        'write_image:PhysicalDrive3:token-1abcdef0123456789',
+      );
+    });
+
+    test('install_screen restore/source gaps fail loudly', () async {
+      final controller = newController(
+        profileJson: {
+          ...baseProfileJson(
+            stockKeepSteps: [
+              {'id': 'screen', 'kind': 'install_screen'},
+            ],
+          ),
+          'screens': [
+            {'id': 'lcd', 'source_kind': 'restore_from_backup'},
+          ],
+        },
+      );
+      await controller.loadProfile('test-printer');
+      controller.setFlow(WizardFlow.stockKeep);
+      await controller.setDecision('screen', 'lcd');
+      controller.setSession(
+        const SshSession(id: 'fake', host: 'h', port: 22, user: 'root'),
+      );
+
+      await expectLater(
+        controller.startExecution(),
+        throwsA(isA<StepExecutionException>()),
+      );
+    });
+
+    test('flash_mcus pending implementation fails loudly', () async {
+      final controller = newController(
+        profileJson: {
+          ...baseProfileJson(
+            stockKeepSteps: [
+              {
+                'id': 'mcus',
+                'kind': 'flash_mcus',
+                'which': ['main'],
+              },
+            ],
+          ),
+          'firmware': {
+            'choices': [
+              {
+                'id': 'klipper',
+                'repo': 'https://github.com/Klipper3d/klipper',
+                'ref': 'main',
+              },
+            ],
+          },
+          'mcus': [
+            {'id': 'main', 'chip': 'stm32f407xx'},
+          ],
+        },
+      );
+      await controller.loadProfile('test-printer');
+      controller.setFlow(WizardFlow.stockKeep);
+      await controller.setDecision('firmware', 'klipper');
+      controller.setSession(
+        const SshSession(id: 'fake', host: 'h', port: 22, user: 'root'),
+      );
+
+      await expectLater(
+        controller.startExecution(),
+        throwsA(isA<StepExecutionException>()),
+      );
+    });
+  });
 }
 
 // -----------------------------------------------------------------
@@ -1903,13 +2285,15 @@ class _PinnedLocationProfileService implements ProfileService {
 class _StubFlashService implements FlashService {
   _StubFlashService({
     this.safetyVerdict = const FlashSafetyVerdict(diskId: '', allowed: true),
+    this.disks = const [],
   });
 
   final FlashSafetyVerdict safetyVerdict;
+  final List<DiskInfo> disks;
   final safetyChecks = <String>[];
 
   @override
-  Future<List<DiskInfo>> listDisks() async => const [];
+  Future<List<DiskInfo>> listDisks() async => disks;
   @override
   Future<FlashSafetyVerdict> safetyCheck({required String diskId}) async {
     safetyChecks.add(diskId);
@@ -2274,13 +2658,14 @@ class FakeSecurity implements SecurityService {
       value: lastTokenValue,
       expiresAt: DateTime.now().add(ttl),
       operation: operation,
+      target: target,
     );
   }
 
   final consumed = <String>[];
   @override
-  bool consumeToken(String value, String operation) {
-    consumed.add('$operation:$value');
+  bool consumeToken(String value, String operation, {required String target}) {
+    consumed.add('$operation:$target:$value');
     return true;
   }
 

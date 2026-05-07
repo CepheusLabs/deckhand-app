@@ -27,6 +27,27 @@ class WizardCancelledException implements Exception {
   String toString() => 'WizardCancelledException: $reason';
 }
 
+/// Thrown when execution reached a real-world handoff that cannot be
+/// completed inside the automated runner.
+///
+/// This is not a failed step. Fresh flashing, for example, has to pause
+/// after the eMMC write so the user can reinstall the module and connect
+/// to the newly booted printer before SSH-only steps can continue.
+class WizardHandoffRequiredException implements Exception {
+  const WizardHandoffRequiredException({
+    required this.step,
+    required this.route,
+    required this.message,
+  });
+
+  final String step;
+  final String route;
+  final String message;
+
+  @override
+  String toString() => message;
+}
+
 /// Thrown by [WizardController.restore] when the saved profile id
 /// can't be reloaded — most often because the user is offline, the
 /// profiles repo moved, or the host hasn't been allow-listed yet.
@@ -43,7 +64,8 @@ class ResumeFailedException implements Exception {
   final Object cause;
   final StackTrace stackTrace;
   @override
-  String toString() => 'ResumeFailedException(profile="${snapshot.profileId}", '
+  String toString() =>
+      'ResumeFailedException(profile="${snapshot.profileId}", '
       'step="${snapshot.currentStep}"): $cause';
 }
 
@@ -89,7 +111,7 @@ class StepProgress extends WizardEvent {
     this.message,
   });
   final String stepId;
-  final double percent;
+  final double? percent;
   final String? message;
 }
 

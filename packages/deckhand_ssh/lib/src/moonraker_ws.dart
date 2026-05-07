@@ -19,8 +19,8 @@ class MoonrakerHttpService implements MoonrakerService {
 
   @override
   Future<KlippyInfo> info({required String host, int port = 7125}) async {
-    final res = await _dio.get<Map<String, dynamic>>(
-      'http://$host:$port/printer/info',
+    final res = await _dio.getUri<Map<String, dynamic>>(
+      _moonrakerUri(host, port, const ['printer', 'info']),
     );
     final r =
         (res.data?['result'] as Map?)?.cast<String, dynamic>() ?? const {};
@@ -50,9 +50,13 @@ class MoonrakerHttpService implements MoonrakerService {
     int port = 7125,
     required List<String> objects,
   }) async {
-    final res = await _dio.get<Map<String, dynamic>>(
-      'http://$host:$port/printer/objects/query',
-      queryParameters: {for (final object in objects) object: ''},
+    final res = await _dio.getUri<Map<String, dynamic>>(
+      _moonrakerUri(
+        host,
+        port,
+        const ['printer', 'objects', 'query'],
+        queryParameters: {for (final object in objects) object: ''},
+      ),
     );
     final status = (res.data?['result'] as Map?)?['status'] as Map? ?? const {};
     return status.cast<String, dynamic>();
@@ -64,8 +68,8 @@ class MoonrakerHttpService implements MoonrakerService {
     int port = 7125,
     required String script,
   }) async {
-    await _dio.post<Map<String, dynamic>>(
-      'http://$host:$port/printer/gcode/script',
+    await _dio.postUri<Map<String, dynamic>>(
+      _moonrakerUri(host, port, const ['printer', 'gcode', 'script']),
       data: {'script': script},
     );
   }
@@ -75,8 +79,8 @@ class MoonrakerHttpService implements MoonrakerService {
     required String host,
     int port = 7125,
   }) async {
-    final res = await _dio.get<Map<String, dynamic>>(
-      'http://$host:$port/printer/objects/list',
+    final res = await _dio.getUri<Map<String, dynamic>>(
+      _moonrakerUri(host, port, const ['printer', 'objects', 'list']),
     );
     final objects =
         (res.data?['result'] as Map?)?['objects'] as List? ?? const [];
@@ -90,8 +94,13 @@ class MoonrakerHttpService implements MoonrakerService {
     required String filename,
   }) async {
     try {
-      final res = await _dio.get<String>(
-        'http://$host:$port/server/files/config/$filename',
+      final res = await _dio.getUri<String>(
+        _moonrakerUri(host, port, [
+          'server',
+          'files',
+          'config',
+          ..._safeConfigPath(filename),
+        ]),
         options: Options(responseType: ResponseType.plain),
       );
       return res.data;
@@ -105,6 +114,30 @@ class MoonrakerHttpService implements MoonrakerService {
     } catch (_) {
       return null;
     }
+  }
+
+  Uri _moonrakerUri(
+    String host,
+    int port,
+    List<String> pathSegments, {
+    Map<String, dynamic>? queryParameters,
+  }) => Uri(
+    scheme: 'http',
+    host: host,
+    port: port,
+    pathSegments: pathSegments,
+    queryParameters: queryParameters,
+  );
+
+  List<String> _safeConfigPath(String filename) {
+    final normalized = filename.replaceAll('\\', '/');
+    final parts = normalized.split('/');
+    if (normalized.startsWith('/') ||
+        parts.isEmpty ||
+        parts.any((part) => part.isEmpty || part == '.' || part == '..')) {
+      throw ArgumentError.value(filename, 'filename', 'unsafe config path');
+    }
+    return parts;
   }
 }
 

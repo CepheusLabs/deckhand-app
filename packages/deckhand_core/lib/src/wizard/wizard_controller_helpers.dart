@@ -130,6 +130,12 @@ String _mcuConfigImpl(Map<String, dynamic> mcu) {
   final transport = (mcu['transport'] as Map?)?.cast<String, dynamic>() ?? {};
   final selectKey = transport['select'] as String? ?? '';
   final baud = transport['baud'] as num?;
+  final safeToken = RegExp(r'^[A-Za-z0-9_+.-]*$');
+  if (!safeToken.hasMatch(chip) ||
+      !safeToken.hasMatch(flashOffset) ||
+      !safeToken.hasMatch(selectKey)) {
+    throw StepExecutionException('mcu config contains unsafe shell content');
+  }
   final lines = [
     'CONFIG_MACH_STM32=y',
     'CONFIG_MCU="$chip"',
@@ -143,6 +149,8 @@ String _mcuConfigImpl(Map<String, dynamic> mcu) {
 }
 
 bool _isDangerousPathImpl(String path) {
+  final normalized = _normalizeProfileDeletePathImpl(path);
+  if (normalized == null) return true;
   const dangerous = {
     '/',
     '/bin',
@@ -160,7 +168,38 @@ bool _isDangerousPathImpl(String path) {
     '/usr',
     '/var',
   };
-  return dangerous.contains(path);
+  if (dangerous.contains(normalized)) return true;
+  const protectedPrefixes = [
+    '/bin/',
+    '/boot/',
+    '/dev/',
+    '/etc/',
+    '/lib/',
+    '/lib64/',
+    '/proc/',
+    '/root/',
+    '/run/',
+    '/sbin/',
+    '/sys/',
+    '/usr/',
+    '/var/',
+  ];
+  return protectedPrefixes.any(normalized.startsWith);
+}
+
+String? _normalizeProfileDeletePathImpl(String path) {
+  final trimmed = path.trim();
+  if (trimmed.isEmpty || trimmed.startsWith('-') || !trimmed.startsWith('/')) {
+    return null;
+  }
+  final segments = <String>[];
+  for (final segment in trimmed.split('/')) {
+    if (segment.isEmpty || segment == '.') continue;
+    if (segment == '..') return null;
+    segments.add(segment);
+  }
+  if (segments.isEmpty) return '/';
+  return '/${segments.join('/')}';
 }
 
 /// Build a `VAR=value VAR2=value2 ` prefix for a script step's
@@ -229,6 +268,28 @@ void _validateGitRefImpl(String value, String label) {
       !RegExp(r'^[A-Za-z0-9._/-]+$').hasMatch(value)) {
     throw StepExecutionException('$label "$value" is not a safe git ref');
   }
+}
+
+void _validateRemoteInstallPathImpl(String value, String label) {
+  final trimmed = value.trim();
+  if (trimmed.isEmpty ||
+      trimmed.startsWith('-') ||
+      trimmed.contains('\u0000') ||
+      trimmed.split('/').contains('..') ||
+      (!trimmed.startsWith('/') &&
+          trimmed != '~' &&
+          !trimmed.startsWith('~/'))) {
+    throw StepExecutionException('$label "$value" is not a safe remote path');
+  }
+}
+
+String _safeRemoteBasenameImpl(String value, String label) {
+  final base = p.basename(value);
+  final safe = base.replaceAll(RegExp(r'[^A-Za-z0-9._+-]'), '_');
+  if (safe.isEmpty || safe == '.' || safe == '..' || safe.startsWith('-')) {
+    throw StepExecutionException('$label "$base" is not a safe file name');
+  }
+  return safe;
 }
 
 /// Expand `{{...}}` templates in [template].

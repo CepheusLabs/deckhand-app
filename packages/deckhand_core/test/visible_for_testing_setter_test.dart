@@ -278,9 +278,11 @@ class _StubSecurity implements SecurityService {
     value: 'stub',
     expiresAt: DateTime.now().add(ttl),
     operation: operation,
+    target: target,
   );
   @override
-  bool consumeToken(String value, String operation) => true;
+  bool consumeToken(String value, String operation, {required String target}) =>
+      true;
   @override
   Future<bool> isHostAllowed(String host) async => true;
   @override

@@ -102,11 +102,16 @@ class HeadlessSecurityService implements SecurityService {
     final value =
         'hitl-token-$_tokenCounter-${DateTime.now().microsecondsSinceEpoch}';
     final expires = DateTime.now().add(ttl);
-    _tokens[value] = _TokenRecord(operation: operation, expiresAt: expires);
+    _tokens[value] = _TokenRecord(
+      operation: operation,
+      target: target,
+      expiresAt: expires,
+    );
     return ConfirmationToken(
       value: value,
       expiresAt: expires,
       operation: operation,
+      target: target,
     );
   }
 
@@ -114,10 +119,11 @@ class HeadlessSecurityService implements SecurityService {
   /// helper of the same name; the elevated-helper path expects the
   /// token to be invalid after one use.
   @override
-  bool consumeToken(String value, String operation) {
+  bool consumeToken(String value, String operation, {required String target}) {
     final t = _tokens.remove(value);
     if (t == null) return false;
     if (t.operation != operation) return false;
+    if (t.target != target) return false;
     if (DateTime.now().isAfter(t.expiresAt)) return false;
     return true;
   }
@@ -212,8 +218,13 @@ class HeadlessSecurityService implements SecurityService {
 }
 
 class _TokenRecord {
-  _TokenRecord({required this.operation, required this.expiresAt});
+  _TokenRecord({
+    required this.operation,
+    required this.target,
+    required this.expiresAt,
+  });
   final String operation;
+  final String target;
   final DateTime expiresAt;
 }
 

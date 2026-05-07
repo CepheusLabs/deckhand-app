@@ -149,8 +149,17 @@ Future<void> _startExecutionImpl(WizardController c) async {
     final id = step['id'] as String? ?? 'unnamed';
     final kind = step['kind'] as String? ?? '';
     c._currentStepKind = kind;
-    c._emit(StepStarted(id));
     final hash = canonicalInputHash(c._canonicalStepInputs(step));
+    final prior = c._runState?.lastFor(id);
+    if (prior != null &&
+        prior.status == RunStateStatus.completed &&
+        prior.inputHash == hash) {
+      c._log(step, '[run-state] skipping $id; already completed');
+      c._emit(StepCompleted(id));
+      c._currentStepKind = null;
+      continue;
+    }
+    c._emit(StepStarted(id));
     await c._runStateRecord(
       RunStateStep(
         id: id,
@@ -175,6 +184,8 @@ Future<void> _startExecutionImpl(WizardController c) async {
           inputHash: hash,
         ),
       );
+    } on WizardHandoffRequiredException {
+      rethrow;
     } catch (e) {
       c._emit(StepFailed(stepId: id, error: '$e'));
       await c._runStateRecord(
@@ -214,6 +225,19 @@ Future<void> _runStateBootstrapImpl(WizardController c) async {
     c._runState = await c._runStateStore.load(session) ?? fresh;
   } on Object {
     c._runState = fresh;
+  }
+}
+
+Future<void> _runStateAttachSessionImpl(WizardController c) async {
+  final session = c._session;
+  if (session == null) return;
+  final current = c._runState;
+  try {
+    final remote = await c._runStateStore.load(session);
+    if (remote == null) return;
+    c._runState = current == null ? remote : current.merging(remote);
+  } on Object {
+    return;
   }
 }
 
@@ -466,11 +490,24 @@ Future<void> _resolveOrAwaitInputImpl(
 ) async {
   final existing = _lookupExistingDecisionImpl(c, step);
   if (existing != null) {
-    c._log(step, '[input] using existing decision: $existing');
+    final display = await _displayExistingDecisionImpl(c, step, existing);
+    c._log(step, '[input] using existing decision: $display');
     c._emit(DecisionRecorded(path: id, value: existing));
     return;
   }
   await c._awaitUserInput(id, step);
+}
+
+Future<String> _displayExistingDecisionImpl(
+  WizardController c,
+  Map<String, dynamic> step,
+  Object existing,
+) async {
+  final kind = step['kind'] as String? ?? '';
+  if (kind == 'disk_picker' && existing is String) {
+    return _userFacingDiskNameForIdImpl(c, existing);
+  }
+  return '$existing';
 }
 
 /// Checks known decision keys that may already hold the answer for
@@ -498,12 +535,77 @@ Object? _lookupExistingDecisionImpl(
   return null;
 }
 
+Future<String> _userFacingDiskNameForIdImpl(
+  WizardController c,
+  String diskId,
+) async {
+  try {
+    final disks = await c.flash.listDisks();
+    for (final disk in disks) {
+      if (disk.id == diskId) return _userFacingDiskNameImpl(disk);
+    }
+  } catch (_) {
+    // Logs are best-effort display only. The raw disk id is still used
+    // for all safety checks and helper calls below.
+  }
+  return diskId;
+}
+
+String _userFacingDiskNameImpl(DiskInfo disk) {
+  final model = disk.model.trim();
+  if (_isFriendlyDiskModelImpl(model, disk)) return model;
+  final bus = disk.bus.trim().toUpperCase();
+  if (disk.removable || bus == 'USB' || bus == 'SD' || bus == 'MMC') {
+    return 'Generic STORAGE DEVICE';
+  }
+  if (bus.isNotEmpty && bus != 'UNKNOWN') return '$bus storage device';
+  return 'Storage device';
+}
+
+bool _isFriendlyDiskModelImpl(String model, DiskInfo disk) {
+  if (model.isEmpty) return false;
+  final lower = model.toLowerCase();
+  if (lower == 'unknown' || lower == 'unknown disk') return false;
+  if (_sameTechnicalDiskValueImpl(model, disk.id) ||
+      _sameTechnicalDiskValueImpl(model, disk.path)) {
+    return false;
+  }
+  return _physicalDriveNumberImpl(model) == null;
+}
+
+bool _sameTechnicalDiskValueImpl(String left, String right) {
+  if (right.trim().isEmpty) return false;
+  return left.trim().toLowerCase() == right.trim().toLowerCase();
+}
+
+String? _physicalDriveNumberImpl(String value) {
+  final compact = value
+      .trim()
+      .replaceFirst(RegExp(r'^\\\\\.\\', caseSensitive: false), '')
+      .replaceAll(RegExp(r'[\s_-]+'), '')
+      .toLowerCase();
+  final match = RegExp(r'^physicaldrive([0-9]+)$').firstMatch(compact);
+  return match?.group(1);
+}
+
 Future<void> _runWaitForSshImpl(
   WizardController c,
   Map<String, dynamic> step,
 ) async {
   final host = c._state.sshHost;
-  if (host == null) throw StepExecutionException('no ssh host set');
+  if (host == null || host.trim().isEmpty) {
+    c._log(
+      step,
+      '[handoff] reinstall the eMMC, power on the printer, then connect to it',
+    );
+    c.setCurrentStep('first-boot');
+    throw const WizardHandoffRequiredException(
+      step: 'first-boot',
+      route: '/first-boot',
+      message:
+          'Install the eMMC in the printer, power it on, then connect to the printer to continue.',
+    );
+  }
   final timeoutSecs = (step['timeout_seconds'] as num?)?.toInt() ?? 600;
   final ok = await c.discovery.waitForSsh(
     host: host,

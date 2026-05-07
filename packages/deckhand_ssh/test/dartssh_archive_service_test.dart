@@ -36,7 +36,7 @@ void main() {
     });
 
     test(
-      'captureRemote streams chunked base64 and reassembles bytes',
+      'captureRemote streams chunked base64 and requires success marker',
       () async {
         // Build a known tar.gz so we can assert byte-exact round-trip.
         final source = _buildTarGz({
@@ -53,11 +53,12 @@ void main() {
           final end = (i + 76 < encoded.length) ? i + 76 : encoded.length;
           lines.add(encoded.substring(i, end));
         }
+        lines.add('__DECKHAND_TAR_OK__');
 
         final ssh = _FakeSsh(
           streamLines: {
             // The capture command suffix that the impl actually sends.
-            'tar -czf -': lines,
+            'tar -czf': lines,
           },
         );
         final svc = DartsshArchiveService(ssh: ssh);
@@ -83,7 +84,7 @@ void main() {
       final encoded = base64.encode(source);
       final ssh = _FakeSsh(
         streamLines: {
-          'tar -czf -': [encoded],
+          'tar -czf': [encoded, '__DECKHAND_TAR_OK__'],
         },
       );
       final svc = DartsshArchiveService(ssh: ssh);
@@ -100,6 +101,34 @@ void main() {
         ssh.streamCommands.single,
         isNot(contains('--ignore-failed-read \'--checkpoint-action')),
       );
+      expect(
+        ssh.streamCommands.single,
+        isNot(contains('--ignore-failed-read')),
+      );
+    });
+
+    test('captureRemote fails if tar never emits the success marker', () async {
+      final source = _buildTarGz({'a.txt': utf8.encode('hello')});
+      final encoded = base64.encode(source);
+      final ssh = _FakeSsh(
+        streamLines: {
+          'tar -czf': [encoded],
+        },
+      );
+      final svc = DartsshArchiveService(ssh: ssh);
+      final out = p.join(tmp.path, 'missing-marker.tar.gz');
+
+      await expectLater(
+        svc
+            .captureRemote(
+              session: _session,
+              paths: const ['/printer_data/config'],
+              archivePath: out,
+            )
+            .toList(),
+        throwsA(isA<StateError>()),
+      );
+      expect(File(out).existsSync(), isFalse);
     });
 
     test(
@@ -107,7 +136,7 @@ void main() {
       () async {
         final ssh = _FakeSsh(
           streamLines: {
-            'tar -czf -': ['not-base64-!@#'],
+            'tar -czf': ['not-base64-!@#'],
           },
         );
         final svc = DartsshArchiveService(ssh: ssh);
@@ -127,7 +156,7 @@ void main() {
     );
 
     test('captureRemote propagates SSH stream errors and cleans up', () async {
-      final ssh = _FakeSsh(streamErrors: {'tar -czf -': 'broken pipe'});
+      final ssh = _FakeSsh(streamErrors: {'tar -czf': 'broken pipe'});
       final svc = DartsshArchiveService(ssh: ssh);
       final out = p.join(tmp.path, 'broken.tar.gz');
       await expectLater(
@@ -183,6 +212,14 @@ void main() {
       );
 
       expect(res.errors, isEmpty);
+      expect(
+        ssh.runCommands.first,
+        allOf(
+          contains('--no-same-owner'),
+          contains('--no-same-permissions'),
+          contains('--numeric-owner'),
+        ),
+      );
       expect(res.restoredFiles, ['hello.txt']);
       expect(
         ssh.uploadCalls,

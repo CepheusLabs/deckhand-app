@@ -60,6 +60,7 @@ class WizardController {
     this.elevatedHelper,
     this.archive,
     this.snapshotsDir,
+    this.osImagesDir,
     this.deckhandVersion = 'unknown',
   }) {
     _runStateStore = RunStateStore(ssh: ssh);
@@ -88,6 +89,11 @@ class WizardController {
   /// a `snapshot_archive` step fires, the controller emits a warning
   /// and skips the capture.
   final String? snapshotsDir;
+
+  /// Where on the host verified OS images are cached. Production
+  /// wiring sets this to the sidecar-managed persistent cache root.
+  /// When null, os_download falls back to its legacy temp directory.
+  final String? osImagesDir;
 
   /// Surfaced into the on-printer run-state file's
   /// `deckhand_version` field so a maintainer reading a debug
@@ -284,6 +290,7 @@ class WizardController {
       }
     }
     _state = _state.copyWith(sshHost: host);
+    await _runStateAttachSession();
     _emit(SshConnected(host: host, user: session.user));
     // Fire the inventory probe in the background so the services /
     // files / screens screens render with machine-specific state
@@ -317,6 +324,7 @@ class WizardController {
     _session = session;
     _sshPassword = password;
     _state = _state.copyWith(sshHost: host);
+    await _runStateAttachSession();
     _emit(SshConnected(host: host, user: session.user));
     // Probe failures emit StepWarning internally; the .catchError is a
     // belt-and-suspenders guard so a surprise sync throw at the top of
@@ -509,6 +517,7 @@ class WizardController {
   /// tolerates "no SSH yet", "file missing", "file unparseable".
   /// Run-state dispatchers. Bodies in wizard_controller_runtime.dart.
   Future<void> _runStateBootstrap() => _runStateBootstrapImpl(this);
+  Future<void> _runStateAttachSession() => _runStateAttachSessionImpl(this);
   Future<void> _runStateRecord(RunStateStep step) =>
       _runStateRecordImpl(this, step);
 
@@ -755,6 +764,10 @@ class WizardController {
   String _shellQuote(String s) => shellSingleQuote(s);
   String _randomSuffix() => _randomSuffixImpl();
   String _buildEnvPrefix(Object? rawEnv) => _buildEnvPrefixImpl(rawEnv);
+  void _validateRemoteInstallPath(String value, String label) =>
+      _validateRemoteInstallPathImpl(value, label);
+  String _safeRemoteBasename(String value, String label) =>
+      _safeRemoteBasenameImpl(value, label);
   String _render(String template, {bool shellSafe = false}) =>
       _renderImpl(this, template, shellSafe: shellSafe);
 

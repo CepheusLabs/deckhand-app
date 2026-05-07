@@ -48,16 +48,23 @@ class DartsshArchiveService implements ArchiveService {
       return;
     }
 
-    // Quote each path for the shell. The printer-side command is:
-    //   tar -czf - --ignore-failed-read -- <paths>
-    // which streams a tarball to stdout. --ignore-failed-read makes
-    // a missing path a warning rather than a hard error so a
-    // user-deselected path that no longer exists doesn't fail the
-    // snapshot.
+    // Quote each path for the shell. Build the archive in a remote
+    // temp file first, then stream it only after tar succeeds. That
+    // gives this line-oriented API an explicit success marker instead
+    // of treating a truncated tar stream as a valid snapshot.
     final quoted = paths
         .map((p) => "'${p.replaceAll("'", r"'\''")}'")
         .join(' ');
-    final cmd = 'tar -czf - --ignore-failed-read -- $quoted';
+    const okMarker = '__DECKHAND_TAR_OK__';
+    final cmd =
+        r'tmp="${TMPDIR:-/tmp}/deckhand-snapshot-$(date +%s)-$$.tar.gz"; '
+        r'trap "rm -f \"$tmp\"" EXIT HUP INT TERM; '
+        r'if tar -czf "$tmp" -- '
+        '$quoted'
+        r'; then '
+        r'base64 "$tmp" | fold -w 76; '
+        "printf '%s\\n' '$okMarker'; "
+        'else exit 1; fi';
 
     // Wrap the binary stream in chunked base64. See the class doc
     // comment for the rationale; in short, runStream is line-
@@ -65,13 +72,14 @@ class DartsshArchiveService implements ArchiveService {
     // doesn't buffer a multi-MB archive into one line in memory.
     // `fold -w 76` produces a line every 76 base64 chars (= 57
     // binary bytes) which is the MIME / PEM convention.
-    final framed = '$cmd | base64 | fold -w 76';
+    final framed = cmd;
 
     // Ensure parent dir exists.
     await Directory(File(archivePath).parent.path).create(recursive: true);
     final out = File(archivePath).openWrite();
     var bytes = 0;
     var done = false;
+    var sawOkMarker = false;
     try {
       await for (final line in _ssh.runStream(session, framed)) {
         // dartssh2's runStream yields stdout as text lines without
@@ -80,6 +88,10 @@ class DartsshArchiveService implements ArchiveService {
         // stray whitespace the SSH transport might emit.
         final trimmed = line.trim();
         if (trimmed.isEmpty) continue;
+        if (trimmed == okMarker) {
+          sawOkMarker = true;
+          continue;
+        }
         final List<int> chunk;
         try {
           chunk = base64.decode(trimmed);
@@ -91,6 +103,9 @@ class DartsshArchiveService implements ArchiveService {
         out.add(chunk);
         bytes += chunk.length;
         yield SnapshotProgress(bytesCaptured: bytes, bytesEstimated: 0);
+      }
+      if (!sawOkMarker) {
+        throw StateError('archive stream ended before tar completed');
       }
       await out.flush();
       done = true;
@@ -144,7 +159,8 @@ class DartsshArchiveService implements ArchiveService {
       final res = await _ssh.run(
         session,
         'mkdir -p $qDest && tar -xzf $qTmp -C $qDest '
-        '--no-same-owner --delay-directory-restore',
+        '--no-same-owner --no-same-permissions --numeric-owner '
+        '--delay-directory-restore',
         timeout: const Duration(minutes: 5),
       );
       if (!res.success) {

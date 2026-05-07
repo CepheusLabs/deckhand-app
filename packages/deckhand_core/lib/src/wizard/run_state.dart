@@ -31,14 +31,13 @@ class RunState {
     required String deckhandVersion,
     required String profileId,
     required String profileCommit,
-  }) =>
-      RunState(
-        deckhandVersion: deckhandVersion,
-        profileId: profileId,
-        profileCommit: profileCommit,
-        startedAt: DateTime.now().toUtc(),
-        steps: const [],
-      );
+  }) => RunState(
+    deckhandVersion: deckhandVersion,
+    profileId: profileId,
+    profileCommit: profileCommit,
+    startedAt: DateTime.now().toUtc(),
+    steps: const [],
+  );
 
   factory RunState.fromJson(Map<String, dynamic> json) {
     if (json['schema'] != _schema) {
@@ -57,8 +56,8 @@ class RunState {
       deckhandVersion: (json['deckhand_version'] as String?) ?? '',
       profileId: (json['profile_id'] as String?) ?? '',
       profileCommit: (json['profile_commit'] as String?) ?? '',
-      startedAt: DateTime.tryParse(json['started_at'] as String? ?? '')
-              ?.toUtc() ??
+      startedAt:
+          DateTime.tryParse(json['started_at'] as String? ?? '')?.toUtc() ??
           DateTime.now().toUtc(),
       steps: steps,
     );
@@ -73,13 +72,13 @@ class RunState {
   final List<RunStateStep> steps;
 
   Map<String, dynamic> toJson() => <String, dynamic>{
-        'schema': _schema,
-        'deckhand_version': deckhandVersion,
-        'profile_id': profileId,
-        'profile_commit': profileCommit,
-        'started_at': startedAt.toIso8601String(),
-        'steps': [for (final s in steps) s.toJson()],
-      };
+    'schema': _schema,
+    'deckhand_version': deckhandVersion,
+    'profile_id': profileId,
+    'profile_commit': profileCommit,
+    'started_at': startedAt.toIso8601String(),
+    'steps': [for (final s in steps) s.toJson()],
+  };
 
   /// Returns the last recorded entry for [stepId], or null if absent.
   /// Multiple entries with the same id can exist when the user jumped
@@ -95,14 +94,13 @@ class RunState {
   /// Append [step], returning a new RunState. Existing entries with
   /// the same id are preserved so the audit trail of attempts is
   /// intact; [lastFor] reflects the appended record.
-  RunState appending(RunStateStep step) =>
-      RunState(
-        deckhandVersion: deckhandVersion,
-        profileId: profileId,
-        profileCommit: profileCommit,
-        startedAt: startedAt,
-        steps: [...steps, step],
-      );
+  RunState appending(RunStateStep step) => RunState(
+    deckhandVersion: deckhandVersion,
+    profileId: profileId,
+    profileCommit: profileCommit,
+    startedAt: startedAt,
+    steps: [...steps, step],
+  );
 
   /// Replace the most recent entry for [step.id] in place. Useful for
   /// updating an `in_progress` record to `completed` / `failed`
@@ -123,6 +121,30 @@ class RunState {
       }
     }
     return appending(step);
+  }
+
+  RunState merging(RunState other) {
+    if (other.steps.isEmpty) return this;
+    if (steps.isEmpty) {
+      return RunState(
+        deckhandVersion: deckhandVersion,
+        profileId: profileId,
+        profileCommit: profileCommit,
+        startedAt: other.startedAt.isBefore(startedAt)
+            ? other.startedAt
+            : startedAt,
+        steps: other.steps,
+      );
+    }
+    return RunState(
+      deckhandVersion: deckhandVersion,
+      profileId: profileId,
+      profileCommit: profileCommit,
+      startedAt: other.startedAt.isBefore(startedAt)
+          ? other.startedAt
+          : startedAt,
+      steps: [...other.steps, ...steps],
+    );
   }
 }
 
@@ -153,11 +175,12 @@ class RunStateStep {
     return RunStateStep(
       id: (json['id'] as String?) ?? '',
       status: runStateStatusFromString(json['status'] as String?),
-      startedAt: DateTime.tryParse(json['started_at'] as String? ?? '')
-              ?.toUtc() ??
+      startedAt:
+          DateTime.tryParse(json['started_at'] as String? ?? '')?.toUtc() ??
           DateTime.now().toUtc(),
-      finishedAt:
-          DateTime.tryParse(json['finished_at'] as String? ?? '')?.toUtc(),
+      finishedAt: DateTime.tryParse(
+        json['finished_at'] as String? ?? '',
+      )?.toUtc(),
       inputHash: (json['input_hash'] as String?) ?? '',
       output: output,
       error: json['error'] as String?,
@@ -177,16 +200,16 @@ class RunStateStep {
   final String? skipReason;
 
   Map<String, dynamic> toJson() => <String, dynamic>{
-        'id': id,
-        'status': status.wireName,
-        'started_at': startedAt.toIso8601String(),
-        if (finishedAt != null) 'finished_at': finishedAt!.toIso8601String(),
-        'input_hash': inputHash,
-        if (output.isNotEmpty) 'output': output,
-        if (error != null) 'error': error,
-        if (exitCode != null) 'exit_code': exitCode,
-        if (skipReason != null) 'skip_reason': skipReason,
-      };
+    'id': id,
+    'status': status.wireName,
+    'started_at': startedAt.toIso8601String(),
+    if (finishedAt != null) 'finished_at': finishedAt!.toIso8601String(),
+    'input_hash': inputHash,
+    if (output.isNotEmpty) 'output': output,
+    if (error != null) 'error': error,
+    if (exitCode != null) 'exit_code': exitCode,
+    if (skipReason != null) 'skip_reason': skipReason,
+  };
 }
 
 enum RunStateStatus {
@@ -241,7 +264,7 @@ class RunStateStore {
       // Quoted for safety even though the path is a constant — the
       // remote path can be overridden by tests, and a future caller
       // shouldn't have to re-derive whether quoting is safe.
-      'cat ${shellSingleQuote(_remotePath)} 2>/dev/null || true',
+      'cat ${shellPathEscape(_remotePath)} 2>/dev/null || true',
       timeout: _readTimeout,
     );
     final body = result.stdout.trim();
@@ -268,11 +291,13 @@ class RunStateStore {
         ? _remotePath.substring(0, _remotePath.lastIndexOf('/'))
         : '.';
     final tmp = '$_remotePath.tmp';
-    final qTmp = shellSingleQuote(tmp);
+    final qTmp = shellPathEscape(tmp);
+    final qRemotePath = shellPathEscape(_remotePath);
+    final qRemoteDir = shellPathEscape(remoteDir);
     final cmd =
-        'mkdir -p ${shellSingleQuote(remoteDir)} && '
+        'mkdir -p $qRemoteDir && '
         '(printf %s ${shellSingleQuote(encoded)} | base64 -d > '
-        '$qTmp && mv $qTmp ${shellSingleQuote(_remotePath)} || '
+        '$qTmp && mv $qTmp $qRemotePath || '
         '{ rc=\$?; rm -f $qTmp; exit \$rc; })';
     final result = await _ssh.run(session, cmd, timeout: _writeTimeout);
     if (!result.success) {

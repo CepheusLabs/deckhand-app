@@ -20,9 +20,7 @@ void main() {
           'disable_makerbase_udp': true,
           'change_default_password': false,
         },
-        'files': {
-          'select_all': true,
-        },
+        'files': {'select_all': true},
       });
       expect(got, {
         'firmware': 'kalico',
@@ -88,8 +86,10 @@ max_duration_minutes: 35
       });
       expect(scenario.expectedPorts, {7125: 'open'});
       expect(scenario.expectedRemoteFiles, hasLength(1));
-      expect(scenario.expectedRemoteFiles.first.path,
-          '~/klipper/klippy/klippy.py');
+      expect(
+        scenario.expectedRemoteFiles.first.path,
+        '~/klipper/klippy/klippy.py',
+      );
       expect(scenario.maxDuration, const Duration(minutes: 35));
     });
 
@@ -115,7 +115,9 @@ printer:
     tearDown(() async {
       try {
         await tmp.delete(recursive: true);
-      } on Object {/* best-effort */}
+      } on Object {
+        /* best-effort */
+      }
     });
 
     test('pre-approved hosts are immediately allowed', () async {
@@ -153,9 +155,9 @@ printer:
         operation: 'flash',
         target: '/dev/sde',
       );
-      expect(svc.consumeToken(t.value, 'flash'), isTrue);
+      expect(svc.consumeToken(t.value, 'flash', target: '/dev/sde'), isTrue);
       // Second consumption fails.
-      expect(svc.consumeToken(t.value, 'flash'), isFalse);
+      expect(svc.consumeToken(t.value, 'flash', target: '/dev/sde'), isFalse);
       await svc.dispose();
     });
 
@@ -165,7 +167,7 @@ printer:
         operation: 'flash',
         target: '/dev/sde',
       );
-      expect(svc.consumeToken(t.value, 'erase'), isFalse);
+      expect(svc.consumeToken(t.value, 'erase', target: '/dev/sde'), isFalse);
       await svc.dispose();
     });
 
@@ -186,14 +188,16 @@ printer:
       final svc = HeadlessSecurityService(stateDir: tmp.path);
       final received = <EgressEvent>[];
       final sub = svc.egressEvents.listen(received.add);
-      svc.recordEgress(EgressEvent(
-        requestId: 'r1',
-        host: 'github.com',
-        url: 'https://github.com/x/y.git',
-        method: 'GET',
-        operationLabel: 'profile.fetch',
-        startedAt: DateTime.now(),
-      ));
+      svc.recordEgress(
+        EgressEvent(
+          requestId: 'r1',
+          host: 'github.com',
+          url: 'https://github.com/x/y.git',
+          method: 'GET',
+          operationLabel: 'profile.fetch',
+          startedAt: DateTime.now(),
+        ),
+      );
       await Future<void>.delayed(const Duration(milliseconds: 10));
       expect(received, hasLength(1));
       expect(received.first.host, 'github.com');
@@ -203,8 +207,7 @@ printer:
   });
 
   group('ScenarioRunner.run', () {
-    test('records sidecar.start failure when binary path is bogus',
-        () async {
+    test('records sidecar.start failure when binary path is bogus', () async {
       final tmp = await Directory.systemTemp.createTemp('deckhand-hitl-run-');
       addTearDown(() async {
         try {
@@ -227,8 +230,9 @@ printer:
       final report = await runner.run();
       expect(report.failedCount, greaterThan(0));
       // The first failure is sidecar.start; the manifest captures it.
-      final manifest =
-          await File(p.join(tmp.path, 'manifest.json')).readAsString();
+      final manifest = await File(
+        p.join(tmp.path, 'manifest.json'),
+      ).readAsString();
       expect(manifest, contains('"sidecar.start"'));
       expect(manifest, contains('"ok": false'));
     });
@@ -264,7 +268,9 @@ expectations:
       Future<RunReport> runOne({required bool bail}) async {
         final out = await Directory.systemTemp.createTemp('deckhand-hitl-r-');
         addTearDown(() async {
-          try { await out.delete(recursive: true); } on Object {}
+          try {
+            await out.delete(recursive: true);
+          } on Object {}
         });
         return ScenarioRunner(
           scenario: base,
@@ -273,6 +279,7 @@ expectations:
           bailOnFirstFailure: bail,
         ).run();
       }
+
       final patient = await runOne(bail: false);
       final eager = await runOne(bail: true);
       // Both fail on sidecar.start. With bail=false, the runner

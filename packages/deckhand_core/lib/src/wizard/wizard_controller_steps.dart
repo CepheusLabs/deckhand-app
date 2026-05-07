@@ -56,8 +56,9 @@ Future<void> _runWriteFileImpl(
   final backup = step['backup'] as bool? ?? true;
 
   final ts = DateTime.now().millisecondsSinceEpoch;
-  final tmpLocal = p.join(Directory.systemTemp.path, 'deckhand-$ts.tmp');
-  final remoteTmp = '/tmp/deckhand-write-$ts.tmp';
+  final suffix = c._randomSuffix();
+  final tmpLocal = p.join(Directory.systemTemp.path, 'deckhand-$suffix.tmp');
+  final remoteTmp = '/tmp/deckhand-write-$suffix.tmp';
   await File(tmpLocal).writeAsString(rendered);
 
   try {
@@ -87,10 +88,10 @@ Future<void> _runWriteFileImpl(
       // surface at all.
       final metaTmpLocal = p.join(
         Directory.systemTemp.path,
-        'deckhand-meta-$ts.json',
+        'deckhand-meta-$suffix.json',
       );
       await File(metaTmpLocal).writeAsString(meta);
-      final remoteMetaTmp = '/tmp/deckhand-meta-$ts.json';
+      final remoteMetaTmp = '/tmp/deckhand-meta-$suffix.json';
       await c.ssh.upload(s, metaTmpLocal, remoteMetaTmp, mode: 420); // 0o644
       final cp = useSudo ? 'sudo cp -p --' : 'cp -p --';
       final writeMeta = useSudo
@@ -171,7 +172,7 @@ Future<void> _runWriteFileImpl(
     try {
       final metaTmpLocal = p.join(
         Directory.systemTemp.path,
-        'deckhand-meta-$ts.json',
+        'deckhand-meta-$suffix.json',
       );
       final f = File(metaTmpLocal);
       if (await f.exists()) await f.delete();
@@ -243,14 +244,12 @@ Future<void> _runInstallScreenImpl(
     }
     c._log(step, '[screen] installed $screenId');
   } else if (sourceKind == 'restore_from_backup') {
-    c._log(
-      step,
-      '[screen] $screenId restore-from-backup requires a mounted backup image - not yet automated',
+    throw StepExecutionException(
+      'screen $screenId restore-from-backup is not implemented',
     );
   } else {
-    c._log(
-      step,
-      '[screen] $screenId source kind "$sourceKind" not implemented',
+    throw StepExecutionException(
+      'screen $screenId source kind "$sourceKind" is not implemented',
     );
   }
 }
@@ -264,6 +263,12 @@ Future<void> _runFlashMcusImpl(
   final fw = c._selectedFirmware();
   if (fw == null) throw StepExecutionException('no firmware selected');
   final install = fw.installPath ?? '~/klipper';
+  c._validateRemoteInstallPath(install, 'firmware install path');
+  if (which.isNotEmpty) {
+    throw StepExecutionException(
+      'mcu flashing is not implemented by Deckhand yet',
+    );
+  }
   for (final id in which) {
     final mcu = c._profile!.mcus.firstWhere(
       (m) => m.id == id,
@@ -272,7 +277,7 @@ Future<void> _runFlashMcusImpl(
     final raw = mcu.raw;
     final configLines = c._mcuConfig(raw);
     final writeConf =
-        'cd $install && cat > .config <<"MCUCONF"\n$configLines\nMCUCONF\n'
+        'cd ${shellPathEscape(install)} && cat > .config <<"MCUCONF"\n$configLines\nMCUCONF\n'
         'make olddefconfig >/dev/null && make clean >/dev/null && make -j1';
     final build = await c._runSsh(
       writeConf,
@@ -323,9 +328,11 @@ Future<void> _runOsDownloadImpl(
       'OS image "$osId" must declare a 64-hex sha256 before download',
     );
   }
+  final defaultOsImageDir =
+      c.osImagesDir ?? p.join(Directory.systemTemp.path, 'deckhand-os-images');
   final dest =
       step['dest'] as String? ??
-      p.join(Directory.systemTemp.path, 'deckhand-os-images', '${opt.id}.img');
+      p.join(defaultOsImageDir, '${_safeOsImageCacheIdImpl(opt.id)}.img');
   c._log(step, '[os] preparing ${opt.url} -> $dest');
 
   final stepId = step['id'] as String? ?? 'os_download';
@@ -351,6 +358,16 @@ Future<void> _runOsDownloadImpl(
       );
     } else if (ev.phase == OsDownloadPhase.failed) {
       throw StepExecutionException('os download failed');
+    } else if (ev.phase == OsDownloadPhase.extracting) {
+      c._emit(
+        StepProgress(
+          stepId: stepId,
+          percent: ev.bytesTotal > 0 ? ev.fraction : null,
+          message:
+              'extracting image'
+              '${ev.bytesDone > 0 ? ' (${(ev.bytesDone / (1 << 20)).toStringAsFixed(1)} MiB)' : ''}',
+        ),
+      );
     } else {
       c._emit(
         StepProgress(
@@ -377,12 +394,27 @@ Future<void> _runOsDownloadImpl(
 bool _isSha256HexImpl(String value) =>
     RegExp(r'^[0-9a-f]{64}$').hasMatch(value);
 
+String _safeOsImageCacheIdImpl(String value) {
+  final safe = value
+      .trim()
+      .toLowerCase()
+      .replaceAll(RegExp(r'[^a-z0-9._-]+'), '-')
+      .replaceAll(RegExp(r'^[._-]+|[._-]+$'), '');
+  if (safe.isEmpty) {
+    throw StepExecutionException('OS image id is not safe for cache file name');
+  }
+  if (safe.length <= 120) return safe;
+  final truncated = safe.substring(0, 120).replaceAll(RegExp(r'[._-]+$'), '');
+  return truncated.isEmpty ? 'image' : truncated;
+}
+
 Future<void> _runFlashDiskImpl(
   WizardController c,
   Map<String, dynamic> step,
 ) async {
   final diskId = c._state.decisions['flash.disk'] as String?;
   if (diskId == null) throw StepExecutionException('no flash disk selected');
+  final diskName = await _userFacingDiskNameForIdImpl(c, diskId);
   final imagePath = c._state.decisions['flash.image_path'] as String?;
   if (imagePath == null) {
     throw StepExecutionException(
@@ -400,7 +432,9 @@ Future<void> _runFlashDiskImpl(
     final reasons = verdict.blockingReasons.isEmpty
         ? 'no blocking reason returned'
         : verdict.blockingReasons.join('; ');
-    throw StepExecutionException('disk safety check refused $diskId: $reasons');
+    throw StepExecutionException(
+      'disk safety check refused $diskName: $reasons',
+    );
   }
   if (verdict.warnings.isNotEmpty) {
     final acknowledged =
@@ -409,7 +443,7 @@ Future<void> _runFlashDiskImpl(
             true;
     if (!acknowledged) {
       throw StepExecutionException(
-        'disk safety check returned warnings for $diskId: '
+        'disk safety check returned warnings for $diskName: '
         '${verdict.warnings.join('; ')}',
       );
     }
@@ -428,16 +462,20 @@ Future<void> _runFlashDiskImpl(
   // in the helper invocation. This pairs with the elevated helper's
   // --token-file mechanism, which keeps the value off the process
   // table and out of /proc/<pid>/cmdline.
-  final consumed = c.security.consumeToken(token.value, 'write_image');
+  final consumed = c.security.consumeToken(
+    token.value,
+    'write_image',
+    target: diskId,
+  );
   if (!consumed) {
     throw StepExecutionException(
       'confirmation token was rejected before helper launch',
     );
   }
   final verify = step['verify_after_write'] as bool? ?? true;
-  final expectedSha = c._state.decisions['flash.image_sha256'] as String?;
+  final expectedSha = await _resolveExpectedFlashSha256Impl(c);
   final stepId = step['id'] as String? ?? 'flash_disk';
-  c._log(step, '[flash] writing $imagePath -> $diskId (verify=$verify)');
+  c._log(step, '[flash] writing $imagePath -> $diskName (verify=$verify)');
 
   await for (final ev in helper.writeImage(
     imagePath: imagePath,
@@ -453,6 +491,35 @@ Future<void> _runFlashDiskImpl(
     }
   }
   c._log(step, '[flash] done');
+}
+
+Future<String> _resolveExpectedFlashSha256Impl(WizardController c) async {
+  final recorded = (c._state.decisions['flash.image_sha256'] as String?)
+      ?.trim()
+      .toLowerCase();
+  if (recorded != null && _isSha256HexImpl(recorded)) {
+    if (recorded != c._state.decisions['flash.image_sha256']) {
+      await c.setDecision('flash.image_sha256', recorded);
+    }
+    return recorded;
+  }
+
+  final osId = c._state.decisions['flash.os'] as String?;
+  if (osId != null) {
+    for (final opt
+        in c._profile?.os.freshInstallOptions ?? const <OsImageOption>[]) {
+      if (opt.id != osId) continue;
+      final profileSha = opt.sha256?.trim().toLowerCase();
+      if (profileSha != null && _isSha256HexImpl(profileSha)) {
+        await c.setDecision('flash.image_sha256', profileSha);
+        return profileSha;
+      }
+    }
+  }
+
+  throw StepExecutionException(
+    'flash image sha256 is missing or invalid; rerun the OS download step',
+  );
 }
 
 Future<void> _runScriptImpl(
@@ -473,7 +540,7 @@ Future<void> _runScriptImpl(
   // attacker on the printer cannot read (or race-overwrite) the
   // staged script while it is still on disk. mode 0o700 - only
   // the SSH user's shell execs it, nobody else reads or mutates.
-  final basename = p.basename(rel);
+  final basename = c._safeRemoteBasename(rel, 'script path');
   final remote = '/tmp/deckhand-${c._randomSuffix()}-$basename';
   await c.ssh.upload(s, local, remote, mode: 448); // 0o700
   final extraArgs = ((step['args'] as List?) ?? const []).cast<String>();
@@ -494,9 +561,10 @@ Future<void> _runScriptImpl(
       (step['askpass'] as bool? ?? true) && c._sshPassword != null;
 
   final argStr = extraArgs.map(shellSingleQuote).join(' ');
+  final qRemote = shellSingleQuote(remote);
   final baseCmd = argStr.isEmpty
-      ? '$interpreter $remote'
-      : '$interpreter $remote $argStr';
+      ? '$interpreter $qRemote'
+      : '$interpreter $qRemote $argStr';
 
   final extraEnvPrefix = c._buildEnvPrefix(step['env']);
 
@@ -522,29 +590,36 @@ Future<void> _runScriptImpl(
     '${useSudo ? " (root)" : ""}'
     '${setUpAskpass ? " (askpass)" : ""}',
   );
-  final res = await c._runSsh(cmd, timeout: Duration(seconds: timeoutSecs));
-  if (res.stdout.trim().isNotEmpty) {
-    for (final line in res.stdout.trim().split('\n')) {
-      c._log(step, '[script]   $line');
+  try {
+    final res = await c._runSsh(cmd, timeout: Duration(seconds: timeoutSecs));
+    if (res.stdout.trim().isNotEmpty) {
+      for (final line in res.stdout.trim().split('\n')) {
+        c._log(step, '[script]   $line');
+      }
     }
-  }
-  if (!res.success && !ignoreErrors) {
-    if (_looksLikeSudoPtyErrorImpl(res.stderr)) {
+    if (!res.success && !ignoreErrors) {
+      if (_looksLikeSudoPtyErrorImpl(res.stderr)) {
+        throw StepExecutionException(
+          'script $rel could not authenticate for sudo over an SSH '
+          'session without a tty. Check the printer\'s sudoers config: '
+          'either grant passwordless sudo for this user, or ensure '
+          'SUDO_ASKPASS is permitted (no `Defaults requiretty`, no '
+          '`Defaults !visiblepw`).',
+          stderr: res.stderr,
+        );
+      }
       throw StepExecutionException(
-        'script $rel could not authenticate for sudo over an SSH '
-        'session without a tty. Check the printer\'s sudoers config: '
-        'either grant passwordless sudo for this user, or ensure '
-        'SUDO_ASKPASS is permitted (no `Defaults requiretty`, no '
-        '`Defaults !visiblepw`).',
+        'script $rel failed (exit ${res.exitCode})',
         stderr: res.stderr,
       );
     }
-    throw StepExecutionException(
-      'script $rel failed (exit ${res.exitCode})',
-      stderr: res.stderr,
-    );
+    c._log(step, '[script] done ($rel, exit ${res.exitCode})');
+  } finally {
+    await c._runSsh('rm -f -- $qRemote');
+    if (helper != null) {
+      await _cleanupSudoAskpassHelperImpl(c, helper);
+    }
   }
-  c._log(step, '[script] done ($rel, exit ${res.exitCode})');
 }
 
 /// Stages a temporary sudo-askpass helper + `sudo` wrapper on the
@@ -552,9 +627,6 @@ Future<void> _runScriptImpl(
 Future<_ScriptSudoHelper> _installSudoAskpassHelperImpl(
   WizardController c,
 ) async {
-  final cached = c._sessionAskpass;
-  if (cached != null) return cached;
-
   final s = c._requireSession();
   final pw = c._sshPassword;
   if (pw == null) {
@@ -596,8 +668,23 @@ Future<_ScriptSudoHelper> _installSudoAskpassHelperImpl(
   await c.ssh.run(s, 'chmod 755 ${c._shellQuote('$binDir/sudo')}');
 
   final helper = _ScriptSudoHelper(askpassPath: askpassPath, binDir: binDir);
-  c._sessionAskpass = helper;
   return helper;
+}
+
+Future<void> _cleanupSudoAskpassHelperImpl(
+  WizardController c,
+  _ScriptSudoHelper helper,
+) async {
+  try {
+    await c._runSsh(
+      'rm -rf -- '
+      '${shellSingleQuote(helper.askpassPath)} '
+      '${shellSingleQuote(helper.binDir)}',
+    );
+  } catch (_) {}
+  if (identical(c._sessionAskpass, helper)) {
+    c._sessionAskpass = null;
+  }
 }
 
 bool _looksLikeSudoPtyErrorImpl(String stderr) {

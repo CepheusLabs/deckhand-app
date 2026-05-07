@@ -4,6 +4,8 @@ import 'dart:io';
 import 'package:bonsoir/bonsoir.dart';
 import 'package:deckhand_core/deckhand_core.dart';
 
+import 'cidr.dart' as cidr_util;
+
 /// [DiscoveryService] backed by bonsoir for mDNS and plain Dart sockets
 /// for CIDR + SSH-ready polling.
 class BonsoirDiscoveryService implements DiscoveryService {
@@ -115,30 +117,23 @@ class BonsoirDiscoveryService implements DiscoveryService {
   }
 
   Iterable<String> _expandCidr(String cidr) sync* {
-    final parts = cidr.split('/');
-    if (parts.length != 2) {
+    final slash = cidr.indexOf('/');
+    if (slash < 0) {
       yield cidr;
       return;
     }
-    final octets = parts[0].split('.').map(int.parse).toList();
-    if (octets.length != 4) return;
-    final prefix = int.parse(parts[1]);
+    final prefix = int.tryParse(cidr.substring(slash + 1));
+    if (prefix == null) return;
     // Cap at /22 (1024 hosts). A /16 scan would enumerate 65k hosts,
     // which is both useless on a home LAN and guaranteed to exhaust
     // OS socket/descriptor limits even with concurrency throttled.
     // Users who truly need to sweep large networks should narrow the
     // CIDR before calling this API.
     if (prefix < 22 || prefix > 32) return;
-
-    final hostBits = 32 - prefix;
-    final count = 1 << hostBits;
-    final base =
-        (octets[0] << 24) | (octets[1] << 16) | (octets[2] << 8) | octets[3];
-    final mask = (~0 << hostBits) & 0xFFFFFFFF;
-    final network = base & mask;
-    for (var i = 0; i < count; i++) {
-      final addr = network | i;
-      yield '${(addr >> 24) & 0xFF}.${(addr >> 16) & 0xFF}.${(addr >> 8) & 0xFF}.${addr & 0xFF}';
+    try {
+      yield* cidr_util.expandCidr(cidr);
+    } on FormatException {
+      return;
     }
   }
 }
