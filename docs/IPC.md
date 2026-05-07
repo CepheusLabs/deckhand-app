@@ -128,7 +128,8 @@ Enumerate local disks.
     manage view's "discard interrupted flash" action.
 
 #### `disks.hash`
-SHA-256 of a local file.
+SHA-256 of a local file at a Deckhand-managed path or an explicitly
+approved raw-device path.
 - **Params**: `{ path: str }`
 - **Result**: `{ sha256: hex, path: str }`
 
@@ -164,9 +165,12 @@ error** - the UI must dispatch via the elevated helper binary
 ### OS image download
 
 #### `os.download`
-HTTP GET a large file with progress + optional sha256 verification.
-- **Params**: `{ url: str, dest: str, sha256?: hex }`
-- **Result**: `{ sha256: hex, path: str }`
+HTTPS GET a large OS image with progress and required sha256
+verification. The sidecar rejects non-HTTPS URLs, missing/invalid
+hashes, unsafe destinations, and redirects that leave the approved
+HTTPS host policy.
+- **Params**: `{ url: str, dest: str, sha256: hex }`
+- **Result**: `{ sha256: hex, path: str, reused: bool }`
 - **Notifications**: `progress` with `{ bytes_done, bytes_total, phase: "downloading"|"done" }`
 
 ---
@@ -212,9 +216,14 @@ AuthorizationExecuteWithPrivileges / pkexec).
 
 ```
 deckhand-elevated-helper write-image \
-  --image <path> --target <disk_id> --token <confirmation_token> \
-  [--verify] [--sha256 <hex>]
+  --image <path> --target <disk_id> --token-file <path> \
+  --manifest <path> --sha256 <hex> [--verify]
 ```
+
+The helper validates the sidecar-issued manifest before opening the
+target. The manifest binds the token digest, image path, image SHA-256,
+target disk, and expiry so the elevated process cannot be driven with a
+reused token or a swapped image/target pair.
 
 ### Output
 
