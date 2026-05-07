@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:deckhand_core/deckhand_core.dart';
@@ -88,12 +89,7 @@ class SidecarProfileService implements ProfileService {
       }
       yamlText = await f.readAsString();
     } else {
-      await requireHostApproved(_security, registryUrl);
-      final res = await _dio.get<String>(
-        registryUrl,
-        options: Options(responseType: ResponseType.plain),
-      );
-      yamlText = res.data ?? '';
+      yamlText = await _getPlainWithApprovedRedirects(registryUrl);
     }
     final yaml = loadYaml(yamlText) as YamlMap;
     final entries = (yaml['profiles'] as YamlList? ?? YamlList())
@@ -118,7 +114,130 @@ class SidecarProfileService implements ProfileService {
           ),
         )
         .toList();
-    return ProfileRegistry(entries: entries);
+    return ProfileRegistry(
+      entries: await Future.wait(
+        entries.map((e) => _withProfileSpecFallback(e, local)),
+      ),
+    );
+  }
+
+  Future<ProfileRegistryEntry> _withProfileSpecFallback(
+    ProfileRegistryEntry entry,
+    String? local,
+  ) async {
+    if (!_needsProfileSpecFallback(entry)) return entry;
+    try {
+      final profileText = local == null
+          ? await _getRemoteProfileYaml(entry)
+          : await _getLocalProfileYaml(entry, local);
+      if (profileText == null) return entry;
+      return _withDerivedSpecs(entry, parseProfileYaml(profileText));
+    } catch (_) {
+      // Registry cards are advisory. A bad or temporarily unavailable
+      // profile.yaml should not block the picker from rendering.
+      return entry;
+    }
+  }
+
+  Future<String?> _getLocalProfileYaml(
+    ProfileRegistryEntry entry,
+    String local,
+  ) async {
+    final root = p.normalize(p.absolute(local));
+    final path = p.normalize(
+      p.absolute(p.join(root, entry.directory, 'profile.yaml')),
+    );
+    if (!p.isWithin(root, path)) return null;
+    final file = File(path);
+    if (!await file.exists()) return null;
+    return file.readAsString();
+  }
+
+  Future<String?> _getRemoteProfileYaml(ProfileRegistryEntry entry) async {
+    final profileUrl = _remoteProfileYamlUrl(entry);
+    if (profileUrl == null) return null;
+    return _getPlainWithApprovedRedirects(profileUrl.toString());
+  }
+
+  Uri? _remoteProfileYamlUrl(ProfileRegistryEntry entry) {
+    final directory = entry.directory.trim();
+    if (directory.isEmpty ||
+        directory.contains('\\') ||
+        directory.startsWith('/') ||
+        directory.split('/').any((part) => part == '..') ||
+        Uri.tryParse(directory)?.hasScheme == true) {
+      return null;
+    }
+    final base = Uri.parse(registryUrl);
+    final dir = directory.endsWith('/') ? directory : '$directory/';
+    return base.resolve('${dir}profile.yaml');
+  }
+
+  bool _needsProfileSpecFallback(ProfileRegistryEntry entry) =>
+      _isBlank(entry.sbc) || _isBlank(entry.kinematics) || _isBlank(entry.mcu);
+
+  bool _isBlank(String? value) => value == null || value.trim().isEmpty;
+
+  ProfileRegistryEntry _withDerivedSpecs(
+    ProfileRegistryEntry entry,
+    PrinterProfile profile,
+  ) {
+    return ProfileRegistryEntry(
+      id: entry.id,
+      displayName: entry.displayName,
+      manufacturer: entry.manufacturer,
+      model: entry.model,
+      status: entry.status,
+      directory: entry.directory,
+      latestTag: entry.latestTag,
+      sbc: _firstText(entry.sbc, _deriveSbc(profile)),
+      kinematics: _firstText(entry.kinematics, _deriveKinematics(profile)),
+      mcu: _firstText(entry.mcu, _deriveMcu(profile)),
+      extras: _firstText(entry.extras, profile.raw['picker_extras'] as String?),
+    );
+  }
+
+  String? _firstText(String? primary, String? fallback) =>
+      !_isBlank(primary) ? primary!.trim() : fallback?.trim();
+
+  String? _deriveSbc(PrinterProfile profile) {
+    final soc = profile.hardware.sbc?.soc;
+    if (soc == null || soc.isEmpty) return null;
+    final parts = soc.split('-');
+    if (parts.length == 1) return parts[0].toUpperCase();
+    final vendor = parts.first;
+    final chip = parts.sublist(1).join(' ').toUpperCase();
+    if (vendor == 'rockchip') return chip;
+    return '${_titleCase(vendor)} $chip';
+  }
+
+  String? _deriveKinematics(PrinterProfile profile) {
+    final kin = profile.hardware.kinematics;
+    if (kin == null || kin.isEmpty) return null;
+    return switch (kin) {
+      'corexy' => 'CoreXY',
+      'corexz' => 'CoreXZ',
+      'cartesian' => 'Cartesian',
+      'delta' => 'Delta',
+      'scara' => 'SCARA',
+      _ => _titleCase(kin),
+    };
+  }
+
+  String? _deriveMcu(PrinterProfile profile) {
+    if (profile.mcus.isEmpty) return null;
+    final main = profile.mcus.firstWhere(
+      (mcu) => mcu.id == 'main',
+      orElse: () => profile.mcus.first,
+    );
+    final chip = main.raw['chip'];
+    if (chip is! String || chip.isEmpty) return null;
+    return chip.replaceFirst(RegExp(r'[a-z]+$'), '').toUpperCase();
+  }
+
+  String _titleCase(String value) {
+    if (value.isEmpty) return value;
+    return value[0].toUpperCase() + value.substring(1);
   }
 
   @override
@@ -147,7 +266,12 @@ class SidecarProfileService implements ProfileService {
 
     final resolvedRef = ref ?? 'main';
     _validateGitRef(resolvedRef);
-    final dest = p.join(paths.cacheDir, 'profiles', resolvedRef);
+    final dest = p.join(
+      paths.cacheDir,
+      'profiles',
+      _repoCacheKey(),
+      resolvedRef,
+    );
 
     // Semver-tagged refs (v1.2.3, v26.4.18-1247) are immutable - a tag
     // pointing at a given commit never moves, so caching by ref name is
@@ -210,6 +334,63 @@ class SidecarProfileService implements ProfileService {
   static final _tagLike = RegExp(r'^v?\d+\.\d+\.\d+(-[\w.-]+)?$');
   bool _looksLikeTag(String ref) => _tagLike.hasMatch(ref);
 
+  String _repoCacheKey() {
+    final parsed = Uri.tryParse(profilesRepo);
+    final readable = parsed == null || parsed.host.isEmpty
+        ? 'custom'
+        : '${parsed.host}${parsed.path}'.toLowerCase();
+    final compact = readable
+        .replaceAll(RegExp(r'[^a-z0-9._-]+'), '-')
+        .replaceAll(RegExp(r'-+'), '-')
+        .replaceAll(RegExp(r'^-|-$'), '');
+    if (compact.isNotEmpty && compact.length <= 80) return compact;
+    return base64Url.encode(utf8.encode(profilesRepo)).replaceAll('=', '');
+  }
+
+  Future<String> _getPlainWithApprovedRedirects(String url) async {
+    var current = Uri.parse(url);
+    for (var redirects = 0; redirects < 5; redirects++) {
+      await requireHostApproved(_security, current.toString());
+      final res = await _dio.get<String>(
+        current.toString(),
+        options: Options(
+          responseType: ResponseType.plain,
+          followRedirects: false,
+          validateStatus: (status) =>
+              status != null && (status < 400 || _isRedirect(status)),
+        ),
+      );
+      if (!_isRedirect(res.statusCode)) return res.data ?? '';
+      current = _resolveRedirect(current, res.headers);
+    }
+    throw const ProfileFormatException(
+      'too many redirects while fetching registry.yaml',
+    );
+  }
+
+  Uri _resolveRedirect(Uri current, Headers headers) {
+    final location = headers.value('location');
+    if (location == null || location.trim().isEmpty) {
+      throw ProfileFormatException(
+        'redirect from $current did not include Location',
+      );
+    }
+    final next = current.resolve(location);
+    if (next.scheme != 'https' || next.host.isEmpty) {
+      throw const ProfileFormatException(
+        'profile registry redirects must use https',
+      );
+    }
+    return next;
+  }
+
+  bool _isRedirect(int? status) =>
+      status == 301 ||
+      status == 302 ||
+      status == 303 ||
+      status == 307 ||
+      status == 308;
+
   @override
   Future<PrinterProfile> load(ProfileCacheEntry cacheEntry) async {
     final file = File(p.join(cacheEntry.localPath, 'profile.yaml'));
@@ -233,16 +414,6 @@ class SidecarProfileService implements ProfileService {
       throw ProfileFormatException('unsafe profile ref "$ref"');
     }
   }
-}
-
-/// Thrown when a profile.yaml is missing the fields the wizard treats
-/// as load-bearing. Surfaces a readable message instead of the raw
-/// cast/null error a downstream model would otherwise emit.
-class ProfileFormatException implements Exception {
-  const ProfileFormatException(this.message);
-  final String message;
-  @override
-  String toString() => 'ProfileFormatException: $message';
 }
 
 /// Parse a profile.yaml string into a [PrinterProfile].

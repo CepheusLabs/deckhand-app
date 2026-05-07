@@ -22,7 +22,7 @@ abstract class SecurityService {
   /// was found and removed; false otherwise (already consumed,
   /// expired, never issued, or operation mismatch). Callers may treat
   /// false as a security signal and refuse to launch privileged work.
-  bool consumeToken(String value, String operation);
+  bool consumeToken(String value, String operation, {required String target});
 
   /// Batch-prompt the user to allow-list [hosts] before any network
   /// traffic reaches them.
@@ -166,10 +166,12 @@ class ConfirmationToken {
     required this.value,
     required this.expiresAt,
     required this.operation,
+    required this.target,
   });
   final String value;
   final DateTime expiresAt;
   final String operation;
+  final String target;
 }
 
 /// Thrown when a network-egress call is attempted to a host the user

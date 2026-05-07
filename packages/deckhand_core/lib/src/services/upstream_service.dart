@@ -21,9 +21,9 @@ abstract class UpstreamService {
     String? tag,
   });
 
-  /// Stream a full-image download (base Linux OS image) to [destPath],
-  /// optionally verifying the resulting file's sha256 matches
-  /// [expectedSha256].
+  /// Stream a full-image download (base Linux OS image) to [destPath].
+  /// Implementations must require a 64-hex [expectedSha256] before
+  /// issuing network traffic or returning an image path.
   Stream<OsDownloadProgress> osDownload({
     required String url,
     required String destPath,
@@ -62,4 +62,4 @@ class OsDownloadProgress {
   double get fraction => bytesTotal == 0 ? 0 : bytesDone / bytesTotal;
 }
 
-enum OsDownloadPhase { downloading, done, failed }
+enum OsDownloadPhase { downloading, extracting, done, failed }

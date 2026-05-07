@@ -44,6 +44,7 @@ class DefaultSecurityService implements SecurityService {
       value: _uuid.v4(),
       expiresAt: DateTime.now().add(ttl),
       operation: operation,
+      target: target,
     );
     _tokens[token.value] = token;
     // Expire proactively so the map doesn't grow unbounded.
@@ -54,10 +55,11 @@ class DefaultSecurityService implements SecurityService {
   /// Validate + consume a token. Returns true if the token is live;
   /// removes it so subsequent attempts fail.
   @override
-  bool consumeToken(String value, String operation) {
+  bool consumeToken(String value, String operation, {required String target}) {
     final t = _tokens.remove(value);
     if (t == null) return false;
     if (t.operation != operation) return false;
+    if (t.target != target) return false;
     if (DateTime.now().isAfter(t.expiresAt)) return false;
     return true;
   }
@@ -69,7 +71,8 @@ class DefaultSecurityService implements SecurityService {
     // user accepts each one.
     final current = <String, bool>{};
     for (final h in hosts) {
-      current[h] = await isHostAllowed(h);
+      final host = _normalizeHost(h);
+      current[host] = await isHostAllowed(host);
     }
     return current;
   }
@@ -78,17 +81,18 @@ class DefaultSecurityService implements SecurityService {
   /// approves a network-egress prompt.
   @override
   Future<void> approveHost(String host) async {
-    await _storage.write(key: _hostAllowKey(host), value: '1');
+    await _storage.write(key: _hostAllowKey(_normalizeHost(host)), value: '1');
   }
 
   @override
   Future<void> revokeHost(String host) async {
-    await _storage.delete(key: _hostAllowKey(host));
+    await _storage.delete(key: _hostAllowKey(_normalizeHost(host)));
   }
 
   @override
   Future<bool> isHostAllowed(String host) async {
-    return (await _storage.read(key: _hostAllowKey(host))) == '1';
+    return (await _storage.read(key: _hostAllowKey(_normalizeHost(host)))) ==
+        '1';
   }
 
   @override
@@ -109,17 +113,20 @@ class DefaultSecurityService implements SecurityService {
     required String host,
     required String fingerprint,
   }) async {
-    await _storage.write(key: _hostFpKey(host), value: fingerprint);
+    await _storage.write(
+      key: _hostFpKey(_normalizeHost(host)),
+      value: fingerprint,
+    );
   }
 
   @override
   Future<String?> pinnedHostFingerprint(String host) async {
-    return _storage.read(key: _hostFpKey(host));
+    return _storage.read(key: _hostFpKey(_normalizeHost(host)));
   }
 
   @override
   Future<void> forgetHostFingerprint(String host) async {
-    await _storage.delete(key: _hostFpKey(host));
+    await _storage.delete(key: _hostFpKey(_normalizeHost(host)));
   }
 
   @override
@@ -156,4 +163,5 @@ class DefaultSecurityService implements SecurityService {
 
   String _hostAllowKey(String host) => '$_hostAllowPrefix$host';
   String _hostFpKey(String host) => '$_hostFpPrefix$host';
+  String _normalizeHost(String host) => host.trim().toLowerCase();
 }

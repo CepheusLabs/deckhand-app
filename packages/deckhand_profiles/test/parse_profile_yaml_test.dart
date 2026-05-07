@@ -1,8 +1,10 @@
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:deckhand_core/deckhand_core.dart';
 import 'package:deckhand_flash/deckhand_flash.dart';
 import 'package:deckhand_profiles/src/sidecar_profile_service.dart';
+import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
 
@@ -227,6 +229,42 @@ status: alpha
       );
       expect(sidecar.calls, isEmpty);
     });
+
+    test('cache path includes profile repo identity, not only tag', () async {
+      final tmp = await Directory.systemTemp.createTemp(
+        'deckhand-profile-service-',
+      );
+      addTearDown(() async => tmp.delete(recursive: true));
+      final paths = DeckhandPaths(
+        cacheDir: p.join(tmp.path, 'cache'),
+        stateDir: p.join(tmp.path, 'state'),
+        logsDir: p.join(tmp.path, 'logs'),
+        settingsFile: p.join(tmp.path, 'settings.json'),
+      );
+      final sidecarA = _FakeSidecar();
+      final sidecarB = _FakeSidecar();
+      final svcA = SidecarProfileService(
+        sidecar: sidecarA,
+        paths: paths,
+        security: _AllowAllSecurity(),
+        profilesRepo: 'https://github.com/CepheusLabs/deckhand-profiles.git',
+      );
+      final svcB = SidecarProfileService(
+        sidecar: sidecarB,
+        paths: paths,
+        security: _AllowAllSecurity(),
+        profilesRepo: 'https://github.com/example/deckhand-profiles.git',
+      );
+
+      await svcA.ensureCached(profileId: 'test-printer', ref: 'v1.2.3');
+      await svcB.ensureCached(profileId: 'test-printer', ref: 'v1.2.3');
+
+      final destA = sidecarA.calls.single.params['dest'] as String;
+      final destB = sidecarB.calls.single.params['dest'] as String;
+      expect(destA, isNot(destB));
+      expect(destA, contains('github.com-cepheuslabs-deckhand-profiles.git'));
+      expect(destB, contains('github.com-example-deckhand-profiles.git'));
+    });
   });
 
   group('SidecarProfileService.fetchRegistry', () {
@@ -270,6 +308,117 @@ profiles:
       expect(entry.mcu, 'STM32F407');
       expect(entry.extras, 'ChromaKit');
     });
+
+    test('derives missing card metadata from local profile.yaml', () async {
+      final tmp = await Directory.systemTemp.createTemp(
+        'deckhand-profile-registry-',
+      );
+      addTearDown(() async => tmp.delete(recursive: true));
+      final profileDir = Directory(
+        p.join(tmp.path, 'printers', 'test-printer'),
+      );
+      await profileDir.create(recursive: true);
+      await File(p.join(tmp.path, 'registry.yaml')).writeAsString('''
+schema_version: 1
+profiles:
+  - id: test-printer
+    display_name: Test Printer
+    manufacturer: Acme
+    model: Robo
+    status: beta
+    directory: printers/test-printer
+''');
+      await File(p.join(profileDir.path, 'profile.yaml')).writeAsString('''
+schema_version: 1
+profile_id: test-printer
+profile_version: 0.1.0
+display_name: Test Printer
+status: beta
+manufacturer: Acme
+model: Robo
+picker_extras: ChromaKit
+hardware:
+  sbc: { soc: rockchip-rk3328 }
+  kinematics: corexy
+mcus:
+  - { id: main, chip: stm32f407xx }
+''');
+
+      final svc = SidecarProfileService(
+        sidecar: _FakeSidecar(),
+        paths: DeckhandPaths(
+          cacheDir: p.join(tmp.path, 'cache'),
+          stateDir: p.join(tmp.path, 'state'),
+          logsDir: p.join(tmp.path, 'logs'),
+          settingsFile: p.join(tmp.path, 'settings.json'),
+        ),
+        security: _AllowAllSecurity(),
+        localProfilesDir: tmp.path,
+      );
+
+      final registry = await svc.fetchRegistry();
+      final entry = registry.entries.single;
+      expect(entry.sbc, 'RK3328');
+      expect(entry.kinematics, 'CoreXY');
+      expect(entry.mcu, 'STM32F407');
+      expect(entry.extras, 'ChromaKit');
+    });
+
+    test('derives missing card metadata from remote profile.yaml', () async {
+      final tmp = await Directory.systemTemp.createTemp(
+        'deckhand-profile-registry-',
+      );
+      addTearDown(() async => tmp.delete(recursive: true));
+      final adapter = _RegistryAdapter(
+        registry: '''
+schema_version: 1
+profiles:
+  - id: test-printer
+    display_name: Test Printer
+    manufacturer: Acme
+    model: Robo
+    status: beta
+    directory: printers/test-printer
+''',
+        profile: '''
+schema_version: 1
+profile_id: test-printer
+profile_version: 0.1.0
+display_name: Test Printer
+status: beta
+manufacturer: Acme
+model: Robo
+hardware:
+  sbc: { soc: allwinner-h616 }
+  kinematics: corexy
+mcus:
+  - { id: main, chip: stm32h750xx }
+''',
+      );
+      final dio = Dio()..httpClientAdapter = adapter;
+      final svc = SidecarProfileService(
+        sidecar: _FakeSidecar(),
+        paths: DeckhandPaths(
+          cacheDir: p.join(tmp.path, 'cache'),
+          stateDir: p.join(tmp.path, 'state'),
+          logsDir: p.join(tmp.path, 'logs'),
+          settingsFile: p.join(tmp.path, 'settings.json'),
+        ),
+        security: _AllowAllSecurity(),
+        dio: dio,
+        registryUrl: 'https://profiles.example/registry.yaml',
+      );
+
+      final registry = await svc.fetchRegistry();
+      final entry = registry.entries.single;
+      expect(entry.sbc, 'Allwinner H616');
+      expect(entry.kinematics, 'CoreXY');
+      expect(entry.mcu, 'STM32H750');
+      expect(adapter.urls, [
+        'https://profiles.example/registry.yaml',
+        'https://profiles.example/printers/test-printer/profile.yaml',
+      ]);
+    });
   });
 
   // TODO(test-hardware): end-to-end `SidecarProfileService.load` goes
@@ -287,7 +436,11 @@ class _FakeSidecar implements SidecarConnection {
     Map<String, dynamic> params,
   ) async {
     calls.add((method: method, params: params));
-    return const <String, dynamic>{};
+    return <String, dynamic>{
+      'local_path': params['dest'] as String,
+      'resolved_ref': params['ref'] as String? ?? 'main',
+      'resolved_sha': 'abc123',
+    };
   }
 
   @override
@@ -307,6 +460,34 @@ class _FakeSidecar implements SidecarConnection {
   Future<void> shutdown() async {}
 }
 
+class _RegistryAdapter implements HttpClientAdapter {
+  _RegistryAdapter({required this.registry, required this.profile});
+
+  final String registry;
+  final String profile;
+  final urls = <String>[];
+
+  @override
+  Future<ResponseBody> fetch(
+    RequestOptions options,
+    Stream<Uint8List>? requestStream,
+    Future<void>? cancelFuture,
+  ) async {
+    final url = options.uri.toString();
+    urls.add(url);
+    if (url == 'https://profiles.example/registry.yaml') {
+      return ResponseBody.fromString(registry, 200);
+    }
+    if (url == 'https://profiles.example/printers/test-printer/profile.yaml') {
+      return ResponseBody.fromString(profile, 200);
+    }
+    return ResponseBody.fromString('not found', 404);
+  }
+
+  @override
+  void close({bool force = false}) {}
+}
+
 class _AllowAllSecurity implements SecurityService {
   @override
   Future<ConfirmationToken> issueConfirmationToken({
@@ -317,10 +498,12 @@ class _AllowAllSecurity implements SecurityService {
     value: 'token-0123456789abcdef',
     expiresAt: DateTime.now().add(ttl),
     operation: operation,
+    target: target,
   );
 
   @override
-  bool consumeToken(String value, String operation) => true;
+  bool consumeToken(String value, String operation, {required String target}) =>
+      true;
 
   @override
   Future<Map<String, bool>> requestHostApprovals(List<String> hosts) async => {

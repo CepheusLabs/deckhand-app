@@ -82,9 +82,11 @@ class DeckhandSettings {
   /// older rows roll off.
   void recordSavedHost(SavedHost h) {
     final list = savedHosts.toList();
-    list.removeWhere((e) =>
-        e.host.toLowerCase() == h.host.toLowerCase() &&
-        e.user.toLowerCase() == h.user.toLowerCase());
+    list.removeWhere(
+      (e) =>
+          e.host.toLowerCase() == h.host.toLowerCase() &&
+          e.user.toLowerCase() == h.user.toLowerCase(),
+    );
     list.insert(0, h);
     while (list.length > 10) {
       list.removeLast();
@@ -94,9 +96,11 @@ class DeckhandSettings {
 
   void forgetSavedHost({required String host, required String user}) {
     final list = savedHosts.toList()
-      ..removeWhere((e) =>
-          e.host.toLowerCase() == host.toLowerCase() &&
-          e.user.toLowerCase() == user.toLowerCase());
+      ..removeWhere(
+        (e) =>
+            e.host.toLowerCase() == host.toLowerCase() &&
+            e.user.toLowerCase() == user.toLowerCase(),
+      );
     savedHosts = list;
   }
 
@@ -115,6 +119,7 @@ class DeckhandSettings {
     if (v is String && v.trim().isNotEmpty) return v.trim();
     return null;
   }
+
   set localProfilesDir(String? v) {
     if (v == null || v.trim().isEmpty) {
       _values.remove('local_profiles_dir');
@@ -131,6 +136,7 @@ class DeckhandSettings {
     if (v is num) return v.toInt();
     return 30;
   }
+
   set pruneOlderThanDays(int v) =>
       _values['prune_older_than_days'] = v < 1 ? 1 : v;
 
@@ -141,6 +147,7 @@ class DeckhandSettings {
     final v = _values['prune_keep_newest_per_target'];
     return v is bool ? v : true; // default: safe (keep one)
   }
+
   set pruneKeepNewestPerTarget(bool v) =>
       _values['prune_keep_newest_per_target'] = v;
 
@@ -156,7 +163,19 @@ class DeckhandSettings {
     final v = _values['dry_run'];
     return v is bool ? v : false;
   }
+
   set dryRun(bool v) => _values['dry_run'] = v;
+
+  /// Developer mode. When enabled, the UI prefers raw/internal
+  /// diagnostics over user-facing summaries: step ids, exact log
+  /// strings, paths, and other details useful while debugging a
+  /// profile or Deckhand itself. Default false.
+  bool get developerMode {
+    final v = _values['developer_mode'];
+    return v is bool ? v : false;
+  }
+
+  set developerMode(bool v) => _values['developer_mode'] = v;
 
   /// When true, every flash run reads the disk back after writing and
   /// compares the SHA256 against the source image. Adds 30-90 seconds
@@ -168,6 +187,7 @@ class DeckhandSettings {
     final v = _values['verify_after_write'];
     return v is bool ? v : true;
   }
+
   set verifyAfterWrite(bool v) => _values['verify_after_write'] = v;
 
   /// Days to retain downloaded OS images and profile checkouts in the
@@ -181,6 +201,7 @@ class DeckhandSettings {
     if (v is num) return v.toInt();
     return 30;
   }
+
   set cacheRetentionDays(int v) =>
       _values['cache_retention_days'] = v < 0 ? 0 : v;
 
@@ -197,6 +218,7 @@ class DeckhandSettings {
     }
     return 'system';
   }
+
   set themeModeName(String v) {
     if (v == 'system' || v == 'light' || v == 'dark') {
       _values['theme_mode'] = v;
@@ -212,6 +234,7 @@ class DeckhandSettings {
     if (v is String && v.trim().isNotEmpty) return v.trim();
     return null;
   }
+
   set preferredLocale(String? v) {
     if (v == null || v.trim().isEmpty) {
       _values.remove('preferred_locale');
@@ -234,6 +257,7 @@ class DeckhandSettings {
     if (width == null || height == null) return null;
     return WindowGeometry(width: width, height: height, x: x, y: y);
   }
+
   set windowGeometry(WindowGeometry? g) {
     if (g == null) {
       _values.remove('window_geometry');
@@ -259,6 +283,7 @@ class DeckhandSettings {
     if (raw is Map) return raw.cast<String, dynamic>();
     return null;
   }
+
   set lastPreflight(Map<String, dynamic>? v) {
     if (v == null) {
       _values.remove('last_preflight');
@@ -319,11 +344,11 @@ class SavedHost {
   final DateTime? lastUsed;
 
   Map<String, dynamic> toJson() => <String, dynamic>{
-        'host': host,
-        'port': port,
-        'user': user,
-        if (lastUsed != null) 'last_used': lastUsed!.toIso8601String(),
-      };
+    'host': host,
+    'port': port,
+    'user': user,
+    if (lastUsed != null) 'last_used': lastUsed!.toIso8601String(),
+  };
 
   factory SavedHost.fromJson(Map<String, dynamic> j) {
     final lastUsedRaw = j['last_used'];

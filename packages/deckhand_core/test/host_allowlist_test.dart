@@ -4,8 +4,10 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   group('hostFromUrl', () {
     test('https URL -> host', () {
-      expect(hostFromUrl('https://github.com/CepheusLabs/deckhand'),
-          'github.com');
+      expect(
+        hostFromUrl('https://github.com/CepheusLabs/deckhand'),
+        'github.com',
+      );
     });
     test('http URL with port -> host (port stripped)', () {
       expect(hostFromUrl('http://example.com:8080/path'), 'example.com');
@@ -30,19 +32,31 @@ void main() {
       final s = _StubSecurity({'github.com'});
       expect(
         () => requireHostApproved(s, 'https://armbian.com/img.xz'),
-        throwsA(isA<HostNotApprovedException>()
-            .having((e) => e.host, 'host', 'armbian.com')),
+        throwsA(
+          isA<HostNotApprovedException>().having(
+            (e) => e.host,
+            'host',
+            'armbian.com',
+          ),
+        ),
       );
     });
-    test('unparseable URL -> HostNotApprovedException with the raw url',
-        () async {
-      final s = _StubSecurity({});
-      expect(
-        () => requireHostApproved(s, 'not a url'),
-        throwsA(isA<HostNotApprovedException>()
-            .having((e) => e.host, 'host', 'not a url')),
-      );
-    });
+    test(
+      'unparseable URL -> HostNotApprovedException with the raw url',
+      () async {
+        final s = _StubSecurity({});
+        expect(
+          () => requireHostApproved(s, 'not a url'),
+          throwsA(
+            isA<HostNotApprovedException>().having(
+              (e) => e.host,
+              'host',
+              'not a url',
+            ),
+          ),
+        );
+      },
+    );
   });
 }
 
@@ -54,8 +68,9 @@ class _StubSecurity implements SecurityService {
   Future<bool> isHostAllowed(String host) async => allowed.contains(host);
 
   @override
-  Future<Map<String, bool>> requestHostApprovals(List<String> hosts) async =>
-      {for (final h in hosts) h: allowed.contains(h)};
+  Future<Map<String, bool>> requestHostApprovals(List<String> hosts) async => {
+    for (final h in hosts) h: allowed.contains(h),
+  };
 
   @override
   Future<ConfirmationToken> issueConfirmationToken({
@@ -65,7 +80,8 @@ class _StubSecurity implements SecurityService {
   }) async => throw UnimplementedError();
 
   @override
-  bool consumeToken(String value, String operation) => true;
+  bool consumeToken(String value, String operation, {required String target}) =>
+      true;
 
   @override
   Future<void> approveHost(String host) async {}
@@ -75,7 +91,8 @@ class _StubSecurity implements SecurityService {
 
   @override
   Future<void> pinHostFingerprint({
-    required String host, required String fingerprint,
+    required String host,
+    required String fingerprint,
   }) async {}
 
   @override

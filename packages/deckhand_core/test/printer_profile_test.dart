@@ -109,6 +109,38 @@ void main() {
       expect(p.stockOs.paths.single.action, 'snapshot_and_replace');
     });
 
+    test('stock file default action is keep unless explicitly delete', () {
+      final p = PrinterProfile.fromJson(<String, dynamic>{
+        'profile_id': 't',
+        'stock_os': {
+          'files': [
+            {
+              'id': 'rsa_priv',
+              'paths': ['/etc/dropbear/dropbear_rsa_host_key'],
+            },
+          ],
+        },
+      });
+      expect(p.stockOs.files.single.defaultAction, 'keep');
+    });
+
+    test(
+      'throws ProfileFormatException for missing critical required fields',
+      () {
+        expect(
+          () => PrinterProfile.fromJson(<String, dynamic>{
+            'profile_id': 'broken',
+            'ssh': {
+              'default_credentials': [
+                {'password': 'pw'},
+              ],
+            },
+          }),
+          throwsA(isA<ProfileFormatException>()),
+        );
+      },
+    );
+
     test('parses identification hints', () {
       final p = PrinterProfile.fromJson({
         'profile_id': 'x',
@@ -117,8 +149,7 @@ void main() {
           'hostname_patterns': [r'^mkspi$'],
         },
       });
-      expect(p.identification.moonrakerObjects,
-          ['phrozen_dev', 'some_other']);
+      expect(p.identification.moonrakerObjects, ['phrozen_dev', 'some_other']);
       expect(p.identification.hostnamePatterns, [r'^mkspi$']);
     });
 

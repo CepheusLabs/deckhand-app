@@ -10,6 +10,7 @@ export 'src/paths.dart';
 export 'src/settings.dart';
 export 'src/shell/shell_quoting.dart';
 export 'src/models/printer_profile.dart';
+export 'src/models/profile_network_hosts.dart';
 export 'src/services/flash_service.dart';
 export 'src/services/ssh_service.dart';
 export 'src/services/profile_service.dart';

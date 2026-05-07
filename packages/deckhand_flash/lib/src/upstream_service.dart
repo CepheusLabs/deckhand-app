@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:deckhand_core/deckhand_core.dart';
+import 'package:crypto/crypto.dart';
 import 'package:dio/dio.dart';
 import 'package:path/path.dart' as p;
 
@@ -29,7 +30,9 @@ class SidecarUpstreamService implements UpstreamService {
     required this.sidecar,
     required SecurityService security,
     Dio? dio,
+    String? osImagesDir,
   }) : _security = security,
+       _osImagesDir = osImagesDir,
        _dio = (dio ?? Dio())
          // Token interceptor runs first so it sees the un-mutated
          // request and can inject the auth header before the egress
@@ -39,6 +42,7 @@ class SidecarUpstreamService implements UpstreamService {
 
   final SidecarConnection sidecar;
   final SecurityService _security;
+  final String? _osImagesDir;
   final Dio _dio;
 
   @override
@@ -81,9 +85,7 @@ class SidecarUpstreamService implements UpstreamService {
         ? 'https://api.github.com/repos/$repoSlug/releases/latest'
         : 'https://api.github.com/repos/$repoSlug/releases/tags/$tag';
 
-    await requireHostApproved(_security, url);
-    final relResp = await _dio.get<Map<String, dynamic>>(url);
-    final rel = relResp.data ?? const {};
+    final rel = await _getReleaseJson(url);
     final tagName = rel['tag_name'] as String? ?? tag ?? 'unknown';
     final assets = ((rel['assets'] as List?) ?? const []).cast<Map>();
     final match = assets.firstWhere(
@@ -98,13 +100,22 @@ class SidecarUpstreamService implements UpstreamService {
     final dlUrl = match['browser_download_url'] as String;
     final assetName = match['name'] as String;
     _validateReleaseAssetName(assetName);
-    await requireHostApproved(_security, dlUrl);
 
     final outPath = p.join(destPath, assetName);
     await Directory(destPath).create(recursive: true);
-    await _dio.download(dlUrl, outPath);
-    final hashRes = await sidecar.call('disks.hash', {'path': outPath});
-    final actualSha = (hashRes['sha256'] as String? ?? '').trim().toLowerCase();
+    if (await File(outPath).exists()) {
+      final existingSha = await _hashFile(outPath);
+      if (existingSha == normalizedExpected) {
+        return UpstreamFetchResult(
+          localPath: outPath,
+          resolvedRef: tagName,
+          assetName: assetName,
+        );
+      }
+      await File(outPath).delete();
+    }
+    await _downloadApproved(dlUrl, outPath);
+    final actualSha = await _hashFile(outPath);
     if (actualSha != normalizedExpected) {
       try {
         await File(outPath).delete();
@@ -125,6 +136,84 @@ class SidecarUpstreamService implements UpstreamService {
     );
   }
 
+  Future<Map<String, dynamic>> _getReleaseJson(String url) async {
+    var current = Uri.parse(url);
+    for (var redirects = 0; redirects < 5; redirects++) {
+      await requireHostApproved(_security, current.toString());
+      final res = await _dio.get<Map<String, dynamic>>(
+        current.toString(),
+        options: Options(
+          followRedirects: false,
+          validateStatus: (status) =>
+              status != null && (status < 400 || _isRedirect(status)),
+          extra: const {
+            EgressLogInterceptor.operationLabelKey: 'GitHub release metadata',
+          },
+        ),
+      );
+      if (!_isRedirect(res.statusCode)) {
+        return res.data ?? const <String, dynamic>{};
+      }
+      current = _resolveRedirect(current, res.headers);
+    }
+    throw UpstreamException('too many redirects while fetching $url');
+  }
+
+  Future<void> _downloadApproved(String url, String outPath) async {
+    var current = Uri.parse(url);
+    for (var redirects = 0; redirects < 5; redirects++) {
+      await requireHostApproved(_security, current.toString());
+      final res = await _dio.download(
+        current.toString(),
+        outPath,
+        options: Options(
+          followRedirects: false,
+          validateStatus: (status) =>
+              status != null && (status < 400 || _isRedirect(status)),
+          extra: const {
+            EgressLogInterceptor.operationLabelKey: 'GitHub release asset',
+          },
+        ),
+      );
+      if (!_isRedirect(res.statusCode)) return;
+      try {
+        await File(outPath).delete();
+      } on FileSystemException {
+        // Redirect responses may not have created a file; ignore.
+      }
+      current = _resolveRedirect(current, res.headers);
+    }
+    throw UpstreamException('too many redirects while downloading $url');
+  }
+
+  Uri _resolveRedirect(Uri current, Headers headers) {
+    final location = headers.value('location');
+    if (location == null || location.trim().isEmpty) {
+      throw UpstreamException(
+        'redirect from $current did not include Location',
+      );
+    }
+    final next = current.resolve(location);
+    if (next.scheme != 'https' || next.host.isEmpty) {
+      throw UpstreamException(
+        'release asset redirects must stay on https URLs',
+      );
+    }
+    return next;
+  }
+
+  bool _isRedirect(int? status) =>
+      status == 301 ||
+      status == 302 ||
+      status == 303 ||
+      status == 307 ||
+      status == 308;
+
+  Future<String> _hashFile(String outPath) async {
+    final hashRes = await sidecar.call('disks.hash', {'path': outPath});
+    return (hashRes['sha256'] as String? ?? '').trim().toLowerCase();
+  }
+
   @override
   Stream<OsDownloadProgress> osDownload({
     required String url,
@@ -140,25 +229,118 @@ class SidecarUpstreamService implements UpstreamService {
         !RegExp(r'^[0-9a-f]{64}$').hasMatch(normalizedExpected)) {
       throw UpstreamException('OS image downloads require a 64-hex sha256');
     }
+    final safeDestPath = _validateManagedOsImageDest(destPath);
+    await _clearStaleOsImagePart(safeDestPath);
+    final cachedSha = await _tryReuseOrClearLocalOsImage(
+      safeDestPath,
+      normalizedExpected,
+      url,
+    );
+    if (cachedSha != null) {
+      await _writeDownloadManifest(
+        url: url,
+        destPath: safeDestPath,
+        expectedSha256: normalizedExpected,
+        actualSha256: cachedSha,
+        reused: true,
+      );
+      yield OsDownloadProgress(
+        bytesDone: 0,
+        bytesTotal: 0,
+        phase: OsDownloadPhase.done,
+        sha256: cachedSha,
+        path: safeDestPath,
+        reused: true,
+      );
+      return;
+    }
     await requireHostApproved(_security, url);
-    await for (final progress
-        in sidecar
-            .callStreaming('os.download', {
-              'url': url,
-              'dest': destPath,
-              'sha256': normalizedExpected,
-            })
-            .transform(_osDownloadTransformer)) {
-      if (progress.phase == OsDownloadPhase.done) {
-        await _writeDownloadManifest(
+    final host = parsed.host.toLowerCase();
+    String? requestId;
+    DateTime? startedAt;
+    void recordDownloadStartIfNeeded() {
+      if (requestId != null) return;
+      requestId = _newEgressRequestId('os-download');
+      startedAt = DateTime.now().toUtc();
+      _security.recordEgress(
+        EgressEvent(
+          requestId: requestId!,
+          host: host,
           url: url,
-          destPath: progress.path ?? destPath,
-          expectedSha256: normalizedExpected,
-          actualSha256: progress.sha256 ?? normalizedExpected,
-          reused: progress.reused,
+          method: 'GET',
+          operationLabel: 'OS image download',
+          startedAt: startedAt!,
+        ),
+      );
+    }
+
+    var bytesSeen = 0;
+    var completed = false;
+    try {
+      await for (final progress
+          in sidecar
+              .callStreaming('os.download', {
+                'url': url,
+                'dest': safeDestPath,
+                'sha256': normalizedExpected,
+              })
+              .transform(_osDownloadTransformer)) {
+        if (progress.phase == OsDownloadPhase.downloading) {
+          recordDownloadStartIfNeeded();
+        }
+        if (progress.bytesDone > bytesSeen) bytesSeen = progress.bytesDone;
+        if (progress.phase == OsDownloadPhase.done) {
+          final resultPath = progress.path == null
+              ? safeDestPath
+              : _validateSidecarResultPath(progress.path!);
+          if (!_samePath(resultPath, safeDestPath)) {
+            throw UpstreamException(
+              'os.download returned unexpected path: $resultPath',
+            );
+          }
+          await _writeDownloadManifest(
+            url: url,
+            destPath: resultPath,
+            expectedSha256: normalizedExpected,
+            actualSha256: progress.sha256 ?? normalizedExpected,
+            reused: progress.reused,
+          );
+          completed = true;
+          if (requestId != null && startedAt != null) {
+            _security.recordEgress(
+              EgressEvent(
+                requestId: requestId!,
+                host: host,
+                url: url,
+                method: 'GET',
+                operationLabel: 'OS image download',
+                startedAt: startedAt!,
+                completedAt: DateTime.now().toUtc(),
+                bytes: bytesSeen == 0 ? null : bytesSeen,
+                status: 200,
+              ),
+            );
+          }
+        }
+        yield progress;
+      }
+    } catch (e) {
+      if (!completed && requestId != null && startedAt != null) {
+        _security.recordEgress(
+          EgressEvent(
+            requestId: requestId!,
+            host: host,
+            url: url,
+            method: 'GET',
+            operationLabel: 'OS image download',
+            startedAt: startedAt!,
+            completedAt: DateTime.now().toUtc(),
+            bytes: bytesSeen == 0 ? null : bytesSeen,
+            error: '$e',
+          ),
         );
       }
-      yield progress;
+      rethrow;
     }
   }
 
@@ -171,6 +353,16 @@ class SidecarUpstreamService implements UpstreamService {
   }) async {
     final manifest = File(_manifestPath(destPath));
     await manifest.parent.create(recursive: true);
+    final manifestType = await FileSystemEntity.type(
+      manifest.path,
+      followLinks: false,
+    );
+    if (manifestType == FileSystemEntityType.link ||
+        manifestType == FileSystemEntityType.directory) {
+      throw UpstreamException(
+        'download manifest path must be a regular file: ${manifest.path}',
+      );
+    }
     final now = DateTime.now().toUtc().toIso8601String();
     await manifest.writeAsString(
       const JsonEncoder.withIndent('  ').convert({
@@ -185,6 +377,113 @@ class SidecarUpstreamService implements UpstreamService {
   }
 
   String _manifestPath(String destPath) => '$destPath.deckhand-download.json';
+
+  Future<String?> _tryReuseOrClearLocalOsImage(
+    String destPath,
+    String expectedSha256,
+    String url,
+  ) async {
+    final type = await FileSystemEntity.type(destPath, followLinks: false);
+    if (type == FileSystemEntityType.notFound) return null;
+    if (type == FileSystemEntityType.link ||
+        type == FileSystemEntityType.directory) {
+      throw UpstreamException(
+        'cached OS image path must be a regular file: $destPath',
+      );
+    }
+    if (_isXzUrl(url)) {
+      if (await _hasXzMagic(destPath)) {
+        await File(destPath).delete();
+        return null;
+      }
+      final manifestSha = await _localManifestImageSha(
+        destPath: destPath,
+        expectedSha256: expectedSha256,
+        url: url,
+      );
+      if (manifestSha == null) {
+        await File(destPath).delete();
+        return null;
+      }
+      final actual = await _hashLocalFile(destPath);
+      if (actual == manifestSha) return actual;
+      await File(destPath).delete();
+      return null;
+    }
+    final actual = await _hashLocalFile(destPath);
+    if (actual == expectedSha256) return actual;
+    await File(destPath).delete();
+    return null;
+  }
+
+  Future<void> _clearStaleOsImagePart(String destPath) async {
+    final partPath = '$destPath.part';
+    final type = await FileSystemEntity.type(partPath, followLinks: false);
+    if (type == FileSystemEntityType.notFound) return;
+    if (type == FileSystemEntityType.link ||
+        type == FileSystemEntityType.directory) {
+      throw UpstreamException(
+        'cached OS image partial path must be a regular file: $partPath',
+      );
+    }
+    await File(partPath).delete();
+  }
+
+  bool _isXzUrl(String url) {
+    final parsed = Uri.tryParse(url);
+    return parsed != null && parsed.path.toLowerCase().endsWith('.xz');
+  }
+
+  Future<bool> _hasXzMagic(String path) async {
+    final file = File(path);
+    final stream = file.openRead(0, 6);
+    final bytes = <int>[];
+    await for (final chunk in stream) {
+      bytes.addAll(chunk);
+      if (bytes.length >= 6) break;
+    }
+    return bytes.length >= 6 &&
+        bytes[0] == 0xfd &&
+        bytes[1] == 0x37 &&
+        bytes[2] == 0x7a &&
+        bytes[3] == 0x58 &&
+        bytes[4] == 0x5a &&
+        bytes[5] == 0x00;
+  }
+
+  Future<String?> _localManifestImageSha({
+    required String destPath,
+    required String expectedSha256,
+    required String url,
+  }) async {
+    final manifest = File(_manifestPath(destPath));
+    final type = await FileSystemEntity.type(manifest.path, followLinks: false);
+    if (type == FileSystemEntityType.notFound) return null;
+    if (type == FileSystemEntityType.link ||
+        type == FileSystemEntityType.directory) {
+      throw UpstreamException(
+        'download manifest path must be a regular file: ${manifest.path}',
+      );
+    }
+    final body = jsonDecode(await manifest.readAsString());
+    if (body is! Map) return null;
+    final decoded = body.cast<String, dynamic>();
+    if (decoded['url'] != url ||
+        decoded['path'] != destPath ||
+        decoded['expected_sha256'] != expectedSha256) {
+      return null;
+    }
+    final actualSha = decoded['actual_sha256'] as String?;
+    if (actualSha == null || !RegExp(r'^[0-9a-f]{64}$').hasMatch(actualSha)) {
+      return null;
+    }
+    return actualSha;
+  }
+
+  Future<String> _hashLocalFile(String path) async {
+    final digest = await sha256.bind(File(path).openRead()).first;
+    return digest.toString();
+  }
 
   bool _matches(String name, String pattern) {
     // Very simple glob: `*.zip` / `*fluidd*.zip`. No regex surface.
@@ -228,6 +527,76 @@ class SidecarUpstreamService implements UpstreamService {
       throw UpstreamException('unsafe release asset name: $name');
     }
   }
+
+  String _validateManagedOsImageDest(String destPath) {
+    final raw = destPath.trim();
+    if (raw.isEmpty) {
+      throw UpstreamException('OS image destination is required');
+    }
+    final normalizedSeparators = raw.replaceAll('\\', '/');
+    if (normalizedSeparators.startsWith('//./') ||
+        normalizedSeparators.startsWith('/dev/')) {
+      throw UpstreamException(
+        'OS image destination must be a regular file path',
+      );
+    }
+    final parts = p.split(raw);
+    if (parts.any((part) => part == '..')) {
+      throw UpstreamException('OS image destination must not use traversal');
+    }
+    final clean = p.normalize(p.absolute(raw));
+    if (p.extension(clean).toLowerCase() != '.img') {
+      throw UpstreamException('OS image destination must end in .img');
+    }
+    if (p.basename(clean).isEmpty ||
+        p.basename(clean) == '.' ||
+        p.basename(clean) == '..') {
+      throw UpstreamException('OS image destination must be a file name');
+    }
+
+    final configuredRoot =
+        _osImagesDir ?? p.join(Directory.systemTemp.path, 'deckhand-os-images');
+    if (configuredRoot.trim().isEmpty) {
+      throw UpstreamException('Deckhand managed OS image cache is unset');
+    }
+    final managedRoot = p.normalize(p.absolute(configuredRoot));
+    if (!_samePath(p.dirname(clean), managedRoot)) {
+      throw UpstreamException(
+        'OS image destination must be in Deckhand managed OS image cache',
+      );
+    }
+    final rootType = FileSystemEntity.typeSync(managedRoot, followLinks: false);
+    if (rootType == FileSystemEntityType.link ||
+        (rootType != FileSystemEntityType.notFound &&
+            rootType != FileSystemEntityType.directory)) {
+      throw UpstreamException(
+        'Deckhand managed OS image cache must be a real directory',
+      );
+    }
+    return clean;
+  }
+
+  bool _samePath(String a, String b) {
+    final left = p.normalize(p.absolute(a));
+    final right = p.normalize(p.absolute(b));
+    if (Platform.isWindows) {
+      return left.toLowerCase() == right.toLowerCase();
+    }
+    return left == right;
+  }
+
+  String _validateSidecarResultPath(String path) {
+    try {
+      return _validateManagedOsImageDest(path);
+    } on UpstreamException catch (e) {
+      throw UpstreamException(
+        'os.download returned unexpected path: $path (${e.message})',
+      );
+    }
+  }
+
+  String _newEgressRequestId(String prefix) =>
+      '$prefix-${DateTime.now().microsecondsSinceEpoch}';
 }
 
 class UpstreamException implements Exception {
@@ -270,6 +639,7 @@ final _osDownloadTransformer =
 
 OsDownloadPhase _phaseFromString(String? s) => switch (s) {
   'downloading' => OsDownloadPhase.downloading,
+  'extracting' => OsDownloadPhase.extracting,
   'done' => OsDownloadPhase.done,
   'failed' => OsDownloadPhase.failed,
   _ => OsDownloadPhase.downloading,

@@ -5,6 +5,7 @@ import 'dart:typed_data';
 
 import 'package:deckhand_core/deckhand_core.dart';
 import 'package:deckhand_flash/deckhand_flash.dart';
+import 'package:crypto/crypto.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
@@ -100,6 +101,82 @@ void main() {
       expect(security.checkedHosts, ['api.github.com', 'downloads.example']);
     });
 
+    test('requires approval for release asset redirect targets', () async {
+      final tmp = await Directory.systemTemp.createTemp('deckhand-upstream-');
+      addTearDown(() async => tmp.delete(recursive: true));
+
+      final security = _AllowAllSecurity(
+        allowedHosts: {'api.github.com', 'downloads.example'},
+      );
+      final dio = Dio()
+        ..httpClientAdapter = _FakeGitHubAdapter(
+          redirectAssetTo: 'https://redirected.example/fluidd.zip',
+        );
+      final svc = SidecarUpstreamService(
+        sidecar: _FakeSidecar(
+          hash:
+              'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        ),
+        security: security,
+        dio: dio,
+      );
+
+      await expectLater(
+        svc.releaseFetch(
+          repoSlug: 'fluidd-core/fluidd',
+          assetPattern: 'fluidd.zip',
+          destPath: tmp.path,
+          expectedSha256:
+              'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        ),
+        throwsA(
+          isA<HostNotApprovedException>().having(
+            (e) => e.host,
+            'host',
+            'redirected.example',
+          ),
+        ),
+      );
+      expect(security.checkedHosts, [
+        'api.github.com',
+        'downloads.example',
+        'redirected.example',
+      ]);
+    });
+
+    test(
+      'reuses a verified existing release asset without redownloading',
+      () async {
+        final tmp = await Directory.systemTemp.createTemp('deckhand-upstream-');
+        addTearDown(() async => tmp.delete(recursive: true));
+
+        final expected =
+            'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+        final existing = File(p.join(tmp.path, 'fluidd.zip'));
+        await existing.writeAsString('cached-asset');
+        final sidecar = _FakeSidecar(hash: expected);
+        final adapter = _FakeGitHubAdapter();
+        final dio = Dio()..httpClientAdapter = adapter;
+        final svc = SidecarUpstreamService(
+          sidecar: sidecar,
+          security: _AllowAllSecurity(),
+          dio: dio,
+        );
+
+        final res = await svc.releaseFetch(
+          repoSlug: 'fluidd-core/fluidd',
+          assetPattern: 'fluidd.zip',
+          destPath: tmp.path,
+          expectedSha256: expected,
+        );
+
+        expect(res.localPath, existing.path);
+        expect(await existing.readAsString(), 'cached-asset');
+        expect(adapter.assetDownloadCount, 0);
+        expect(sidecar.hashPaths, [existing.path]);
+      },
+    );
+
     test('rejects release asset names that escape the destination', () async {
       final tmp = await Directory.systemTemp.createTemp('deckhand-upstream-');
       addTearDown(() async => tmp.delete(recursive: true));
@@ -170,6 +247,36 @@ void main() {
       expect(security.checkedHosts, isEmpty);
     });
 
+    test('rejects unmanaged destinations before host approval', () async {
+      final sidecar = _FakeSidecar(
+        hash:
+            'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      );
+      final security = _AllowAllSecurity();
+      final svc = SidecarUpstreamService(sidecar: sidecar, security: security);
+
+      await expectLater(
+        svc
+            .osDownload(
+              url: 'https://example.com/image.img',
+              destPath: p.join(await _unmanagedTempDir(), 'image.img'),
+              expectedSha256:
+                  'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+            )
+            .drain<void>(),
+        throwsA(
+          isA<UpstreamException>().having(
+            (e) => e.message,
+            'message',
+            contains('managed OS image cache'),
+          ),
+        ),
+      );
+
+      expect(sidecar.streamingCalls, isEmpty);
+      expect(security.checkedHosts, isEmpty);
+    });
+
     test('passes normalized sha256 to os.download', () async {
       final sidecar = _FakeSidecar(
         hash:
@@ -181,7 +288,7 @@ void main() {
       await svc
           .osDownload(
             url: 'https://example.com/image.img',
-            destPath: '/tmp/deckhand-os-images/image.img',
+            destPath: _managedOsImageDest('image.img'),
             expectedSha256:
                 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
           )
@@ -195,10 +302,46 @@ void main() {
       );
     });
 
+    test('accepts an injected managed OS image cache root', () async {
+      final root = await Directory.systemTemp.createTemp(
+        'deckhand-managed-os-cache-',
+      );
+      addTearDown(() async => root.delete(recursive: true));
+      final dest = p.join(root.path, 'image.img');
+      final expected =
+          'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+      final sidecar = _FakeSidecar(
+        hash: expected,
+        streamEvents: [
+          SidecarResult({'sha256': expected, 'path': dest, 'reused': true}),
+        ],
+      );
+      final security = _AllowAllSecurity();
+      final svc = SidecarUpstreamService(
+        sidecar: sidecar,
+        security: security,
+        osImagesDir: root.path,
+      );
+
+      await svc
+          .osDownload(
+            url: 'https://example.com/image.img',
+            destPath: dest,
+            expectedSha256: expected,
+          )
+          .drain<void>();
+
+      expect(sidecar.streamingCalls, hasLength(1));
+      expect(sidecar.streamingCalls.single.params['dest'], dest);
+      expect(security.checkedHosts, ['example.com']);
+    });
+
     test('reuses an existing image when its sha256 matches', () async {
-      final tmp = await Directory.systemTemp.createTemp('deckhand-upstream-');
-      addTearDown(() async => tmp.delete(recursive: true));
-      final dest = p.join(tmp.path, 'image.img');
+      final dest = _managedOsImageDest('reused-image.img');
+      addTearDown(() async {
+        await _deleteIfExists(dest);
+        await _deleteIfExists('$dest.deckhand-download.json');
+      });
       final expected =
           'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
       final sidecar = _FakeSidecar(
@@ -232,10 +375,205 @@ void main() {
       expect(manifest, contains(expected));
     });
 
+    test('reuses verified local image before host approval', () async {
+      final dest = _managedOsImageDest('local-preflight-reuse.img');
+      addTearDown(() async {
+        await _deleteIfExists(dest);
+        await _deleteIfExists('$dest.deckhand-download.json');
+      });
+      await Directory(p.dirname(dest)).create(recursive: true);
+      const cachedBody = 'cached-image';
+      await File(dest).writeAsString(cachedBody);
+      final expected = sha256.convert(utf8.encode(cachedBody)).toString();
+      final sidecar = _FakeSidecar(
+        hash:
+            'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+      );
+      final security = _AllowAllSecurity(allowedHosts: const {});
+      final svc = SidecarUpstreamService(sidecar: sidecar, security: security);
+
+      final events = await svc
+          .osDownload(
+            url: 'https://blocked.example.com/image.img',
+            destPath: dest,
+            expectedSha256: expected,
+          )
+          .toList();
+
+      expect(events, hasLength(1));
+      expect(events.single.phase, OsDownloadPhase.done);
+      expect(events.single.reused, isTrue);
+      expect(events.single.path, dest);
+      expect(sidecar.hashPaths, isEmpty);
+      expect(sidecar.streamingCalls, isEmpty);
+      expect(security.checkedHosts, isEmpty);
+      final manifest = await File(
+        '$dest.deckhand-download.json',
+      ).readAsString();
+      expect(manifest, contains('"reused_at"'));
+    });
+
+    test('does not reuse stale xz bytes masquerading as an image', () async {
+      final dest = _managedOsImageDest('stale-xz-cache.img');
+      addTearDown(() async {
+        await _deleteIfExists(dest);
+        await _deleteIfExists('$dest.deckhand-download.json');
+      });
+      await Directory(p.dirname(dest)).create(recursive: true);
+      final staleXzBytes = <int>[0xfd, 0x37, 0x7a, 0x58, 0x5a, 0x00, 1, 2];
+      await File(dest).writeAsBytes(staleXzBytes);
+      final expectedArtifactSha = sha256.convert(staleXzBytes).toString();
+      final finalImageSha =
+          'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+      final sidecar = _FakeSidecar(
+        hash: finalImageSha,
+        streamEvents: [
+          SidecarResult({
+            'sha256': finalImageSha,
+            'path': dest,
+            'reused': false,
+          }),
+        ],
+      );
+      final security = _AllowAllSecurity();
+      final svc = SidecarUpstreamService(sidecar: sidecar, security: security);
+
+      final events = await svc
+          .osDownload(
+            url: 'https://example.com/image.img.xz',
+            destPath: dest,
+            expectedSha256: expectedArtifactSha,
+          )
+          .toList();
+
+      expect(events.single.sha256, finalImageSha);
+      expect(events.single.reused, isFalse);
+      expect(File(dest).existsSync(), isFalse);
+      expect(sidecar.streamingCalls, hasLength(1));
+      expect(security.checkedHosts, ['example.com']);
+    });
+
+    test('clears extracted xz images without a matching manifest', () async {
+      final dest = _managedOsImageDest('manifestless-xz-cache.img');
+      addTearDown(() async {
+        await _deleteIfExists(dest);
+        await _deleteIfExists('$dest.deckhand-download.json');
+      });
+      await Directory(p.dirname(dest)).create(recursive: true);
+      await File(dest).writeAsString('raw image without provenance');
+      final imageSha =
+          'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+      final artifactSha =
+          'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+      final sidecar = _FakeSidecar(
+        hash: imageSha,
+        streamEvents: [
+          SidecarResult({'sha256': imageSha, 'path': dest, 'reused': false}),
+        ],
+      );
+      final security = _AllowAllSecurity();
+      final svc = SidecarUpstreamService(sidecar: sidecar, security: security);
+
+      final events = await svc
+          .osDownload(
+            url: 'https://example.com/image.img.xz',
+            destPath: dest,
+            expectedSha256: artifactSha,
+          )
+          .toList();
+
+      expect(events.single.sha256, imageSha);
+      expect(File(dest).existsSync(), isFalse);
+      expect(sidecar.streamingCalls, hasLength(1));
+      expect(security.checkedHosts, ['example.com']);
+    });
+
+    test(
+      'clears stale extracted image partials before sidecar download',
+      () async {
+        final dest = _managedOsImageDest('stale-part-cache.img');
+        addTearDown(() async {
+          await _deleteIfExists(dest);
+          await _deleteIfExists('$dest.part');
+          await _deleteIfExists('$dest.deckhand-download.json');
+        });
+        await Directory(p.dirname(dest)).create(recursive: true);
+        await File('$dest.part').writeAsString('interrupted extraction');
+        final imageSha =
+            'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+        final artifactSha =
+            'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+        final sidecar = _FakeSidecar(
+          hash: imageSha,
+          streamEvents: [
+            SidecarResult({'sha256': imageSha, 'path': dest, 'reused': false}),
+          ],
+        );
+        final security = _AllowAllSecurity();
+        final svc = SidecarUpstreamService(
+          sidecar: sidecar,
+          security: security,
+        );
+
+        await svc
+            .osDownload(
+              url: 'https://example.com/image.img.xz',
+              destPath: dest,
+              expectedSha256: artifactSha,
+            )
+            .drain<void>();
+
+        expect(File('$dest.part').existsSync(), isFalse);
+        expect(sidecar.streamingCalls, hasLength(1));
+        expect(security.checkedHosts, ['example.com']);
+      },
+    );
+
+    test('reuses extracted xz images only when the manifest matches', () async {
+      final dest = _managedOsImageDest('extracted-xz-cache.img');
+      addTearDown(() async {
+        await _deleteIfExists(dest);
+        await _deleteIfExists('$dest.deckhand-download.json');
+      });
+      await Directory(p.dirname(dest)).create(recursive: true);
+      const body = 'raw image bytes';
+      await File(dest).writeAsString(body);
+      final imageSha = sha256.convert(utf8.encode(body)).toString();
+      final artifactSha =
+          'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+      await File('$dest.deckhand-download.json').writeAsString(
+        jsonEncode({
+          'schema_version': 1,
+          'url': 'https://example.com/image.img.xz',
+          'path': dest,
+          'expected_sha256': artifactSha,
+          'actual_sha256': imageSha,
+        }),
+      );
+      final sidecar = _FakeSidecar(hash: imageSha);
+      final security = _AllowAllSecurity(allowedHosts: const {});
+      final svc = SidecarUpstreamService(sidecar: sidecar, security: security);
+
+      final events = await svc
+          .osDownload(
+            url: 'https://example.com/image.img.xz',
+            destPath: dest,
+            expectedSha256: artifactSha,
+          )
+          .toList();
+
+      expect(events.single.sha256, imageSha);
+      expect(events.single.reused, isTrue);
+      expect(sidecar.streamingCalls, isEmpty);
+      expect(security.checkedHosts, isEmpty);
+    });
+
     test('records completed downloads in the image manifest', () async {
-      final tmp = await Directory.systemTemp.createTemp('deckhand-upstream-');
-      addTearDown(() async => tmp.delete(recursive: true));
-      final dest = p.join(tmp.path, 'image.img');
+      final dest = _managedOsImageDest('downloaded-image.img');
+      addTearDown(() async {
+        await _deleteIfExists(dest);
+        await _deleteIfExists('$dest.deckhand-download.json');
+      });
       final expected =
           'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
       final sidecar = _FakeSidecar(
@@ -263,13 +601,166 @@ void main() {
       expect(manifest, contains('"downloaded_at"'));
       expect(manifest, contains(expected));
     });
+
+    test('records sidecar OS downloads as egress events', () async {
+      final dest = _managedOsImageDest('egress-image.img');
+      addTearDown(() async {
+        await _deleteIfExists(dest);
+        await _deleteIfExists('$dest.deckhand-download.json');
+      });
+      final expected =
+          'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+      final sidecar = _FakeSidecar(
+        hash: expected,
+        streamEvents: [
+          const SidecarProgress(
+            SidecarNotification(
+              method: 'os.download.progress',
+              params: {
+                'bytes_done': 1024,
+                'bytes_total': 2048,
+                'phase': 'downloading',
+              },
+            ),
+          ),
+          SidecarResult({'sha256': expected, 'path': dest, 'reused': false}),
+        ],
+      );
+      final security = _AllowAllSecurity();
+      final svc = SidecarUpstreamService(sidecar: sidecar, security: security);
+
+      await svc
+          .osDownload(
+            url: 'https://example.com/image.img',
+            destPath: dest,
+            expectedSha256: expected,
+          )
+          .drain<void>();
+
+      expect(security.egressRecords, hasLength(2));
+      expect(security.egressRecords.first.host, 'example.com');
+      expect(security.egressRecords.first.operationLabel, 'OS image download');
+      expect(security.egressRecords.first.completedAt, isNull);
+      expect(
+        security.egressRecords.last.requestId,
+        security.egressRecords.first.requestId,
+      );
+      expect(security.egressRecords.last.completedAt, isNotNull);
+      expect(security.egressRecords.last.bytes, 1024);
+    });
+
+    test(
+      'does not record egress when only extracting a cached artifact',
+      () async {
+        final dest = _managedOsImageDest('extracting-cached-artifact.img');
+        addTearDown(() async {
+          await _deleteIfExists(dest);
+          await _deleteIfExists('$dest.deckhand-download.json');
+        });
+        final imageSha =
+            'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+        final artifactSha =
+            'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+        final sidecar = _FakeSidecar(
+          hash: imageSha,
+          streamEvents: [
+            const SidecarProgress(
+              SidecarNotification(
+                method: 'os.download.progress',
+                params: {
+                  'bytes_done': 1024,
+                  'bytes_total': 0,
+                  'phase': 'extracting',
+                },
+              ),
+            ),
+            SidecarResult({'sha256': imageSha, 'path': dest, 'reused': false}),
+          ],
+        );
+        final security = _AllowAllSecurity();
+        final svc = SidecarUpstreamService(
+          sidecar: sidecar,
+          security: security,
+        );
+
+        final events = await svc
+            .osDownload(
+              url: 'https://example.com/image.img.xz',
+              destPath: dest,
+              expectedSha256: artifactSha,
+            )
+            .toList();
+
+        expect(events.first.phase, OsDownloadPhase.extracting);
+        expect(events.last.phase, OsDownloadPhase.done);
+        expect(security.checkedHosts, ['example.com']);
+        expect(security.egressRecords, isEmpty);
+      },
+    );
+
+    test('rejects sidecar result paths outside the managed cache', () async {
+      final dest = _managedOsImageDest('sidecar-path-mismatch.img');
+      addTearDown(() async {
+        await _deleteIfExists(dest);
+        await _deleteIfExists('$dest.deckhand-download.json');
+      });
+      final unmanaged = p.join(await _unmanagedTempDir(), 'evil.img');
+      final expected =
+          'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+      final sidecar = _FakeSidecar(
+        hash: expected,
+        streamEvents: [
+          SidecarResult({'sha256': expected, 'path': unmanaged}),
+        ],
+      );
+      final security = _AllowAllSecurity();
+      final svc = SidecarUpstreamService(sidecar: sidecar, security: security);
+
+      await expectLater(
+        svc
+            .osDownload(
+              url: 'https://example.com/image.img',
+              destPath: dest,
+              expectedSha256: expected,
+            )
+            .drain<void>(),
+        throwsA(
+          isA<UpstreamException>().having(
+            (e) => e.message,
+            'message',
+            contains('returned unexpected path'),
+          ),
+        ),
+      );
+
+      expect(File('$unmanaged.deckhand-download.json').existsSync(), isFalse);
+    });
   });
 }
 
+String _managedOsImageDest(String name) {
+  return p.join(Directory.systemTemp.path, 'deckhand-os-images', name);
+}
+
+Future<String> _unmanagedTempDir() async {
+  final dir = await Directory.systemTemp.createTemp('deckhand-unmanaged-');
+  addTearDown(() async => dir.delete(recursive: true));
+  return dir.path;
+}
+
+Future<void> _deleteIfExists(String path) async {
+  final file = File(path);
+  if (await file.exists()) {
+    await file.delete();
+  }
+}
+
 class _FakeGitHubAdapter implements HttpClientAdapter {
-  _FakeGitHubAdapter({this.assetName = 'fluidd.zip'});
+  _FakeGitHubAdapter({this.assetName = 'fluidd.zip', this.redirectAssetTo});
 
   final String assetName;
+  final String? redirectAssetTo;
+  var assetDownloadCount = 0;
 
   @override
   Future<ResponseBody> fetch(
@@ -296,7 +787,22 @@ class _FakeGitHubAdapter implements HttpClientAdapter {
       );
     }
     if (url == 'https://downloads.example/fluidd.zip') {
+      final redirect = redirectAssetTo;
+      if (redirect != null) {
+        return ResponseBody.fromString(
+          '',
+          302,
+          headers: {
+            'location': [redirect],
+          },
+        );
+      }
+      assetDownloadCount++;
       return ResponseBody.fromString('asset-bytes', 200);
+    }
+    if (url == 'https://redirected.example/fluidd.zip') {
+      assetDownloadCount++;
+      return ResponseBody.fromString('redirected-asset-bytes', 200);
     }
     return ResponseBody.fromString('not found', 404);
   }
@@ -353,6 +859,7 @@ class _AllowAllSecurity implements SecurityService {
 
   final Set<String>? _allowedHosts;
   final checkedHosts = <String>[];
+  final egressRecords = <EgressEvent>[];
 
   @override
   Future<ConfirmationToken> issueConfirmationToken({
@@ -363,10 +870,12 @@ class _AllowAllSecurity implements SecurityService {
     value: 'token-0123456789abcdef',
     expiresAt: DateTime.now().add(ttl),
     operation: operation,
+    target: target,
   );
 
   @override
-  bool consumeToken(String value, String operation) => true;
+  bool consumeToken(String value, String operation, {required String target}) =>
+      true;
 
   @override
   Future<Map<String, bool>> requestHostApprovals(List<String> hosts) async => {
@@ -413,5 +922,7 @@ class _AllowAllSecurity implements SecurityService {
   Stream<EgressEvent> get egressEvents => const Stream.empty();
 
   @override
-  void recordEgress(EgressEvent event) {}
+  void recordEgress(EgressEvent event) {
+    egressRecords.add(event);
+  }
 }

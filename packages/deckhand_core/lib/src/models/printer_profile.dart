@@ -1,5 +1,19 @@
 import 'dart:convert';
 
+class ProfileFormatException implements FormatException {
+  const ProfileFormatException(this.message, [this.source, this.offset]);
+
+  @override
+  final String message;
+  @override
+  final dynamic source;
+  @override
+  final int? offset;
+
+  @override
+  String toString() => 'ProfileFormatException: $message';
+}
+
 /// Strongly-typed model of a parsed `profile.yaml` from deckhand-profiles.
 ///
 /// Fields match the authoritative spec in
@@ -130,12 +144,11 @@ class ProfileIdentification {
   factory ProfileIdentification.fromJson(Map<String, dynamic> j) =>
       ProfileIdentification(
         markerFile: j['marker_file'] as String?,
-        moonrakerObjects:
-            ((j['moonraker_objects'] as List?) ?? const []).cast<String>(),
-        hostnamePatterns:
-            ((j['hostname_patterns'] as List?) ?? const []).cast<String>(),
-        probeTimeoutSeconds:
-            (j['probe_timeout_seconds'] as num?)?.toInt() ?? 3,
+        moonrakerObjects: ((j['moonraker_objects'] as List?) ?? const [])
+            .cast<String>(),
+        hostnamePatterns: ((j['hostname_patterns'] as List?) ?? const [])
+            .cast<String>(),
+        probeTimeoutSeconds: (j['probe_timeout_seconds'] as num?)?.toInt() ?? 3,
       );
 }
 
@@ -168,7 +181,8 @@ class PrinterMatch {
     // non-empty file still counts (older schemas, custom markers) -
     // anything Deckhand-written under this exact filename is
     // convincing enough on its own.
-    if (hints.markerFile != null && markerFileContent != null &&
+    if (hints.markerFile != null &&
+        markerFileContent != null &&
         markerFileContent.trim().isNotEmpty) {
       Object? parsed;
       try {
@@ -234,12 +248,14 @@ class PrinterMatch {
     }
     // If the profile supplies any hints at all, we can say "miss"
     // confidently. If it supplies none, we stay unknown.
-    final hasAny = hints.markerFile != null ||
+    final hasAny =
+        hints.markerFile != null ||
         hints.moonrakerObjects.isNotEmpty ||
         hints.hostnamePatterns.isNotEmpty;
     return PrinterMatch(
-      confidence:
-          hasAny ? PrinterMatchConfidence.miss : PrinterMatchConfidence.unknown,
+      confidence: hasAny
+          ? PrinterMatchConfidence.miss
+          : PrinterMatchConfidence.unknown,
     );
   }
 }
@@ -385,9 +401,11 @@ class OsImageOption {
   final String? architecture;
   final String? notes;
   factory OsImageOption.fromJson(Map<String, dynamic> j) => OsImageOption(
-    id: j['id'] as String,
-    displayName: j['display_name'] as String? ?? j['id'] as String,
-    url: j['url'] as String? ?? '',
+    id: _requiredString(j, 'id', 'os.fresh_install_options[]'),
+    displayName:
+        j['display_name'] as String? ??
+        _requiredString(j, 'id', 'os.fresh_install_options[]'),
+    url: _requiredString(j, 'url', 'os.fresh_install_options[]'),
     sha256: j['sha256'] as String?,
     sizeBytesApprox: (j['size_bytes_approx'] as num?)?.toInt(),
     recommended: j['recommended'] as bool? ?? false,
@@ -421,7 +439,7 @@ class SshDefaultCredential {
   final String? keyPath;
   factory SshDefaultCredential.fromJson(Map<String, dynamic> j) =>
       SshDefaultCredential(
-        user: j['user'] as String,
+        user: _requiredString(j, 'user', 'ssh.default_credentials[]'),
         password: j['password'] as String?,
         keyPath: j['key_path'] as String?,
       );
@@ -468,9 +486,11 @@ class FirmwareChoice {
   final String? pythonMin;
   final bool recommended;
   factory FirmwareChoice.fromJson(Map<String, dynamic> j) => FirmwareChoice(
-    id: j['id'] as String,
-    displayName: j['display_name'] as String? ?? j['id'] as String,
-    repo: j['repo'] as String? ?? '',
+    id: _requiredString(j, 'id', 'firmware.choices[]'),
+    displayName:
+        j['display_name'] as String? ??
+        _requiredString(j, 'id', 'firmware.choices[]'),
+    repo: _requiredString(j, 'repo', 'firmware.choices[]'),
     ref: j['ref'] as String? ?? 'main',
     description: j['description'] as String?,
     installPath: j['install_path'] as String?,
@@ -500,7 +520,7 @@ class McuConfig {
   final String? displayName;
   final Map<String, dynamic> raw;
   factory McuConfig.fromJson(Map<String, dynamic> j) => McuConfig(
-    id: j['id'] as String,
+    id: _requiredString(j, 'id', 'mcus[]'),
     displayName: j['display_name'] as String?,
     raw: j,
   );
@@ -520,7 +540,7 @@ class ScreenConfig {
   final bool recommended;
   final Map<String, dynamic> raw;
   factory ScreenConfig.fromJson(Map<String, dynamic> j) => ScreenConfig(
-    id: j['id'] as String,
+    id: _requiredString(j, 'id', 'screens[]'),
     displayName: j['display_name'] as String?,
     status: j['status'] as String?,
     recommended: j['recommended'] as bool? ?? false,
@@ -540,7 +560,7 @@ class AddonConfig {
   final String? displayName;
   final Map<String, dynamic> raw;
   factory AddonConfig.fromJson(Map<String, dynamic> j) => AddonConfig(
-    id: j['id'] as String,
+    id: _requiredString(j, 'id', 'addons[]'),
     kind: j['kind'] as String?,
     displayName: j['display_name'] as String?,
     raw: j,
@@ -575,9 +595,9 @@ class StockOsInventory {
     services: _listOfMap(j['services']).map(StockService.fromJson).toList(),
     files: _listOfMap(j['files']).map(StockFile.fromJson).toList(),
     paths: _listOfMap(j['paths']).map(StockPath.fromJson).toList(),
-    snapshotPaths: _listOfMap(j['snapshot_paths'])
-        .map(StockSnapshotPath.fromJson)
-        .toList(),
+    snapshotPaths: _listOfMap(
+      j['snapshot_paths'],
+    ).map(StockSnapshotPath.fromJson).toList(),
   );
 }
 
@@ -616,7 +636,7 @@ class DetectionRule {
   final bool required;
   final Map<String, dynamic> raw;
   factory DetectionRule.fromJson(Map<String, dynamic> j) => DetectionRule(
-    kind: j['kind'] as String,
+    kind: _requiredString(j, 'kind', 'stock_os.detections[]'),
     required: j['required'] as bool? ?? true,
     raw: j,
   );
@@ -634,7 +654,7 @@ class StockService {
   final String defaultAction;
   final Map<String, dynamic> raw;
   factory StockService.fromJson(Map<String, dynamic> j) => StockService(
-    id: j['id'] as String,
+    id: _requiredString(j, 'id', 'stock_os.services[]'),
     displayName: j['display_name'] as String? ?? j['id'] as String,
     defaultAction: j['default_action'] as String? ?? 'keep',
     raw: j,
@@ -655,10 +675,12 @@ class StockFile {
   final String defaultAction;
   final Map<String, dynamic> raw;
   factory StockFile.fromJson(Map<String, dynamic> j) => StockFile(
-    id: j['id'] as String,
-    displayName: j['display_name'] as String? ?? j['id'] as String,
+    id: _requiredString(j, 'id', 'stock_os.files[]'),
+    displayName:
+        j['display_name'] as String? ??
+        _requiredString(j, 'id', 'stock_os.files[]'),
     paths: ((j['paths'] as List?) ?? const []).cast<String>(),
-    defaultAction: j['default_action'] as String? ?? 'delete',
+    defaultAction: j['default_action'] as String? ?? 'keep',
     raw: j,
   );
 }
@@ -677,8 +699,8 @@ class StockPath {
   final String? snapshotTo;
   final String? role;
   factory StockPath.fromJson(Map<String, dynamic> j) => StockPath(
-    id: j['id'] as String,
-    path: j['path'] as String,
+    id: _requiredString(j, 'id', 'stock_os.paths[]'),
+    path: _requiredString(j, 'path', 'stock_os.paths[]'),
     action: j['action'] as String? ?? 'preserve',
     snapshotTo: j['snapshot_to'] as String?,
     role: j['role'] as String?,
@@ -736,7 +758,7 @@ class VerifierConfig {
   final String id;
   final Map<String, dynamic> raw;
   factory VerifierConfig.fromJson(Map<String, dynamic> j) =>
-      VerifierConfig(id: j['id'] as String, raw: j);
+      VerifierConfig(id: _requiredString(j, 'id', 'verifiers[]'), raw: j);
 }
 
 // -----------------------------------------------------------------
@@ -751,4 +773,10 @@ Map<String, dynamic>? _mapOrNull(Object? v) =>
 List<Map<String, dynamic>> _listOfMap(Object? v) {
   if (v is! List) return const [];
   return v.whereType<Map>().map((m) => m.cast<String, dynamic>()).toList();
+}
+
+String _requiredString(Map<String, dynamic> j, String key, String context) {
+  final value = j[key];
+  if (value is String && value.trim().isNotEmpty) return value;
+  throw ProfileFormatException('$context.$key is required');
 }
