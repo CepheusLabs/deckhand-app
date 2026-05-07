@@ -267,6 +267,64 @@ void main() {
     );
     expect(button.onPressed, isNotNull);
   });
+
+  testWidgets('direct eMMC restore hides partial unindexed image candidates', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1400, 1000));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    final disk = const DiskInfo(
+      id: 'PhysicalDrive3',
+      path: r'\\.\PHYSICALDRIVE3',
+      sizeBytes: 8 * 1024 * 1024,
+      bus: 'USB',
+      model: 'Generic STORAGE DEVICE',
+      removable: true,
+      partitions: [],
+    );
+    final fullCandidate = EmmcBackupImageCandidate(
+      imagePath: r'C:\Deckhand\emmc-backups\restore-full.img',
+      imageBytes: disk.sizeBytes,
+      modifiedAt: DateTime.utc(2026, 5, 4, 12),
+      inferredProfileId: 'phrozen-arco',
+    );
+    final partialCandidate = EmmcBackupImageCandidate(
+      imagePath: r'C:\Deckhand\emmc-backups\restore-partial.img',
+      imageBytes: 4 * 1024 * 1024,
+      modifiedAt: DateTime.utc(2026, 5, 4, 13),
+      inferredProfileId: 'phrozen-arco',
+    );
+
+    final controller = stubWizardController(profileJson: testProfileJson());
+    await controller.loadProfile('test-printer');
+
+    await tester.pumpWidget(
+      testHarness(
+        controller: controller,
+        child: const EmmcRestoreScreen(),
+        initialLocation: '/emmc-restore',
+        extraOverrides: [
+          emmcBackupManifestsProvider.overrideWith((ref) async => const []),
+          emmcBackupImageCandidatesProvider.overrideWith(
+            (ref) async => [partialCandidate, fullCandidate],
+          ),
+          flashServiceProvider.overrideWithValue(
+            _RestoreFlash(
+              disks: [disk],
+              sha256Value:
+                  'dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd',
+            ),
+          ),
+        ],
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+
+    expect(find.textContaining('restore-full.img'), findsOneWidget);
+    expect(find.textContaining('restore-partial.img'), findsNothing);
+  });
 }
 
 class _RestoreFlash implements FlashService {

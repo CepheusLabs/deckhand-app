@@ -608,50 +608,6 @@ class _RestoreTabState extends ConsumerState<_RestoreTab> {
         manifestsAsync.valueOrNull ?? const <EmmcBackupManifest>[];
     final candidates =
         candidatesAsync.valueOrNull ?? const <EmmcBackupImageCandidate>[];
-    final images = _restoreImagesFrom(
-      manifests: manifests,
-      candidates: candidates,
-    );
-    if (images.isEmpty) {
-      return _Panel(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const _MonoLabel('RESTORE EMMC IMAGE'),
-            const SizedBox(height: 8),
-            Text(
-              'No eMMC backup images were found. Deckhand looked for '
-              'manifest-indexed backups and standalone .img files in:',
-              style: TextStyle(
-                fontFamily: DeckhandTokens.fontSans,
-                fontSize: DeckhandTokens.tMd,
-                color: tokens.text2,
-                height: 1.5,
-              ),
-            ),
-            const SizedBox(height: 10),
-            _MutedBox(
-              text: backupDir?.trim().isNotEmpty == true
-                  ? backupDir!.trim()
-                  : 'No backup directory is configured for this build.',
-            ),
-            const SizedBox(height: 10),
-            Text(
-              'Put the backup image in that folder, or make a new eMMC '
-              'backup from the Backup tab. Restore stays on this recovery '
-              'screen so canceling never drops into an install step.',
-              style: TextStyle(
-                fontFamily: DeckhandTokens.fontSans,
-                fontSize: DeckhandTokens.tSm,
-                color: tokens.text3,
-                height: 1.45,
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-
     if (disksAsync.isLoading && !disksAsync.hasValue) {
       return const Padding(
         padding: EdgeInsets.only(top: 8),
@@ -667,6 +623,61 @@ class _RestoreTabState extends ConsumerState<_RestoreTab> {
     }
 
     final disks = disksAsync.valueOrNull ?? const <DiskInfo>[];
+    final images = _restoreImagesFrom(
+      manifests: manifests,
+      candidates: candidates,
+      disks: disks,
+    );
+    if (images.isEmpty) {
+      final foundOnlyUnmatchedCandidates =
+          manifests.isEmpty && candidates.isNotEmpty;
+      return _Panel(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const _MonoLabel('RESTORE EMMC IMAGE'),
+            const SizedBox(height: 8),
+            Text(
+              foundOnlyUnmatchedCandidates
+                  ? 'No restorable eMMC backup images matched the attached '
+                        'removable disks. Deckhand hides loose .img files when '
+                        'their size does not match a visible eMMC target.'
+                  : 'No eMMC backup images were found. Deckhand looked for '
+                        'manifest-indexed backups and standalone .img files in:',
+              style: TextStyle(
+                fontFamily: DeckhandTokens.fontSans,
+                fontSize: DeckhandTokens.tMd,
+                color: tokens.text2,
+                height: 1.5,
+              ),
+            ),
+            const SizedBox(height: 10),
+            _MutedBox(
+              text: backupDir?.trim().isNotEmpty == true
+                  ? backupDir!.trim()
+                  : 'No backup directory is configured for this build.',
+            ),
+            const SizedBox(height: 10),
+            Text(
+              foundOnlyUnmatchedCandidates
+                  ? 'Connect the eMMC adapter you want to restore to and '
+                        'refresh. Partial or canceled backup files stay hidden '
+                        'so they cannot be selected by mistake.'
+                  : 'Put the backup image in that folder, or make a new eMMC '
+                        'backup from the Backup tab. Restore stays on this '
+                        'recovery screen so canceling never drops into an '
+                        'install step.',
+              style: TextStyle(
+                fontFamily: DeckhandTokens.fontSans,
+                fontSize: DeckhandTokens.tSm,
+                color: tokens.text3,
+                height: 1.45,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
     final image = _selectedImage(images);
     final target = image == null ? null : _selectedDisk(disks, image);
     final expected = target == null ? '' : diskDisplayName(target);
@@ -1404,14 +1415,20 @@ class _RestoreProgressPanel extends StatelessWidget {
 List<_RestoreImage> _restoreImagesFrom({
   required List<EmmcBackupManifest> manifests,
   required List<EmmcBackupImageCandidate> candidates,
+  required List<DiskInfo> disks,
 }) {
   final manifestPaths = {
     for (final manifest in manifests) manifest.imagePath.toLowerCase(),
   };
+  final removableDiskSizes = {
+    for (final disk in disks)
+      if (disk.removable) disk.sizeBytes,
+  };
   final images = <_RestoreImage>[
     for (final manifest in manifests) _RestoreImage.manifest(manifest),
     for (final candidate in candidates)
-      if (!manifestPaths.contains(candidate.imagePath.toLowerCase()))
+      if (!manifestPaths.contains(candidate.imagePath.toLowerCase()) &&
+          removableDiskSizes.contains(candidate.imageBytes))
         _RestoreImage.candidate(candidate),
   ];
   images.sort((a, b) => b.createdAt.compareTo(a.createdAt));
