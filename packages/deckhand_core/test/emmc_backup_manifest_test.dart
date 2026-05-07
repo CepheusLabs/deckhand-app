@@ -302,4 +302,63 @@ void main() {
       p.join(dir.path, 'phrozen-arco', '2026-05-04T23-02-59Z', 'emmc.img'),
     );
   });
+
+  test('catalog collapses manifest backups with identical hashes', () {
+    final older = EmmcBackupManifest.create(
+      profileId: 'phrozen-arco',
+      imagePath: r'C:\Deckhand\old\emmc.img',
+      imageBytes: 4096,
+      imageSha256: 'f' * 64,
+      disk: disk,
+      deckhandVersion: 'dev',
+      createdAt: DateTime.utc(2026, 5, 3, 12),
+    );
+    final newer = EmmcBackupManifest.create(
+      profileId: 'phrozen-arco',
+      imagePath: r'C:\Deckhand\new\emmc.img',
+      imageBytes: 4096,
+      imageSha256: 'f' * 64,
+      disk: disk,
+      deckhandVersion: 'dev',
+      createdAt: DateTime.utc(2026, 5, 4, 12),
+    );
+
+    final catalog = buildEmmcBackupCatalog(
+      manifests: [older, newer],
+      candidates: const [],
+    );
+
+    expect(catalog, hasLength(1));
+    expect(catalog.single.imagePath, newer.imagePath);
+    expect(catalog.single.duplicatePaths, [older.imagePath]);
+    expect(catalog.single.duplicateCount, 1);
+    expect(catalog.single.indexed, isTrue);
+  });
+
+  test('catalog keeps unindexed candidates and labels partial images', () {
+    final full = EmmcBackupImageCandidate(
+      imagePath: r'C:\Deckhand\phrozen-arco\full\emmc.img',
+      imageBytes: 4096,
+      modifiedAt: DateTime.utc(2026, 5, 4, 12),
+      inferredProfileId: 'phrozen-arco',
+    );
+    final partial = EmmcBackupImageCandidate(
+      imagePath: r'C:\Deckhand\phrozen-arco\partial\emmc.img',
+      imageBytes: 2048,
+      modifiedAt: DateTime.utc(2026, 5, 4, 13),
+      inferredProfileId: 'phrozen-arco',
+    );
+
+    final catalog = buildEmmcBackupCatalog(
+      manifests: const [],
+      candidates: [full, partial],
+      referenceSizeBytes: 4096,
+    );
+
+    expect(catalog, hasLength(2));
+    expect(catalog.first.imagePath, partial.imagePath);
+    expect(catalog.first.fullSize, isFalse);
+    expect(catalog.last.fullSize, isTrue);
+    expect(catalog.every((entry) => !entry.indexed), isTrue);
+  });
 }

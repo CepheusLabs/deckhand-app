@@ -1,5 +1,4 @@
 import 'dart:async';
-
 import 'package:deckhand_core/deckhand_core.dart';
 import 'package:deckhand_ui/src/providers.dart';
 import 'package:deckhand_ui/src/screens/manage_screen.dart';
@@ -111,17 +110,15 @@ void main() {
 
     await tester.tap(find.text('Restore').first);
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 250));
-    expect(find.text('RESTORE EMMC IMAGE'), findsOneWidget);
-    expect(find.textContaining('Generic STORAGE DEVICE'), findsWidgets);
+    await tester.pump(const Duration(seconds: 1));
+    expect(find.text('BACKUP IMAGE'), findsOneWidget);
 
-    await tester.enterText(
-      find.byType(TextField).last,
-      'Generic STORAGE DEVICE',
-    );
+    await tester.tap(find.widgetWithText(FilledButton, 'Continue to target'));
     await tester.pump();
+    expect(find.text('TARGET EMMC'), findsOneWidget);
+    expect(find.textContaining('Generic STORAGE DEVICE'), findsWidgets);
     final button = tester.widget<FilledButton>(
-      find.widgetWithText(FilledButton, 'Restore backup'),
+      find.widgetWithText(FilledButton, 'Review restore'),
     );
     expect(button.onPressed, isNotNull);
   });
@@ -167,10 +164,12 @@ void main() {
       ),
     );
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 250));
+    await tester.pump(const Duration(seconds: 1));
 
     expect(find.text('Restore an eMMC backup.'), findsOneWidget);
-    expect(find.text('RESTORE EMMC IMAGE'), findsOneWidget);
+    expect(find.text('BACKUP IMAGE'), findsOneWidget);
+    await tester.tap(find.widgetWithText(FilledButton, 'Continue to target'));
+    await tester.pump();
     expect(find.textContaining('Generic STORAGE DEVICE'), findsWidgets);
   });
 
@@ -254,16 +253,13 @@ void main() {
     await tester.pump(const Duration(milliseconds: 250));
 
     expect(find.textContaining('deckhand-cli-backup.img'), findsOneWidget);
-    expect(find.textContaining('unindexed image'), findsWidgets);
-    expect(find.textContaining('Generic STORAGE DEVICE'), findsWidgets);
+    expect(find.textContaining('Unindexed image'), findsWidgets);
 
-    await tester.enterText(
-      find.byType(TextField).last,
-      'Generic STORAGE DEVICE',
-    );
+    await tester.tap(find.widgetWithText(FilledButton, 'Continue to target'));
     await tester.pump();
+    expect(find.textContaining('Generic STORAGE DEVICE'), findsWidgets);
     final button = tester.widget<FilledButton>(
-      find.widgetWithText(FilledButton, 'Restore backup'),
+      find.widgetWithText(FilledButton, 'Review restore'),
     );
     expect(button.onPressed, isNotNull);
   });
@@ -317,17 +313,201 @@ void main() {
     await tester.pump(const Duration(milliseconds: 250));
 
     expect(find.textContaining('restore-smaller.img'), findsOneWidget);
-    expect(find.textContaining('Generic STORAGE DEVICE'), findsWidgets);
 
-    await tester.enterText(
-      find.byType(TextField).last,
-      'Generic STORAGE DEVICE',
-    );
+    await tester.tap(find.widgetWithText(FilledButton, 'Continue to target'));
     await tester.pump();
+    expect(find.textContaining('Generic STORAGE DEVICE'), findsWidgets);
     final button = tester.widget<FilledButton>(
-      find.widgetWithText(FilledButton, 'Restore backup'),
+      find.widgetWithText(FilledButton, 'Review restore'),
     );
     expect(button.onPressed, isNotNull);
+  });
+
+  testWidgets('restore view groups backups and collapses duplicate hashes', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1400, 1000));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    const sha =
+        'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee';
+    const disk = DiskInfo(
+      id: 'PhysicalDrive3',
+      path: r'\\.\PHYSICALDRIVE3',
+      sizeBytes: 4096,
+      bus: 'USB',
+      model: 'Generic STORAGE DEVICE',
+      removable: true,
+      partitions: [],
+    );
+    final older = EmmcBackupManifest.create(
+      profileId: 'phrozen-arco',
+      imagePath: r'C:\Deckhand\emmc-backups\phrozen-arco\old\emmc.img',
+      imageBytes: 4096,
+      imageSha256: sha,
+      disk: disk,
+      deckhandVersion: 'test',
+      createdAt: DateTime.utc(2026, 5, 3, 12),
+    );
+    final newer = EmmcBackupManifest.create(
+      profileId: 'phrozen-arco',
+      imagePath: r'C:\Deckhand\emmc-backups\phrozen-arco\new\emmc.img',
+      imageBytes: 4096,
+      imageSha256: sha,
+      disk: disk,
+      deckhandVersion: 'test',
+      createdAt: DateTime.utc(2026, 5, 4, 12),
+    );
+    final partial = EmmcBackupImageCandidate(
+      imagePath: r'C:\Deckhand\emmc-backups\phrozen-arco\partial\emmc.img',
+      imageBytes: 2048,
+      modifiedAt: DateTime.utc(2026, 5, 5, 12),
+      inferredProfileId: 'phrozen-arco',
+    );
+
+    final controller = stubWizardController(profileJson: testProfileJson());
+    await controller.loadProfile('test-printer');
+
+    await tester.pumpWidget(
+      testHarness(
+        controller: controller,
+        child: const EmmcRestoreScreen(),
+        initialLocation: '/emmc-restore',
+        extraOverrides: [
+          emmcBackupManifestsProvider.overrideWith(
+            (ref) async => [older, newer],
+          ),
+          emmcBackupImageCandidatesProvider.overrideWith(
+            (ref) async => [partial],
+          ),
+          flashServiceProvider.overrideWithValue(
+            _RestoreFlash(disks: [disk], sha256Value: sha),
+          ),
+        ],
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+
+    expect(find.text('PHROZEN-ARCO'), findsOneWidget);
+    expect(find.textContaining('1 duplicate hidden'), findsOneWidget);
+    expect(find.textContaining('Indexed full-disk backup'), findsOneWidget);
+    expect(find.textContaining('Unindexed partial image'), findsOneWidget);
+  });
+
+  testWidgets('restore flow offers indexing for unindexed images', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1400, 1000));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    const disk = DiskInfo(
+      id: 'PhysicalDrive3',
+      path: r'\\.\PHYSICALDRIVE3',
+      sizeBytes: 4096,
+      bus: 'USB',
+      model: 'Generic STORAGE DEVICE',
+      removable: true,
+      partitions: [],
+    );
+    final candidate = EmmcBackupImageCandidate(
+      imagePath: r'C:\Deckhand\emmc-backups\phrozen-arco\image\emmc.img',
+      imageBytes: 4096,
+      modifiedAt: DateTime.utc(2026, 5, 4, 12),
+      inferredProfileId: 'phrozen-arco',
+    );
+
+    final controller = stubWizardController(profileJson: testProfileJson());
+    await controller.loadProfile('test-printer');
+
+    await tester.pumpWidget(
+      testHarness(
+        controller: controller,
+        child: const EmmcRestoreScreen(),
+        initialLocation: '/emmc-restore',
+        extraOverrides: [
+          emmcBackupManifestsProvider.overrideWith((ref) async => const []),
+          emmcBackupImageCandidatesProvider.overrideWith(
+            (ref) async => [candidate],
+          ),
+          flashServiceProvider.overrideWithValue(
+            _RestoreFlash(disks: [disk], sha256Value: 'f' * 64),
+          ),
+        ],
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+
+    await tester.tap(find.widgetWithText(FilledButton, 'Continue to target'));
+    await tester.pump();
+    expect(find.text('Unindexed image'), findsWidgets);
+    final button = tester.widget<OutlinedButton>(
+      find.widgetWithText(OutlinedButton, 'Verify and index'),
+    );
+    expect(button.onPressed, isNotNull);
+  });
+
+  testWidgets('restore flow uses backup target confirmation then progress', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1400, 1000));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    const sha =
+        '9999999999999999999999999999999999999999999999999999999999999999';
+    const disk = DiskInfo(
+      id: 'PhysicalDrive3',
+      path: r'\\.\PHYSICALDRIVE3',
+      sizeBytes: 4096,
+      bus: 'USB',
+      model: 'Generic STORAGE DEVICE',
+      removable: true,
+      partitions: [],
+    );
+    final manifest = EmmcBackupManifest.create(
+      profileId: 'phrozen-arco',
+      imagePath: r'C:\Deckhand\emmc-backups\phrozen-arco\image\emmc.img',
+      imageBytes: 4096,
+      imageSha256: sha,
+      disk: disk,
+      deckhandVersion: 'test',
+      createdAt: DateTime.utc(2026, 5, 4, 12),
+    );
+
+    final controller = stubWizardController(profileJson: testProfileJson());
+    await controller.loadProfile('test-printer');
+
+    await tester.pumpWidget(
+      testHarness(
+        controller: controller,
+        child: const EmmcRestoreScreen(),
+        initialLocation: '/emmc-restore',
+        extraOverrides: [
+          emmcBackupManifestsProvider.overrideWith((ref) async => [manifest]),
+          emmcBackupImageCandidatesProvider.overrideWith(
+            (ref) async => const [],
+          ),
+          flashServiceProvider.overrideWithValue(
+            _RestoreFlash(disks: [disk], sha256Value: sha),
+          ),
+        ],
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+
+    await tester.tap(find.widgetWithText(FilledButton, 'Continue to target'));
+    await tester.pump();
+    expect(find.text('TARGET EMMC'), findsOneWidget);
+
+    await tester.tap(find.widgetWithText(FilledButton, 'Review restore'));
+    await tester.pump();
+    expect(find.text('RESTORE CONFIRMATION'), findsOneWidget);
+
+    await tester.tap(find.widgetWithText(FilledButton, 'Restore backup'));
+    await tester.pump();
+    expect(find.text('Erase and restore eMMC?'), findsOneWidget);
   });
 }
 

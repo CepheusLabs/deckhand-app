@@ -202,6 +202,136 @@ class EmmcBackupImageCandidate {
   }
 }
 
+class EmmcBackupCatalogEntry {
+  const EmmcBackupCatalogEntry({
+    required this.imagePath,
+    required this.imageBytes,
+    required this.createdAt,
+    required this.profileId,
+    required this.indexed,
+    required this.fullSize,
+    required this.duplicatePaths,
+    this.imageSha256,
+    this.diskIdentity,
+    this.manifest,
+    this.candidate,
+  });
+
+  final String imagePath;
+  final int imageBytes;
+  final DateTime createdAt;
+  final String? profileId;
+  final bool indexed;
+  final bool fullSize;
+  final List<String> duplicatePaths;
+  final String? imageSha256;
+  final EmmcBackupDiskIdentity? diskIdentity;
+  final EmmcBackupManifest? manifest;
+  final EmmcBackupImageCandidate? candidate;
+
+  int get duplicateCount => duplicatePaths.length;
+
+  EmmcBackupCatalogEntry copyWith({
+    String? imagePath,
+    int? imageBytes,
+    DateTime? createdAt,
+    String? profileId,
+    bool? indexed,
+    bool? fullSize,
+    List<String>? duplicatePaths,
+    String? imageSha256,
+    EmmcBackupDiskIdentity? diskIdentity,
+    EmmcBackupManifest? manifest,
+    EmmcBackupImageCandidate? candidate,
+  }) {
+    return EmmcBackupCatalogEntry(
+      imagePath: imagePath ?? this.imagePath,
+      imageBytes: imageBytes ?? this.imageBytes,
+      createdAt: createdAt ?? this.createdAt,
+      profileId: profileId ?? this.profileId,
+      indexed: indexed ?? this.indexed,
+      fullSize: fullSize ?? this.fullSize,
+      duplicatePaths: duplicatePaths ?? this.duplicatePaths,
+      imageSha256: imageSha256 ?? this.imageSha256,
+      diskIdentity: diskIdentity ?? this.diskIdentity,
+      manifest: manifest ?? this.manifest,
+      candidate: candidate ?? this.candidate,
+    );
+  }
+}
+
+List<EmmcBackupCatalogEntry> buildEmmcBackupCatalog({
+  required List<EmmcBackupManifest> manifests,
+  required List<EmmcBackupImageCandidate> candidates,
+  int? referenceSizeBytes,
+}) {
+  final manifestPaths = <String>{};
+  final entriesByHash = <String, EmmcBackupCatalogEntry>{};
+  final entries = <EmmcBackupCatalogEntry>[];
+
+  for (final manifest in manifests) {
+    final keyPath = manifest.imagePath.toLowerCase();
+    if (!manifestPaths.add(keyPath)) continue;
+    final hash = manifest.imageSha256.trim().toLowerCase();
+    final entry = EmmcBackupCatalogEntry(
+      imagePath: manifest.imagePath,
+      imageBytes: manifest.imageBytes,
+      createdAt: manifest.createdAt,
+      profileId: _nonEmptyOrNull(manifest.profileId),
+      indexed: true,
+      fullSize:
+          referenceSizeBytes == null ||
+          manifest.imageBytes == referenceSizeBytes,
+      duplicatePaths: const [],
+      imageSha256: hash,
+      diskIdentity: manifest.disk,
+      manifest: manifest,
+    );
+    if (!_isSha256Hex(hash)) {
+      entries.add(entry);
+      continue;
+    }
+    final existing = entriesByHash[hash];
+    if (existing == null) {
+      entriesByHash[hash] = entry;
+      continue;
+    }
+    final newest = entry.createdAt.isAfter(existing.createdAt)
+        ? entry
+        : existing;
+    final older = identical(newest, entry) ? existing : entry;
+    entriesByHash[hash] = newest.copyWith(
+      duplicatePaths: [
+        ...newest.duplicatePaths,
+        older.imagePath,
+        ...older.duplicatePaths,
+      ],
+    );
+  }
+
+  entries.addAll(entriesByHash.values);
+  for (final candidate in candidates) {
+    if (manifestPaths.contains(candidate.imagePath.toLowerCase())) continue;
+    entries.add(
+      EmmcBackupCatalogEntry(
+        imagePath: candidate.imagePath,
+        imageBytes: candidate.imageBytes,
+        createdAt: candidate.modifiedAt,
+        profileId: _nonEmptyOrNull(candidate.inferredProfileId),
+        indexed: false,
+        fullSize:
+            referenceSizeBytes == null ||
+            candidate.imageBytes == referenceSizeBytes,
+        duplicatePaths: const [],
+        candidate: candidate,
+      ),
+    );
+  }
+
+  entries.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+  return entries;
+}
+
 class EmmcBackupOrganizeResult {
   const EmmcBackupOrganizeResult({required this.moves, required this.failures});
 
@@ -404,6 +534,10 @@ String? _nonEmptyOrNull(String? value) {
   final trimmed = value?.trim();
   return trimmed == null || trimmed.isEmpty ? null : trimmed;
 }
+
+final _sha256Re = RegExp(r'^[0-9a-f]{64}$');
+
+bool _isSha256Hex(String value) => _sha256Re.hasMatch(value);
 
 DateTime? _inferLegacyBackupCreatedAt(String imagePath) {
   final base = p.basename(imagePath);
