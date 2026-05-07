@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
+import 'package:crypto/crypto.dart';
 import 'package:deckhand_core/deckhand_core.dart';
 import 'package:deckhand_flash/src/process_elevated_helper.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -129,6 +131,84 @@ void main() {
     });
   });
 
+  group('writeImage', () {
+    const sha =
+        '0123456789abcdef0123456789abcdef'
+        '0123456789abcdef0123456789abcdef';
+
+    test(
+      'passes a manifest that binds token, image, target, and sha',
+      () async {
+        final svc = _CapturingElevatedHelper();
+        const token = 'token-0123456789abcdef';
+
+        final events = await svc
+            .writeImage(
+              imagePath: r'C:\Deckhand\images\image.img',
+              diskId: 'PhysicalDrive3',
+              confirmationToken: token,
+              expectedSha256: sha.toUpperCase(),
+            )
+            .toList();
+
+        expect(events.single.phase, FlashPhase.done);
+        expect(
+          svc.capturedArgs,
+          containsAllInOrder([
+            'write-image',
+            '--image',
+            r'C:\Deckhand\images\image.img',
+            '--target',
+            'PhysicalDrive3',
+            '--token-file',
+          ]),
+        );
+        expect(svc.capturedArgs, contains('--cancel-file'));
+        expect(svc.capturedArgs, contains('--manifest'));
+        expect(svc.capturedArgs, contains('--verify=true'));
+        expect(
+          svc.capturedArgs,
+          isNot(containsAllInOrder(['--verify', 'true'])),
+        );
+        expect(svc.capturedArgs, containsAllInOrder(['--sha256', sha]));
+
+        final manifest = svc.capturedManifest;
+        expect(manifest, isNotNull);
+        expect(manifest!['version'], 1);
+        expect(manifest['op'], 'write-image');
+        expect(manifest['image_path'], r'C:\Deckhand\images\image.img');
+        expect(manifest['image_sha256'], sha);
+        expect(manifest['target'], 'PhysicalDrive3');
+        expect(
+          manifest['token_sha256'],
+          sha256.convert(utf8.encode(token)).toString(),
+        );
+        expect(
+          DateTime.parse(
+            manifest['expires_at'] as String,
+          ).isAfter(DateTime.now().toUtc()),
+          isTrue,
+        );
+      },
+    );
+
+    test('refuses to launch without an expected sha256', () async {
+      final svc = _CapturingElevatedHelper();
+
+      await expectLater(
+        svc
+            .writeImage(
+              imagePath: '/tmp/image.img',
+              diskId: 'PhysicalDrive3',
+              confirmationToken: 'token-0123456789abcdef',
+            )
+            .toList(),
+        throwsA(isA<StateError>()),
+      );
+      expect(svc.capturedArgs, isNull);
+    });
+  });
+
   group('DryRunElevatedHelperService', () {
     test(
       'writeImage emits synthetic progress without launching a helper',
@@ -235,10 +315,14 @@ void main() {
         r'C:\Users\eknof\AppData\Local\Temp\img.iso',
         '--target',
         'PhysicalDrive3',
-        '--token',
-        'token-0123456789abcdef',
-        '--verify',
-        'true',
+        '--token-file',
+        r'C:\Users\eknof\AppData\Local\Temp\deckhand-elevated-helper\token',
+        '--manifest',
+        r'C:\Users\eknof\AppData\Local\Temp\deckhand-elevated-helper\manifest',
+        '--verify=true',
+        '--sha256',
+        '0123456789abcdef0123456789abcdef'
+            '0123456789abcdef0123456789abcdef',
       ];
       final argList = args.map(powerShellQuoteArg).join(',');
       // Every arg appears verbatim between double quotes, separated
@@ -247,6 +331,21 @@ void main() {
       expect(argList, contains('"--image"'));
       expect(argList, contains(r'"C:\Users\eknof\AppData\Local\Temp\img.iso"'));
       expect(argList.split(',').length, args.length);
+    });
+  });
+
+  group('Windows helper launcher', () {
+    test('launches helper and lets the events file own completion', () {
+      final command = buildWindowsLaunchPowerShellCommandForTesting(
+        helperPath: r'C:\Deckhand\deckhand-elevated-helper.exe',
+        argList: '"write-image","--target","PhysicalDrive3"',
+      );
+
+      expect(command, contains('Start-Process'));
+      expect(command, contains('-PassThru'));
+      expect(command, contains('helper-pid='));
+      expect(command, isNot(contains('-Wait')));
+      expect(command, isNot(contains('ExitCode')));
     });
   });
 
@@ -306,10 +405,17 @@ class _CapturingElevatedHelper extends ProcessElevatedHelperService {
     : super(helperPath: '/bin/helper');
 
   List<String>? capturedArgs;
+  Map<String, dynamic>? capturedManifest;
 
   @override
   Stream<FlashProgress> launchHelper(List<String> args) async* {
     capturedArgs = List<String>.of(args);
+    final manifestIndex = args.indexOf('--manifest');
+    if (manifestIndex >= 0 && manifestIndex + 1 < args.length) {
+      capturedManifest =
+          jsonDecode(File(args[manifestIndex + 1]).readAsStringSync())
+              as Map<String, dynamic>;
+    }
     yield const FlashProgress(
       bytesDone: 1,
       bytesTotal: 1,

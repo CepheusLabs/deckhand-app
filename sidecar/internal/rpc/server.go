@@ -15,10 +15,14 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net/url"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
 )
+
+var sensitiveURLPattern = regexp.MustCompile(`https?://[^\s"']+`)
 
 // Error is a typed handler error that carries a JSON-RPC error code.
 // Handlers return `&rpc.Error{Code: CodeDisk+1, Message: "..."}` and the
@@ -75,6 +79,12 @@ type Server struct {
 
 	// Job registry: one cancellable context per in-flight request.
 	jobs *jobRegistry
+
+	limitMu        sync.Mutex
+	globalLimit    int
+	globalInFlight int
+	methodLimits   map[string]int
+	methodInFlight map[string]int
 }
 
 // NewServer returns a Server with no handlers registered.
@@ -82,6 +92,29 @@ func NewServer() *Server {
 	return &Server{
 		methods: make(map[string]MethodSpec),
 		jobs:    newJobRegistry(),
+
+		globalLimit: 32,
+		methodLimits: map[string]int{
+			"disks.write_image": 1,
+			"disks.read_image":  1,
+			"disks.hash":        1,
+		},
+		methodInFlight: map[string]int{},
+	}
+}
+
+// SetConcurrencyLimits configures best-effort request admission limits.
+// A zero global limit disables the global cap; method limits apply by
+// method name and reject excess concurrent calls before the handler starts.
+func (s *Server) SetConcurrencyLimits(global int, methods map[string]int) {
+	s.limitMu.Lock()
+	defer s.limitMu.Unlock()
+	s.globalLimit = global
+	s.methodLimits = make(map[string]int, len(methods))
+	for method, limit := range methods {
+		if limit > 0 {
+			s.methodLimits[method] = limit
+		}
 	}
 }
 
@@ -166,6 +199,11 @@ func (s *Server) Serve(ctx context.Context, in io.Reader, out io.Writer) error {
 			w.writeResponse(errorResponse(req.ID, codeMethodNotFound, fmt.Sprintf("unknown method %q", req.Method), nil))
 			continue
 		}
+		releaseLimit, ok := s.acquireLimit(req.Method)
+		if !ok {
+			w.writeResponse(errorResponse(req.ID, CodeGeneric, fmt.Sprintf("concurrency limit exceeded for %s", req.Method), nil))
+			continue
+		}
 
 		// Dispatch in a goroutine so long-running handlers don't block
 		// the read loop. Each request gets its own notifier that scopes
@@ -174,6 +212,7 @@ func (s *Server) Serve(ctx context.Context, in io.Reader, out io.Writer) error {
 		inflight.Add(1)
 		go func(req request, spec MethodSpec) {
 			defer inflight.Done()
+			defer releaseLimit()
 			opID := unquoteID(req.ID)
 			note := &methodNotifier{writer: w, operationID: opID}
 
@@ -194,14 +233,14 @@ func (s *Server) Serve(ctx context.Context, in io.Reader, out io.Writer) error {
 			defer func() {
 				if r := recover(); r != nil {
 					s.logHandlerError(req.Method, opID, fmt.Errorf("panic: %v", r))
-					w.writeResponse(errorResponse(req.ID, codeInternalError, fmt.Sprintf("handler panic: %v", r), nil))
+					w.writeResponse(errorResponse(req.ID, codeInternalError, "handler panic", nil))
 				}
 			}()
 			result, err := spec.Handler(handlerCtx, req.Params, note)
 			if err != nil {
 				s.logHandlerError(req.Method, opID, err)
 				code, data := mapError(err)
-				w.writeResponse(errorResponse(req.ID, code, err.Error(), data))
+				w.writeResponse(errorResponse(req.ID, code, sanitizeErrorMessage(err.Error()), data))
 				return
 			}
 			w.writeResponse(successResponse(req.ID, result))
@@ -214,6 +253,25 @@ func (s *Server) Serve(ctx context.Context, in io.Reader, out io.Writer) error {
 		return err
 	}
 	return scanner.Err()
+}
+
+func (s *Server) acquireLimit(method string) (func(), bool) {
+	s.limitMu.Lock()
+	defer s.limitMu.Unlock()
+	if s.globalLimit > 0 && s.globalInFlight >= s.globalLimit {
+		return nil, false
+	}
+	if limit := s.methodLimits[method]; limit > 0 && s.methodInFlight[method] >= limit {
+		return nil, false
+	}
+	s.globalInFlight++
+	s.methodInFlight[method]++
+	return func() {
+		s.limitMu.Lock()
+		defer s.limitMu.Unlock()
+		s.globalInFlight--
+		s.methodInFlight[method]--
+	}, true
 }
 
 // RenderMethodsMarkdown returns a markdown table describing every
@@ -309,6 +367,16 @@ func redactParams(raw json.RawMessage) json.RawMessage {
 		if shouldRedactKey(k) {
 			m[k] = json.RawMessage(`"[redacted]"`)
 			changed = true
+			continue
+		}
+		var value string
+		if err := json.Unmarshal(m[k], &value); err == nil {
+			sanitized := sanitizeErrorMessage(value)
+			if sanitized != value {
+				b, _ := json.Marshal(sanitized)
+				m[k] = b
+				changed = true
+			}
 		}
 	}
 	if !changed {
@@ -331,6 +399,23 @@ func shouldRedactKey(k string) bool {
 		strings.Contains(lk, "token")
 }
 
+func sanitizeErrorMessage(msg string) string {
+	return sensitiveURLPattern.ReplaceAllStringFunc(msg, func(raw string) string {
+		u, err := url.Parse(raw)
+		if err != nil || u.Host == "" {
+			return "[redacted-url]"
+		}
+		if u.User != nil {
+			u.User = url.User("redacted")
+		}
+		if u.RawQuery != "" {
+			u.RawQuery = "[redacted]"
+		}
+		u.Fragment = ""
+		return u.String()
+	})
+}
+
 func (s *Server) logDispatch(method, opID string, raw json.RawMessage) {
 	l := s.Logger()
 	l.Info("rpc.dispatch",
@@ -345,7 +430,7 @@ func (s *Server) logHandlerError(method, opID string, err error) {
 	l.Warn("rpc.handler_error",
 		"method", method,
 		"operation_id", opID,
-		"error", err.Error(),
+		"error", sanitizeErrorMessage(err.Error()),
 	)
 }
 

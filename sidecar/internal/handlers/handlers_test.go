@@ -345,6 +345,25 @@ func TestReadImageOutputPolicyRejectsUnsafeOutputs(t *testing.T) {
 	}
 }
 
+func TestValidateHashPathRejectsBroadTempAndAllowsManagedOSImage(t *testing.T) {
+	if err := validateHashPath(filepath.Join(os.TempDir(), "arbitrary.img")); err == nil {
+		t.Fatalf("expected broad temp dir path to be rejected")
+	}
+
+	root := filepath.Join(os.TempDir(), downloadTempRootName)
+	if err := os.MkdirAll(root, 0o700); err != nil {
+		t.Fatalf("mkdir root: %v", err)
+	}
+	path := filepath.Join(root, "deckhand-test-hash-"+strings.ReplaceAll(t.Name(), "/", "-")+".img")
+	t.Cleanup(func() { _ = os.Remove(path) })
+	if err := os.WriteFile(path, []byte("hash me"), 0o600); err != nil {
+		t.Fatalf("write managed image: %v", err)
+	}
+	if err := validateHashPath(path); err != nil {
+		t.Fatalf("expected managed os image path to pass: %v", err)
+	}
+}
+
 func TestDownloadDestPolicyRejectsUnmanagedAndExistingPaths(t *testing.T) {
 	outside := filepath.Join(t.TempDir(), "image.img")
 	if _, err := validateDownloadDestPolicy(outside); err == nil {
@@ -372,6 +391,17 @@ func TestDownloadDestPolicyRejectsUnmanagedAndExistingPaths(t *testing.T) {
 	}
 	if err := validateDownloadDestPath(dest); err == nil {
 		t.Fatalf("expected existing download dest to be rejected")
+	}
+}
+
+func TestDownloadRootMatchIsCaseInsensitiveOnWindows(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("windows path case-insensitivity only")
+	}
+	root := filepath.Join(os.TempDir(), downloadTempRootName)
+	path := filepath.Join(root, "image.img")
+	if !isDirectChildOfAnyRoot(strings.ToUpper(path), []string{strings.ToLower(root)}) {
+		t.Fatalf("expected direct-child root match to ignore path case on Windows")
 	}
 }
 
@@ -439,7 +469,11 @@ func TestReuseOrClearDownloadDestDeletesOnlyAfterPolicy(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected managed path to pass policy: %v", err)
 	}
-	reused, _, err := reuseOrClearDownloadDest(clean, strings.Repeat("a", 64))
+	reused, _, err := reuseOrClearDownloadDest(
+		clean,
+		strings.Repeat("a", 64),
+		"https://example.com/image.img",
+	)
 	if err != nil {
 		t.Fatalf("reuseOrClearDownloadDest: %v", err)
 	}
@@ -451,6 +485,55 @@ func TestReuseOrClearDownloadDestDeletesOnlyAfterPolicy(t *testing.T) {
 	}
 	if _, err := os.Lstat(part); !os.IsNotExist(err) {
 		t.Fatalf("expected stale partial removed, got %v", err)
+	}
+}
+
+func TestReuseOrClearDownloadDestKeepsXZDownloadPart(t *testing.T) {
+	root := filepath.Join(os.TempDir(), downloadTempRootName)
+	if err := os.MkdirAll(root, 0o700); err != nil {
+		t.Fatalf("mkdir root: %v", err)
+	}
+	dest := filepath.Join(root, "deckhand-test-xz-part-"+strings.ReplaceAll(t.Name(), "/", "-")+".img")
+	downloadPart := dest + ".download.part"
+	extractPart := dest + ".part"
+	t.Cleanup(func() {
+		_ = os.Remove(dest)
+		_ = os.Remove(downloadPart)
+		_ = os.Remove(extractPart)
+	})
+	if err := os.WriteFile(dest, []byte("stale-final"), 0o600); err != nil {
+		t.Fatalf("write stale dest: %v", err)
+	}
+	if err := os.WriteFile(downloadPart, []byte("verified compressed artifact"), 0o600); err != nil {
+		t.Fatalf("write download part: %v", err)
+	}
+	if err := os.WriteFile(extractPart, []byte("stale extracted partial"), 0o600); err != nil {
+		t.Fatalf("write extract part: %v", err)
+	}
+
+	clean, err := validateDownloadDestPolicy(dest)
+	if err != nil {
+		t.Fatalf("expected managed path to pass policy: %v", err)
+	}
+	reused, _, err := reuseOrClearDownloadDest(
+		clean,
+		strings.Repeat("a", 64),
+		"https://github.com/example/releases/download/v1/image.img.xz",
+	)
+	if err != nil {
+		t.Fatalf("reuseOrClearDownloadDest: %v", err)
+	}
+	if reused {
+		t.Fatalf("expected xz path to be finished by osimg.Download")
+	}
+	if _, err := os.Lstat(dest); !os.IsNotExist(err) {
+		t.Fatalf("expected stale dest removed, got %v", err)
+	}
+	if _, err := os.Lstat(extractPart); !os.IsNotExist(err) {
+		t.Fatalf("expected stale extracted partial removed, got %v", err)
+	}
+	if _, err := os.Lstat(downloadPart); err != nil {
+		t.Fatalf("expected verified download partial to be preserved, got %v", err)
 	}
 }
 

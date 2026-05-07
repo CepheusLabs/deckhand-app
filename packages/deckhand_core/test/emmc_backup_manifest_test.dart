@@ -48,6 +48,32 @@ void main() {
     );
   });
 
+  test('does not match a generic same-size USB disk by model and bus only', () {
+    final manifest = EmmcBackupManifest.create(
+      profileId: 'phrozen-arco',
+      imagePath: r'C:\Deckhand\phrozen-arco.img',
+      imageBytes: 4096,
+      imageSha256: 'a' * 64,
+      disk: disk,
+      deckhandVersion: 'dev',
+    );
+
+    const otherGenericUsb = DiskInfo(
+      id: 'disk-2',
+      path: r'\\.\PhysicalDrive4',
+      sizeBytes: 4096,
+      bus: 'USB',
+      model: 'Generic STORAGE DEVICE',
+      removable: true,
+      partitions: [],
+    );
+
+    expect(
+      manifest.matches(profileId: 'phrozen-arco', disk: otherGenericUsb),
+      isFalse,
+    );
+  });
+
   test('scanner returns only manifests with existing images', () async {
     final dir = await Directory.systemTemp.createTemp(
       'deckhand_emmc_manifest_',

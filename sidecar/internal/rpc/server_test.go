@@ -2,11 +2,15 @@ package rpc
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
+	"log/slog"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -130,10 +134,13 @@ func TestServer_HandlerPanicCaughtAsInternalError(t *testing.T) {
 	defer stop()
 	line := readLine(t, scanner)
 
-	for _, substr := range []string{`"error"`, `"code":-32603`, "something went wrong", `"id":"42"`} {
+	for _, substr := range []string{`"error"`, `"code":-32603`, `"id":"42"`} {
 		if !strings.Contains(line, substr) {
 			t.Fatalf("expected %q in response, got: %q", substr, line)
 		}
+	}
+	if strings.Contains(line, "something went wrong") {
+		t.Fatalf("panic internals leaked in response: %q", line)
 	}
 }
 
@@ -243,5 +250,80 @@ func TestServer_ConcurrentNotifications_AreAtomic(t *testing.T) {
 		if err := json.Unmarshal([]byte(line), &anyJSON); err != nil {
 			t.Fatalf("line %d did not parse as JSON: %v (%q)", i, err, line)
 		}
+	}
+}
+
+func TestServer_GlobalConcurrencyLimitRejectsOverflow(t *testing.T) {
+	s := NewServer()
+	s.SetConcurrencyLimits(1, nil)
+	release := make(chan struct{})
+	var started atomic.Int32
+	s.Register("hold", func(ctx context.Context, _ json.RawMessage, _ Notifier) (any, error) {
+		started.Add(1)
+		<-release
+		return map[string]any{"ok": true}, nil
+	})
+	scanner, stop := driveServer(t, s,
+		`{"jsonrpc":"2.0","id":"1","method":"hold","params":{}}`+"\n"+
+			`{"jsonrpc":"2.0","id":"2","method":"hold","params":{}}`+"\n")
+	defer stop()
+
+	line := readLine(t, scanner)
+	if !strings.Contains(line, `"id":"2"`) || !strings.Contains(line, "concurrency limit exceeded") {
+		t.Fatalf("expected second request to be rejected, got %q", line)
+	}
+	close(release)
+	line = readLine(t, scanner)
+	if !strings.Contains(line, `"id":"1"`) {
+		t.Fatalf("expected first request to finish, got %q", line)
+	}
+	if started.Load() != 1 {
+		t.Fatalf("expected only one handler start, got %d", started.Load())
+	}
+}
+
+func TestServer_PerMethodConcurrencyLimitRejectsOverflow(t *testing.T) {
+	s := NewServer()
+	s.SetConcurrencyLimits(0, map[string]int{"raw.write": 1})
+	release := make(chan struct{})
+	s.Register("raw.write", func(ctx context.Context, _ json.RawMessage, _ Notifier) (any, error) {
+		<-release
+		return map[string]any{"ok": true}, nil
+	})
+	scanner, stop := driveServer(t, s,
+		`{"jsonrpc":"2.0","id":"1","method":"raw.write","params":{}}`+"\n"+
+			`{"jsonrpc":"2.0","id":"2","method":"raw.write","params":{}}`+"\n")
+	defer stop()
+
+	line := readLine(t, scanner)
+	if !strings.Contains(line, `"id":"2"`) || !strings.Contains(line, "concurrency limit exceeded") {
+		t.Fatalf("expected per-method rejection, got %q", line)
+	}
+	close(release)
+	line = readLine(t, scanner)
+	if !strings.Contains(line, `"id":"1"`) {
+		t.Fatalf("expected first request to finish, got %q", line)
+	}
+}
+
+func TestServerRedactsSensitiveURLsInLogsAndResponses(t *testing.T) {
+	var buf bytes.Buffer
+	s := NewServer()
+	s.SetLogger(slog.New(slog.NewTextHandler(&buf, nil)))
+	s.Register("fetch", func(ctx context.Context, _ json.RawMessage, _ Notifier) (any, error) {
+		return nil, errors.New("fetch failed for https://user:pass@example.com/path?token=secret")
+	})
+	scanner, stop := driveServer(t, s, `{"jsonrpc":"2.0","id":"1","method":"fetch","params":{"url":"https://user:pass@example.com/path?token=secret"}}`+"\n")
+	defer stop()
+	line := readLine(t, scanner)
+	logs := buf.String()
+
+	for _, text := range []string{line, logs} {
+		if strings.Contains(text, "user:pass") || strings.Contains(text, "token=secret") {
+			t.Fatalf("sensitive URL leaked: %q", text)
+		}
+	}
+	if !strings.Contains(line, "https://redacted@example.com/path?[redacted]") {
+		t.Fatalf("expected sanitized URL in response, got %q", line)
 	}
 }

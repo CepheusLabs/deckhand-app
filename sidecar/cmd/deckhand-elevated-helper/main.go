@@ -14,7 +14,7 @@
 //
 //	deckhand-elevated-helper write-image \
 //	  --image <path> --target <disk_id> --token-file <path> \
-//	  [--verify] [--sha256 <hex>]
+//	  --manifest <path> --sha256 <hex> [--verify]
 //
 // The confirmation token is supplied via a 0600-mode file rather than
 // a CLI argument so it does not appear in /proc/<pid>/cmdline or the
@@ -55,6 +55,23 @@ var Version = "0.0.0-dev"
 // end up at the same on-disk file.
 var eventsOut io.Writer = os.Stdout
 
+const (
+	helperTempRootName   = "deckhand-elevated-helper"
+	downloadTempRootName = "deckhand-os-images"
+	writeManifestVersion = 1
+	maxImageBytes        = 64 * 1024 * 1024 * 1024
+)
+
+type writeManifest struct {
+	Version     int       `json:"version"`
+	Op          string    `json:"op"`
+	ImagePath   string    `json:"image_path"`
+	ImageSHA256 string    `json:"image_sha256"`
+	Target      string    `json:"target"`
+	TokenSHA256 string    `json:"token_sha256"`
+	ExpiresAt   time.Time `json:"expires_at"`
+}
+
 func main() {
 	if len(os.Args) < 2 {
 		fatalf("usage: deckhand-elevated-helper <op> [flags]")
@@ -70,24 +87,8 @@ func main() {
 	// the unknown flag.
 	for i := 0; i < len(args); i++ {
 		if args[i] == "--events-file" && i+1 < len(args) {
-			f, err := os.OpenFile(
-				args[i+1],
-				os.O_WRONLY|os.O_CREATE|os.O_APPEND,
-				0o600,
-			)
+			f, err := openHelperEventsFile(args[i+1])
 			if err != nil {
-				// Fall back to a sibling .err file so the parent has
-				// SOMETHING to read when --events-file is unwritable
-				// (path mangled by ShellExecuteEx, ACL denial under
-				// elevation, etc.). Without this the parent sees
-				// "exit 0, no events" with no clue.
-				errPath := args[i+1] + ".openerr"
-				if ef, ferr := os.Create(errPath); ferr == nil {
-					fmt.Fprintf(ef,
-						"helper could not open events-file %q: %v\n",
-						args[i+1], err)
-					_ = ef.Close()
-				}
 				fmt.Fprintf(os.Stderr,
 					"open events-file %q: %v\n", args[i+1], err)
 				os.Exit(2)
@@ -454,8 +455,9 @@ func runWriteImage(args []string) {
 	target := fs.String("target", "", "target disk id, e.g. PhysicalDrive3 on Windows, /dev/sde on Linux, /dev/rdisk4 on macOS")
 	tokenFile := fs.String("token-file", "", "path to a 0600-mode file containing the UI-issued confirmation token; deleted on read")
 	cancelFile := fs.String("cancel-file", "", "optional regular file; operation aborts when the file disappears")
+	manifestPath := fs.String("manifest", "", "Deckhand sidecar write manifest binding token/image/target/expiry")
 	verify := fs.Bool("verify", true, "read the written disk back and compare sha256")
-	expectedSha := fs.String("sha256", "", "optional expected sha256 of the image (post-write verification compares against this)")
+	expectedSha := fs.String("sha256", "", "required expected sha256 of the image (post-write verification compares against this)")
 	// flag.ExitOnError calls os.Exit on parse failure, so Parse's return
 	// is only informational in that mode. Keep the explicit call so a
 	// future switch to ContinueOnError still surfaces the error.
@@ -463,8 +465,8 @@ func runWriteImage(args []string) {
 		fatalf("parse flags: %v", err)
 	}
 
-	if *image == "" || *target == "" || *tokenFile == "" {
-		fatalf("write-image requires --image, --target, and --token-file")
+	if *image == "" || *target == "" || *tokenFile == "" || *manifestPath == "" {
+		fatalf("write-image requires --image, --target, --token-file, and --manifest")
 	}
 	fatalIfCanceled(*cancelFile, nil)
 
@@ -483,6 +485,9 @@ func runWriteImage(args []string) {
 	if len(token) < 16 {
 		fatalf("token is implausibly short; refusing")
 	}
+	if err := validateExpectedSHA(*expectedSha); err != nil {
+		fatalf("validate sha256: %v", err)
+	}
 	fatalIfCanceled(*cancelFile, nil)
 
 	devicePath, err := targetToDevicePath(*target)
@@ -491,6 +496,12 @@ func runWriteImage(args []string) {
 	}
 	if err := requireRawDeviceAccess(); err != nil {
 		fatalf("check privileges: %v", err)
+	}
+	if err := validateWriteManifest(*manifestPath, *image, *target, *expectedSha, token); err != nil {
+		fatalf("validate manifest: %v", err)
+	}
+	if err := validateManagedImagePath(*image, *expectedSha); err != nil {
+		fatalf("validate image: %v", err)
 	}
 	emitJSON(map[string]any{"event": "preparing", "device": devicePath, "image": *image})
 
@@ -648,9 +659,15 @@ func operationCanceled(cancelFile string) bool {
 // observing the file before the helper deletes it - the caller must
 // chmod 0600 (or set the equivalent ACL on Windows) before invocation.
 func readAndRemoveTokenFile(path string) (string, error) {
-	info, err := os.Stat(path)
+	if err := validateHelperPrivateFilePath(path, "token file"); err != nil {
+		return "", err
+	}
+	info, err := os.Lstat(path)
 	if err != nil {
 		return "", err
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return "", fmt.Errorf("token file %q is a symlink", path)
 	}
 	if !info.Mode().IsRegular() {
 		return "", fmt.Errorf("token file %q is not a regular file", path)
@@ -672,6 +689,204 @@ func readAndRemoveTokenFile(path string) (string, error) {
 		return "", readErr
 	}
 	return strings.TrimSpace(string(b)), nil
+}
+
+func helperPrivateRoot() string {
+	return filepath.Join(os.TempDir(), helperTempRootName)
+}
+
+func validateHelperPrivateFilePath(path, label string) error {
+	if path == "" {
+		return fmt.Errorf("%s is required", label)
+	}
+	clean, err := filepath.Abs(filepath.Clean(path))
+	if err != nil {
+		return fmt.Errorf("resolve %s: %w", label, err)
+	}
+	root, err := filepath.Abs(filepath.Clean(helperPrivateRoot()))
+	if err != nil {
+		return fmt.Errorf("resolve helper temp root: %w", err)
+	}
+	if filepath.Dir(clean) != root {
+		return fmt.Errorf("%s %q must be a direct child of Deckhand's private helper temp directory %q", label, path, root)
+	}
+	rootInfo, err := os.Lstat(root)
+	if err != nil {
+		return fmt.Errorf("inspect helper temp root: %w", err)
+	}
+	if rootInfo.Mode()&os.ModeSymlink != 0 || !rootInfo.IsDir() {
+		return fmt.Errorf("helper temp root %q must be a real directory", root)
+	}
+	if runtime.GOOS != "windows" && rootInfo.Mode().Perm()&0o077 != 0 {
+		return fmt.Errorf("helper temp root %q has overbroad permissions %v; expected 0700", root, rootInfo.Mode().Perm())
+	}
+	return nil
+}
+
+func openHelperEventsFile(path string) (*os.File, error) {
+	if err := validateHelperPrivateFilePath(path, "events file"); err != nil {
+		return nil, err
+	}
+	if info, err := os.Lstat(path); err == nil {
+		if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
+			return nil, fmt.Errorf("events file %q must be a regular file", path)
+		}
+	} else if !os.IsNotExist(err) {
+		return nil, fmt.Errorf("inspect events file: %w", err)
+	}
+	return os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o600)
+}
+
+func validateWriteManifest(path, imagePath, target, expectedSha, token string) error {
+	if err := validateHelperPrivateFilePath(path, "manifest"); err != nil {
+		return err
+	}
+	info, err := os.Lstat(path)
+	if err != nil {
+		return err
+	}
+	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
+		return fmt.Errorf("manifest %q must be a regular file", path)
+	}
+	var manifest writeManifest
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	if err := json.Unmarshal(b, &manifest); err != nil {
+		return fmt.Errorf("decode manifest: %w", err)
+	}
+	if manifest.Version != writeManifestVersion || manifest.Op != "write-image" {
+		return fmt.Errorf("manifest has unsupported version/op")
+	}
+	if time.Now().After(manifest.ExpiresAt) {
+		return fmt.Errorf("manifest expired at %s", manifest.ExpiresAt.Format(time.RFC3339))
+	}
+	if !sameCleanPath(manifest.ImagePath, imagePath) {
+		return fmt.Errorf("manifest image path mismatch")
+	}
+	if manifest.Target != target {
+		return fmt.Errorf("manifest target mismatch")
+	}
+	if manifest.ImageSHA256 != expectedSha {
+		return fmt.Errorf("manifest sha256 mismatch")
+	}
+	if manifest.TokenSHA256 != tokenDigest(token) {
+		return fmt.Errorf("manifest token binding mismatch")
+	}
+	return nil
+}
+
+func tokenDigest(token string) string {
+	sum := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(sum[:])
+}
+
+func validateExpectedSHA(sha string) error {
+	if len(sha) != 64 {
+		return fmt.Errorf("sha256 is required and must be 64 lowercase hex characters")
+	}
+	if _, err := hex.DecodeString(sha); err != nil {
+		return fmt.Errorf("decode sha256: %w", err)
+	}
+	if strings.ToLower(sha) != sha {
+		return fmt.Errorf("sha256 must be lowercase hex")
+	}
+	return nil
+}
+
+func validateManagedImagePath(path, expectedSha string) error {
+	if err := validateExpectedSHA(expectedSha); err != nil {
+		return err
+	}
+	clean, err := filepath.Abs(filepath.Clean(path))
+	if err != nil {
+		return fmt.Errorf("resolve image: %w", err)
+	}
+	if !isDirectChildOfAnyRoot(clean, managedImageRoots()) {
+		return fmt.Errorf("image %q is not under a Deckhand-managed OS image cache", path)
+	}
+	info, err := os.Lstat(clean)
+	if err != nil {
+		return fmt.Errorf("inspect image: %w", err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
+		return fmt.Errorf("image %q must be a regular file", path)
+	}
+	if info.Size() <= 0 || info.Size() > maxImageBytes {
+		return fmt.Errorf("image %q has unsafe size %d", path, info.Size())
+	}
+	actual, err := hashFileSHA256(clean)
+	if err != nil {
+		return fmt.Errorf("hash image: %w", err)
+	}
+	if actual != expectedSha {
+		return fmt.Errorf("image sha256 mismatch")
+	}
+	return nil
+}
+
+func managedImageRoots() []string {
+	roots := []string{}
+	for _, root := range []string{userCacheDir(), userConfigDir()} {
+		if root == "" {
+			continue
+		}
+		if abs, err := filepath.Abs(filepath.Join(root, "Deckhand", "os-images")); err == nil {
+			roots = append(roots, filepath.Clean(abs))
+		}
+	}
+	if tmp := os.TempDir(); tmp != "" {
+		if abs, err := filepath.Abs(filepath.Join(tmp, downloadTempRootName)); err == nil {
+			roots = append(roots, filepath.Clean(abs))
+		}
+	}
+	return roots
+}
+
+func userCacheDir() string {
+	dir, _ := os.UserCacheDir()
+	return dir
+}
+
+func userConfigDir() string {
+	dir, _ := os.UserConfigDir()
+	return dir
+}
+
+func isDirectChildOfAnyRoot(path string, roots []string) bool {
+	parent := filepath.Dir(path)
+	for _, root := range roots {
+		if root != "" && sameCleanPath(parent, root) {
+			return true
+		}
+	}
+	return false
+}
+
+func sameCleanPath(a, b string) bool {
+	aa, errA := filepath.Abs(filepath.Clean(a))
+	bb, errB := filepath.Abs(filepath.Clean(b))
+	if errA != nil || errB != nil {
+		return false
+	}
+	if runtime.GOOS == "windows" {
+		return strings.EqualFold(aa, bb)
+	}
+	return aa == bb
+}
+
+func hashFileSHA256(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = f.Close() }()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
 func emitJSON(v any) {

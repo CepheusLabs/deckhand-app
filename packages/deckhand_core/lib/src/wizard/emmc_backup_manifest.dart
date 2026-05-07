@@ -137,6 +137,10 @@ class EmmcBackupDiskIdentity {
     if (sizeBytes != disk.sizeBytes) return false;
     if (_sameStableValue(id, disk.id)) return true;
     if (_sameStableValue(path, disk.path)) return true;
+    if (_isGenericUsbIdentity(model, bus) ||
+        _isGenericUsbIdentity(disk.model, disk.bus)) {
+      return false;
+    }
     return _sameStableValue(model, disk.model) &&
         _sameStableValue(bus, disk.bus);
   }
@@ -145,6 +149,17 @@ class EmmcBackupDiskIdentity {
     final left = a.trim().toLowerCase();
     final right = b.trim().toLowerCase();
     return left.isNotEmpty && left == right;
+  }
+
+  static bool _isGenericUsbIdentity(String model, String bus) {
+    final m = model.trim().toLowerCase();
+    final b = bus.trim().toLowerCase();
+    if (b != 'usb') return false;
+    return m.isEmpty ||
+        m == 'generic storage device' ||
+        m == 'usb storage device' ||
+        m.contains('generic') ||
+        m.contains('storage device');
   }
 }
 

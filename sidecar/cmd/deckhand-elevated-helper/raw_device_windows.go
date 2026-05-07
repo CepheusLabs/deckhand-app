@@ -22,6 +22,15 @@ const (
 	diskExtentBytes              = 24
 )
 
+var (
+	enumerateWindowsVolumesFn = enumerateWindowsVolumes
+	openWindowsVolumeFn       = openWindowsVolume
+	volumeContainsDiskFn      = volumeContainsDisk
+	lockAndDismountVolumeFn   = lockAndDismountVolume
+	closeWindowsHandleFn      = windows.CloseHandle
+	deviceIoControlFn         = windows.DeviceIoControl
+)
+
 func requireRawDeviceAccess() error {
 	var token windows.Token
 	if err := windows.OpenProcessToken(
@@ -106,35 +115,45 @@ func physicalDriveNumber(devicePath string) (uint32, error) {
 }
 
 func lockMountedVolumesForDisk(diskNumber uint32) ([]windows.Handle, error) {
-	volumeNames, err := enumerateWindowsVolumes()
+	volumeNames, err := enumerateWindowsVolumesFn()
 	if err != nil {
 		return nil, err
 	}
 
 	var locks []windows.Handle
 	for _, volumeName := range volumeNames {
-		handle, err := openWindowsVolume(volumeName)
+		handle, err := openWindowsVolumeFn(volumeName)
 		if err != nil {
+			closeWindowsHandles(locks)
 			return nil, fmt.Errorf("open volume %s: %w", volumeName, err)
 		}
 
-		matches, extErr := volumeContainsDisk(handle, diskNumber)
+		matches, extErr := volumeContainsDiskFn(handle, diskNumber)
 		if extErr != nil {
-			_ = windows.CloseHandle(handle)
+			_ = closeWindowsHandleFn(handle)
+			if isUnsupportedVolumeExtentsError(extErr) {
+				continue
+			}
+			closeWindowsHandles(locks)
 			return nil, fmt.Errorf("query volume %s extents: %w", volumeName, extErr)
 		}
 		if !matches {
-			_ = windows.CloseHandle(handle)
+			_ = closeWindowsHandleFn(handle)
 			continue
 		}
 
-		if err := lockAndDismountVolume(handle, volumeName); err != nil {
-			_ = windows.CloseHandle(handle)
+		if err := lockAndDismountVolumeFn(handle, volumeName); err != nil {
+			_ = closeWindowsHandleFn(handle)
+			closeWindowsHandles(locks)
 			return nil, err
 		}
 		locks = append(locks, handle)
 	}
 	return locks, nil
+}
+
+func isUnsupportedVolumeExtentsError(err error) bool {
+	return errors.Is(err, windows.ERROR_INVALID_FUNCTION)
 }
 
 func enumerateWindowsVolumes() ([]string, error) {
@@ -219,8 +238,45 @@ func volumeContainsDisk(handle windows.Handle, diskNumber uint32) (bool, error) 
 }
 
 func lockAndDismountVolume(handle windows.Handle, volumeName string) error {
+	if err := lockWindowsVolume(handle); err != nil {
+		if !isBusyVolumeError(err) {
+			return fmt.Errorf("lock volume %s: %w", volumeName, err)
+		}
+		if dismountErr := dismountWindowsVolume(handle); dismountErr != nil {
+			return fmt.Errorf(
+				"lock volume %s: %w; dismount busy volume also failed: %w",
+				volumeName,
+				err,
+				dismountErr,
+			)
+		}
+		if retryErr := lockWindowsVolume(handle); retryErr != nil {
+			if isBusyVolumeError(retryErr) {
+				// Some USB storage adapters keep returning
+				// ACCESS_DENIED/SHARING_VIOLATION after FSCTL_DISMOUNT_VOLUME
+				// even though the mounted filesystem has been invalidated.
+				// Treat that post-dismount lock as best-effort: the helper
+				// writes the physical drive handle next, and we still fail
+				// closed if the dismount itself did not succeed.
+				return nil
+			}
+			return fmt.Errorf(
+				"lock volume %s after dismounting busy filesystem: %w",
+				volumeName,
+				retryErr,
+			)
+		}
+		return nil
+	}
+	if err := dismountWindowsVolume(handle); err != nil {
+		return fmt.Errorf("dismount volume %s: %w", volumeName, err)
+	}
+	return nil
+}
+
+func lockWindowsVolume(handle windows.Handle) error {
 	var bytesReturned uint32
-	if err := windows.DeviceIoControl(
+	return deviceIoControlFn(
 		handle,
 		fsctlLockVolume,
 		nil,
@@ -229,10 +285,12 @@ func lockAndDismountVolume(handle windows.Handle, volumeName string) error {
 		0,
 		&bytesReturned,
 		nil,
-	); err != nil {
-		return fmt.Errorf("lock volume %s: %w", volumeName, err)
-	}
-	if err := windows.DeviceIoControl(
+	)
+}
+
+func dismountWindowsVolume(handle windows.Handle) error {
+	var bytesReturned uint32
+	return deviceIoControlFn(
 		handle,
 		fsctlDismountVolume,
 		nil,
@@ -241,14 +299,17 @@ func lockAndDismountVolume(handle windows.Handle, volumeName string) error {
 		0,
 		&bytesReturned,
 		nil,
-	); err != nil {
-		return fmt.Errorf("dismount volume %s: %w", volumeName, err)
-	}
-	return nil
+	)
+}
+
+func isBusyVolumeError(err error) bool {
+	return errors.Is(err, windows.ERROR_ACCESS_DENIED) ||
+		errors.Is(err, windows.ERROR_SHARING_VIOLATION) ||
+		errors.Is(err, windows.ERROR_LOCK_VIOLATION)
 }
 
 func closeWindowsHandles(handles []windows.Handle) {
 	for _, handle := range handles {
-		_ = windows.CloseHandle(handle)
+		_ = closeWindowsHandleFn(handle)
 	}
 }

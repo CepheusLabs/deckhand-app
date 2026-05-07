@@ -8,6 +8,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
 
 void main() {
+  const imageSha256 =
+      '0123456789abcdef0123456789abcdef'
+      '0123456789abcdef0123456789abcdef';
+
   group('flash sentinel lifecycle', () {
     late Directory tmp;
     late FlashSentinelWriter writer;
@@ -19,7 +23,9 @@ void main() {
     tearDown(() async {
       try {
         await tmp.delete(recursive: true);
-      } on Object {/* best-effort */}
+      } on Object {
+        /* best-effort */
+      }
     });
 
     test('write produces a JSON file with the expected schema', () async {
@@ -38,8 +44,7 @@ void main() {
       expect(body['started_at'], isNotEmpty);
     });
 
-    test('disk_ids with shell-special characters round-trip safely',
-        () async {
+    test('disk_ids with shell-special characters round-trip safely', () async {
       const oddId = r'/dev/disk0/partition$1';
       await writer.write(diskId: oddId, imagePath: '/x');
       final path = writer.sentinelPath(oddId);
@@ -49,8 +54,7 @@ void main() {
       expect(await File(path).exists(), isTrue);
     });
 
-    test('clear removes the sentinel; missing file is not an error',
-        () async {
+    test('clear removes the sentinel; missing file is not an error', () async {
       await writer.write(diskId: 'd1', imagePath: '/x');
       await writer.clear('d1');
       expect(await File(writer.sentinelPath('d1')).exists(), isFalse);
@@ -59,10 +63,8 @@ void main() {
       await writer.clear('never-existed');
     });
 
-    test(
-        'helper launch dispatch: sentinel written before launch, '
-        'cleared only on event:done',
-        () async {
+    test('helper launch dispatch: sentinel written before launch, '
+        'cleared only on event:done', () async {
       // Subclass that doesn't spawn a real process — the test wants
       // the lifecycle, not the OS-level elevation prompt.
       final svc = _FakeLaunchHelperService(
@@ -70,8 +72,10 @@ void main() {
         sentinelWriter: writer,
         events: [
           const FlashProgress(
-            bytesDone: 100, bytesTotal: 100,
-            phase: FlashPhase.done, message: 'sha-stub',
+            bytesDone: 100,
+            bytesTotal: 100,
+            phase: FlashPhase.done,
+            message: 'sha-stub',
           ),
         ],
       );
@@ -80,11 +84,14 @@ void main() {
 
       // Stream the events; sentinel is written before the first
       // event arrives and cleared after the last one.
-      final got = await svc.writeImage(
-        imagePath: '/img.iso',
-        diskId: 'disk0',
-        confirmationToken: 'tok-${"x" * 16}',
-      ).toList();
+      final got = await svc
+          .writeImage(
+            imagePath: '/img.iso',
+            diskId: 'disk0',
+            confirmationToken: 'tok-${"x" * 16}',
+            expectedSha256: imageSha256,
+          )
+          .toList();
       expect(got, hasLength(1));
       expect(got.single.phase, FlashPhase.done);
 
@@ -93,55 +100,64 @@ void main() {
     });
 
     test(
-        'sentinel survives when the helper exits without event:done',
-        () async {
-      final svc = _FakeLaunchHelperService(
-        helperPath: '/fake',
-        sentinelWriter: writer,
-        events: [
-          const FlashProgress(
-            bytesDone: 50, bytesTotal: 100,
-            phase: FlashPhase.writing, message: null,
-          ),
-          // Stream ends without a `done` phase — simulates the
-          // helper crashing mid-write.
-        ],
-      );
-      await svc.writeImage(
-        imagePath: '/img.iso',
-        diskId: 'disk-crash',
-        confirmationToken: 'tok-${"x" * 16}',
-      ).toList();
-      // Sentinel persists.
-      expect(
-        await File(writer.sentinelPath('disk-crash')).exists(),
-        isTrue,
-      );
-    });
+      'sentinel survives when the helper exits without event:done',
+      () async {
+        final svc = _FakeLaunchHelperService(
+          helperPath: '/fake',
+          sentinelWriter: writer,
+          events: [
+            const FlashProgress(
+              bytesDone: 50,
+              bytesTotal: 100,
+              phase: FlashPhase.writing,
+              message: null,
+            ),
+            // Stream ends without a `done` phase — simulates the
+            // helper crashing mid-write.
+          ],
+        );
+        await svc
+            .writeImage(
+              imagePath: '/img.iso',
+              diskId: 'disk-crash',
+              confirmationToken: 'tok-${"x" * 16}',
+              expectedSha256: imageSha256,
+            )
+            .toList();
+        // Sentinel persists.
+        expect(await File(writer.sentinelPath('disk-crash')).exists(), isTrue);
+      },
+    );
 
-    test('next disks.list-style read surfaces the surviving sentinel',
-        () async {
-      // Write a sentinel directly (simulating a prior failed flash),
-      // then load via the test seam.
-      await writer.write(
-        diskId: 'PhysicalDrive3',
-        imagePath: '/tmp/x.iso',
-        imageSha256: 'sha',
-      );
-      final body = jsonDecode(
-        await File(writer.sentinelPath('PhysicalDrive3')).readAsString(),
-      ) as Map<String, dynamic>;
-      // The Go side's LoadSentinels is the production reader; here we
-      // assert the wire format is what the Go side expects (schema +
-      // disk_id key + ISO-8601 timestamp).
-      expect(body['schema'], 'deckhand.flash_sentinel/1');
-      expect(body['disk_id'], 'PhysicalDrive3');
-      expect(
-        DateTime.tryParse(body['started_at'] as String),
-        isNotNull,
-        reason: 'sidecar parses started_at as RFC3339',
-      );
-    });
+    test(
+      'next disks.list-style read surfaces the surviving sentinel',
+      () async {
+        // Write a sentinel directly (simulating a prior failed flash),
+        // then load via the test seam.
+        await writer.write(
+          diskId: 'PhysicalDrive3',
+          imagePath: '/tmp/x.iso',
+          imageSha256: 'sha',
+        );
+        final body =
+            jsonDecode(
+                  await File(
+                    writer.sentinelPath('PhysicalDrive3'),
+                  ).readAsString(),
+                )
+                as Map<String, dynamic>;
+        // The Go side's LoadSentinels is the production reader; here we
+        // assert the wire format is what the Go side expects (schema +
+        // disk_id key + ISO-8601 timestamp).
+        expect(body['schema'], 'deckhand.flash_sentinel/1');
+        expect(body['disk_id'], 'PhysicalDrive3');
+        expect(
+          DateTime.tryParse(body['started_at'] as String),
+          isNotNull,
+          reason: 'sidecar parses started_at as RFC3339',
+        );
+      },
+    );
   });
 }
 

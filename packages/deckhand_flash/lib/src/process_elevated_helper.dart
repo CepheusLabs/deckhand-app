@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 
 import 'package:crypto/crypto.dart';
 import 'package:deckhand_core/deckhand_core.dart';
@@ -8,6 +9,10 @@ import 'package:meta/meta.dart';
 import 'package:path/path.dart' as p;
 
 import 'flash_sentinel.dart';
+
+const _helperTempRootName = 'deckhand-elevated-helper';
+const _writeManifestVersion = 1;
+final _helperTempRandom = Random.secure();
 
 /// [ElevatedHelperService] that launches the sibling
 /// `deckhand-elevated-helper` binary with platform-native elevation.
@@ -18,9 +23,9 @@ import 'flash_sentinel.dart';
 /// network access.
 ///
 /// Elevation per platform:
-///   - Windows: `powershell.exe Start-Process -Verb RunAs -Wait` with
-///     stdout redirected to a tempfile; UI tails that file for JSON
-///     progress events.
+///   - Windows: `powershell.exe Start-Process -Verb RunAs` starts the
+///     helper, then the UI treats the helper-owned events file as the
+///     source of truth for JSON progress events.
 ///   - macOS: `osascript -e 'do shell script ... with administrator
 ///     privileges'` - triggers the Authorization Services dialog.
 ///   - Linux: `pkexec` - the helper inherits stdio directly so
@@ -112,12 +117,14 @@ class ProcessElevatedHelperService implements ElevatedHelperService {
 
   Stream<FlashProgress> _launchCancellableHelper({
     required String confirmationToken,
-    required List<String> Function(String tokenFile, String cancelFile)
+    required FutureOr<List<String>> Function(
+      String tokenFile,
+      String cancelFile,
+    )
     buildArgs,
   }) {
     final controller = StreamController<FlashProgress>();
-    Directory? tokenDir;
-    Directory? cancelDir;
+    File? tokenFile;
     File? cancelFile;
     StreamSubscription<FlashProgress>? helperSub;
     var cancelRequested = false;
@@ -133,56 +140,22 @@ class ProcessElevatedHelperService implements ElevatedHelperService {
           if (await liveCancelFile.exists()) await liveCancelFile.delete();
         } catch (_) {}
       }
-      final liveCancelDir = cancelDir;
-      if (liveCancelDir != null) {
+      final liveTokenFile = tokenFile;
+      if (liveTokenFile != null) {
         try {
-          if (await liveCancelDir.exists()) {
-            await liveCancelDir.delete(recursive: true);
-          }
+          if (await liveTokenFile.exists()) await liveTokenFile.delete();
         } catch (_) {}
       }
-      final liveTokenDir = tokenDir;
-      if (liveTokenDir != null) {
-        try {
-          if (await liveTokenDir.exists()) {
-            await liveTokenDir.delete(recursive: true);
-          }
-        } catch (_) {}
-      }
-    }
-
-    Future<File> writePrivateTempFile({
-      required String dirPrefix,
-      required String fileName,
-      required String body,
-    }) async {
-      final dir = await Directory.systemTemp.createTemp(dirPrefix);
-      if (!Platform.isWindows) {
-        await Process.run('chmod', ['0700', dir.path]);
-      }
-      final file = File(p.join(dir.path, fileName));
-      await file.writeAsString(body, flush: true);
-      if (!Platform.isWindows) {
-        await Process.run('chmod', ['0600', file.path]);
-      }
-      if (dirPrefix == 'deckhand-tok-') {
-        tokenDir = dir;
-      } else {
-        cancelDir = dir;
-      }
-      return file;
     }
 
     controller.onListen = () async {
       try {
-        final tokenFile = await writePrivateTempFile(
-          dirPrefix: 'deckhand-tok-',
-          fileName: 'token',
+        tokenFile = await _writePrivateHelperTempFile(
+          prefix: 'token',
           body: confirmationToken,
         );
-        cancelFile = await writePrivateTempFile(
-          dirPrefix: 'deckhand-cancel-',
-          fileName: 'active',
+        cancelFile = await _writePrivateHelperTempFile(
+          prefix: 'cancel',
           body: 'active',
         );
         if (cancelRequested) {
@@ -191,21 +164,23 @@ class ProcessElevatedHelperService implements ElevatedHelperService {
           return;
         }
 
-        helperSub = launchHelper(buildArgs(tokenFile.path, cancelFile!.path))
-            .listen(
-              (event) {
-                if (!controller.isClosed) controller.add(event);
-              },
-              onError: (Object e, StackTrace st) async {
-                if (!controller.isClosed) controller.addError(e, st);
-                await cleanupFiles();
-                await closeController();
-              },
-              onDone: () async {
-                await cleanupFiles();
-                await closeController();
-              },
-            );
+        final args = await Future<List<String>>.value(
+          buildArgs(tokenFile!.path, cancelFile!.path),
+        );
+        helperSub = launchHelper(args).listen(
+          (event) {
+            if (!controller.isClosed) controller.add(event);
+          },
+          onError: (Object e, StackTrace st) async {
+            if (!controller.isClosed) controller.addError(e, st);
+            await cleanupFiles();
+            await closeController();
+          },
+          onDone: () async {
+            await cleanupFiles();
+            await closeController();
+          },
+        );
       } catch (e, st) {
         await cleanupFiles();
         if (!controller.isClosed) controller.addError(e, st);
@@ -230,34 +205,8 @@ class ProcessElevatedHelperService implements ElevatedHelperService {
     bool verifyAfterWrite = true,
     String? expectedSha256,
   }) async* {
-    // Write the token to a 0600-mode regular file in a 0700-mode
-    // private temp dir, so the value never appears in /proc/<pid>/cmdline,
-    // ps output, or the equivalent OS process table. The helper reads
-    // the file and removes it before any other I/O; we also clean up
-    // best-effort here in case the helper exits abnormally.
-    final tokenDir = await Directory.systemTemp.createTemp('deckhand-tok-');
-    if (!Platform.isWindows) {
-      // chmod the dir 0700 explicitly; createTemp already does on
-      // *nix but be defensive against future platform changes.
-      await Process.run('chmod', ['0700', tokenDir.path]);
-    }
-    final tokenFile = File(p.join(tokenDir.path, 'token'));
-    await tokenFile.writeAsString(confirmationToken, flush: true);
-    if (!Platform.isWindows) {
-      await Process.run('chmod', ['0600', tokenFile.path]);
-    }
-
-    final args = <String>[
-      'write-image',
-      '--image', imagePath,
-      '--target', diskId,
-      '--token-file', tokenFile.path,
-      '--verify', verifyAfterWrite.toString(),
-      if (expectedSha256 != null) ...['--sha256', expectedSha256],
-      // Self-terminate when the unprivileged parent (this process)
-      // dies — see the read-image branch for the rationale.
-      '--watchdog-pid', '$pid',
-    ];
+    final expectedSha = _normalizeRequiredSha256(expectedSha256);
+    File? manifestFile;
 
     // Sentinel goes down before the elevation prompt fires. Anything
     // that interrupts the operation between here and `event: done`
@@ -268,7 +217,7 @@ class ProcessElevatedHelperService implements ElevatedHelperService {
         await sentinelWriter!.write(
           diskId: diskId,
           imagePath: imagePath,
-          imageSha256: expectedSha256,
+          imageSha256: expectedSha,
         );
       } on FileSystemException {
         // A non-writable sentinel directory must not block the flash:
@@ -280,7 +229,33 @@ class ProcessElevatedHelperService implements ElevatedHelperService {
 
     var sawDone = false;
     try {
-      await for (final ev in launchHelper(args)) {
+      await for (final ev in _launchCancellableHelper(
+        confirmationToken: confirmationToken,
+        buildArgs: (tokenFile, cancelFile) async {
+          manifestFile = await _writePrivateHelperTempFile(
+            prefix: 'manifest',
+            body: _writeManifestJson(
+              imagePath: imagePath,
+              imageSha256: expectedSha,
+              target: diskId,
+              token: confirmationToken,
+            ),
+          );
+          return <String>[
+            'write-image',
+            '--image', imagePath,
+            '--target', diskId,
+            '--token-file', tokenFile,
+            '--cancel-file', cancelFile,
+            '--manifest', manifestFile!.path,
+            '--verify=$verifyAfterWrite',
+            '--sha256', expectedSha,
+            // Self-terminate when the unprivileged parent (this process)
+            // dies - see the read-image branch for the rationale.
+            '--watchdog-pid', '$pid',
+          ];
+        },
+      )) {
         if (ev.phase == FlashPhase.done) sawDone = true;
         yield ev;
       }
@@ -288,10 +263,11 @@ class ProcessElevatedHelperService implements ElevatedHelperService {
       if (sawDone && sentinelWriter != null) {
         await sentinelWriter!.clear(diskId);
       }
-      // Best-effort token cleanup. The helper deletes the file on
-      // read; this catches the case where it never got that far.
+      // Best-effort manifest cleanup. Token/cancel files are owned by
+      // _launchCancellableHelper; the helper deletes the token on read.
       try {
-        await tokenDir.delete(recursive: true);
+        final file = manifestFile;
+        if (file != null && await file.exists()) await file.delete();
       } catch (_) {}
     }
   }
@@ -307,23 +283,13 @@ class ProcessElevatedHelperService implements ElevatedHelperService {
   }
 
   // -----------------------------------------------------------------
-  // Windows: PowerShell Start-Process -Verb RunAs. Helper output is
-  // redirected to a tempfile; we tail it for JSON progress events.
-  //
-  // Race: the previous implementation's poll loop exited on
-  // `ps.exitCode`, which was set the instant PowerShell finished —
-  // but the stdout-redirected file might not have been flushed to
-  // disk yet (NTFS buffers + PowerShell's own close sequence happen
-  // asynchronously). The drain step tried to recover but mixed
-  // string-index and byte-offset arithmetic, losing UTF-8 characters
-  // or data held in `carry`. This rewrite does two things:
-  //   1. Never exit the tail loop until we've done one read strictly
-  //      after the process was observed as exited AND the file size
-  //      has stopped growing. That guarantees the final progress
-  //      event is observed even if it lands after exitCode fires.
-  //   2. Use a single byte-offset + UTF-8 decoder across the loop and
-  //      drain so partial characters or unfinished lines are never
-  //      dropped between phases.
+  // Windows: PowerShell Start-Process -Verb RunAs. PowerShell is only
+  // the launch mechanism; the helper-owned events file is the
+  // completion contract. Treating PowerShell's lifetime as helper
+  // lifetime is wrong on UAC-disabled and some ShellExecute paths.
+  // We keep a byte-offset tailer plus an explicit event state machine
+  // so "started" cannot be lost when a long progress file scrolls it
+  // out of a diagnostic tail.
 
   Stream<FlashProgress> _runWindows(List<String> helperArgs) async* {
     // PowerShell's `Start-Process -Verb RunAs` does NOT honor
@@ -346,13 +312,10 @@ class ProcessElevatedHelperService implements ElevatedHelperService {
     // try/catch so any failure (param binding, UAC denial, missing
     // exe) is surfaced as a non-zero exit + a clear message on
     // PowerShell's own stderr, which the Dart parent drains.
-    final stdoutFile = File(
-      p.join(
-        Directory.systemTemp.path,
-        'deckhand-helper-${DateTime.now().millisecondsSinceEpoch}.log',
-      ),
+    final stdoutFile = await _writePrivateHelperTempFile(
+      prefix: 'events',
+      body: '',
     );
-    await stdoutFile.writeAsString('');
 
     final argsWithEventsFile = _injectHelperEventsFile(
       helperArgs,
@@ -381,31 +344,10 @@ class ProcessElevatedHelperService implements ElevatedHelperService {
     // without asking?". When EnableLUA=0 it's true for every admin
     // user; when LUA is on it's true only for already-elevated
     // processes.
-    final psCommand = [
-      '\$ErrorActionPreference = "Stop"; ',
-      'try { ',
-      '  \$isAdmin = ([Security.Principal.WindowsPrincipal] ',
-      '    [Security.Principal.WindowsIdentity]::GetCurrent()).',
-      '    IsInRole([Security.Principal.WindowsBuiltinRole]::Administrator); ',
-      '  if (\$isAdmin) { ',
-      '    \$p = Start-Process -FilePath "$helperPath" ',
-      '      -ArgumentList $argList ',
-      '      -Wait -PassThru -WindowStyle Hidden; ',
-      '  } else { ',
-      '    \$p = Start-Process -FilePath "$helperPath" ',
-      '      -ArgumentList $argList ',
-      '      -Verb RunAs -Wait -PassThru; ',
-      '  } ',
-      '  exit \$p.ExitCode ',
-      '} catch { ',
-      // Write the failure to PowerShell's stderr so the Dart parent
-      // can show the user something actionable: UAC denial reads
-      // "The operation was canceled by the user.", missing exe reads
-      // "This file does not have an app associated with it…", etc.
-      '  [Console]::Error.WriteLine(\$_.Exception.Message); ',
-      '  exit 1 ',
-      '}',
-    ].join();
+    final psCommand = _buildWindowsLaunchPowerShellCommand(
+      helperPath: helperPath,
+      argList: argList,
+    );
 
     final ps = await Process.start('powershell.exe', [
       '-NoProfile',
@@ -437,6 +379,7 @@ class ProcessElevatedHelperService implements ElevatedHelperService {
     var offset = 0;
     final decoder = const Utf8Decoder(allowMalformed: true);
     final carry = StringBuffer();
+    final helperState = _HelperEventState();
 
     Future<List<FlashProgress>> readChunkOnce() async {
       final events = <FlashProgress>[];
@@ -454,6 +397,7 @@ class ProcessElevatedHelperService implements ElevatedHelperService {
         while (nl >= 0) {
           final line = s.substring(0, nl).trimRight();
           s = s.substring(nl + 1);
+          helperState.addLine(line);
           final ev = _parseHelperLine(line);
           if (ev != null) events.add(ev);
           nl = s.indexOf('\n');
@@ -467,17 +411,20 @@ class ProcessElevatedHelperService implements ElevatedHelperService {
       return events;
     }
 
-    Future<String?> readEventsTail() async {
+    Future<String?> readEventsText() async {
       try {
         if (!await stdoutFile.exists()) return null;
-        var eventsTail = (await stdoutFile.readAsString()).trim();
-        if (eventsTail.length > 512) {
-          eventsTail = eventsTail.substring(eventsTail.length - 512);
-        }
-        return eventsTail;
+        return (await stdoutFile.readAsString()).trim();
       } catch (_) {
         return null;
       }
+    }
+
+    String? eventsTailForDisplay(String? eventsText) {
+      if (eventsText == null || eventsText.trim().isEmpty) return null;
+      final trimmed = eventsText.trim();
+      if (trimmed.length <= 512) return trimmed;
+      return trimmed.substring(trimmed.length - 512);
     }
 
     var keepDebugFiles = false;
@@ -488,9 +435,9 @@ class ProcessElevatedHelperService implements ElevatedHelperService {
           yield ev;
         }
       }
-      // Drain after exit: PowerShell may still be flushing redirected
-      // stdout. Keep reading until the file size is stable across two
-      // passes so we can't miss the final `done` event.
+      // One last drain after PowerShell's launcher exits catches a
+      // helper event that landed during process teardown before the
+      // longer helper-owned tail below takes over.
       await exitFuture;
       var stableSize = -1;
       for (var i = 0; i < 20; i++) {
@@ -504,7 +451,9 @@ class ProcessElevatedHelperService implements ElevatedHelperService {
       }
       // Any unterminated trailing line gets one last parse attempt.
       if (carry.isNotEmpty) {
-        final ev = _parseHelperLine(carry.toString().trimRight());
+        final line = carry.toString().trimRight();
+        helperState.addLine(line);
+        final ev = _parseHelperLine(line);
         if (ev != null) yield ev;
         carry.clear();
       }
@@ -524,11 +473,12 @@ class ProcessElevatedHelperService implements ElevatedHelperService {
       if (errTail != null && errTail.length > 512) {
         errTail = errTail.substring(errTail.length - 512);
       }
-      // PowerShell's stdout for our script is normally empty (we
-      // only `exit`); surface it on failure in case a future tweak
-      // emits diagnostic output.
+      // PowerShell stdout normally contains only the launched helper
+      // PID. Surface it on failure because it is useful when the
+      // helper process exists but did not emit events.
       final psOut = psStdoutBuf.toString().trim();
-      var eventsTail = await readEventsTail();
+      var eventsText = await readEventsText();
+      var eventsTail = eventsTailForDisplay(eventsText);
 
       // The helper writes a "started" sentinel event the moment it
       // begins executing — we use that to tell three failure modes
@@ -543,24 +493,27 @@ class ProcessElevatedHelperService implements ElevatedHelperService {
           openErrTail = (await openErrFile.readAsString()).trim();
         }
       } catch (_) {}
-      var sawStartedEvent = _helperEventsContainStarted(eventsTail);
+      var sawStartedEvent = helperState.started;
 
       // In "never notify" UAC mode, ShellExecute/Start-Process can
       // report success before the elevated process has had time to
       // open the events file. Do not treat PowerShell exit 0 as helper
-      // completion; wait briefly for the helper's own started event.
+      // completion; wait for the helper's own event stream. This has
+      // to tolerate machines where ShellExecute returns before the
+      // elevated child has created or flushed the events file.
       if (exit == 0 && !sawStartedEvent) {
-        final deadline = DateTime.now().add(const Duration(seconds: 15));
+        final deadline = DateTime.now().add(const Duration(minutes: 2));
         while (DateTime.now().isBefore(deadline)) {
           await Future<void>.delayed(const Duration(milliseconds: 150));
           for (final ev in await readChunkOnce()) {
             yield ev;
           }
-          eventsTail = await readEventsTail();
-          sawStartedEvent = _helperEventsContainStarted(eventsTail);
+          eventsText = await readEventsText();
+          eventsTail = eventsTailForDisplay(eventsText);
+          sawStartedEvent = helperState.started;
           if (sawStartedEvent ||
-              _helperEventsContainDone(eventsTail) ||
-              _lastHelperErrorMessage(eventsTail) != null) {
+              helperState.done ||
+              helperState.errorMessage != null) {
             break;
           }
         }
@@ -570,8 +523,8 @@ class ProcessElevatedHelperService implements ElevatedHelperService {
       // keep tailing the helper-owned events file until the helper
       // emits a terminal event. This preserves progress and prevents
       // a live backup from being misreported as "never started".
-      var helperError = _lastHelperErrorMessage(eventsTail);
-      var sawDoneEvent = _helperEventsContainDone(eventsTail);
+      var helperError = helperState.errorMessage;
+      var sawDoneEvent = helperState.done;
       if (exit == 0 &&
           sawStartedEvent &&
           !sawDoneEvent &&
@@ -579,7 +532,7 @@ class ProcessElevatedHelperService implements ElevatedHelperService {
         var lastLength = await stdoutFile.length();
         var idleSince = DateTime.now();
         while (DateTime.now().difference(idleSince) <
-            const Duration(seconds: 45)) {
+            const Duration(minutes: 2)) {
           await Future<void>.delayed(const Duration(milliseconds: 250));
           for (final ev in await readChunkOnce()) {
             yield ev;
@@ -589,9 +542,11 @@ class ProcessElevatedHelperService implements ElevatedHelperService {
             lastLength = len;
             idleSince = DateTime.now();
           }
-          eventsTail = await readEventsTail();
-          helperError = _lastHelperErrorMessage(eventsTail);
-          sawDoneEvent = _helperEventsContainDone(eventsTail);
+          eventsText = await readEventsText();
+          eventsTail = eventsTailForDisplay(eventsText);
+          sawStartedEvent = helperState.started;
+          helperError = helperState.errorMessage;
+          sawDoneEvent = helperState.done;
           if (sawDoneEvent || helperError != null) break;
         }
       }
@@ -651,7 +606,8 @@ class ProcessElevatedHelperService implements ElevatedHelperService {
           'The UAC prompt may have been suppressed or the elevated '
           'process couldn\'t be launched (antivirus quarantine, '
           'helper missing, missing manifest, etc.). '
-          'Helper path: $helperPath. Events-file: ${stdoutFile.path} (empty). '
+          'Helper path: $helperPath. Events-file: ${stdoutFile.path}'
+          '${eventsTail == null || eventsTail.isEmpty ? " (empty)" : " tail: $eventsTail"}. '
           'PowerShell stderr: ${errTail ?? "(empty)"}',
         );
       }
@@ -756,6 +712,85 @@ class ProcessElevatedHelperService implements ElevatedHelperService {
   }
 }
 
+String _normalizeRequiredSha256(String? value) {
+  final sha = value?.trim().toLowerCase();
+  if (sha == null || !RegExp(r'^[0-9a-f]{64}$').hasMatch(sha)) {
+    throw StateError('write-image requires a 64-character sha256');
+  }
+  return sha;
+}
+
+String _writeManifestJson({
+  required String imagePath,
+  required String imageSha256,
+  required String target,
+  required String token,
+}) {
+  final tokenSha = sha256.convert(utf8.encode(token)).toString();
+  return jsonEncode({
+    'version': _writeManifestVersion,
+    'op': 'write-image',
+    'image_path': imagePath,
+    'image_sha256': imageSha256,
+    'target': target,
+    'token_sha256': tokenSha,
+    'expires_at': DateTime.now()
+        .toUtc()
+        .add(const Duration(minutes: 15))
+        .toIso8601String(),
+  });
+}
+
+Future<File> _writePrivateHelperTempFile({
+  required String prefix,
+  required String body,
+}) async {
+  final root = await _ensureHelperPrivateRoot();
+  for (var attempt = 0; attempt < 32; attempt++) {
+    final file = File(p.join(root.path, '$prefix-$pid-${_randomHex(16)}'));
+    try {
+      await file.create(exclusive: true);
+      if (!Platform.isWindows) {
+        await Process.run('chmod', ['0600', file.path]);
+      }
+      await file.writeAsString(body, flush: true);
+      return file;
+    } on FileSystemException {
+      final type = await FileSystemEntity.type(file.path, followLinks: false);
+      if (type != FileSystemEntityType.notFound) continue;
+      rethrow;
+    }
+  }
+  throw StateError('could not allocate a private helper temp file');
+}
+
+Future<Directory> _ensureHelperPrivateRoot() async {
+  final root = Directory(
+    p.join(Directory.systemTemp.path, _helperTempRootName),
+  );
+  final existing = await FileSystemEntity.type(root.path, followLinks: false);
+  if (existing != FileSystemEntityType.notFound &&
+      existing != FileSystemEntityType.directory) {
+    throw FileSystemException(
+      'helper temp root must be a real directory',
+      root.path,
+    );
+  }
+  await root.create(recursive: true);
+  if (!Platform.isWindows) {
+    await Process.run('chmod', ['0700', root.path]);
+  }
+  return root;
+}
+
+String _randomHex(int bytes) {
+  final out = StringBuffer();
+  for (var i = 0; i < bytes; i++) {
+    out.write(_helperTempRandom.nextInt(256).toRadixString(16).padLeft(2, '0'));
+  }
+  return out.toString();
+}
+
 /// Non-destructive elevated-helper stand-in used for whole-app dry-run
 /// mode. This closes the gap where the sidecar flash service was
 /// dry-run aware but the app still had a real privileged helper wired.
@@ -857,6 +892,15 @@ Future<FlashProgress?> recoverCompletedReadImageForTesting(
   List<String> helperArgs,
 ) => _recoverCompletedReadImage(helperArgs);
 
+@visibleForTesting
+String buildWindowsLaunchPowerShellCommandForTesting({
+  required String helperPath,
+  required String argList,
+}) => _buildWindowsLaunchPowerShellCommand(
+  helperPath: helperPath,
+  argList: argList,
+);
+
 List<String> _injectHelperEventsFile(
   List<String> helperArgs,
   String eventsPath,
@@ -866,6 +910,37 @@ List<String> _injectHelperEventsFile(
   }
   return [helperArgs.first, '--events-file', eventsPath, ...helperArgs.skip(1)];
 }
+
+String _buildWindowsLaunchPowerShellCommand({
+  required String helperPath,
+  required String argList,
+}) => [
+  '\$ErrorActionPreference = "Stop"; ',
+  'try { ',
+  '  \$isAdmin = ([Security.Principal.WindowsPrincipal] ',
+  '    [Security.Principal.WindowsIdentity]::GetCurrent()).',
+  '    IsInRole([Security.Principal.WindowsBuiltinRole]::Administrator); ',
+  '  if (\$isAdmin) { ',
+  '    \$p = Start-Process -FilePath "$helperPath" ',
+  '      -ArgumentList $argList ',
+  '      -PassThru -WindowStyle Hidden; ',
+  '  } else { ',
+  '    \$p = Start-Process -FilePath "$helperPath" ',
+  '      -ArgumentList $argList ',
+  '      -Verb RunAs -PassThru; ',
+  '  } ',
+  '  if (\$null -eq \$p) { throw "Start-Process returned no process" } ',
+  '  [Console]::Out.WriteLine("helper-pid=\$(\$p.Id)"); ',
+  '  exit 0 ',
+  '} catch { ',
+  // Write the failure to PowerShell's stderr so the Dart parent
+  // can show the user something actionable: UAC denial reads
+  // "The operation was canceled by the user.", missing exe reads
+  // "This file does not have an app associated with it...", etc.
+  '  [Console]::Error.WriteLine(\$_.Exception.Message); ',
+  '  exit 1 ',
+  '}',
+].join();
 
 FlashProgress? _parseHelperLine(String line) {
   if (line.trim().isEmpty) return null;
@@ -911,6 +986,34 @@ FlashProgress? _parseHelperLine(String line) {
       );
     default:
       return null;
+  }
+}
+
+class _HelperEventState {
+  bool started = false;
+  bool done = false;
+  String? errorMessage;
+
+  void addLine(String line) {
+    final trimmed = line.trim();
+    if (trimmed.isEmpty) return;
+    try {
+      final obj = jsonDecode(trimmed);
+      if (obj is! Map<String, dynamic>) return;
+      switch (obj['event']) {
+        case 'started':
+          started = true;
+        case 'done':
+          done = true;
+        case 'error':
+          final msg = obj['message'];
+          if (msg is String && msg.trim().isNotEmpty) {
+            errorMessage = msg.trim();
+          }
+      }
+    } catch (_) {
+      return;
+    }
   }
 }
 

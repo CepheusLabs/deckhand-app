@@ -388,7 +388,11 @@ func Register(s *rpc.Server, cancel context.CancelFunc, version string) {
 			if err != nil {
 				return nil, rpc.NewError(rpc.CodeGeneric, "%v", err)
 			}
-			reused, reusedSha, err := reuseOrClearDownloadDest(dest, req.ExpectedSha)
+			reused, reusedSha, err := reuseOrClearDownloadDest(
+				dest,
+				req.ExpectedSha,
+				req.URL,
+			)
 			if err != nil {
 				return nil, rpc.NewError(rpc.CodeGeneric, "%v", err)
 			}
@@ -509,27 +513,21 @@ func validateHashPath(p string) error {
 		(strings.HasPrefix(clean, `\\.\`) || strings.HasPrefix(clean, `//./`)) {
 		return nil
 	}
-	// Regular-file downloads under the sidecar's managed cache/data dirs.
-	h := host.Current()
-	for _, root := range []string{h.Cache, h.Data} {
-		if root == "" {
-			continue
-		}
-		cleanRoot := filepath.Clean(root)
-		// Require a path separator after the root to prevent `/var/dataEVIL`
-		// from matching `/var/data`.
-		if strings.HasPrefix(clean, cleanRoot+string(os.PathSeparator)) {
-			return nil
-		}
+	abs, err := filepath.Abs(clean)
+	if err != nil {
+		return fmt.Errorf("resolve path %q: %w", p, err)
 	}
-	// The system tmp dir is also acceptable for short-lived downloads
-	// the UI stages before verification - TempDir is caller-controlled
-	// by the OS, not attacker-controlled.
-	tmp := filepath.Clean(os.TempDir())
-	if tmp != "" && strings.HasPrefix(clean, tmp+string(os.PathSeparator)) {
+	if isDirectChildOfAnyRoot(abs, managedDownloadRoots()) {
+		info, err := os.Lstat(abs)
+		if err != nil {
+			return fmt.Errorf("inspect path %q: %w", p, err)
+		}
+		if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
+			return fmt.Errorf("path %q must be a regular image file", p)
+		}
 		return nil
 	}
-	return fmt.Errorf("path %q is not under a Deckhand-managed directory or a recognised device node", p)
+	return fmt.Errorf("path %q is not under a Deckhand-managed OS image directory or a recognised device node", p)
 }
 
 func validateRepoURL(raw string) error {
@@ -784,7 +782,16 @@ func validateDownloadDestPath(dest string) error {
 	return nil
 }
 
-func reuseOrClearDownloadDest(dest, expectedSha string) (bool, string, error) {
+func reuseOrClearDownloadDest(dest, expectedSha, rawURL string) (bool, string, error) {
+	if downloadURLLooksXZ(rawURL) {
+		if err := removeDownloadDest(dest); err != nil {
+			return false, "", err
+		}
+		if err := removeExtractedDownloadPart(dest); err != nil {
+			return false, "", err
+		}
+		return false, "", nil
+	}
 	if reused, actual, err := reuseExistingDownload(dest, expectedSha); err != nil || reused {
 		if err != nil {
 			return false, "", err
@@ -798,6 +805,14 @@ func reuseOrClearDownloadDest(dest, expectedSha string) (bool, string, error) {
 		return false, "", err
 	}
 	return false, "", nil
+}
+
+func downloadURLLooksXZ(rawURL string) bool {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return false
+	}
+	return strings.HasSuffix(strings.ToLower(parsed.Path), ".xz")
 }
 
 func reuseExistingDownload(dest, expectedSha string) (bool, string, error) {
@@ -824,7 +839,24 @@ func reuseExistingDownload(dest, expectedSha string) (bool, string, error) {
 	return false, actual, nil
 }
 
-func removeDownloadPart(dest string) error {
+func removeDownloadDest(dest string) error {
+	info, err := os.Lstat(dest)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("inspect cached image %q: %w", dest, err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
+		return fmt.Errorf("cached image %q must be a regular file", dest)
+	}
+	if err := os.Remove(dest); err != nil {
+		return fmt.Errorf("remove cached image %q: %w", dest, err)
+	}
+	return nil
+}
+
+func removeExtractedDownloadPart(dest string) error {
 	part := dest + ".part"
 	info, err := os.Lstat(part)
 	if os.IsNotExist(err) {
@@ -838,6 +870,25 @@ func removeDownloadPart(dest string) error {
 	}
 	if err := os.Remove(part); err != nil {
 		return fmt.Errorf("remove stale partial dest %q: %w", part, err)
+	}
+	return nil
+}
+
+func removeDownloadPart(dest string) error {
+	for _, part := range []string{dest + ".part", dest + ".download.part"} {
+		info, err := os.Lstat(part)
+		if os.IsNotExist(err) {
+			continue
+		}
+		if err != nil {
+			return fmt.Errorf("inspect partial dest %q: %w", part, err)
+		}
+		if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
+			return fmt.Errorf("partial dest %q must be a regular file", part)
+		}
+		if err := os.Remove(part); err != nil {
+			return fmt.Errorf("remove stale partial dest %q: %w", part, err)
+		}
 	}
 	return nil
 }
@@ -864,7 +915,7 @@ func managedDownloadRoots() []string {
 func isDirectChildOfAnyRoot(path string, roots []string) bool {
 	parent := filepath.Dir(path)
 	for _, root := range roots {
-		if root != "" && parent == root {
+		if root != "" && samePath(parent, root) {
 			return true
 		}
 	}

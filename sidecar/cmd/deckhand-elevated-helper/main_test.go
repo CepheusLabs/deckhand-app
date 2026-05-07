@@ -3,12 +3,14 @@ package main
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestValidateBackupOutputPathAllowsNewDirectImageChild(t *testing.T) {
@@ -156,6 +158,90 @@ func TestOperationCanceledRequiresLiveRegularFile(t *testing.T) {
 	}
 }
 
+func TestHelperPrivatePathPolicyAllowsDirectChild(t *testing.T) {
+	root := helperPrivateRoot()
+	if err := os.MkdirAll(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(root, "deckhand-test-token-"+strings.ReplaceAll(t.Name(), "/", "-")+".txt")
+	t.Cleanup(func() { _ = os.Remove(path) })
+	if err := os.WriteFile(path, []byte("tok-1234567890abcd"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := validateHelperPrivateFilePath(path, "token file"); err != nil {
+		t.Fatalf("expected private direct child to pass: %v", err)
+	}
+}
+
+func TestHelperPrivatePathPolicyRejectsUnmanagedAndNestedPaths(t *testing.T) {
+	tmp := t.TempDir()
+	cases := []string{
+		filepath.Join(tmp, "token.txt"),
+		filepath.Join(tmp, helperTempRootName, "nested", "token.txt"),
+	}
+	for _, path := range cases {
+		t.Run(path, func(t *testing.T) {
+			if err := validateHelperPrivateFilePath(path, "token file"); err == nil {
+				t.Fatalf("expected %q to be rejected", path)
+			}
+		})
+	}
+}
+
+func TestValidateWriteManifestRequiresFreshMatchingManifest(t *testing.T) {
+	root := makeHelperTempRoot(t)
+	image := filepath.Join(root, "image.img")
+	payload := []byte("deckhand image")
+	if err := os.WriteFile(image, payload, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256(payload)
+	sha := hex.EncodeToString(sum[:])
+	manifest := filepath.Join(root, "write-manifest.json")
+	writeManifestFile(t, manifest, writeManifest{
+		Version:     1,
+		Op:          "write-image",
+		ImagePath:   image,
+		ImageSHA256: sha,
+		Target:      "/dev/sdz",
+		TokenSHA256: tokenDigest("tok-1234567890abcd"),
+		ExpiresAt:   time.Now().Add(time.Minute).UTC(),
+	})
+
+	if err := validateWriteManifest(manifest, image, "/dev/sdz", sha, "tok-1234567890abcd"); err != nil {
+		t.Fatalf("validateWriteManifest() error = %v", err)
+	}
+	if err := validateWriteManifest(manifest, image, "/dev/sdy", sha, "tok-1234567890abcd"); err == nil {
+		t.Fatalf("expected target mismatch to be rejected")
+	}
+}
+
+func TestValidateImagePathRequiresManagedImageAndSha(t *testing.T) {
+	root := filepath.Join(os.TempDir(), downloadTempRootName)
+	if err := os.MkdirAll(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	image := filepath.Join(root, "deckhand-helper-test-"+strings.ReplaceAll(t.Name(), "/", "-")+".img")
+	t.Cleanup(func() { _ = os.Remove(image) })
+	payload := []byte("image-bytes")
+	if err := os.WriteFile(image, payload, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256(payload)
+	sha := hex.EncodeToString(sum[:])
+
+	if err := validateManagedImagePath(image, sha); err != nil {
+		t.Fatalf("expected managed image to pass: %v", err)
+	}
+	if err := validateManagedImagePath(image, ""); err == nil {
+		t.Fatalf("expected missing sha to be rejected")
+	}
+	if err := validateManagedImagePath(filepath.Join(t.TempDir(), "image.img"), sha); err == nil {
+		t.Fatalf("expected unmanaged image path to be rejected")
+	}
+}
+
 func TestHashReaderHashesEveryByte(t *testing.T) {
 	payload := "deckhand live disk hash"
 	wantBytes := int64(len(payload))
@@ -189,6 +275,30 @@ func TestTerminalDeviceReadErrorAcceptsEOFOnly(t *testing.T) {
 	}
 	if isTerminalDeviceReadError(errors.New("read failed"), 1024, 1024) {
 		t.Fatal("generic read error should not be terminal")
+	}
+}
+
+func makeHelperTempRoot(t *testing.T) string {
+	t.Helper()
+	root := helperPrivateRoot()
+	if err := os.MkdirAll(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = os.Remove(filepath.Join(root, "image.img"))
+		_ = os.Remove(filepath.Join(root, "write-manifest.json"))
+	})
+	return root
+}
+
+func writeManifestFile(t *testing.T, path string, manifest writeManifest) {
+	t.Helper()
+	b, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, b, 0o600); err != nil {
+		t.Fatal(err)
 	}
 }
 
