@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:deckhand_core/deckhand_core.dart';
@@ -199,6 +200,106 @@ void main() {
     expect(
       candidates.firstWhere((c) => c.imagePath == loose.path).inferredProfileId,
       'sovol-zero',
+    );
+  });
+
+  test('organizer moves loose backups beside corrected manifests', () async {
+    final dir = await Directory.systemTemp.createTemp(
+      'deckhand_emmc_organize_',
+    );
+    addTearDown(() async {
+      if (await dir.exists()) await dir.delete(recursive: true);
+    });
+
+    final image = File(p.join(dir.path, 'phrozen-arco-emmc-legacy.img'));
+    await image.writeAsBytes(List<int>.filled(4096, 7), flush: true);
+    final manifest = EmmcBackupManifest.create(
+      profileId: 'phrozen-arco',
+      imagePath: image.path,
+      imageBytes: 4096,
+      imageSha256: 'e' * 64,
+      disk: disk,
+      deckhandVersion: 'dev',
+      createdAt: DateTime.utc(2026, 5, 7, 18, 19, 20),
+    );
+    await writeEmmcBackupManifest(manifest);
+
+    final result = await organizeLegacyEmmcBackups(dir.path);
+    final movedPath = p.join(
+      dir.path,
+      'phrozen-arco',
+      '2026-05-07T18-19-20Z',
+      'emmc.img',
+    );
+
+    expect(result.moved, 1);
+    expect(await image.exists(), isFalse);
+    expect(await File(emmcBackupManifestPath(image.path)).exists(), isFalse);
+    expect(await File(movedPath).exists(), isTrue);
+
+    final movedManifestFile = File(emmcBackupManifestPath(movedPath));
+    expect(await movedManifestFile.exists(), isTrue);
+    final movedManifest = EmmcBackupManifest.fromJson(
+      jsonDecode(await movedManifestFile.readAsString())
+          as Map<String, dynamic>,
+    );
+    expect(movedManifest.imagePath, movedPath);
+    expect(movedManifest.profileId, 'phrozen-arco');
+  });
+
+  test('organizer keeps same-second backups as separate folders', () async {
+    final dir = await Directory.systemTemp.createTemp(
+      'deckhand_emmc_organize_collision_',
+    );
+    addTearDown(() async {
+      if (await dir.exists()) await dir.delete(recursive: true);
+    });
+
+    final modified = DateTime.utc(2026, 5, 7, 18, 19, 20);
+    final first = File(p.join(dir.path, 'phrozen-arco-emmc-a.img'));
+    final second = File(p.join(dir.path, 'phrozen-arco-emmc-b.img'));
+    await first.writeAsBytes(List<int>.filled(1024, 1), flush: true);
+    await second.writeAsBytes(List<int>.filled(2048, 2), flush: true);
+    await first.setLastModified(modified);
+    await second.setLastModified(modified);
+
+    final result = await organizeLegacyEmmcBackups(dir.path);
+
+    expect(result.moved, 2);
+    expect(
+      await File(
+        p.join(dir.path, 'phrozen-arco', '2026-05-07T18-19-20Z', 'emmc.img'),
+      ).exists(),
+      isTrue,
+    );
+    expect(
+      await File(
+        p.join(dir.path, 'phrozen-arco', '2026-05-07T18-19-20Z-2', 'emmc.img'),
+      ).exists(),
+      isTrue,
+    );
+  });
+
+  test('organizer preserves legacy filename timestamps', () async {
+    final dir = await Directory.systemTemp.createTemp(
+      'deckhand_emmc_organize_timestamp_',
+    );
+    addTearDown(() async {
+      if (await dir.exists()) await dir.delete(recursive: true);
+    });
+
+    final image = File(
+      p.join(dir.path, 'phrozen-arco-emmc-2026-05-04T23-02-59-557160Z.img'),
+    );
+    await image.writeAsBytes(List<int>.filled(1024, 1), flush: true);
+    await image.setLastModified(DateTime.utc(2026, 1, 1));
+
+    final result = await organizeLegacyEmmcBackups(dir.path);
+
+    expect(result.moved, 1);
+    expect(
+      result.moves.single.toImagePath,
+      p.join(dir.path, 'phrozen-arco', '2026-05-04T23-02-59Z', 'emmc.img'),
     );
   });
 }

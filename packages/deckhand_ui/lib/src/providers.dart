@@ -253,11 +253,22 @@ final disksProvider = FutureProvider<List<DiskInfo>>((ref) async {
 /// surprise path.
 final emmcBackupsDirProvider = Provider<String?>((_) => null);
 
+final emmcBackupOrganizationProvider = FutureProvider<EmmcBackupOrganizeResult>(
+  (ref) async {
+    final dir = ref.watch(emmcBackupsDirProvider);
+    if (dir == null || dir.trim().isEmpty) {
+      return const EmmcBackupOrganizeResult(moves: [], failures: []);
+    }
+    return organizeLegacyEmmcBackups(dir);
+  },
+);
+
 final emmcBackupManifestsProvider = FutureProvider<List<EmmcBackupManifest>>((
   ref,
 ) async {
   final dir = ref.watch(emmcBackupsDirProvider);
   if (dir == null || dir.trim().isEmpty) return const [];
+  await ref.watch(emmcBackupOrganizationProvider.future);
   return scanEmmcBackupManifests(dir);
 });
 
@@ -265,6 +276,7 @@ final emmcBackupImageCandidatesProvider =
     FutureProvider<List<EmmcBackupImageCandidate>>((ref) async {
       final dir = ref.watch(emmcBackupsDirProvider);
       if (dir == null || dir.trim().isEmpty) return const [];
+      await ref.watch(emmcBackupOrganizationProvider.future);
       return scanEmmcBackupImageCandidates(dir);
     });
 

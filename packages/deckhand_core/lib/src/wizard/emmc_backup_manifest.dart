@@ -202,6 +202,38 @@ class EmmcBackupImageCandidate {
   }
 }
 
+class EmmcBackupOrganizeResult {
+  const EmmcBackupOrganizeResult({required this.moves, required this.failures});
+
+  final List<EmmcBackupOrganizedMove> moves;
+  final List<EmmcBackupOrganizeFailure> failures;
+
+  int get moved => moves.length;
+  bool get hasFailures => failures.isNotEmpty;
+}
+
+class EmmcBackupOrganizedMove {
+  const EmmcBackupOrganizedMove({
+    required this.fromImagePath,
+    required this.toImagePath,
+    required this.toManifestPath,
+  });
+
+  final String fromImagePath;
+  final String toImagePath;
+  final String? toManifestPath;
+}
+
+class EmmcBackupOrganizeFailure {
+  const EmmcBackupOrganizeFailure({
+    required this.imagePath,
+    required this.message,
+  });
+
+  final String imagePath;
+  final String message;
+}
+
 Future<String> writeEmmcBackupManifest(EmmcBackupManifest manifest) async {
   final manifestPath = emmcBackupManifestPath(manifest.imagePath);
   await Directory(p.dirname(manifestPath)).create(recursive: true);
@@ -210,6 +242,34 @@ Future<String> writeEmmcBackupManifest(EmmcBackupManifest manifest) async {
     flush: true,
   );
   return manifestPath;
+}
+
+Future<EmmcBackupOrganizeResult> organizeLegacyEmmcBackups(String dir) async {
+  final root = Directory(dir);
+  if (!await root.exists()) {
+    return const EmmcBackupOrganizeResult(moves: [], failures: []);
+  }
+  final moves = <EmmcBackupOrganizedMove>[];
+  final failures = <EmmcBackupOrganizeFailure>[];
+  await for (final entity in root.list(followLinks: false)) {
+    if (entity is! File || !entity.path.toLowerCase().endsWith('.img')) {
+      continue;
+    }
+    final type = await FileSystemEntity.type(entity.path, followLinks: false);
+    if (type != FileSystemEntityType.file) continue;
+    try {
+      final moved = await _organizeLooseBackupImage(
+        rootDir: dir,
+        image: entity,
+      );
+      if (moved != null) moves.add(moved);
+    } catch (e) {
+      failures.add(
+        EmmcBackupOrganizeFailure(imagePath: entity.path, message: '$e'),
+      );
+    }
+  }
+  return EmmcBackupOrganizeResult(moves: moves, failures: failures);
 }
 
 Future<List<EmmcBackupManifest>> scanEmmcBackupManifests(String dir) async {
@@ -254,6 +314,126 @@ Future<List<EmmcBackupImageCandidate>> scanEmmcBackupImageCandidates(
   }
   candidates.sort((a, b) => b.modifiedAt.compareTo(a.modifiedAt));
   return candidates;
+}
+
+Future<EmmcBackupOrganizedMove?> _organizeLooseBackupImage({
+  required String rootDir,
+  required File image,
+}) async {
+  final stat = await image.stat();
+  if (stat.type != FileSystemEntityType.file || stat.size <= 0) return null;
+
+  final oldManifestFile = File(emmcBackupManifestPath(image.path));
+  final oldManifestExists = await oldManifestFile.exists();
+  final oldManifest = oldManifestExists
+      ? await _readManifest(oldManifestFile)
+      : null;
+  final profileId =
+      _nonEmptyOrNull(oldManifest?.profileId) ??
+      inferEmmcBackupProfileId(image.path) ??
+      'unknown-profile';
+  final createdAt =
+      oldManifest?.createdAt ??
+      _inferLegacyBackupCreatedAt(image.path) ??
+      stat.modified.toUtc();
+  final target = await _availableOrganizedImagePath(
+    rootDir: rootDir,
+    profileId: profileId,
+    createdAt: createdAt,
+  );
+  await Directory(p.dirname(target)).create(recursive: true);
+  await image.rename(target);
+
+  String? newManifestPath;
+  if (oldManifest != null) {
+    final updated = EmmcBackupManifest(
+      schemaVersion: oldManifest.schemaVersion,
+      createdAt: oldManifest.createdAt,
+      profileId: oldManifest.profileId,
+      imagePath: target,
+      imageBytes: oldManifest.imageBytes,
+      imageSha256: oldManifest.imageSha256,
+      disk: oldManifest.disk,
+      deckhandVersion: oldManifest.deckhandVersion,
+    );
+    newManifestPath = await writeEmmcBackupManifest(updated);
+    if (oldManifestFile.path != newManifestPath &&
+        await oldManifestFile.exists()) {
+      await oldManifestFile.delete();
+    }
+  } else if (oldManifestExists) {
+    newManifestPath = emmcBackupManifestPath(target);
+    await oldManifestFile.rename(newManifestPath);
+  }
+
+  return EmmcBackupOrganizedMove(
+    fromImagePath: image.path,
+    toImagePath: target,
+    toManifestPath: newManifestPath,
+  );
+}
+
+Future<String> _availableOrganizedImagePath({
+  required String rootDir,
+  required String profileId,
+  required DateTime createdAt,
+}) async {
+  final base = emmcBackupImagePath(
+    rootDir: rootDir,
+    profileId: profileId,
+    createdAt: createdAt,
+  );
+  if (!await File(base).exists() &&
+      !await File(emmcBackupManifestPath(base)).exists()) {
+    return base;
+  }
+  final context = _pathContextForRoot(rootDir);
+  final parent = context.dirname(context.dirname(base));
+  final stamp = context.basename(context.dirname(base));
+  for (var i = 2; i < 10000; i++) {
+    final candidate = context.join(parent, '$stamp-$i', 'emmc.img');
+    if (!await File(candidate).exists() &&
+        !await File(emmcBackupManifestPath(candidate)).exists()) {
+      return candidate;
+    }
+  }
+  throw StateError('Could not find an available backup folder for $base');
+}
+
+String? _nonEmptyOrNull(String? value) {
+  final trimmed = value?.trim();
+  return trimmed == null || trimmed.isEmpty ? null : trimmed;
+}
+
+DateTime? _inferLegacyBackupCreatedAt(String imagePath) {
+  final base = p.basename(imagePath);
+  final dashed = RegExp(
+    r'(\d{4})-(\d{2})-(\d{2})T(\d{2})-(\d{2})-(\d{2})(?:-\d+)?Z',
+  ).firstMatch(base);
+  if (dashed != null) {
+    return DateTime.utc(
+      int.parse(dashed.group(1)!),
+      int.parse(dashed.group(2)!),
+      int.parse(dashed.group(3)!),
+      int.parse(dashed.group(4)!),
+      int.parse(dashed.group(5)!),
+      int.parse(dashed.group(6)!),
+    );
+  }
+  final compact = RegExp(
+    r'(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z',
+  ).firstMatch(base);
+  if (compact != null) {
+    return DateTime.utc(
+      int.parse(compact.group(1)!),
+      int.parse(compact.group(2)!),
+      int.parse(compact.group(3)!),
+      int.parse(compact.group(4)!),
+      int.parse(compact.group(5)!),
+      int.parse(compact.group(6)!),
+    );
+  }
+  return null;
 }
 
 EmmcBackupManifest? findMatchingEmmcBackup({
