@@ -1,0 +1,282 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Manual playbook: Deckhand</title>
+<link rel="icon" type="image/svg+xml" href="favicon.svg" />
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body data-screen-label="Manual Playbook">
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="brand" href="index.html"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><rect x="3" y="14" width="26" height="4" fill="currentColor" opacity=".4"/><g stroke="currentColor" stroke-width="2" stroke-linecap="square" fill="none"><line x1="6" y1="9" x2="6" y2="14"/><line x1="11" y1="11" x2="11" y2="14"/><line x1="16" y1="7" x2="16" y2="14"/><line x1="21" y1="11" x2="21" y2="14"/><line x1="26" y1="9" x2="26" y2="14"/><line x1="6" y1="18" x2="6" y2="23"/><line x1="11" y1="18" x2="11" y2="21"/><line x1="16" y1="18" x2="16" y2="25"/><line x1="21" y1="18" x2="21" y2="21"/><line x1="26" y1="18" x2="26" y2="23"/></g></svg> Deckhand <span class="brand-tag">v0.4 · alpha</span></a>
+    <nav class="topnav">
+      <a href="index.html" data-nav="index.html">Home</a>
+      <a href="wiki.html" data-nav="wiki.html">Wiki</a>
+      <a href="getting-started.html" data-nav="getting-started.html">Get started</a>
+      <a href="manual.html" data-nav="manual.html">Manual steps</a>
+      <a href="faq.html" data-nav="faq.html">FAQ</a>
+    </nav>
+    <div class="topbar-spacer"></div>
+    <button class="topbar-search" data-search><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg> Search docs… <span class="kbd-shortcut">⌘K</span></button>
+  </div>
+</header>
+
+<div class="wiki-shell">
+  <aside class="sidebar">
+    <div class="sidebar-section"><div class="sidebar-section-title">Overview</div><a href="wiki.html" data-page="wiki.html">Wiki home</a></div>
+    <div class="sidebar-section"><div class="sidebar-section-title">Use it</div><a href="getting-started.html" data-page="getting-started.html">Getting started</a><a href="usage.html" data-page="usage.html">Usage guide</a><a href="examples.html" data-page="examples.html">Recipes</a></div>
+    <div class="sidebar-section"><div class="sidebar-section-title">Under the hood</div><a href="manual.html" data-page="manual.html">Manual playbook</a><a href="cli.html" data-page="cli.html">CLI &amp; IPC</a></div>
+    <div class="sidebar-section"><div class="sidebar-section-title">Reference</div><a href="faq.html" data-page="faq.html">FAQ</a></div>
+  </aside>
+
+  <main class="wiki-content">
+    <div class="crumbs"><a href="index.html">Home</a><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg><a href="wiki.html">Wiki</a><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg><span>Manual playbook</span></div>
+
+    <span class="lede-pill">Audit · script · DIY</span>
+    <h1 class="page-h">Doing it by hand.</h1>
+    <p class="page-lede">Every wizard screen is a few shell commands wearing a UI. Here they are, in order. Useful if you want to audit what Deckhand actually runs, script your own variant, or just skip the GUI. Tested on Phrozen Arco running stock vendor OS; commands are similar on Sovol but paths differ, check your <a href="https://github.com/CepheusLabs/deckhand-profiles">profile YAML</a>.</p>
+
+    <div class="callout callout--warn">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4M12 17h.01M10.3 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.7 3.86a2 2 0 0 0-3.4 0z"/></svg>
+      <div>
+        <div class="callout-title">No safety net here</div>
+        <p>The GUI takes a snapshot before anything destructive and picks itself up if it crashes. Doing this by hand, that's on you. Start with the snapshot in §2 even if you skip everything else.</p>
+      </div>
+    </div>
+
+    <h2 id="overview">Screen-to-shell map</h2>
+    <p>Each row links down to the section with the actual commands.</p>
+    <table class="steps-table">
+      <thead><tr><th>Screen</th><th>Purpose</th><th>Shell equivalent</th></tr></thead>
+      <tbody>
+        <tr><td>S10</td><td>Doctor preflight</td><td><a href="#preflight">Tool checks &amp; network probes</a></td></tr>
+        <tr><td>S20</td><td>Discover printer</td><td><a href="#discover">avahi-browse / arp -a</a></td></tr>
+        <tr><td>S145</td><td>Snapshot configs</td><td><a href="#snapshot">tar over ssh</a></td></tr>
+        <tr><td>S100</td><td>Choose firmware</td><td><a href="#firmware">git clone Klipper/Kalico</a></td></tr>
+        <tr><td>S105</td><td>Web UI</td><td><a href="#webui">Mainsail / Fluidd install</a></td></tr>
+        <tr><td>S107</td><td>Install KIAUH</td><td><a href="#kiauh">git clone kiauh</a></td></tr>
+        <tr><td>S110</td><td>Screen daemon</td><td><a href="#screen">systemd unit</a></td></tr>
+        <tr><td>S120</td><td>Per-service questions</td><td><a href="#services">systemctl disable</a></td></tr>
+        <tr><td>S140</td><td>Cleanup files</td><td><a href="#files">rm -rf</a></td></tr>
+        <tr><td>S150</td><td>Hardening</td><td><a href="#hardening">passwd / timesyncd</a></td></tr>
+        <tr><td>S200</td><td>Fresh-flash target</td><td><a href="#flash">dd / Etcher</a></td></tr>
+        <tr><td>S220</td><td>Write image</td><td><a href="#flash">dd of=/dev/sdX</a></td></tr>
+        <tr><td>S910</td><td>Verify</td><td><a href="#verify">curl Moonraker</a></td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="preflight">1. Preflight: what Doctor checks</h2>
+    <p>Mirror the <a href="https://github.com/CepheusLabs/deckhand/blob/main/docs/DOCTOR.md">doctor.run</a> checks before you start:</p>
+<pre><code># Check elevation tool
+which pkexec      # Linux
+which osascript   # macOS, built in
+where powershell  # Windows
+
+# Check disk enumeration works
+lsblk             # Linux
+diskutil list     # macOS
+Get-Disk          # Windows PowerShell
+
+# Check mDNS works
+avahi-browse -art          # Linux  (or use `dns-sd -B _ssh._tcp` on mac)
+ping printer.local
+
+# Check GitHub reachability + rate limit
+curl -s https://api.github.com/rate_limit | jq .rate
+
+# Check clock skew (matters for TLS)
+curl -sI https://api.github.com | grep -i ^date</code></pre>
+
+    <h2 id="discover">2. Find your printer</h2>
+    <p>The GUI tries mDNS first, falls back to ARP. By hand:</p>
+<pre><code># Browse for SSH services on the LAN
+avahi-browse -rt _ssh._tcp     # Linux
+dns-sd -B _ssh._tcp .          # macOS
+
+# Or scan the local /24
+nmap -sn 192.168.1.0/24
+
+# Once you have an IP, confirm SSH works
+ssh mks@192.168.1.42           # Phrozen Arco default
+# password: makerbase</code></pre>
+
+    <h2 id="snapshot" class="">3. Snapshot before you touch anything</h2>
+    <p>Same thing S145 does. Streams a tar.gz back to your laptop. Nothing gets left on the printer.</p>
+
+    <div class="parallel">
+      <div class="parallel--gui">
+        <div class="parallel-head"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="14" rx="2"/></svg> Deckhand</div>
+        <ol><li>S145 → tick paths to snapshot</li><li>"Snapshot and continue"</li><li>tar lives in <code>~/.deckhand/snapshots/</code></li></ol>
+      </div>
+      <div class="parallel--manual">
+        <div class="parallel-head"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m4 17 6-6-6-6m8 14h8"/></svg> Shell</div>
+<pre><code>STAMP=$(date +%Y%m%d-%H%M%S)
+ssh mks@printer.local \
+  'tar -czf - ~/printer_data ~/klippy_extras 2>/dev/null' \
+  > deckhand-snapshot-${STAMP}.tar.gz
+sha256sum deckhand-snapshot-${STAMP}.tar.gz</code></pre>
+      </div>
+    </div>
+
+    <h2 id="firmware">4. Install firmware (Klipper or Kalico)</h2>
+    <p>What S100 does, behind the scenes: a git clone and the project's install script. Pick one.</p>
+
+    <h3 id="kalico-install">Kalico (the fork)</h3>
+<pre><code>ssh mks@printer.local
+sudo systemctl stop klipper 2>/dev/null
+
+# Back up any existing klipper dir
+[ -d ~/klipper ] &amp;&amp; mv ~/klipper ~/klipper.vendor-$(date +%s)
+
+git clone https://github.com/KalicoCrew/kalico.git ~/klipper
+cd ~/klipper
+./scripts/install-debian.sh
+# Reads python_min from setup; will offer to build Python 3.11 from
+# source if your distro is too old (~20 min on a CB1).</code></pre>
+
+    <h3 id="klipper-install">Klipper (mainline)</h3>
+<pre><code>git clone https://github.com/Klipper3d/klipper.git ~/klipper
+cd ~/klipper
+./scripts/install-debian.sh</code></pre>
+
+    <h3 id="moonraker">Then Moonraker (always needed)</h3>
+<pre><code>git clone https://github.com/Arksine/moonraker.git ~/moonraker
+cd ~/moonraker
+./scripts/install-moonraker.sh</code></pre>
+
+    <h2 id="webui">5. Install a web UI</h2>
+    <p>This is S105. Mainsail and Fluidd are both static bundles, served by nginx.</p>
+
+    <div class="parallel">
+      <div class="parallel--gui">
+        <div class="parallel-head">Deckhand</div>
+        <ol><li>S105 → pick Mainsail / Fluidd / both</li><li>Wizard fetches release tarball</li><li>nginx config installed</li></ol>
+      </div>
+      <div class="parallel--manual">
+        <div class="parallel-head">Shell, Mainsail</div>
+<pre><code>sudo apt install -y nginx
+mkdir -p ~/mainsail &amp;&amp; cd ~/mainsail
+wget -q https://github.com/mainsail-crew/mainsail/releases/latest/download/mainsail.zip
+unzip -q mainsail.zip &amp;&amp; rm mainsail.zip
+
+# Drop the nginx config from Moonraker's docs
+sudo cp ~/moonraker/docs/nginx_configs/mainsail \
+        /etc/nginx/sites-available/mainsail
+sudo ln -sf /etc/nginx/sites-available/mainsail \
+            /etc/nginx/sites-enabled/
+sudo nginx -t &amp;&amp; sudo systemctl reload nginx</code></pre>
+      </div>
+    </div>
+
+    <p>For Fluidd, swap <code>mainsail.zip</code> for <code>fluidd.zip</code> from <code>fluidd-core/fluidd</code>, same shape. Picking <strong>both</strong> just means installing both bundles on different ports (default 80 + 8080).</p>
+
+    <h2 id="kiauh">6. Drop in KIAUH</h2>
+    <p>S107. One git clone. KIAUH is the menu you'll come back to later for updates.</p>
+<pre><code>git clone https://github.com/dw-0/kiauh.git ~/kiauh
+~/kiauh/kiauh.sh    # interactive menu</code></pre>
+
+    <h2 id="screen">7. Touchscreen daemon (optional)</h2>
+    <p>S110 picks one based on your hardware. For an Arco with KlipperScreen:</p>
+<pre><code>git clone https://github.com/KlipperScreen/KlipperScreen.git ~/KlipperScreen
+~/KlipperScreen/scripts/KlipperScreen-install.sh</code></pre>
+    <p>Each profile in <code>deckhand-profiles</code> declares one or more screens with their install steps under <code>screens[].install</code>; copy from there if your printer isn't covered above.</p>
+
+    <h2 id="services">8. Evict vendor services</h2>
+    <p>Same list S120 walks you through, just done in one go. The list comes from your profile's <code>stock_os.services[]</code>. On the Arco, the usual suspects:</p>
+<pre><code># Block UDP discovery beacons
+sudo systemctl disable --now makerbase-net-mods.service
+
+# Stop vendor screen daemon (replaced by KlipperScreen)
+sudo systemctl disable --now phrozen-screen-svc.service
+
+# Vendor cloud bridge, definitely not needed
+sudo systemctl disable --now makerbase-cloud.service
+
+# Verify nothing's running you don't expect
+systemctl list-units --type=service --state=running \
+  | grep -Ev '^(klipper|moonraker|nginx|sshd|systemd|cron)'</code></pre>
+
+    <h2 id="files">9. Remove vendor files</h2>
+    <p>S140 gives you a tickbox list. Doing it by hand, look up the profile's paths and <code>rm -rf</code> what you want gone. The GUI shows you a diff preview before deleting; on the shell side, please double-check each path before you commit.</p>
+<pre><code># From phrozen-arco profile, stock_os.files[]:
+sudo rm -rf /opt/phrozen/legacy-cgi/
+sudo rm -rf /var/lib/phrozen/cloud-cache/
+sudo rm    /etc/phrozen/branding.json
+sudo rm -rf ~/printer_data/config.vendor-overrides/</code></pre>
+
+    <h2 id="hardening">10. Hardening (S150)</h2>
+<pre><code># Change the well-known SSH password
+passwd
+
+# Fix the 3-way time-sync conflict (chrony + ntpd + systemd-timesyncd)
+sudo systemctl disable --now chrony ntp 2>/dev/null
+sudo systemctl enable  --now systemd-timesyncd
+
+# Turn off vendor UDP if it wasn't covered above
+sudo ufw deny 8989/udp 2>/dev/null   # if ufw is installed</code></pre>
+
+    <h2 id="flash">11. Fresh flash (Path B only)</h2>
+    <p>Only if you're <em>wiping</em> the eMMC. The GUI does this with the elevated helper + the <code>FlashService.write</code> RPC; manually you'd Etcher or <code>dd</code>.</p>
+
+    <div class="callout callout--danger">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
+      <div>
+        <div class="callout-title">Triple-check your <code>of=</code> path</div>
+        <p>Wrong device and you wipe your laptop. Run <code>lsblk</code> or <code>diskutil list</code> with the card unplugged, then plug it in and run again. The letter that changed is your card.</p>
+      </div>
+    </div>
+
+<pre><code># 1. Download Armbian for your printer's SoC (RK3328 for Arco)
+wget https://dl.armbian.com/.../Armbian_24.x_Tinkerboard_jammy_current.img.xz
+xz -d Armbian_24.x_Tinkerboard_jammy_current.img.xz
+
+# 2. Confirm target device (CARD must be unmounted)
+lsblk
+sudo umount /dev/sdX*
+
+# 3. Write, this takes ~5 min for an 8GB image
+sudo dd if=Armbian_24.x_Tinkerboard_jammy_current.img \
+        of=/dev/sdX bs=4M status=progress conv=fsync
+
+# 4. Sync, eject, plug into printer, boot, then SSH and run all
+#    of the above starting from §4.</code></pre>
+
+    <h2 id="verify">12. Did it work?</h2>
+    <p>Same as S910. Klipper should report <code>Ready</code> and Moonraker should answer the door:</p>
+<pre><code># From your laptop:
+curl -s http://printer.local:7125/printer/info | jq .result.state
+# → "ready"
+
+curl -s http://printer.local/ -o /dev/null -w '%{http_code}\n'
+# → 200  (Mainsail/Fluidd serving)</code></pre>
+
+    <p>If <code>state</code> is <code>error</code>, SSH in and tail Klipper's log: <code>journalctl -u klipper -n 100</code>. The wizard's debug-bundle creator (<a href="cli.html#debug">cli.html</a>) collects the same files for you with redaction.</p>
+
+    <h2 id="rollback">Rollback: restore the snapshot</h2>
+    <p>If something went sideways and you took the snapshot in §3:</p>
+<pre><code>scp deckhand-snapshot-*.tar.gz mks@printer.local:/tmp/
+ssh mks@printer.local '
+  cd ~ &amp;&amp; mv printer_data printer_data.failed-$(date +%s)
+  tar -xzf /tmp/deckhand-snapshot-*.tar.gz
+  sudo systemctl restart klipper moonraker
+  rm /tmp/deckhand-snapshot-*.tar.gz
+'</code></pre>
+
+    <div class="pager">
+      <a href="usage.html"><span>← Back</span><strong>Usage guide</strong></a>
+      <a class="next" href="cli.html"><span>Next →</span><strong>CLI &amp; IPC</strong></a>
+    </div>
+  </main>
+
+  <aside class="toc"><h4>On this page</h4><ul></ul></aside>
+</div>
+
+<div class="search-modal" id="search-modal"><div class="search-panel"><div class="search-input"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg><input placeholder="Search the wiki…" /></div><div class="search-results"><div class="search-result is-selected">Manual playbook · Stock keep <span class="sr-where">manual.html#firmware</span></div></div><div class="search-foot"><span><kbd>esc</kbd> close</span></div></div></div>
+
+<script src="app.js"></script>
+
+</body>
+</html>

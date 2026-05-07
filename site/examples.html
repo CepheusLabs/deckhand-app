@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Recipes: Deckhand</title>
+<link rel="icon" type="image/svg+xml" href="favicon.svg" />
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body data-screen-label="Recipes">
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="brand" href="index.html"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><rect x="3" y="14" width="26" height="4" fill="currentColor" opacity=".4"/><g stroke="currentColor" stroke-width="2" stroke-linecap="square" fill="none"><line x1="6" y1="9" x2="6" y2="14"/><line x1="11" y1="11" x2="11" y2="14"/><line x1="16" y1="7" x2="16" y2="14"/><line x1="21" y1="11" x2="21" y2="14"/><line x1="26" y1="9" x2="26" y2="14"/><line x1="6" y1="18" x2="6" y2="23"/><line x1="11" y1="18" x2="11" y2="21"/><line x1="16" y1="18" x2="16" y2="25"/><line x1="21" y1="18" x2="21" y2="21"/><line x1="26" y1="18" x2="26" y2="23"/></g></svg> Deckhand <span class="brand-tag">v0.4 · alpha</span></a>
+    <nav class="topnav">
+      <a href="index.html" data-nav="index.html">Home</a>
+      <a href="wiki.html" data-nav="wiki.html">Wiki</a>
+      <a href="getting-started.html" data-nav="getting-started.html">Get started</a>
+      <a href="manual.html" data-nav="manual.html">Manual steps</a>
+      <a href="faq.html" data-nav="faq.html">FAQ</a>
+    </nav>
+    <div class="topbar-spacer"></div>
+    <button class="topbar-search" data-search><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg> Search docs… <span class="kbd-shortcut">⌘K</span></button>
+  </div>
+</header>
+
+<div class="wiki-shell">
+  <aside class="sidebar">
+    <div class="sidebar-section"><div class="sidebar-section-title">Overview</div><a href="wiki.html" data-page="wiki.html">Wiki home</a></div>
+    <div class="sidebar-section"><div class="sidebar-section-title">Use it</div><a href="getting-started.html" data-page="getting-started.html">Getting started</a><a href="usage.html" data-page="usage.html">Usage guide</a><a href="examples.html" data-page="examples.html">Recipes</a></div>
+    <div class="sidebar-section"><div class="sidebar-section-title">Under the hood</div><a href="manual.html" data-page="manual.html">Manual playbook</a><a href="cli.html" data-page="cli.html">CLI &amp; IPC</a></div>
+    <div class="sidebar-section"><div class="sidebar-section-title">Reference</div><a href="faq.html" data-page="faq.html">FAQ</a></div>
+  </aside>
+
+  <main class="wiki-content">
+    <div class="crumbs"><a href="index.html">Home</a><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg><a href="wiki.html">Wiki</a><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg><span>Recipes</span></div>
+
+    <span class="lede-pill">Concrete walkthroughs</span>
+    <h1 class="page-h">Recipes.</h1>
+    <p class="page-lede">Common end-to-end runs. Each one shows the GUI path and the shell-only version. Use whichever you like.</p>
+
+    <h2 id="arco-stock">Phrozen Arco: stock keep with Kalico + Mainsail</h2>
+    <p>The most common path. The vendor's OS sticks around, the vendor's services don't, you end up on Kalico and Mainsail with KIAUH installed for next time.</p>
+
+    <div class="parallel">
+      <div class="parallel--gui">
+        <div class="parallel-head">In Deckhand</div>
+        <ol>
+          <li>S20, pick the discovered Arco (or paste IP)</li>
+          <li>S40, Stock keep</li>
+          <li>S145, snapshot all paths</li>
+          <li>S100, Kalico</li>
+          <li>S105, Mainsail</li>
+          <li>S107, install KIAUH</li>
+          <li>S110, KlipperScreen</li>
+          <li>S120, disable makerbase-net-mods, phrozen-screen-svc, makerbase-cloud</li>
+          <li>S140, tick all leftover files (defaults are sane)</li>
+          <li>S150, change SSH password, fix time-sync</li>
+          <li>S900, Run · ~12 min</li>
+        </ol>
+      </div>
+      <div class="parallel--manual">
+        <div class="parallel-head">Headless CLI</div>
+<pre><code>cat &gt; arco-plan.yaml &lt;&lt;EOF
+path: stock_keep
+firmware: kalico
+webui: mainsail
+kiauh: true
+screen: klipperscreen
+services_disable:
+  - makerbase-net-mods
+  - phrozen-screen-svc
+  - makerbase-cloud
+files_remove: all_defaults
+hardening:
+  ssh_password: $(read -s p; echo $p)
+  fix_timesync: true
+EOF
+
+deckhand install \
+  --profile phrozen-arco \
+  --host arco.local --user mks \
+  --plan arco-plan.yaml --yes</code></pre>
+      </div>
+    </div>
+
+    <h2 id="sv08-fresh">Sovol SV08 Max: fresh flash</h2>
+    <p>Vendor OS is wedged, or you just want a clean base. Pull the eMMC card out, flash it on your laptop, slot it back in, finish over SSH.</p>
+
+    <ol>
+      <li>Power off the printer, eject the eMMC card.</li>
+      <li>Plug card into your laptop.</li>
+      <li>Open Deckhand → Manage view → "Fresh-flash from card".</li>
+      <li>Pick Armbian image (Deckhand fetches from <code>dl.armbian.com</code> with verified signatures).</li>
+      <li>Confirm the disk path on S200, Deckhand greys out non-removable disks.</li>
+      <li>S220 writes ~1.4 GB at native speed; ETA shown live.</li>
+      <li>Eject card, return to printer, boot, wait 90 seconds for first-boot expansion.</li>
+      <li>Back in Deckhand → S20 discovers the new printer (now on DHCP) → run the rest of the wizard as Stock keep.</li>
+    </ol>
+
+    <h2 id="restore">Restore from a snapshot</h2>
+    <p>You ran an install yesterday and the printer's acting up. You want yesterday's <code>printer.cfg</code> back without redoing the whole install.</p>
+
+    <div class="parallel">
+      <div class="parallel--gui">
+        <div class="parallel-head">In Deckhand</div>
+        <ol>
+          <li>Manage view → Backups</li>
+          <li>Pick the snapshot row (sorted newest first)</li>
+          <li>Restore → Side-by-side</li>
+          <li>Open the diff viewer, copy the lines you want</li>
+        </ol>
+      </div>
+      <div class="parallel--manual">
+        <div class="parallel-head">Shell</div>
+<pre><code>cd ~/.deckhand/snapshots/
+ls -lh phrozen-arco-*.tar.gz
+
+deckhand restore \
+  --host arco.local \
+  --archive phrozen-arco-2026-04-25.tar.gz \
+  --strategy side-by-side
+# Restored to ~/printer_data.stock-2026-04-25/ on the printer.</code></pre>
+      </div>
+    </div>
+
+    <h2 id="debug">Capturing a debug bundle for a bug report</h2>
+    <p>Before opening an issue, grab one of these. Bundles are auto-redacted (SSH keys, IPs, hostnames, MACs, anything matching the secret regex) and you preview the redacted version before saving the zip.</p>
+<pre><code>deckhand debug-bundle --session last --out ./bundle.zip --review
+
+# OR via the GUI: Manage → Debug bundle → Build → Review → Save.
+# Attach the .zip to your GitHub issue.</code></pre>
+
+    <h2 id="re-run">Re-running just one step</h2>
+    <p>Mainsail got mangled. You want to reinstall just it, not redo the whole wizard.</p>
+    <ol>
+      <li>Manage view → Sessions → pick last session</li>
+      <li>Right-click the <code>mainsail_install</code> step → "Re-run only this step"</li>
+      <li>Confirm, Deckhand re-evaluates the precheck (already-installed → will be replaced) and runs.</li>
+    </ol>
+    <p>CLI equivalent:</p>
+<pre><code>deckhand step run --session 7c44f1 --step mainsail_install</code></pre>
+
+    <div class="pager">
+      <a href="cli.html"><span>← Back</span><strong>CLI &amp; IPC</strong></a>
+      <a class="next" href="faq.html"><span>Next →</span><strong>FAQ</strong></a>
+    </div>
+  </main>
+
+  <aside class="toc"><h4>On this page</h4><ul></ul></aside>
+</div>
+
+<div class="search-modal" id="search-modal"><div class="search-panel"><div class="search-input"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg><input placeholder="Search…" /></div><div class="search-results"></div><div class="search-foot"><span><kbd>esc</kbd> close</span></div></div></div>
+
+<script src="app.js"></script>
+
+</body>
+</html>
