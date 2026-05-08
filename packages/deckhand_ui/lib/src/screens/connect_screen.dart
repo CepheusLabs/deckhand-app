@@ -249,16 +249,17 @@ class _ConnectScreenState extends ConsumerState<ConnectScreen> {
         final session = controller.sshSession;
         if (session != null) {
           final settings = ref.read(deckhandSettingsProvider);
-          settings.recordSavedHost(
-            SavedHost(
+          final profile = controller.profile;
+          if (profile != null) {
+            settings.recordConnectedPrinter(
+              profileId: profile.id,
+              profileDisplayName: profile.displayName,
               host: host,
               port: session.port,
-              user: session.user.isNotEmpty
-                  ? session.user
-                  : (preferredUser ?? ''),
-              lastUsed: DateTime.now(),
-            ),
-          );
+              sessionUser: session.user,
+              preferredUser: preferredUser,
+            );
+          }
           unawaited(settings.save());
         }
       } catch (_) {

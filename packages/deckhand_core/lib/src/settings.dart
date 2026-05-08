@@ -104,6 +104,94 @@ class DeckhandSettings {
     savedHosts = list;
   }
 
+  /// Local machine registry used by Deckhand's Manage entry point.
+  ///
+  /// The shape intentionally mirrors Printdeck's reusable Machines
+  /// descriptor at a small scale: opaque id, display name, machine
+  /// kind, connection mode, labels, and primitive connection fields.
+  /// When the Machines submodule is available, this settings-backed
+  /// source can be replaced by an adapter without changing the UI.
+  List<ManagedPrinter> get managedPrinters {
+    final raw = _values['managed_printers'];
+    if (raw is! List) return const [];
+    final out = <ManagedPrinter>[];
+    for (final entry in raw) {
+      if (entry is Map) {
+        try {
+          out.add(ManagedPrinter.fromJson(entry.cast<String, dynamic>()));
+        } catch (_) {
+          // Skip malformed rows; the next write compacts the list.
+        }
+      }
+    }
+    out.sort((a, b) {
+      final aSeen = a.lastSeen;
+      final bSeen = b.lastSeen;
+      if (aSeen == null && bSeen == null) {
+        return a.displayName.compareTo(b.displayName);
+      }
+      if (aSeen == null) return 1;
+      if (bSeen == null) return -1;
+      return bSeen.compareTo(aSeen);
+    });
+    return out;
+  }
+
+  set managedPrinters(List<ManagedPrinter> printers) {
+    _values['managed_printers'] = [for (final p in printers) p.toJson()];
+  }
+
+  void recordManagedPrinter(ManagedPrinter printer) {
+    final list = managedPrinters.toList()
+      ..removeWhere((p) => p.id.toLowerCase() == printer.id.toLowerCase());
+    list.insert(0, printer);
+    while (list.length > 25) {
+      list.removeLast();
+    }
+    managedPrinters = list;
+  }
+
+  void forgetManagedPrinter(String id) {
+    final list = managedPrinters.toList()
+      ..removeWhere((p) => p.id.toLowerCase() == id.toLowerCase());
+    managedPrinters = list;
+  }
+
+  /// Record a successful printer connection in both places Deckhand
+  /// surfaces it: the Connect screen's quick SSH host list and the
+  /// app-level Manage printer registry.
+  ///
+  /// The method deliberately takes primitive fields instead of a
+  /// controller or service object so a future Printdeck Machines
+  /// adapter can feed the same contract.
+  void recordConnectedPrinter({
+    required String profileId,
+    required String profileDisplayName,
+    required String host,
+    required int port,
+    required String sessionUser,
+    String? preferredUser,
+    DateTime? now,
+  }) {
+    final user = sessionUser.trim().isNotEmpty
+        ? sessionUser.trim()
+        : (preferredUser ?? '').trim();
+    final seenAt = now ?? DateTime.now();
+    recordSavedHost(
+      SavedHost(host: host, port: port, user: user, lastUsed: seenAt),
+    );
+    recordManagedPrinter(
+      ManagedPrinter.fromConnection(
+        profileId: profileId,
+        displayName: profileDisplayName,
+        host: host,
+        port: port,
+        user: user,
+        lastSeen: seenAt,
+      ),
+    );
+  }
+
   bool get showStubProfiles => _values['show_stub_profiles'] == true;
   set showStubProfiles(bool v) => _values['show_stub_profiles'] = v;
 
@@ -371,4 +459,124 @@ class SavedHost {
 
   @override
   String toString() => '$user@$host:$port';
+}
+
+/// Small local machine descriptor for Deckhand-managed printers.
+///
+/// This is deliberately primitive and UI-agnostic so a future
+/// Printdeck Machines adapter can project its richer machine rows into
+/// this same shape. No credentials are stored here.
+class ManagedPrinter {
+  const ManagedPrinter({
+    required this.id,
+    required this.profileId,
+    required this.displayName,
+    required this.host,
+    required this.port,
+    required this.user,
+    this.machineKind = 'fdm_printer',
+    this.connectionMode = 'ssh_moonraker',
+    this.lastSeen,
+    this.labels = const {},
+  });
+
+  factory ManagedPrinter.fromConnection({
+    required String profileId,
+    required String displayName,
+    required String host,
+    required int port,
+    required String user,
+    DateTime? lastSeen,
+    Map<String, String> labels = const {},
+  }) {
+    final cleanProfile = profileId.trim();
+    final cleanHost = host.trim();
+    final cleanUser = user.trim();
+    return ManagedPrinter(
+      id:
+          'local:${cleanProfile.toLowerCase()}:'
+          '${cleanUser.toLowerCase()}@${cleanHost.toLowerCase()}:$port',
+      profileId: cleanProfile,
+      displayName: displayName.trim().isEmpty
+          ? cleanProfile
+          : displayName.trim(),
+      host: cleanHost,
+      port: port,
+      user: cleanUser,
+      lastSeen: lastSeen ?? DateTime.now(),
+      labels: labels,
+    );
+  }
+
+  factory ManagedPrinter.fromJson(Map<String, dynamic> json) {
+    final id = _requiredString(json, 'id');
+    final profileId = _requiredString(json, 'profile_id');
+    final displayName = _requiredString(json, 'display_name');
+    final host = _requiredString(json, 'host');
+    final user = _requiredString(json, 'user');
+    final portRaw = json['port'];
+    final port = portRaw is num ? portRaw.toInt() : 22;
+    if (port < 1 || port > 65535) {
+      throw const FormatException('invalid managed printer port');
+    }
+    final lastSeenRaw = json['last_seen'];
+    DateTime? lastSeen;
+    if (lastSeenRaw is String && lastSeenRaw.trim().isNotEmpty) {
+      lastSeen = DateTime.parse(lastSeenRaw);
+    }
+    final labelsRaw = json['labels'];
+    final labels = <String, String>{};
+    if (labelsRaw is Map) {
+      labelsRaw.forEach((key, value) {
+        if (value is String) labels[key.toString()] = value;
+      });
+    }
+    return ManagedPrinter(
+      id: id,
+      profileId: profileId,
+      displayName: displayName,
+      host: host,
+      port: port,
+      user: user,
+      machineKind: (json['machine_kind'] as String?)?.trim().isNotEmpty == true
+          ? (json['machine_kind'] as String).trim()
+          : 'fdm_printer',
+      connectionMode:
+          (json['connection_mode'] as String?)?.trim().isNotEmpty == true
+          ? (json['connection_mode'] as String).trim()
+          : 'ssh_moonraker',
+      lastSeen: lastSeen,
+      labels: labels,
+    );
+  }
+
+  final String id;
+  final String profileId;
+  final String displayName;
+  final String host;
+  final int port;
+  final String user;
+  final String machineKind;
+  final String connectionMode;
+  final DateTime? lastSeen;
+  final Map<String, String> labels;
+
+  Map<String, dynamic> toJson() => <String, dynamic>{
+    'id': id,
+    'profile_id': profileId,
+    'display_name': displayName,
+    'host': host,
+    'port': port,
+    'user': user,
+    'machine_kind': machineKind,
+    'connection_mode': connectionMode,
+    if (lastSeen != null) 'last_seen': lastSeen!.toIso8601String(),
+    if (labels.isNotEmpty) 'labels': labels,
+  };
+}
+
+String _requiredString(Map<String, dynamic> json, String key) {
+  final value = json[key];
+  if (value is String && value.trim().isNotEmpty) return value.trim();
+  throw FormatException('missing managed printer field "$key"');
 }

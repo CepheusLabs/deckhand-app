@@ -1,0 +1,123 @@
+import 'package:deckhand_core/deckhand_core.dart';
+import 'package:flutter_test/flutter_test.dart';
+
+void main() {
+  group('ManagedPrinter', () {
+    test('round trips through settings json', () {
+      final settings = DeckhandSettings(path: '<memory>');
+      settings.recordManagedPrinter(
+        ManagedPrinter(
+          id: 'local:phrozen-arco:mks@192.168.1.50:22',
+          profileId: 'phrozen-arco',
+          displayName: 'Phrozen Arco',
+          host: '192.168.1.50',
+          port: 22,
+          user: 'mks',
+          machineKind: 'fdm_printer',
+          connectionMode: 'ssh_moonraker',
+          lastSeen: DateTime.utc(2026, 5, 4, 12),
+        ),
+      );
+
+      final entries = settings.managedPrinters;
+
+      expect(entries, hasLength(1));
+      expect(entries.single.id, 'local:phrozen-arco:mks@192.168.1.50:22');
+      expect(entries.single.profileId, 'phrozen-arco');
+      expect(entries.single.displayName, 'Phrozen Arco');
+      expect(entries.single.host, '192.168.1.50');
+      expect(entries.single.port, 22);
+      expect(entries.single.user, 'mks');
+      expect(entries.single.machineKind, 'fdm_printer');
+      expect(entries.single.connectionMode, 'ssh_moonraker');
+      expect(entries.single.lastSeen, DateTime.utc(2026, 5, 4, 12));
+    });
+
+    test('dedupes by id and keeps most recent first', () {
+      final settings = DeckhandSettings(path: '<memory>');
+      settings.recordManagedPrinter(
+        ManagedPrinter.fromConnection(
+          profileId: 'sovol-zero',
+          displayName: 'Sovol Zero',
+          host: '192.168.1.41',
+          port: 22,
+          user: 'root',
+          lastSeen: DateTime.utc(2026, 5, 4, 11),
+        ),
+      );
+      settings.recordManagedPrinter(
+        ManagedPrinter.fromConnection(
+          profileId: 'phrozen-arco',
+          displayName: 'Phrozen Arco',
+          host: '192.168.1.50',
+          port: 22,
+          user: 'mks',
+          lastSeen: DateTime.utc(2026, 5, 4, 12),
+        ),
+      );
+      settings.recordManagedPrinter(
+        ManagedPrinter.fromConnection(
+          profileId: 'sovol-zero',
+          displayName: 'Sovol Zero',
+          host: '192.168.1.41',
+          port: 22,
+          user: 'root',
+          lastSeen: DateTime.utc(2026, 5, 4, 13),
+        ),
+      );
+
+      final entries = settings.managedPrinters;
+
+      expect(entries.map((e) => e.profileId), ['sovol-zero', 'phrozen-arco']);
+      expect(entries.first.lastSeen, DateTime.utc(2026, 5, 4, 13));
+    });
+
+    test('skips malformed persisted rows', () {
+      final settings = DeckhandSettings(
+        path: '<memory>',
+        initial: {
+          'managed_printers': [
+            {'host': '192.168.1.50'},
+            ManagedPrinter.fromConnection(
+              profileId: 'phrozen-arco',
+              displayName: 'Phrozen Arco',
+              host: '192.168.1.50',
+              port: 22,
+              user: 'mks',
+            ).toJson(),
+          ],
+        },
+      );
+
+      expect(settings.managedPrinters, hasLength(1));
+      expect(settings.managedPrinters.single.profileId, 'phrozen-arco');
+    });
+
+    test('records a connected printer as saved host and managed printer', () {
+      final settings = DeckhandSettings(path: '<memory>');
+
+      settings.recordConnectedPrinter(
+        profileId: 'phrozen-arco',
+        profileDisplayName: 'Phrozen Arco',
+        host: '192.168.1.50',
+        port: 22,
+        sessionUser: 'mks',
+        preferredUser: 'root',
+        now: DateTime.utc(2026, 5, 4, 12),
+      );
+
+      expect(settings.savedHosts, hasLength(1));
+      expect(settings.savedHosts.single.host, '192.168.1.50');
+      expect(settings.savedHosts.single.user, 'mks');
+      expect(settings.managedPrinters, hasLength(1));
+      expect(settings.managedPrinters.single.profileId, 'phrozen-arco');
+      expect(settings.managedPrinters.single.displayName, 'Phrozen Arco');
+      expect(settings.managedPrinters.single.host, '192.168.1.50');
+      expect(settings.managedPrinters.single.user, 'mks');
+      expect(
+        settings.managedPrinters.single.lastSeen,
+        DateTime.utc(2026, 5, 4, 12),
+      );
+    });
+  });
+}

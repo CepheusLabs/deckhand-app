@@ -94,5 +94,51 @@ void main() {
       expect(find.widgetWithText(OutlinedButton, 'Manage'), findsOneWidget);
       expect(find.widgetWithText(TextButton, 'Discard'), findsOneWidget);
     });
+
+    testWidgets('known printers can open manage without a resume session', (
+      tester,
+    ) async {
+      await tester.binding.setSurfaceSize(const Size(1200, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      final controller = stubWizardController(profileJson: testProfileJson());
+      await controller.loadProfile('test-printer');
+      final settings = DeckhandSettings(path: '<memory>');
+      settings.recordManagedPrinter(
+        ManagedPrinter.fromConnection(
+          profileId: 'test-printer',
+          displayName: 'Test Printer',
+          host: '192.168.1.50',
+          port: 22,
+          user: 'root',
+          lastSeen: DateTime.utc(2026, 5, 4, 12),
+        ),
+      );
+
+      await tester.pumpWidget(
+        testHarness(
+          controller: controller,
+          child: const WelcomeScreen(),
+          initialLocation: '/',
+          extraOverrides: [
+            deckhandSettingsProvider.overrideWithValue(settings),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('PRINTERS'), findsOneWidget);
+      expect(find.text('Manage known printers.'), findsOneWidget);
+      expect(find.text('Test Printer'), findsOneWidget);
+      expect(find.textContaining('192.168.1.50'), findsOneWidget);
+
+      await tester.tap(find.widgetWithText(OutlinedButton, 'Manage').first);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+
+      expect(controller.state.profileId, 'test-printer');
+      expect(controller.state.sshHost, '192.168.1.50');
+      expect(controller.profile?.displayName, 'Test Printer');
+    });
   });
 }

@@ -51,6 +51,8 @@ class WelcomeScreen extends ConsumerWidget {
             onStart: () => context.go('/pick-printer'),
           ),
           const SizedBox(height: 16),
+          const _ManagedPrintersPanel(),
+          const SizedBox(height: 16),
           _MaintenancePanel(tokens: tokens),
           const SizedBox(height: 18),
           const PreflightStrip(),
@@ -298,6 +300,173 @@ class _ResumePanelState extends ConsumerState<_ResumePanel> {
                   )
                 : const Icon(Icons.arrow_forward, size: 14),
             label: Text(_busyAction == 'resume' ? 'Resuming…' : 'Resume'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ManagedPrintersPanel extends ConsumerStatefulWidget {
+  const _ManagedPrintersPanel();
+
+  @override
+  ConsumerState<_ManagedPrintersPanel> createState() =>
+      _ManagedPrintersPanelState();
+}
+
+class _ManagedPrintersPanelState extends ConsumerState<_ManagedPrintersPanel> {
+  String? _busyId;
+
+  Future<void> _manage(ManagedPrinter printer) async {
+    if (_busyId != null) return;
+    setState(() => _busyId = printer.id);
+    try {
+      await ref
+          .read(wizardControllerProvider)
+          .restore(
+            WizardState(
+              profileId: printer.profileId,
+              decisions: const {},
+              currentStep: 'manage',
+              flow: WizardFlow.none,
+              sshHost: printer.host,
+            ),
+          );
+      if (!mounted) return;
+      context.go('/manage');
+    } on ResumeFailedException catch (e) {
+      if (!mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          icon: const Icon(Icons.error_outline),
+          title: const Text("Couldn't open this printer"),
+          content: Text(
+            'Deckhand found "${printer.displayName}", but the profile '
+            '"${printer.profileId}" could not be loaded:\n\n${e.cause}',
+          ),
+          actions: [
+            FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _busyId = null);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = DeckhandTokens.of(context);
+    final printers = ref.watch(deckhandSettingsProvider).managedPrinters;
+    return _PanelShell(
+      tokens: tokens,
+      eyebrow: 'PRINTERS',
+      headline: 'Manage known printers.',
+      body: printers.isEmpty
+          ? 'Printers appear here after Deckhand connects to them once.'
+          : 'Open a printer directly for status, tuning, backup, restore, '
+                'or maintenance work.',
+      extra: printers.isEmpty
+          ? null
+          : Column(
+              children: [
+                for (var i = 0; i < printers.length && i < 4; i++)
+                  _ManagedPrinterRow(
+                    printer: printers[i],
+                    busy: _busyId == printers[i].id,
+                    onManage: () => _manage(printers[i]),
+                  ),
+              ],
+            ),
+      action: printers.isEmpty
+          ? OutlinedButton.icon(
+              onPressed: () => context.go('/pick-printer'),
+              icon: const Icon(Icons.add, size: 14),
+              label: const Text('Add a printer'),
+            )
+          : OutlinedButton.icon(
+              onPressed: () => context.go('/pick-printer'),
+              icon: const Icon(Icons.add, size: 14),
+              label: const Text('Add another printer'),
+            ),
+    );
+  }
+}
+
+class _ManagedPrinterRow extends StatelessWidget {
+  const _ManagedPrinterRow({
+    required this.printer,
+    required this.busy,
+    required this.onManage,
+  });
+
+  final ManagedPrinter printer;
+  final bool busy;
+  final VoidCallback onManage;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = DeckhandTokens.of(context);
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: tokens.ink2,
+        border: Border.all(color: tokens.line),
+        borderRadius: BorderRadius.circular(DeckhandTokens.r2),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            Icons.precision_manufacturing_outlined,
+            size: 16,
+            color: tokens.text3,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  printer.displayName,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontFamily: DeckhandTokens.fontSans,
+                    fontSize: DeckhandTokens.tSm,
+                    fontWeight: FontWeight.w600,
+                    color: tokens.text,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '${printer.user}@${printer.host}:${printer.port} · '
+                  '${printer.profileId}',
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontFamily: DeckhandTokens.fontMono,
+                    fontSize: DeckhandTokens.tXs,
+                    color: tokens.text3,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          OutlinedButton.icon(
+            onPressed: busy ? null : onManage,
+            icon: busy
+                ? const SizedBox(
+                    width: 12,
+                    height: 12,
+                    child: DeckhandSpinner(size: 12, strokeWidth: 1.5),
+                  )
+                : const Icon(Icons.tune, size: 14),
+            label: Text(busy ? 'Opening...' : 'Manage'),
           ),
         ],
       ),
