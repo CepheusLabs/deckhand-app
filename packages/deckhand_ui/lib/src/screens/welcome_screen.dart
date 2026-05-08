@@ -359,6 +359,19 @@ class _ManagedPrintersPanelState extends ConsumerState<_ManagedPrintersPanel> {
     }
   }
 
+  Future<void> _forget(ManagedPrinter printer) async {
+    if (_busyId == printer.id) return;
+    final settings = ref.read(deckhandSettingsProvider);
+    settings.forgetManagedPrinter(printer.id);
+    setState(() {});
+    try {
+      await settings.save();
+    } catch (_) {
+      // The registry is still updated in memory; a later settings
+      // write can persist it if the file is temporarily unavailable.
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final tokens = DeckhandTokens.of(context);
@@ -380,6 +393,7 @@ class _ManagedPrintersPanelState extends ConsumerState<_ManagedPrintersPanel> {
                     printer: printers[i],
                     busy: _busyId == printers[i].id,
                     onManage: () => _manage(printers[i]),
+                    onForget: () => _forget(printers[i]),
                   ),
               ],
             ),
@@ -403,11 +417,13 @@ class _ManagedPrinterRow extends StatelessWidget {
     required this.printer,
     required this.busy,
     required this.onManage,
+    required this.onForget,
   });
 
   final ManagedPrinter printer;
   final bool busy;
   final VoidCallback onManage;
+  final VoidCallback onForget;
 
   @override
   Widget build(BuildContext context) {
@@ -457,6 +473,15 @@ class _ManagedPrinterRow extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 12),
+          Tooltip(
+            message: 'Forget printer',
+            child: IconButton(
+              onPressed: busy ? null : onForget,
+              icon: const Icon(Icons.close, size: 16),
+              visualDensity: VisualDensity.compact,
+            ),
+          ),
+          const SizedBox(width: 4),
           OutlinedButton.icon(
             onPressed: busy ? null : onManage,
             icon: busy

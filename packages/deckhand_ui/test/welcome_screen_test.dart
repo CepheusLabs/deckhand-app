@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:deckhand_core/deckhand_core.dart';
 import 'package:deckhand_ui/src/providers.dart';
 import 'package:deckhand_ui/src/screens/welcome_screen.dart';
@@ -103,7 +105,9 @@ void main() {
 
       final controller = stubWizardController(profileJson: testProfileJson());
       await controller.loadProfile('test-printer');
-      final settings = DeckhandSettings(path: '<memory>');
+      final temp = Directory.systemTemp.createTempSync('deckhand-settings-');
+      addTearDown(() => temp.deleteSync(recursive: true));
+      final settings = DeckhandSettings(path: '${temp.path}/settings.json');
       settings.recordManagedPrinter(
         ManagedPrinter.fromConnection(
           profileId: 'test-printer',
@@ -139,6 +143,53 @@ void main() {
       expect(controller.state.profileId, 'test-printer');
       expect(controller.state.sshHost, '192.168.1.50');
       expect(controller.profile?.displayName, 'Test Printer');
+    });
+
+    testWidgets('known printers can be forgotten from the welcome screen', (
+      tester,
+    ) async {
+      await tester.binding.setSurfaceSize(const Size(1200, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      final controller = stubWizardController(profileJson: testProfileJson());
+      await controller.loadProfile('test-printer');
+      final temp = Directory.systemTemp.createTempSync('deckhand-settings-');
+      addTearDown(() => temp.deleteSync(recursive: true));
+      final settings = DeckhandSettings(path: '${temp.path}/settings.json');
+      settings.recordManagedPrinter(
+        ManagedPrinter.fromConnection(
+          profileId: 'test-printer',
+          displayName: 'Test Printer',
+          host: '192.168.1.50',
+          port: 22,
+          user: 'root',
+          lastSeen: DateTime.utc(2026, 5, 4, 12),
+        ),
+      );
+
+      await tester.pumpWidget(
+        testHarness(
+          controller: controller,
+          child: const WelcomeScreen(),
+          initialLocation: '/',
+          extraOverrides: [
+            deckhandSettingsProvider.overrideWithValue(settings),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Test Printer'), findsOneWidget);
+
+      await tester.tap(find.byTooltip('Forget printer'));
+      await tester.pump();
+
+      expect(settings.managedPrinters, isEmpty);
+      expect(find.text('Test Printer'), findsNothing);
+      expect(
+        find.text('Printers appear here after Deckhand connects to them once.'),
+        findsOneWidget,
+      );
     });
   });
 }
