@@ -264,54 +264,9 @@ Future<void> _runFlashMcusImpl(
   WizardController c,
   Map<String, dynamic> step,
 ) async {
-  c._requireSession();
-  final which = ((step['which'] as List?) ?? const []).cast<String>();
-  final fw = c._selectedFirmware();
-  if (fw == null) throw StepExecutionException('no firmware selected');
-  final install = fw.installPath ?? '~/klipper';
-  c._validateRemoteInstallPath(install, 'firmware install path');
-  if (which.isNotEmpty) {
-    throw StepExecutionException(
-      'mcu flashing is not implemented by Deckhand yet',
-    );
-  }
-  for (final id in which) {
-    final mcu = c._profile!.mcus.firstWhere(
-      (m) => m.id == id,
-      orElse: () => throw StepExecutionException('unknown mcu $id'),
-    );
-    final raw = mcu.raw;
-    final configLines = c._mcuConfig(raw);
-    final writeConf =
-        'cd ${shellPathEscape(install)} && cat > .config <<"MCUCONF"\n$configLines\nMCUCONF\n'
-        'make olddefconfig >/dev/null && make clean >/dev/null && make -j1';
-    final build = await c._runSsh(
-      writeConf,
-      timeout: const Duration(minutes: 20),
-    );
-    if (!build.success) {
-      throw StepExecutionException(
-        'mcu $id build failed',
-        stderr: build.stderr,
-      );
-    }
-    c._log(step, '[mcu] built $id');
-
-    final transport = (raw['transport'] as Map?)?.cast<String, dynamic>() ?? {};
-    if (transport['requires_physical_access'] == true) {
-      await c._awaitUserInput('${mcu.id}_physical_prompt', {
-        'id': '${mcu.id}_physical_prompt',
-        'kind': 'prompt',
-        'message':
-            transport['physical_access_notes'] as String? ??
-            'Put the MCU into bootloader mode.',
-      });
-    }
-    c._log(
-      step,
-      '[mcu] $id flash pending - refer to profile firmware/flash-$id.sh',
-    );
-  }
+  throw StepExecutionException(
+    'mcu flashing is not implemented by Deckhand yet',
+  );
 }
 
 Future<void> _runOsDownloadImpl(

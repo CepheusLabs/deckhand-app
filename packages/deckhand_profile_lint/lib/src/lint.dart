@@ -499,15 +499,13 @@ void _walkUnsupportedRuntimeFeatures(
     for (var i = 0; i < steps.length; i++) {
       final step = steps[i];
       if (step is! Map || step['kind'] != 'flash_mcus') continue;
-      final which = step['which'];
-      if (which is! List || which.isEmpty) continue;
       out.add(
         LintFinding(
           LintSeverity.error,
-          'flows.$flowName.steps[$i].which',
-          'flash_mcus with explicit MCU targets is not supported by '
-              'Deckhand yet; keep this out of tagged profiles until the '
-              'MCU flash transport contract exists',
+          'flows.$flowName.steps[$i]',
+          'flash_mcus is not supported by Deckhand yet; keep this out '
+              'of tagged profiles until the MCU flash transport contract '
+              'exists',
         ),
       );
     }

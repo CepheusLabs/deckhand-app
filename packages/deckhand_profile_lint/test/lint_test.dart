@@ -223,6 +223,27 @@ void main() {
           .join('\n');
       expect(messages, contains('flash_mcus'));
     });
+
+    test('flags flash_mcus steps without explicit targets', () async {
+      _writeRegistry(tmp, ['mcu-flash-empty']);
+      final profile =
+          '${_minimalValidProfile('mcu-flash-empty')}'
+          '\nflows:\n'
+          '  stock_keep:\n'
+          '    enabled: true\n'
+          '    steps:\n'
+          '      - id: flash_mcus\n'
+          '        kind: flash_mcus\n'
+          '        safe_to_rerun: true\n';
+      _writeProfile(tmp, 'mcu-flash-empty', profile);
+      final report = await runProfileLint(['--root', tmp.path]);
+
+      expect(report.hasErrors, isTrue);
+      final messages = report.results
+          .expand((r) => r.findings.map((f) => f.message))
+          .join('\n');
+      expect(messages, contains('flash_mcus'));
+    });
   });
 
   test('flags folder/profile_id mismatch', () async {

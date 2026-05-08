@@ -2269,6 +2269,38 @@ void main() {
         throwsA(isA<StepExecutionException>()),
       );
     });
+
+    test('flash_mcus without targets still fails loudly', () async {
+      final controller = newController(
+        profileJson: {
+          ...baseProfileJson(
+            stockKeepSteps: [
+              {'id': 'mcus', 'kind': 'flash_mcus'},
+            ],
+          ),
+          'firmware': {
+            'choices': [
+              {
+                'id': 'klipper',
+                'repo': 'https://github.com/Klipper3d/klipper',
+                'ref': 'main',
+              },
+            ],
+          },
+        },
+      );
+      await controller.loadProfile('test-printer');
+      controller.setFlow(WizardFlow.stockKeep);
+      await controller.setDecision('firmware', 'klipper');
+      controller.setSession(
+        const SshSession(id: 'fake', host: 'h', port: 22, user: 'root'),
+      );
+
+      await expectLater(
+        controller.startExecution(),
+        throwsA(isA<StepExecutionException>()),
+      );
+    });
   });
 }
 

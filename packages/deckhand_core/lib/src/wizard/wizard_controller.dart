@@ -759,7 +759,6 @@ class WizardController {
   String _resolveProfilePath(String ref) => _resolveProfilePathImpl(this, ref);
   Future<void> _uploadDir(String localDir, String remote) =>
       _uploadDirImpl(this, localDir, remote);
-  String _mcuConfig(Map<String, dynamic> mcu) => _mcuConfigImpl(mcu);
   bool _isDangerousPath(String path) => _isDangerousPathImpl(path);
   String _shellQuote(String s) => shellSingleQuote(s);
   String _randomSuffix() => _randomSuffixImpl();

@@ -122,32 +122,6 @@ Future<void> _uploadDirImpl(
   }
 }
 
-String _mcuConfigImpl(Map<String, dynamic> mcu) {
-  final chip = mcu['chip'] as String? ?? '';
-  final clock = mcu['clock_hz'] as num? ?? 0;
-  final clockRef = mcu['clock_ref_hz'] as num? ?? 0;
-  final flashOffset = mcu['application_offset'] as String? ?? '';
-  final transport = (mcu['transport'] as Map?)?.cast<String, dynamic>() ?? {};
-  final selectKey = transport['select'] as String? ?? '';
-  final baud = transport['baud'] as num?;
-  final safeToken = RegExp(r'^[A-Za-z0-9_+.-]*$');
-  if (!safeToken.hasMatch(chip) ||
-      !safeToken.hasMatch(flashOffset) ||
-      !safeToken.hasMatch(selectKey)) {
-    throw StepExecutionException('mcu config contains unsafe shell content');
-  }
-  final lines = [
-    'CONFIG_MACH_STM32=y',
-    'CONFIG_MCU="$chip"',
-    'CONFIG_CLOCK_FREQ=$clock',
-    'CONFIG_CLOCK_REF_FREQ=$clockRef',
-    if (flashOffset.isNotEmpty) 'CONFIG_FLASH_APPLICATION_ADDRESS=$flashOffset',
-    'CONFIG_${selectKey.toUpperCase()}=y',
-    if (baud != null) 'CONFIG_SERIAL_BAUD=$baud',
-  ];
-  return lines.join('\n');
-}
-
 bool _isDangerousPathImpl(String path) {
   final normalized = _normalizeProfileDeletePathImpl(path);
   if (normalized == null) return true;
