@@ -43,6 +43,10 @@ Usage:
                                [--helper PATH] [--timeout 60s]
                                Launch the elevated helper through the
                                write-image validation path without writing.
+  deckhand-sidecar restore-smoke --disk DISK_ID --image PATH --sha256 HEX
+                               [--helper PATH] [--timeout 60s]
+                               Launch the elevated helper through the
+                               restore validation path without writing.
   deckhand-sidecar backup-smoke --disk DISK_ID [--helper PATH]
                                [--output-root DIR] [--output PATH]
                                [--total-bytes N] [--timeout 45m]
@@ -128,6 +132,39 @@ func main() {
 			})
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "[deckhand-sidecar] flash-smoke: %v\n", err)
+				os.Exit(1)
+			}
+			if !passed {
+				os.Exit(1)
+			}
+			return
+		case "restore-smoke":
+			fs := flag.NewFlagSet("restore-smoke", flag.ExitOnError)
+			helperPath := fs.String("helper", "", "path to deckhand-elevated-helper; default is sibling of sidecar")
+			diskID := fs.String("disk", "", "disk id to validate, for example PhysicalDrive3")
+			imagePath := fs.String("image", "", "Deckhand eMMC backup .img path")
+			expectedSHA256 := fs.String("sha256", "", "required 64-hex sha256 of image")
+			timeoutRaw := fs.String("timeout", "60s", "maximum time to wait, for example 30s or 2m")
+			if err := fs.Parse(os.Args[2:]); err != nil {
+				fmt.Fprintf(os.Stderr, "[deckhand-sidecar] restore-smoke: %v\n", err)
+				os.Exit(2)
+			}
+			timeout, err := time.ParseDuration(*timeoutRaw)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "[deckhand-sidecar] restore-smoke: invalid --timeout %q: %v\n", *timeoutRaw, err)
+				os.Exit(2)
+			}
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			passed, err := doctor.RunRestoreSmoke(ctx, os.Stdout, doctor.RestoreSmokeOptions{
+				HelperPath:     *helperPath,
+				ImagePath:      *imagePath,
+				DiskID:         *diskID,
+				ExpectedSHA256: *expectedSHA256,
+				Timeout:        timeout,
+			})
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "[deckhand-sidecar] restore-smoke: %v\n", err)
 				os.Exit(1)
 			}
 			if !passed {

@@ -23,6 +23,25 @@ type FlashSmokeOptions struct {
 	Timeout        time.Duration
 }
 
+// RestoreSmokeOptions controls the safe restore launch probe.
+type RestoreSmokeOptions struct {
+	HelperPath     string
+	ImagePath      string
+	DiskID         string
+	ExpectedSHA256 string
+	Timeout        time.Duration
+}
+
+type writeImageSmokeOptions struct {
+	HelperPath     string
+	ImagePath      string
+	DiskID         string
+	ExpectedSHA256 string
+	Timeout        time.Duration
+	Kind           string
+	PassCheck      string
+}
+
 type flashSmokeInvocation struct {
 	EventsPath  string
 	ImagePath   string
@@ -48,6 +67,32 @@ type flashSmokeManifest struct {
 // elevation mechanism used for destructive writes, then runs the helper's
 // write-image validation path without opening or writing the target disk.
 func RunFlashSmoke(ctx context.Context, w io.Writer, opts FlashSmokeOptions) (bool, error) {
+	return runWriteImageSmoke(ctx, w, writeImageSmokeOptions{
+		HelperPath:     opts.HelperPath,
+		ImagePath:      opts.ImagePath,
+		DiskID:         opts.DiskID,
+		ExpectedSHA256: opts.ExpectedSHA256,
+		Timeout:        opts.Timeout,
+		Kind:           "flash",
+		PassCheck:      "flash_write_launch",
+	})
+}
+
+// RunRestoreSmoke exercises the same elevated write-image validation path
+// used by restore, but stops before opening or writing the raw target disk.
+func RunRestoreSmoke(ctx context.Context, w io.Writer, opts RestoreSmokeOptions) (bool, error) {
+	return runWriteImageSmoke(ctx, w, writeImageSmokeOptions{
+		HelperPath:     opts.HelperPath,
+		ImagePath:      opts.ImagePath,
+		DiskID:         opts.DiskID,
+		ExpectedSHA256: opts.ExpectedSHA256,
+		Timeout:        opts.Timeout,
+		Kind:           "restore",
+		PassCheck:      "restore_write_launch",
+	})
+}
+
+func runWriteImageSmoke(ctx context.Context, w io.Writer, opts writeImageSmokeOptions) (bool, error) {
 	if opts.Timeout <= 0 {
 		opts.Timeout = 60 * time.Second
 	}
@@ -130,7 +175,16 @@ func RunFlashSmoke(ctx context.Context, w io.Writer, opts FlashSmokeOptions) (bo
 	ctx, cancel := context.WithTimeout(ctx, opts.Timeout)
 	defer cancel()
 
-	fmt.Fprintf(w, "[INFO] flash_smoke_start - disk=%s image=%s\n", target, imagePath)
+	kind := strings.TrimSpace(opts.Kind)
+	if kind == "" {
+		kind = "write_image"
+	}
+	passCheck := strings.TrimSpace(opts.PassCheck)
+	if passCheck == "" {
+		passCheck = "write_image_launch"
+	}
+
+	fmt.Fprintf(w, "[INFO] %s_smoke_start - disk=%s image=%s\n", kind, target, imagePath)
 	exit, stderr, runErr := runHelperSmokeCommand(ctx, helper, args)
 	body, _ := os.ReadFile(eventsPath)
 	openErr, _ := os.ReadFile(eventsPath + ".openerr")
@@ -138,9 +192,9 @@ func RunFlashSmoke(ctx context.Context, w io.Writer, opts FlashSmokeOptions) (bo
 	passed := runErr == nil && exit == 0 && events.Started && events.Done != nil && events.Done.SHA256 == expected
 
 	if passed {
-		fmt.Fprintf(w, "[PASS] flash_write_launch - %s\n", target)
+		fmt.Fprintf(w, "[PASS] %s - %s\n", passCheck, target)
 	} else {
-		fmt.Fprintf(w, "[FAIL] flash_write_launch - %s\n", target)
+		fmt.Fprintf(w, "[FAIL] %s - %s\n", passCheck, target)
 	}
 	fmt.Fprintf(w, "helper=%s\n", helper)
 	fmt.Fprintf(w, "events_file=%s\n", eventsPath)
