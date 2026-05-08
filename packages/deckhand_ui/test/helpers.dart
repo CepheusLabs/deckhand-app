@@ -186,12 +186,13 @@ Map<String, dynamic> testProfileJson({
 /// widget tests to mount screens that read from the provider.
 WizardController stubWizardController({
   required Map<String, dynamic> profileJson,
+  SshService? ssh,
   UpstreamService? upstream,
   SecurityService? security,
 }) {
   return WizardController(
     profiles: _StubProfileService(PrinterProfile.fromJson(profileJson)),
-    ssh: _StubSsh(),
+    ssh: ssh ?? _StubSsh(),
     flash: _StubFlash(),
     discovery: _StubDiscovery(),
     moonraker: _StubMoonraker(),
@@ -199,6 +200,12 @@ WizardController stubWizardController({
     security: security ?? _StubSecurity(),
   );
 }
+
+SshService stubSsh({Object? connectError}) =>
+    _StubSsh(connectError: connectError);
+
+SecurityService stubSecurity({String? pinnedFingerprint}) =>
+    _StubSecurity(pinnedFingerprint: pinnedFingerprint);
 
 /// Standard provider overrides for widget tests so anything that reads
 /// from [wizardControllerProvider] or a service provider gets a stub.
@@ -270,6 +277,18 @@ class _StubProfileService implements ProfileService {
 }
 
 class _StubSsh implements SshService {
+  _StubSsh({this.connectError});
+
+  final Object? connectError;
+
+  Future<SshSession> _connectResult({required String host, required int port}) {
+    final error = connectError;
+    if (error != null) return Future<SshSession>.error(error);
+    return Future.value(
+      SshSession(id: 'stub', host: host, port: port, user: 'root'),
+    );
+  }
+
   @override
   Future<SshSession> connect({
     required String host,
@@ -277,7 +296,8 @@ class _StubSsh implements SshService {
     required SshCredential credential,
     bool acceptHostKey = false,
     String? acceptedHostFingerprint,
-  }) async => SshSession(id: 'stub', host: host, port: port, user: 'root');
+  }) => _connectResult(host: host, port: port);
+
   @override
   Future<SshSession> tryDefaults({
     required String host,
@@ -285,7 +305,7 @@ class _StubSsh implements SshService {
     required List<SshCredential> credentials,
     bool acceptHostKey = false,
     String? acceptedHostFingerprint,
-  }) async => SshSession(id: 'stub', host: host, port: port, user: 'root');
+  }) => _connectResult(host: host, port: port);
   @override
   Future<SshCommandResult> run(
     SshSession session,
@@ -425,6 +445,10 @@ class _StubUpstream implements UpstreamService {
 }
 
 class _StubSecurity implements SecurityService {
+  _StubSecurity({this.pinnedFingerprint});
+
+  final String? pinnedFingerprint;
+
   @override
   Future<ConfirmationToken> issueConfirmationToken({
     required String operation,
@@ -453,11 +477,16 @@ class _StubSecurity implements SecurityService {
     required String fingerprint,
   }) async {}
   @override
-  Future<String?> pinnedHostFingerprint(String host) async => null;
+  Future<String?> pinnedHostFingerprint(String host) async => pinnedFingerprint;
   @override
   Future<void> forgetHostFingerprint(String host) async {}
   @override
-  Future<Map<String, String>> listPinnedFingerprints() async => const {};
+  Future<Map<String, String>> listPinnedFingerprints() async {
+    final fingerprint = pinnedFingerprint;
+    if (fingerprint == null) return const {};
+    return {'192.168.1.50': fingerprint};
+  }
+
   @override
   Future<List<String>> listApprovedHosts() async => const [];
   @override

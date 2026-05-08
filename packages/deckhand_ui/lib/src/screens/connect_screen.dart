@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ffi' as ffi;
 import 'dart:io';
 
 import 'package:deckhand_core/deckhand_core.dart';
@@ -8,8 +9,10 @@ import 'package:go_router/go_router.dart';
 
 import '../i18n/translations.g.dart';
 import '../providers.dart';
+import '../screens/debug_bundle_screen.dart';
 import '../theming/deckhand_tokens.dart';
 import '../widgets/deckhand_loading.dart';
+import '../widgets/save_debug_bundle.dart';
 import '../widgets/status_pill.dart';
 import '../widgets/wizard_scaffold.dart';
 
@@ -430,12 +433,71 @@ class _ConnectScreenState extends ConsumerState<ConnectScreen> {
             expectedFingerprint: expectedFingerprint,
             receivedFingerprint: receivedFingerprint,
             onBack: () => Navigator.of(ctx).pop(false),
+            onSaveDebugBundle: () => _openMitmDebugBundleReview(
+              host: host,
+              expectedFingerprint: expectedFingerprint,
+              receivedFingerprint: receivedFingerprint,
+            ),
             onClearAndRetry: () => Navigator.of(ctx).pop(true),
           ),
         ),
       ),
     );
   }
+
+  Future<void> _openMitmDebugBundleReview({
+    required String host,
+    required String? expectedFingerprint,
+    required String receivedFingerprint,
+  }) {
+    final sessionLog = _mitmDebugLog(
+      host: host,
+      expectedFingerprint: expectedFingerprint,
+      receivedFingerprint: receivedFingerprint,
+    );
+    final rootNavigator = Navigator.of(context, rootNavigator: true);
+    return rootNavigator.push<void>(
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (reviewContext) => DebugBundleScreen(
+          sessionLog: sessionLog,
+          onCancel: () => Navigator.of(reviewContext).pop(),
+          onSave: (redactedLog) {
+            unawaited(() async {
+              final result = await saveDebugBundle(
+                context: reviewContext,
+                ref: ref,
+                redactedLog: redactedLog,
+                host: _hostInfoSnapshot(),
+                extraTextFiles: {'host_key_mismatch.txt': sessionLog},
+              );
+              if (result != null && reviewContext.mounted) {
+                Navigator.of(reviewContext).pop();
+              }
+            }());
+          },
+        ),
+      ),
+    );
+  }
+
+  String _mitmDebugLog({
+    required String host,
+    required String? expectedFingerprint,
+    required String receivedFingerprint,
+  }) => [
+    'Host key mismatch',
+    'Host: $host',
+    'Expected fingerprint: ${expectedFingerprint ?? '(not available)'}',
+    'Received fingerprint: $receivedFingerprint',
+  ].join('\n');
+
+  HostInfoSnapshot _hostInfoSnapshot() => HostInfoSnapshot(
+    os: '${Platform.operatingSystem} ${Platform.operatingSystemVersion}',
+    arch: ffi.Abi.current().toString(),
+    deckhandVersion: ref.read(deckhandVersionProvider),
+    dartVersion: Platform.version.split(' ').first,
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -1404,12 +1466,6 @@ class _SavedRow extends StatelessWidget {
 /// design's E-host-key-mismatch screen as a dialog body: bad-toned
 /// header, EXPECTED vs RECEIVED side-by-side hash diff, three
 /// distinct actions (Back / Save bundle / Clear & retry).
-///
-/// Save-bundle is wired as a placeholder snackbar — the real bundle
-/// builder lives in `widgets/save_debug_bundle.dart` but needs a
-/// session-log [RedactedDocument] which the MITM path doesn't
-/// produce on its own. Filing the action surface now means a future
-/// pass can wire the actual bundle without touching the dialog.
 class _MitmDangerCard extends StatelessWidget {
   const _MitmDangerCard({
     required this.tokens,
@@ -1417,6 +1473,7 @@ class _MitmDangerCard extends StatelessWidget {
     required this.expectedFingerprint,
     required this.receivedFingerprint,
     required this.onBack,
+    required this.onSaveDebugBundle,
     required this.onClearAndRetry,
   });
 
@@ -1425,6 +1482,7 @@ class _MitmDangerCard extends StatelessWidget {
   final String? expectedFingerprint;
   final String receivedFingerprint;
   final VoidCallback onBack;
+  final VoidCallback onSaveDebugBundle;
   final VoidCallback onClearAndRetry;
 
   @override
@@ -1512,30 +1570,22 @@ class _MitmDangerCard extends StatelessWidget {
           // Clear & retry (destructive, primary). Order mirrors the
           // mockup: cancel-style actions left, destructive on the
           // right with a Spacer separating them.
-          Row(
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            alignment: WrapAlignment.spaceBetween,
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
               TextButton.icon(
                 icon: const Icon(Icons.arrow_back, size: 14),
                 label: const Text('Back'),
                 onPressed: onBack,
               ),
-              const SizedBox(width: 4),
               TextButton.icon(
                 icon: const Icon(Icons.archive_outlined, size: 14),
                 label: const Text('Save debug bundle'),
-                onPressed: () {
-                  ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-                    const SnackBar(
-                      content: Text(
-                        'Open the wizard\'s Debug Bundle screen to save '
-                        'a bundle including this MITM event.',
-                      ),
-                      duration: Duration(seconds: 3),
-                    ),
-                  );
-                },
+                onPressed: onSaveDebugBundle,
               ),
-              const Spacer(),
               FilledButton.icon(
                 style: FilledButton.styleFrom(
                   backgroundColor: tokens.bad,
