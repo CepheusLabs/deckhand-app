@@ -1,10 +1,14 @@
 import 'dart:async';
 
 import 'package:deckhand_core/deckhand_core.dart';
+import 'package:deckhand_ui/src/providers.dart';
 import 'package:deckhand_ui/src/screens/progress_screen.dart';
+import 'package:deckhand_ui/src/theming/deckhand_theme.dart';
 import 'package:deckhand_ui/src/widgets/wizard_progress_bar.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 
 import 'helpers.dart';
 
@@ -46,6 +50,28 @@ void main() {
       // After execution completes, the title is "All done".
       expect(find.text('All done'), findsOneWidget);
     });
+
+    testWidgets(
+      'fresh flash without an SSH host routes to the first-boot handoff',
+      (tester) async {
+        final controller = stubWizardController(
+          profileJson: testProfileJson(
+            freshFlashSteps: [
+              {'id': 'wait_for_ssh', 'kind': 'wait_for_ssh'},
+            ],
+          ),
+        );
+        await controller.loadProfile('test-printer');
+        controller.setFlow(WizardFlow.freshFlash);
+
+        await tester.pumpWidget(_progressHandoffHarness(controller));
+        await tester.pumpAndSettle();
+
+        expect(find.text('FIRST BOOT HANDOFF'), findsOneWidget);
+        expect(find.text('Run stopped'), findsNothing);
+        expect(controller.state.currentStep, 'first-boot');
+      },
+    );
 
     testWidgets('prompt step shows an AlertDialog with profile message', (
       tester,
@@ -547,6 +573,32 @@ void main() {
       expect(ok.onPressed, isNull);
     });
   });
+}
+
+Widget _progressHandoffHarness(WizardController controller) {
+  final router = GoRouter(
+    initialLocation: '/progress',
+    routes: [
+      GoRoute(path: '/progress', builder: (_, _) => const ProgressScreen()),
+      GoRoute(
+        path: '/first-boot',
+        builder: (_, _) => const Scaffold(body: Text('FIRST BOOT HANDOFF')),
+      ),
+    ],
+  );
+  return ProviderScope(
+    overrides: [
+      ...overrideForController(controller),
+      deckhandSettingsProvider.overrideWithValue(
+        DeckhandSettings(path: '<memory>'),
+      ),
+    ],
+    child: MaterialApp.router(
+      routerConfig: router,
+      theme: DeckhandTheme.light(),
+      darkTheme: DeckhandTheme.dark(),
+    ),
+  );
 }
 
 class _HoldingProgressUpstream implements UpstreamService {
