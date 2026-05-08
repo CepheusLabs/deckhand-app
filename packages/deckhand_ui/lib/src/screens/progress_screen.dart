@@ -16,6 +16,51 @@ import '../widgets/progress_run_workspace.dart';
 import '../widgets/wizard_progress_bar.dart';
 import '../widgets/wizard_scaffold.dart';
 
+final _progressPhysicalDriveRe = RegExp(
+  r'(?:\\\\\.\\)?PHYSICALDRIVE(\d+)|PhysicalDrive(\d+)',
+  caseSensitive: false,
+);
+
+String progressRunErrorMessage(Object? error) {
+  var message = (error ?? 'Unknown error').toString().trim();
+  for (final prefix in const [
+    'StepExecutionException: ',
+    'ElevatedHelperException: ',
+  ]) {
+    if (message.startsWith(prefix)) {
+      message = message.substring(prefix.length).trim();
+    }
+  }
+  final lower = message.toLowerCase();
+  if (lower.contains('elevated helper never started')) {
+    return 'Windows did not start Deckhand\'s disk helper. Run Deckhand as Administrator or re-enable UAC prompts, then try again. Check antivirus quarantine if it still fails.';
+  }
+  if (lower.contains('lock volume') && lower.contains('access is denied')) {
+    return 'Windows would not release the selected disk. Close File Explorer, Disk Management, terminals, and any app using that USB drive, then unplug/replug the adapter and retry.';
+  }
+  if (lower.contains('parameter is incorrect') &&
+      lower.contains('physicaldrive')) {
+    final disk = _friendlyProgressDisk(message) ?? 'the selected disk';
+    return 'Windows rejected the raw disk write to $disk. Replug the USB adapter and retry; if it repeats, use a different eMMC reader or adapter.';
+  }
+  return _hideRawProgressDiskIds(message);
+}
+
+String? _friendlyProgressDisk(String message) {
+  final match = _progressPhysicalDriveRe.firstMatch(message);
+  if (match == null) return null;
+  final number = match.group(1) ?? match.group(2);
+  if (number == null) return null;
+  return 'Windows disk $number';
+}
+
+String _hideRawProgressDiskIds(String message) {
+  return message.replaceAllMapped(_progressPhysicalDriveRe, (match) {
+    final number = match.group(1) ?? match.group(2) ?? '';
+    return 'Windows disk $number';
+  });
+}
+
 class ProgressScreen extends ConsumerStatefulWidget {
   const ProgressScreen({super.key});
 
@@ -127,7 +172,7 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> {
         _failed = true;
         _cancelled = false;
         _cancelRequested = false;
-        _error = '$e';
+        _error = progressRunErrorMessage(e);
         _currentStepKind = null;
         _currentStepId = null;
         _currentProgressIndeterminate = false;

@@ -288,6 +288,39 @@ void main() {
       expect(find.text('All done'), findsOneWidget);
     });
 
+    test('progressRunErrorMessage explains Windows volume lock failures', () {
+      final message = progressRunErrorMessage(
+        r'StepExecutionException: prepare target: lock volume \\?\Volume{81442efe-49a7-11f1-bd05-4c23380248b8}\ after dismounting busy filesystem: Access is denied.',
+      );
+
+      expect(message, contains('Windows would not release the selected disk'));
+      expect(message, contains('Close File Explorer'));
+      expect(message, isNot(contains('StepExecutionException')));
+      expect(message, isNot(contains(r'\\?\Volume')));
+    });
+
+    test('progressRunErrorMessage explains helper launch failures', () {
+      final message = progressRunErrorMessage(
+        r'ElevatedHelperException: elevated helper never started. The UAC prompt may have been suppressed or the elevated process could not be launched.',
+      );
+
+      expect(
+        message,
+        contains('Windows did not start Deckhand\'s disk helper'),
+      );
+      expect(message, contains('Run Deckhand as Administrator'));
+      expect(message, isNot(contains('ElevatedHelperException')));
+    });
+
+    test('progressRunErrorMessage hides raw physical drive ids', () {
+      final message = progressRunErrorMessage(
+        r'StepExecutionException: write: write \\.\PHYSICALDRIVE3: The parameter is incorrect.',
+      );
+
+      expect(message, contains('Windows disk 3'));
+      expect(message, isNot(contains('PHYSICALDRIVE3')));
+    });
+
     testWidgets('running install can be canceled from progress screen', (
       tester,
     ) async {
