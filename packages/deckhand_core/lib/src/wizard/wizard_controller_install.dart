@@ -250,14 +250,25 @@ Future<void> _uploadLinkExtraFile(
   final installMode = _linkExtrasInstallMode(mode);
   final qTmp = shellSingleQuote(tmpRemote);
   final qRemote = shellPathEscape(remote);
-  final qBackup = shellPathEscape(_backupPathForRemote(c, remote));
-  final cmd =
-      'if [ -e $qRemote ] || [ -L $qRemote ]; then '
-      'cp -a -- $qRemote $qBackup; fi && '
-      'install -m $installMode -- $qTmp $qRemote && rm -f -- $qTmp';
-  final res = await c._runSsh(cmd);
-  if (!res.success) {
-    throw StepExecutionException('remote install failed', stderr: res.stderr);
+  final backup = method == 'copy_with_backup'
+      ? 'if [ -e $qRemote ] || [ -L $qRemote ]; then '
+            'cp -a -- $qRemote '
+            '${shellPathEscape(_backupPathForRemote(c, remote))}; fi && '
+      : '';
+  try {
+    final res = await c._runSsh(
+      '${backup}install -m $installMode -- $qTmp $qRemote && rm -f -- $qTmp',
+    );
+    if (!res.success) {
+      throw StepExecutionException('remote install failed', stderr: res.stderr);
+    }
+  } finally {
+    try {
+      await c._runSsh('rm -f -- $qTmp');
+    } catch (_) {
+      // Preserve the original install/backup failure. A leaked temp path
+      // is less actionable than hiding why the install failed.
+    }
   }
 }
 

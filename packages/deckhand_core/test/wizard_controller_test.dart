@@ -2058,6 +2058,101 @@ void main() {
         containsAll(<String>['printer.cfg', 'moonraker.conf']),
       );
     });
+
+    test('copy_with_mode_0755 does not create backups', () async {
+      final ssh = FakeSsh();
+      final tmp = await Directory.systemTemp.createTemp('linkx-mode-test');
+      addTearDown(() async => tmp.delete(recursive: true));
+      await File(p.join(tmp.path, 'helper.sh')).writeAsString('#!/bin/sh\n');
+
+      final controller = WizardController(
+        profiles: _PinnedLocationProfileService(
+          baseProfileJson(
+            stockKeepSteps: [
+              {
+                'id': 'install_helper',
+                'kind': 'link_extras',
+                'target_dir': '~/bin/',
+                'method': 'copy_with_mode_0755',
+                'sources': ['./helper.sh'],
+              },
+            ],
+          ),
+          profileDirPath: tmp.path,
+        ),
+        ssh: ssh,
+        flash: _StubFlashService(),
+        discovery: _StubDiscoveryService(),
+        moonraker: _StubMoonrakerService(),
+        upstream: FakeUpstream(),
+        security: FakeSecurity(),
+      );
+      await controller.loadProfile('test-printer');
+      controller.setFlow(WizardFlow.stockKeep);
+      controller.setSession(
+        const SshSession(id: 'fake', host: 'h', port: 22, user: 'root'),
+      );
+
+      await controller.startExecution();
+
+      expect(
+        ssh.runCalls.any(
+          (c) => c.contains('helper.sh') && c.contains('.deckhand-pre-'),
+        ),
+        isFalse,
+      );
+      expect(ssh.runCalls.any((c) => c.contains('install -m 0755')), isTrue);
+    });
+
+    test('cleans remote temp file after target_dir install failure', () async {
+      final ssh = FakeSsh()
+        ..responsesByContains['install -m'] = const SshCommandResult(
+          stdout: '',
+          stderr: 'install failed',
+          exitCode: 1,
+        );
+      final tmp = await Directory.systemTemp.createTemp('linkx-cleanup-test');
+      addTearDown(() async => tmp.delete(recursive: true));
+      await File(p.join(tmp.path, 'printer.cfg')).writeAsString('[printer]\n');
+
+      final controller = WizardController(
+        profiles: _PinnedLocationProfileService(
+          baseProfileJson(
+            stockKeepSteps: [
+              {
+                'id': 'install_config',
+                'kind': 'link_extras',
+                'target_dir': '~/printer_data/config/',
+                'method': 'copy_with_backup',
+                'sources': ['./printer.cfg'],
+              },
+            ],
+          ),
+          profileDirPath: tmp.path,
+        ),
+        ssh: ssh,
+        flash: _StubFlashService(),
+        discovery: _StubDiscoveryService(),
+        moonraker: _StubMoonrakerService(),
+        upstream: FakeUpstream(),
+        security: FakeSecurity(),
+      );
+      await controller.loadProfile('test-printer');
+      controller.setFlow(WizardFlow.stockKeep);
+      controller.setSession(
+        const SshSession(id: 'fake', host: 'h', port: 22, user: 'root'),
+      );
+
+      await expectLater(
+        controller.startExecution(),
+        throwsA(isA<StepExecutionException>()),
+      );
+
+      final cleanupAfterFailure = ssh.runCalls.where(
+        (c) => c.startsWith('rm -f --') && c.contains('/tmp/deckhand-link-'),
+      );
+      expect(cleanupAfterFailure, isNotEmpty);
+    });
   });
 
   group('security review regressions', () {
