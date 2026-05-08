@@ -84,6 +84,10 @@ GoRouter buildDeckhandRouter() => GoRouter(
         _fade('/files', () => const FilesScreen()),
         _fade('/snapshot', () => const SnapshotScreen()),
         _fade('/emmc-backup', () => const EmmcBackupScreen()),
+        _fade(
+          '/recovery-emmc-backup',
+          () => const EmmcBackupScreen(returnRoute: '/emmc-restore'),
+        ),
         _fade('/hardening', () => const HardeningScreen()),
 
         // Flow B (fresh flash)

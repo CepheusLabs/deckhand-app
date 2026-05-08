@@ -385,7 +385,9 @@ class _ManagedPrintersPanelState extends ConsumerState<_ManagedPrintersPanel> {
       eyebrow: 'PRINTERS',
       headline: 'Manage known printers.',
       body: printers.isEmpty
-          ? 'Printers appear here after Deckhand connects to them once.'
+          ? 'Use the printer manager to reopen saved printers for status, '
+                'tuning, backup, restore, or maintenance. No printers are '
+                'saved yet.'
           : 'Open a printer directly for status, tuning, backup, restore, '
                 'or maintenance work.',
       extra: printers.isEmpty
@@ -403,14 +405,14 @@ class _ManagedPrintersPanelState extends ConsumerState<_ManagedPrintersPanel> {
             ),
       action: printers.isEmpty
           ? OutlinedButton.icon(
-              onPressed: () => context.go('/pick-printer'),
-              icon: const Icon(Icons.add, size: 14),
-              label: const Text('Add a printer'),
+              onPressed: () => context.go('/printers'),
+              icon: const Icon(Icons.list_alt, size: 14),
+              label: const Text('Open printer manager'),
             )
           : OutlinedButton.icon(
               onPressed: () => context.go('/printers'),
               icon: const Icon(Icons.list_alt, size: 14),
-              label: const Text('View all printers'),
+              label: const Text('Open printer manager'),
             ),
     );
   }

@@ -667,15 +667,20 @@ class _RestoreTabState extends ConsumerState<_RestoreTab> {
             const SizedBox(height: 10),
             Text(
               'Put the backup image in that folder, or make a new eMMC '
-              'backup from the Backup tab. Restore stays on this '
-              'recovery screen so canceling never drops into an '
-              'install step.',
+              'backup from this recovery flow. Restore stays on this '
+              'screen so canceling never drops into an install step.',
               style: TextStyle(
                 fontFamily: DeckhandTokens.fontSans,
                 fontSize: DeckhandTokens.tSm,
                 color: tokens.text3,
                 height: 1.45,
               ),
+            ),
+            const SizedBox(height: 14),
+            FilledButton.icon(
+              onPressed: () => context.go('/recovery-emmc-backup'),
+              icon: const Icon(Icons.inventory_2_outlined, size: 16),
+              label: const Text('Create eMMC backup'),
             ),
           ],
         ),

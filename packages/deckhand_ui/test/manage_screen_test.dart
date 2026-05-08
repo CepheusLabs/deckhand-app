@@ -1,8 +1,11 @@
 import 'dart:async';
 import 'package:deckhand_core/deckhand_core.dart';
 import 'package:deckhand_ui/src/providers.dart';
+import 'package:deckhand_ui/src/router.dart';
 import 'package:deckhand_ui/src/screens/manage_screen.dart';
+import 'package:deckhand_ui/src/theming/deckhand_theme.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -274,8 +277,60 @@ void main() {
     await tester.pump(const Duration(milliseconds: 250));
 
     expect(find.textContaining('No eMMC backup images were found'), findsOne);
+    expect(find.widgetWithText(FilledButton, 'Create eMMC backup'), findsOne);
     expect(find.text('Open backup flow'), findsNothing);
     expect(find.textContaining(r'C:\Deckhand\emmc-backups'), findsOneWidget);
+  });
+
+  testWidgets('restore backup shortcut returns to restore after cancel', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1400, 1000));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    final controller = stubWizardController(profileJson: testProfileJson());
+    await controller.loadProfile('test-printer');
+    final router = buildDeckhandRouter();
+    router.go('/emmc-restore');
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          ...overrideForController(controller),
+          deckhandSettingsProvider.overrideWithValue(
+            DeckhandSettings(path: '<memory>'),
+          ),
+          emmcBackupManifestsProvider.overrideWith((ref) async => const []),
+          emmcBackupImageCandidatesProvider.overrideWith(
+            (ref) async => const [],
+          ),
+          emmcBackupsDirProvider.overrideWithValue(r'C:\Deckhand\emmc-backups'),
+        ],
+        child: MaterialApp.router(
+          routerConfig: router,
+          theme: DeckhandTheme.light(),
+          darkTheme: DeckhandTheme.dark(),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final createBackup = find.widgetWithText(
+      FilledButton,
+      'Create eMMC backup',
+    );
+    await tester.ensureVisible(createBackup);
+    await tester.tap(createBackup);
+    await tester.pumpAndSettle();
+    expect(find.text('Back up the eMMC now.'), findsOneWidget);
+
+    final cancel = find.text('Cancel');
+    await tester.ensureVisible(cancel);
+    await tester.tap(cancel);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Restore an eMMC backup.'), findsOneWidget);
+    expect(find.text('Save your current configuration.'), findsNothing);
   });
 
   testWidgets('direct eMMC restore can use unindexed image candidates', (

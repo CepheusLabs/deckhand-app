@@ -27,6 +27,12 @@ void main() {
       expect(find.text('NEW INSTALL'), findsOneWidget);
       expect(find.text('Set up a printer from scratch.'), findsOneWidget);
       expect(find.text('Start a new install'), findsOneWidget);
+      expect(find.text('PRINTERS'), findsOneWidget);
+      expect(find.text('Manage known printers.'), findsOneWidget);
+      expect(
+        find.widgetWithText(OutlinedButton, 'Open printer manager'),
+        findsOneWidget,
+      );
       expect(find.text('RECOVERY'), findsOneWidget);
       expect(find.text('Restore an eMMC backup.'), findsOneWidget);
       expect(
@@ -187,7 +193,7 @@ void main() {
       expect(settings.managedPrinters, isEmpty);
       expect(find.text('Test Printer'), findsNothing);
       expect(
-        find.text('Printers appear here after Deckhand connects to them once.'),
+        find.textContaining('Use the printer manager to reopen saved printers'),
         findsOneWidget,
       );
     });
