@@ -2089,7 +2089,62 @@ void main() {
     );
 
     test(
-      'completed run-state with same input hash skips step execution',
+      'completed run-state with matching pre-check skips step execution',
+      () async {
+        final existing =
+            RunState.empty(
+              deckhandVersion: 'unknown',
+              profileId: 'test-printer',
+              profileCommit: 'deadbeef',
+            ).appending(
+              RunStateStep(
+                id: 'cmd',
+                status: RunStateStatus.completed,
+                startedAt: DateTime.utc(2026, 5, 6),
+                inputHash: canonicalInputHash({'marker': 'already-installed'}),
+              ),
+            );
+        final ssh = FakeSsh()
+          ..nextRun = SshCommandResult(
+            stdout: const JsonEncoder().convert(existing.toJson()),
+            stderr: '',
+            exitCode: 0,
+          );
+        final controller = newController(
+          profileJson: baseProfileJson(
+            stockKeepSteps: [
+              {
+                'id': 'cmd',
+                'kind': 'ssh_commands',
+                'commands': ['touch /tmp/should-not-run'],
+                'idempotency': {
+                  'inputs': {'marker': 'already-installed'},
+                  'pre_check': 'test -f /tmp/already-installed',
+                  'resume': 'restart',
+                },
+              },
+            ],
+          ),
+          ssh: ssh,
+        );
+        await controller.loadProfile('test-printer');
+        controller.setFlow(WizardFlow.stockKeep);
+        controller.setSession(
+          const SshSession(id: 'fake', host: 'h', port: 22, user: 'root'),
+        );
+
+        await controller.startExecution();
+
+        expect(ssh.runCalls.any((c) => c.contains('should-not-run')), isFalse);
+        expect(
+          ssh.runCalls.any((c) => c.contains('/tmp/already-installed')),
+          isTrue,
+        );
+      },
+    );
+
+    test(
+      'completed run-state without an idempotency pre-check reruns command',
       () async {
         final existing =
             RunState.empty(
@@ -2120,7 +2175,7 @@ void main() {
               {
                 'id': 'cmd',
                 'kind': 'ssh_commands',
-                'commands': ['touch /tmp/should-not-run'],
+                'commands': ['touch /tmp/should-run'],
               },
             ],
           ),
@@ -2134,9 +2189,48 @@ void main() {
 
         await controller.startExecution();
 
-        expect(ssh.runCalls.any((c) => c.contains('should-not-run')), isFalse);
+        expect(ssh.runCalls.any((c) => c.contains('should-run')), isTrue);
       },
     );
+
+    test('idempotency post-check failure fails the step', () async {
+      final ssh = FakeSsh()
+        ..responsesByContains['/tmp/post-check'] = const SshCommandResult(
+          stdout: '',
+          stderr: 'missing marker',
+          exitCode: 1,
+        );
+      final controller = newController(
+        profileJson: baseProfileJson(
+          stockKeepSteps: [
+            {
+              'id': 'cmd',
+              'kind': 'ssh_commands',
+              'commands': ['touch /tmp/worked'],
+              'idempotency': {
+                'inputs': {'marker': 'post-check'},
+                'pre_check': 'test -f /tmp/post-check',
+                'resume': 'restart',
+                'post_check': 'test -f /tmp/post-check',
+              },
+            },
+          ],
+        ),
+        ssh: ssh,
+      );
+      await controller.loadProfile('test-printer');
+      controller.setFlow(WizardFlow.stockKeep);
+      controller.setSession(
+        const SshSession(id: 'fake', host: 'h', port: 22, user: 'root'),
+      );
+
+      await expectLater(
+        controller.startExecution(),
+        throwsA(isA<StepExecutionException>()),
+      );
+      expect(ssh.runCalls.any((c) => c.contains('/tmp/worked')), isTrue);
+      expect(ssh.runCalls.any((c) => c.contains('/tmp/post-check')), isTrue);
+    });
 
     test('flash_disk consumes confirmation token bound to target', () async {
       final security = FakeSecurity();
@@ -2513,6 +2607,7 @@ class FakeSsh implements SshService {
     stderr: '',
     exitCode: 0,
   );
+  final responsesByContains = <String, SshCommandResult>{};
   final runCalls = <String>[];
   final runDetails = <FakeSshRunCall>[];
   final uploadCalls = <FakeSshUpload>[];
@@ -2568,6 +2663,9 @@ class FakeSsh implements SshService {
       FakeSshRunCall(command: command, sudoPassword: sudoPassword),
     );
     lastSudoPassword = sudoPassword;
+    for (final response in responsesByContains.entries) {
+      if (command.contains(response.key)) return response.value;
+    }
     return nextRun;
   }
 

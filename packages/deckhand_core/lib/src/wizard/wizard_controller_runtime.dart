@@ -154,10 +154,12 @@ Future<void> _startExecutionImpl(WizardController c) async {
     if (prior != null &&
         prior.status == RunStateStatus.completed &&
         prior.inputHash == hash) {
-      c._log(step, '[run-state] skipping $id; already completed');
-      c._emit(StepCompleted(id));
-      c._currentStepKind = null;
-      continue;
+      if (await _runStateCanSkipCompletedStep(c, step)) {
+        c._log(step, '[run-state] skipping $id; already completed');
+        c._emit(StepCompleted(id));
+        c._currentStepKind = null;
+        continue;
+      }
     }
     c._emit(StepStarted(id));
     await c._runStateRecord(
@@ -170,6 +172,7 @@ Future<void> _startExecutionImpl(WizardController c) async {
     );
     try {
       await c._runStep(step);
+      await _runIdempotencyPostCheck(c, step);
       if (c._cancelled) {
         throw WizardCancelledException(c._cancelReason ?? 'cancelled');
       }
@@ -205,6 +208,81 @@ Future<void> _startExecutionImpl(WizardController c) async {
     }
   }
   c._emit(const ExecutionCompleted());
+}
+
+const _kindsWithBuiltInRunStateSkip = <String>{
+  'wait_for_ssh',
+  'os_download',
+  'verify',
+  'conditional',
+  'install_marker',
+  'snapshot_archive',
+};
+
+const _interactiveRunStateStepKinds = <String>{
+  'prompt',
+  'choose_one',
+  'disk_picker',
+};
+
+Map<String, dynamic>? _idempotencyBlock(Map<String, dynamic> step) {
+  final raw = step['idempotency'];
+  return raw is Map ? raw.cast<String, dynamic>() : null;
+}
+
+Future<bool> _runStateCanSkipCompletedStep(
+  WizardController c,
+  Map<String, dynamic> step,
+) async {
+  final id = step['id'] as String? ?? 'unnamed';
+  final kind = step['kind'] as String? ?? '';
+  final idempotency = _idempotencyBlock(step);
+  final preCheck = idempotency?['pre_check'];
+  if (preCheck is String && preCheck.trim().isNotEmpty) {
+    c._requireSession();
+    final rendered = c._render(preCheck, shellSafe: true);
+    final result = await c._runSsh(rendered);
+    if (result.success) {
+      c._log(step, '[run-state] pre-check passed for $id');
+      return true;
+    }
+    c._log(step, '[run-state] pre-check failed for $id; re-running');
+    return false;
+  }
+  if (_kindsWithBuiltInRunStateSkip.contains(kind) ||
+      _interactiveRunStateStepKinds.contains(kind) ||
+      step['safe_to_rerun'] == true) {
+    return true;
+  }
+  c._emit(
+    StepWarning(
+      stepId: id,
+      message:
+          'Completed run-state exists, but this step has no idempotency '
+          'pre-check; re-running it.',
+    ),
+  );
+  return false;
+}
+
+Future<void> _runIdempotencyPostCheck(
+  WizardController c,
+  Map<String, dynamic> step,
+) async {
+  final idempotency = _idempotencyBlock(step);
+  final postCheck = idempotency?['post_check'];
+  if (postCheck is! String || postCheck.trim().isEmpty) return;
+  c._requireSession();
+  final rendered = c._render(postCheck, shellSafe: true);
+  final result = await c._runSsh(rendered);
+  if (result.success) {
+    c._log(step, '[run-state] post-check passed');
+    return;
+  }
+  throw StepExecutionException(
+    'post-check failed for ${step['id'] ?? 'unnamed'}',
+    stderr: result.stderr,
+  );
 }
 
 /// Tolerant of "no SSH yet", "file missing", "file unparseable".

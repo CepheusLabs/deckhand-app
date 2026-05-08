@@ -188,11 +188,16 @@ On entering S900-progress with an existing session:
    Empty file or missing → fresh run.
 2. For each step in the active flow:
    - If `completed` and `input_hash` matches current inputs:
-     mark green, reuse `output`, move on.
+     skip only when the step has a passing `idempotency.pre_check`,
+     a built-in idempotent kind, an interactive kind, or
+     `safe_to_rerun: true`. A matching record without one of those
+     guards is treated as context, not proof, and the command
+     re-runs with a warning.
    - If `completed` and `input_hash` differs: mark yellow ("inputs
      changed"), prompt the user before re-running. Re-runs are
      normal when the user jumps back and changes a decision.
-   - If `in_progress`: invoke the step's resume strategy.
+   - If `in_progress`: invoke the step's resume strategy (pending
+     beyond restart semantics).
    - If `failed`: present the recorded error with "retry / skip"
      buttons (current S900 behaviour, now with full context).
 3. Steps not yet recorded are run in declared order.
@@ -204,21 +209,29 @@ destructive operations.
 
 ## Step kinds and their built-in idempotency
 
-The profile DSL recognises a handful of step kinds that
-[`wizard_controller_steps.dart`](../packages/deckhand_core/lib/src/wizard/wizard_controller_steps.dart)
-already implements. Each gets default idempotency wiring; profiles
-can override.
+The controller recognises a handful of step kinds as safe to skip
+from run-state alone because they are either host-side, read-only,
+or explicit user-input records. Other executable steps need an
+`idempotency` block with a live `pre_check`, or Deckhand re-runs
+them even when the prior `input_hash` matches.
 
-| Kind | Default pre-check | Default resume | Notes |
+| Kind | Default skip rule | Default resume | Notes |
 |------|-------------------|----------------|-------|
-| `apt_install` | `dpkg-query -W -f='${Status}' <pkg> \| grep -q "install ok installed"` | `restart` | Apt is idempotent; restart is safe. |
-| `git_clone` | repo present + correct ref + correct remote | `cleanup_then_restart` (rm -rf the dest) | Partial clones must be wiped. |
-| `service_install` | systemd unit present + enabled state matches | `restart` | systemd handles re-enable cleanly. |
-| `python_venv_build` | `<venv>/bin/python -V` matches expected | `cleanup_then_restart` | Mid-build venvs are unreliable. |
-| `file_replace` | sha256 of dest matches expected | `restart` | Small files; cheap to re-do. |
-| `mcu_flash` | None — always re-runs on retry | `restart` | Profile authors must guard with explicit user confirmation; flashing the same firmware twice is safe but slow. |
-| `snapshot_archive` | Existing archive sha256 matches the input hash | `restart` | Captures `~/printer_data/config/` (and other S145-selected dirs) into `<data_dir>/state/snapshots/<profile>-<ts>.tar.gz` via [`ArchiveService.captureRemote`](../packages/deckhand_core/lib/src/services/archive_service.dart). Decision input is `snapshot.paths` (from S145). |
-| `script` (profile-shipped Dart) | Authored by the script | Authored by the script | Disabled in v1 ([ARCHITECTURE.md:380](ARCHITECTURE.md:380)). |
+| `wait_for_ssh` | Prior matching completed record | `restart` | Waiting is read-only and safe to mark complete on resume. |
+| `os_download` | Prior matching completed record | `restart` | Host-side cache preparation; the image hash is still verified before use. |
+| `verify` | Prior matching completed record | `restart` | Read-only checks. |
+| `conditional` | Prior matching completed record | `restart` | Branch decision is covered by the canonical input hash. |
+| `install_marker` | Prior matching completed record | `restart` | Marker write is Deckhand-owned and input-hashed. |
+| `snapshot_archive` | Prior matching completed record | `restart` | Captures selected directories into a host-local archive via [`ArchiveService.captureRemote`](../packages/deckhand_core/lib/src/services/archive_service.dart). Decision input is `snapshot.paths` (from S145). |
+| `prompt` / `choose_one` / `disk_picker` | Prior matching completed record | `restart` | Interactive records have no printer-side side effect. |
+
+For executable profile steps such as `ssh_commands`, `write_file`,
+`install_firmware`, `apply_files`, `apply_services`, and `script`,
+profile authors declare `idempotency.pre_check`. Deckhand runs that
+pre-check against the live printer before skipping a completed
+matching record; if the pre-check fails, the step re-runs.
+`idempotency.post_check` is also run after the step succeeds and
+turns the step into a failure if the live printer does not match.
 
 ## Cancellation
 
@@ -287,8 +300,7 @@ needing review — it can contain home-directory paths.
   the run-state file is now real; the UI renderer that reads it
   on enter and shows "continuing/re-running/skipping" is the
   remaining piece.
-- Profile DSL `idempotency` block on existing step kinds: pending —
-  authors can add it today (the lint accepts it) but the
-  controller doesn't yet honor `pre_check`/`resume`/`post_check`
-  to skip already-completed work. The current behaviour is
-  "always re-run, log everything to the run-state file."
+- Profile DSL `idempotency` block on existing step kinds: partially
+  implemented — `inputs`, `pre_check`, and `post_check` are honored.
+  `resume`/`cleanup` strategies for interrupted in-progress steps are
+  still pending beyond restart/re-run behaviour.
