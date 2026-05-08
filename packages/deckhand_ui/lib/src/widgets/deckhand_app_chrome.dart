@@ -149,6 +149,12 @@ class _TopBar extends StatelessWidget {
             ),
           ],
           const Spacer(),
+          TextButton.icon(
+            icon: const Icon(Icons.precision_manufacturing_outlined, size: 14),
+            label: const Text('Printers'),
+            onPressed: () => context.go('/printers'),
+          ),
+          const SizedBox(width: 4),
           if (printerLabel != null) ...[
             TextButton.icon(
               icon: const Icon(Icons.tune, size: 14),
