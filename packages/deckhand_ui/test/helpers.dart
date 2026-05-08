@@ -116,6 +116,7 @@ Widget testHarnessWithSettings({
         '/progress',
         '/done',
         '/manage',
+        '/manage-emmc-backup',
         '/emmc-restore',
         '/settings',
       ])

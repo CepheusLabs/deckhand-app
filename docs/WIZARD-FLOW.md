@@ -340,19 +340,18 @@ name shipped in that project's releases.
 status (alpha/beta/stable), and any dependencies (e.g. voronFDM needs
 phrozen_master as stub).
 
-Special handling:
+Supported screen sources:
 
-- Option with `source_kind: restore_from_backup` shows a disabled state
-  with "Requires your eMMC backup image" until user attaches one.
-  Attaching is a small section below the cards: "Select backup image"
-  file picker.
+- Omitted `source_kind` or `source_kind: bundled` uses the screen payload
+  bundled with the selected profile.
+- `source_kind: restore_from_backup` is not supported by the current
+  runtime. The profile linter rejects tagged profiles that declare it until
+  the schema defines which backup artifact should be restored and how it
+  should be applied.
 
 **Primary action.** "Continue".
 
-**Adapter calls.**
-
-- If a backup image is attached: `FlashService.mountImageRo(path, partition)` →
-  browsable location the install step will read from.
+**Adapter calls.** None for the supported bundled-screen path.
 
 ---
 

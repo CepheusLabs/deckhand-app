@@ -157,6 +157,24 @@ void main() {
   });
 
   group('unsupported runtime features', () {
+    test(
+      'allows bundled screen sources and the default bundled source',
+      () async {
+        _writeRegistry(tmp, ['bundled-screens']);
+        final profile =
+            '${_minimalValidProfile('bundled-screens')}'
+            '\nscreens:\n'
+            '  - id: default_lcd\n'
+            '  - id: bundled_lcd\n'
+            '    source_kind: bundled\n';
+        _writeProfile(tmp, 'bundled-screens', profile);
+
+        final report = await runProfileLint(['--root', tmp.path]);
+
+        expect(report.hasErrors, isFalse);
+      },
+    );
+
     test('flags screen restore-from-backup sources', () async {
       _writeRegistry(tmp, ['screen-restore']);
       final profile =

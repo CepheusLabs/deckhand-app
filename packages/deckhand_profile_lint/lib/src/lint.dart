@@ -478,7 +478,7 @@ void _walkUnsupportedRuntimeFeatures(
       final screen = screens[i];
       if (screen is! Map) continue;
       final sourceKind = screen['source_kind'];
-      if (sourceKind is String && sourceKind == 'bundled') continue;
+      if (sourceKind == null || sourceKind == 'bundled') continue;
       out.add(
         LintFinding(
           LintSeverity.error,
