@@ -270,7 +270,8 @@ void main() {
         await tester.pump(const Duration(milliseconds: 50));
       }
 
-      expect(find.text('STEP 1/1 · download_os'), findsOneWidget);
+      expect(find.text('STEP 1/1 · Prepare OS image'), findsOneWidget);
+      expect(find.text('STEP 1/1 · download_os'), findsNothing);
       expect(find.text('50.0%'), findsOneWidget);
       expect(find.textContaining('5.0 MiB / 10.0 MiB'), findsOneWidget);
 

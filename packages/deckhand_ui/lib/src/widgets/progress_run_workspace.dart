@@ -230,7 +230,7 @@ class _StepRow extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  _stepTitle(step.id),
+                  runStepTitle(step.id),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
@@ -496,7 +496,7 @@ class _PaneTabCell extends StatelessWidget {
   }
 }
 
-String _stepTitle(String id) {
+String runStepTitle(String id) {
   final mapped = switch (id) {
     'choose_os_image' => 'Choose OS image',
     'choose_target_disk' => 'Check selected disk',

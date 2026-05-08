@@ -765,8 +765,8 @@ class _ProgressHeader extends StatelessWidget {
     final pct = fraction == null ? null : (fraction! * 100).toStringAsFixed(1);
     final stepLabel = switch ((stepId, activeStepNumber)) {
       (final id?, final stepNumber?) when totalSteps > 0 =>
-        'STEP $stepNumber/$totalSteps · $id',
-      (final id?, _) => 'STEP · $id',
+        'STEP $stepNumber/$totalSteps · ${runStepTitle(id)}',
+      (final id?, _) => 'STEP · ${runStepTitle(id)}',
       _ => '',
     };
     return Row(
