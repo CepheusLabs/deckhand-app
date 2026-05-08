@@ -110,5 +110,72 @@ void main() {
       expect(find.text('Test Printer'), findsNothing);
       expect(find.text('No printers saved yet.'), findsOneWidget);
     });
+
+    testWidgets('uses the managed printer registry provider', (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1200, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      final controller = stubWizardController(profileJson: testProfileJson());
+      await controller.loadProfile('test-printer');
+      final registry = _MemoryManagedPrinterRegistry([
+        ManagedPrinter.fromConnection(
+          profileId: 'test-printer',
+          displayName: 'Provider Printer',
+          host: '192.168.1.60',
+          port: 22,
+          user: 'mks',
+          lastSeen: DateTime.utc(2026, 5, 4, 14),
+        ),
+      ]);
+
+      await tester.pumpWidget(
+        testHarness(
+          controller: controller,
+          child: const PrintersScreen(),
+          initialLocation: '/printers',
+          extraOverrides: [
+            managedPrinterRegistryProvider.overrideWithValue(registry),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Provider Printer'), findsOneWidget);
+
+      await tester.tap(find.byTooltip('Forget printer'));
+      await tester.pump();
+
+      expect(registry.saved, isTrue);
+      expect(registry.listManagedPrinters(), isEmpty);
+      expect(find.text('Provider Printer'), findsNothing);
+    });
   });
+}
+
+class _MemoryManagedPrinterRegistry implements ManagedPrinterRegistry {
+  _MemoryManagedPrinterRegistry(List<ManagedPrinter> printers)
+    : _printers = printers.toList();
+
+  final List<ManagedPrinter> _printers;
+  bool saved = false;
+
+  @override
+  List<ManagedPrinter> listManagedPrinters() => List.unmodifiable(_printers);
+
+  @override
+  void recordManagedPrinter(ManagedPrinter printer) {
+    _printers
+      ..removeWhere((p) => p.id.toLowerCase() == printer.id.toLowerCase())
+      ..insert(0, printer);
+  }
+
+  @override
+  void forgetManagedPrinter(String id) {
+    _printers.removeWhere((p) => p.id.toLowerCase() == id.toLowerCase());
+  }
+
+  @override
+  Future<void> save() async {
+    saved = true;
+  }
 }

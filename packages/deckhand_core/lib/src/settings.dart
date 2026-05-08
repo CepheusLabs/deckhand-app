@@ -575,6 +575,41 @@ class ManagedPrinter {
   };
 }
 
+/// Minimal printer registry contract consumed by Deckhand UI.
+///
+/// The default implementation is settings-backed. A future Printdeck
+/// Machines adapter can implement this interface with richer storage while
+/// preserving the UI-facing operations Deckhand needs: list, record, forget,
+/// and persist.
+abstract class ManagedPrinterRegistry {
+  List<ManagedPrinter> listManagedPrinters();
+  void recordManagedPrinter(ManagedPrinter printer);
+  void forgetManagedPrinter(String id);
+  Future<void> save();
+}
+
+class SettingsManagedPrinterRegistry implements ManagedPrinterRegistry {
+  const SettingsManagedPrinterRegistry(this.settings);
+
+  final DeckhandSettings settings;
+
+  @override
+  List<ManagedPrinter> listManagedPrinters() => settings.managedPrinters;
+
+  @override
+  void recordManagedPrinter(ManagedPrinter printer) {
+    settings.recordManagedPrinter(printer);
+  }
+
+  @override
+  void forgetManagedPrinter(String id) {
+    settings.forgetManagedPrinter(id);
+  }
+
+  @override
+  Future<void> save() => settings.save();
+}
+
 String _requiredString(Map<String, dynamic> json, String key) {
   final value = json[key];
   if (value is String && value.trim().isNotEmpty) return value.trim();

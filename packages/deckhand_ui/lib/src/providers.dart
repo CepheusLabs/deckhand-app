@@ -203,6 +203,12 @@ final deckhandSettingsProvider = Provider<DeckhandSettings>(
   (_) => _throwUnimplemented('deckhandSettingsProvider'),
 );
 
+/// UI-facing managed-printer registry. Defaults to local settings storage,
+/// but is intentionally swappable for the future Printdeck Machines module.
+final managedPrinterRegistryProvider = Provider<ManagedPrinterRegistry>(
+  (ref) => SettingsManagedPrinterRegistry(ref.watch(deckhandSettingsProvider)),
+);
+
 /// Optional: raw-device writes. Null when elevation is unavailable (e.g.
 /// early dev builds before the helper binary ships alongside the app).
 final elevatedHelperServiceProvider = Provider<ElevatedHelperService?>(

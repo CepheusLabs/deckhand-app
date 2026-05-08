@@ -252,18 +252,38 @@ class _ConnectScreenState extends ConsumerState<ConnectScreen> {
         final session = controller.sshSession;
         if (session != null) {
           final settings = ref.read(deckhandSettingsProvider);
+          final registry = ref.read(managedPrinterRegistryProvider);
           final profile = controller.profile;
-          if (profile != null) {
-            settings.recordConnectedPrinter(
-              profileId: profile.id,
-              profileDisplayName: profile.displayName,
+          final user = session.user.trim().isNotEmpty
+              ? session.user.trim()
+              : (preferredUser ?? '').trim();
+          final seenAt = DateTime.now();
+          settings.recordSavedHost(
+            SavedHost(
               host: host,
               port: session.port,
-              sessionUser: session.user,
-              preferredUser: preferredUser,
+              user: user,
+              lastUsed: seenAt,
+            ),
+          );
+          if (profile != null) {
+            registry.recordManagedPrinter(
+              ManagedPrinter.fromConnection(
+                profileId: profile.id,
+                displayName: profile.displayName,
+                host: host,
+                port: session.port,
+                user: user,
+                lastSeen: seenAt,
+              ),
             );
           }
-          unawaited(settings.save());
+          unawaited(
+            _persistConnectedPrinterState(
+              settings: settings,
+              registry: registry,
+            ),
+          );
         }
       } catch (_) {
         // Saved-host persistence is best-effort; a failed save must
@@ -345,6 +365,23 @@ class _ConnectScreenState extends ConsumerState<ConnectScreen> {
           _connectingHost = null;
         });
       }
+    }
+  }
+
+  Future<void> _persistConnectedPrinterState({
+    required DeckhandSettings settings,
+    required ManagedPrinterRegistry registry,
+  }) async {
+    try {
+      if (registry is SettingsManagedPrinterRegistry &&
+          identical(registry.settings, settings)) {
+        await settings.save();
+        return;
+      }
+      await Future.wait([settings.save(), registry.save()]);
+    } catch (_) {
+      // Saved-host persistence is best-effort; a failed save must
+      // not block navigation after an otherwise-successful connect.
     }
   }
 

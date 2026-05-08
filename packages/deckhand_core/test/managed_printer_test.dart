@@ -119,5 +119,36 @@ void main() {
         DateTime.utc(2026, 5, 4, 12),
       );
     });
+
+    test('settings-backed registry exposes the managed printer contract', () {
+      final settings = DeckhandSettings(path: '<memory>');
+      final registry = SettingsManagedPrinterRegistry(settings);
+      final printer = ManagedPrinter.fromConnection(
+        profileId: 'phrozen-arco',
+        displayName: 'Phrozen Arco',
+        host: '192.168.1.50',
+        port: 22,
+        user: 'mks',
+        lastSeen: DateTime.utc(2026, 5, 4, 12),
+        labels: const {'source': 'deckhand'},
+      );
+
+      registry.recordManagedPrinter(printer);
+
+      expect(registry.listManagedPrinters(), hasLength(1));
+      expect(registry.listManagedPrinters().single.id, printer.id);
+      expect(registry.listManagedPrinters().single.machineKind, 'fdm_printer');
+      expect(
+        registry.listManagedPrinters().single.connectionMode,
+        'ssh_moonraker',
+      );
+      expect(registry.listManagedPrinters().single.labels, {
+        'source': 'deckhand',
+      });
+
+      registry.forgetManagedPrinter(printer.id);
+
+      expect(registry.listManagedPrinters(), isEmpty);
+    });
   });
 }

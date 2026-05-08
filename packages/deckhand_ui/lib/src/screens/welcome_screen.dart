@@ -361,11 +361,11 @@ class _ManagedPrintersPanelState extends ConsumerState<_ManagedPrintersPanel> {
 
   Future<void> _forget(ManagedPrinter printer) async {
     if (_busyId == printer.id) return;
-    final settings = ref.read(deckhandSettingsProvider);
-    settings.forgetManagedPrinter(printer.id);
+    final registry = ref.read(managedPrinterRegistryProvider);
+    registry.forgetManagedPrinter(printer.id);
     setState(() {});
     try {
-      await settings.save();
+      await registry.save();
     } catch (_) {
       // The registry is still updated in memory; a later settings
       // write can persist it if the file is temporarily unavailable.
@@ -375,7 +375,9 @@ class _ManagedPrintersPanelState extends ConsumerState<_ManagedPrintersPanel> {
   @override
   Widget build(BuildContext context) {
     final tokens = DeckhandTokens.of(context);
-    final printers = ref.watch(deckhandSettingsProvider).managedPrinters;
+    final printers = ref
+        .watch(managedPrinterRegistryProvider)
+        .listManagedPrinters();
     return _PanelShell(
       tokens: tokens,
       eyebrow: 'PRINTERS',

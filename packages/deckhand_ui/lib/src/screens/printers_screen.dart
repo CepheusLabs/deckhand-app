@@ -62,11 +62,11 @@ class _PrintersScreenState extends ConsumerState<PrintersScreen> {
 
   Future<void> _forget(ManagedPrinter printer) async {
     if (_busyId == printer.id) return;
-    final settings = ref.read(deckhandSettingsProvider);
-    settings.forgetManagedPrinter(printer.id);
+    final registry = ref.read(managedPrinterRegistryProvider);
+    registry.forgetManagedPrinter(printer.id);
     setState(() {});
     try {
-      await settings.save();
+      await registry.save();
     } catch (_) {
       // Keep the in-memory registry updated even if the settings file
       // is temporarily unavailable. A later settings write can persist it.
@@ -75,7 +75,9 @@ class _PrintersScreenState extends ConsumerState<PrintersScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final printers = ref.watch(deckhandSettingsProvider).managedPrinters;
+    final printers = ref
+        .watch(managedPrinterRegistryProvider)
+        .listManagedPrinters();
     return WizardScaffold(
       screenId: 'MGR-printers',
       title: 'Printers.',
