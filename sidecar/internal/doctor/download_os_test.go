@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/CepheusLabs/deckhand/sidecar/internal/osimg"
 )
 
 func TestDefaultDownloadOSDestUsesManagedCacheAndImageID(t *testing.T) {
@@ -67,6 +69,49 @@ func TestRunDownloadOSReusesVerifiedCacheWithoutNetwork(t *testing.T) {
 	passed, err := RunDownloadOS(t.Context(), &out, DownloadOSOptions{
 		URL:            "https://example.invalid/should-not-be-fetched.img",
 		ExpectedSHA256: expected,
+		DestPath:       dest,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !passed {
+		t.Fatalf("passed = false; output:\n%s", out.String())
+	}
+	if !strings.Contains(out.String(), "[PASS] os_image_reuse") {
+		t.Fatalf("expected reuse output, got:\n%s", out.String())
+	}
+}
+
+func TestRunDownloadOSReusesExtractedXZCacheFromManifest(t *testing.T) {
+	root := filepath.Join(os.TempDir(), downloadTempRootName)
+	if err := os.MkdirAll(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	raw := []byte("cached extracted image")
+	artifact := []byte("compressed artifact bytes")
+	rawSum := sha256.Sum256(raw)
+	artifactSum := sha256.Sum256(artifact)
+	rawSha := hex.EncodeToString(rawSum[:])
+	artifactSha := hex.EncodeToString(artifactSum[:])
+	dest := filepath.Join(root, "deckhand-download-os-xz-reuse.img")
+	rawURL := "https://example.invalid/should-not-be-fetched.img.xz"
+	t.Cleanup(func() {
+		_ = os.Remove(dest)
+		_ = os.Remove(dest + ".part")
+		_ = os.Remove(dest + ".download.part")
+		_ = os.Remove(dest + ".deckhand-download.json")
+	})
+	if err := os.WriteFile(dest, raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := osimg.WriteCacheManifest(dest, rawURL, artifactSha, rawSha, false); err != nil {
+		t.Fatal(err)
+	}
+
+	var out bytes.Buffer
+	passed, err := RunDownloadOS(t.Context(), &out, DownloadOSOptions{
+		URL:            rawURL,
+		ExpectedSHA256: artifactSha,
 		DestPath:       dest,
 	})
 	if err != nil {

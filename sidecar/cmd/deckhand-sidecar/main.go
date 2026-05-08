@@ -209,7 +209,7 @@ func main() {
 		case "download-os":
 			fs := flag.NewFlagSet("download-os", flag.ExitOnError)
 			rawURL := fs.String("url", "", "HTTPS URL to the compressed or raw OS image")
-			expectedSHA256 := fs.String("sha256", "", "required 64-hex sha256 of the final raw image")
+			expectedSHA256 := fs.String("sha256", "", "required 64-hex sha256 of the download artifact")
 			imageID := fs.String("id", "", "stable image id used for the managed cache filename")
 			destPath := fs.String("dest", "", "full managed .img destination path; default is Deckhand's OS image cache")
 			timeoutRaw := fs.String("timeout", "60m", "maximum time to wait, for example 10m or 1h")

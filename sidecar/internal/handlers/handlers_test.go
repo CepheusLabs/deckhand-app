@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/CepheusLabs/deckhand/sidecar/internal/disks"
+	"github.com/CepheusLabs/deckhand/sidecar/internal/osimg"
 	"github.com/CepheusLabs/deckhand/sidecar/internal/rpc"
 )
 
@@ -544,6 +545,51 @@ func TestReuseOrClearDownloadDestKeepsXZDownloadPart(t *testing.T) {
 	}
 	if _, err := os.Lstat(downloadPart); err != nil {
 		t.Fatalf("expected verified download partial to be preserved, got %v", err)
+	}
+}
+
+func TestReuseOrClearDownloadDestReusesManifestBackedXZImage(t *testing.T) {
+	root := filepath.Join(os.TempDir(), downloadTempRootName)
+	if err := os.MkdirAll(root, 0o700); err != nil {
+		t.Fatalf("mkdir root: %v", err)
+	}
+	raw := []byte("cached extracted image")
+	artifact := []byte("compressed artifact bytes")
+	rawSum := sha256.Sum256(raw)
+	artifactSum := sha256.Sum256(artifact)
+	rawSha := hex.EncodeToString(rawSum[:])
+	artifactSha := hex.EncodeToString(artifactSum[:])
+	dest := filepath.Join(root, "deckhand-test-xz-reuse-"+strings.ReplaceAll(t.Name(), "/", "-")+".img")
+	rawURL := "https://github.com/example/releases/download/v1/image.img.xz"
+	t.Cleanup(func() {
+		_ = os.Remove(dest)
+		_ = os.Remove(dest + ".part")
+		_ = os.Remove(dest + ".download.part")
+		_ = os.Remove(dest + ".deckhand-download.json")
+	})
+	if err := os.WriteFile(dest, raw, 0o600); err != nil {
+		t.Fatalf("write cached dest: %v", err)
+	}
+	if err := osimg.WriteCacheManifest(dest, rawURL, artifactSha, rawSha, false); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+
+	clean, err := validateDownloadDestPolicy(dest)
+	if err != nil {
+		t.Fatalf("expected managed path to pass policy: %v", err)
+	}
+	reused, actual, err := reuseOrClearDownloadDest(clean, artifactSha, rawURL)
+	if err != nil {
+		t.Fatalf("reuseOrClearDownloadDest: %v", err)
+	}
+	if !reused {
+		t.Fatalf("expected manifest-backed xz image to be reused")
+	}
+	if actual != rawSha {
+		t.Fatalf("actual sha = %s, want %s", actual, rawSha)
+	}
+	if _, err := os.Lstat(dest); err != nil {
+		t.Fatalf("expected cached dest to remain, got %v", err)
 	}
 }
 

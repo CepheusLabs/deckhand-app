@@ -406,6 +406,9 @@ func Register(s *rpc.Server, cancel context.CancelFunc, version string) {
 			if err != nil {
 				return nil, err
 			}
+			if err := osimg.WriteCacheManifest(dest, req.URL, req.ExpectedSha, sha, false); err != nil {
+				return nil, rpc.NewError(rpc.CodeGeneric, "%v", err)
+			}
 			return map[string]any{"sha256": sha, "path": dest, "reused": false}, nil
 		},
 	})
@@ -837,26 +840,32 @@ func validateDownloadDestPath(dest string) error {
 }
 
 func reuseOrClearDownloadDest(dest, expectedSha, rawURL string) (bool, string, error) {
-	if downloadURLLooksXZ(rawURL) {
-		if err := removeDownloadDest(dest); err != nil {
-			return false, "", err
-		}
-		if err := removeExtractedDownloadPart(dest); err != nil {
-			return false, "", err
-		}
-		return false, "", nil
-	}
-	if reused, actual, err := reuseExistingDownload(dest, expectedSha); err != nil || reused {
+	if reused, actual, err := osimg.TryReuseCachedImage(dest, rawURL, expectedSha); err != nil || reused {
 		if err != nil {
 			return false, "", err
 		}
 		if err := removeDownloadPart(dest); err != nil {
 			return false, "", err
 		}
+		if err := osimg.WriteCacheManifest(dest, rawURL, expectedSha, actual, true); err != nil {
+			return false, "", err
+		}
 		return true, actual, nil
 	}
-	if err := removeDownloadPart(dest); err != nil {
+	if err := removeDownloadDest(dest); err != nil {
 		return false, "", err
+	}
+	if err := osimg.RemoveCacheManifest(dest); err != nil {
+		return false, "", err
+	}
+	if downloadURLLooksXZ(rawURL) {
+		if err := removeExtractedDownloadPart(dest); err != nil {
+			return false, "", err
+		}
+	} else {
+		if err := removeDownloadPart(dest); err != nil {
+			return false, "", err
+		}
 	}
 	return false, "", nil
 }
@@ -867,30 +876,6 @@ func downloadURLLooksXZ(rawURL string) bool {
 		return false
 	}
 	return strings.HasSuffix(strings.ToLower(parsed.Path), ".xz")
-}
-
-func reuseExistingDownload(dest, expectedSha string) (bool, string, error) {
-	info, err := os.Lstat(dest)
-	if os.IsNotExist(err) {
-		return false, "", nil
-	}
-	if err != nil {
-		return false, "", fmt.Errorf("inspect dest %q: %w", dest, err)
-	}
-	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
-		return false, "", fmt.Errorf("dest %q must be a regular file", dest)
-	}
-	actual, err := hash.SHA256(dest)
-	if err != nil {
-		return false, "", fmt.Errorf("hash cached image: %w", err)
-	}
-	if actual == expectedSha {
-		return true, actual, nil
-	}
-	if err := os.Remove(dest); err != nil {
-		return false, "", fmt.Errorf("remove stale cached image %q: %w", dest, err)
-	}
-	return false, actual, nil
 }
 
 func removeDownloadDest(dest string) error {

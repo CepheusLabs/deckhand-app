@@ -12,7 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/CepheusLabs/deckhand/sidecar/internal/hash"
 	"github.com/CepheusLabs/deckhand/sidecar/internal/host"
 	"github.com/CepheusLabs/deckhand/sidecar/internal/osimg"
 )
@@ -31,7 +30,9 @@ type DownloadOSOptions struct {
 }
 
 // RunDownloadOS downloads or reuses a verified OS image in Deckhand's
-// managed image cache. It is the CLI mirror of the os.download RPC path.
+// managed image cache. ExpectedSHA256 is the profile-declared artifact
+// hash; compressed downloads are cached with a manifest that binds that
+// artifact hash to the extracted raw image hash.
 func RunDownloadOS(ctx context.Context, w io.Writer, opts DownloadOSOptions) (bool, error) {
 	expected := strings.ToLower(strings.TrimSpace(opts.ExpectedSHA256))
 	if !isLowerSHA256(expected) {
@@ -61,11 +62,14 @@ func RunDownloadOS(ctx context.Context, w io.Writer, opts DownloadOSOptions) (bo
 		return false, err
 	}
 
-	reused, actual, err := reuseDownloadOSDest(dest, expected)
+	reused, actual, err := reuseDownloadOSDest(dest, expected, rawURL)
 	if err != nil {
 		return false, err
 	}
 	if reused {
+		if err := osimg.WriteCacheManifest(dest, rawURL, expected, actual, true); err != nil {
+			return false, err
+		}
 		fmt.Fprintf(w, "[PASS] os_image_reuse - %s\n", dest)
 		fmt.Fprintf(w, "sha256=%s\n", actual)
 		return true, nil
@@ -82,6 +86,9 @@ func RunDownloadOS(ctx context.Context, w io.Writer, opts DownloadOSOptions) (bo
 	if err != nil {
 		fmt.Fprintf(w, "[FAIL] os_image_download - %v\n", err)
 		return false, nil
+	}
+	if err := osimg.WriteCacheManifest(dest, rawURL, expected, sha, false); err != nil {
+		return false, err
 	}
 	fmt.Fprintf(w, "[PASS] os_image_download - %s\n", dest)
 	fmt.Fprintf(w, "sha256=%s\n", sha)
@@ -210,26 +217,19 @@ func validateDownloadOSDest(dest string) error {
 	return nil
 }
 
-func reuseDownloadOSDest(dest, expected string) (bool, string, error) {
-	info, err := os.Lstat(dest)
-	if os.IsNotExist(err) {
-		return false, "", nil
-	}
-	if err != nil {
-		return false, "", fmt.Errorf("inspect cached image: %w", err)
-	}
-	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
-		return false, "", fmt.Errorf("cached image %q must be a regular file", dest)
-	}
-	actual, err := hash.SHA256(dest)
-	if err != nil {
-		return false, "", err
-	}
-	if actual == expected {
-		return true, actual, nil
+func reuseDownloadOSDest(dest, expected, rawURL string) (bool, string, error) {
+	reused, actual, err := osimg.TryReuseCachedImage(dest, rawURL, expected)
+	if err != nil || reused {
+		return reused, actual, err
 	}
 	if err := os.Remove(dest); err != nil {
+		if os.IsNotExist(err) {
+			return false, "", nil
+		}
 		return false, "", fmt.Errorf("remove stale cached image: %w", err)
+	}
+	if err := osimg.RemoveCacheManifest(dest); err != nil {
+		return false, "", err
 	}
 	return false, actual, nil
 }
