@@ -2232,6 +2232,121 @@ void main() {
       expect(ssh.runCalls.any((c) => c.contains('/tmp/post-check')), isTrue);
     });
 
+    test('interrupted step runs cleanup before restart', () async {
+      final existing =
+          RunState.empty(
+            deckhandVersion: 'unknown',
+            profileId: 'test-printer',
+            profileCommit: 'deadbeef',
+          ).appending(
+            RunStateStep(
+              id: 'cmd',
+              status: RunStateStatus.inProgress,
+              startedAt: DateTime.utc(2026, 5, 6),
+              inputHash: canonicalInputHash({'marker': 'cleanup-restart'}),
+            ),
+          );
+      final ssh = FakeSsh()
+        ..nextRun = SshCommandResult(
+          stdout: const JsonEncoder().convert(existing.toJson()),
+          stderr: '',
+          exitCode: 0,
+        );
+      final controller = newController(
+        profileJson: baseProfileJson(
+          stockKeepSteps: [
+            {
+              'id': 'cmd',
+              'kind': 'ssh_commands',
+              'commands': ['touch /tmp/restarted'],
+              'idempotency': {
+                'inputs': {'marker': 'cleanup-restart'},
+                'resume': 'cleanup_then_restart',
+                'cleanup': 'rm -rf /tmp/partial',
+                'post_check': 'test -f /tmp/restarted',
+              },
+            },
+          ],
+        ),
+        ssh: ssh,
+      );
+      await controller.loadProfile('test-printer');
+      controller.setFlow(WizardFlow.stockKeep);
+      controller.setSession(
+        const SshSession(id: 'fake', host: 'h', port: 22, user: 'root'),
+      );
+
+      await controller.startExecution();
+
+      final cleanupIndex = ssh.runCalls.indexWhere(
+        (c) => c.contains('/tmp/partial'),
+      );
+      final commandIndex = ssh.runCalls.indexWhere(
+        (c) => c.contains('/tmp/restarted'),
+      );
+      expect(cleanupIndex, isNonNegative);
+      expect(commandIndex, isNonNegative);
+      expect(cleanupIndex, lessThan(commandIndex));
+    });
+
+    test('interrupted step cleanup failure blocks restart', () async {
+      final existing =
+          RunState.empty(
+            deckhandVersion: 'unknown',
+            profileId: 'test-printer',
+            profileCommit: 'deadbeef',
+          ).appending(
+            RunStateStep(
+              id: 'cmd',
+              status: RunStateStatus.inProgress,
+              startedAt: DateTime.utc(2026, 5, 6),
+              inputHash: canonicalInputHash({'marker': 'cleanup-restart'}),
+            ),
+          );
+      final ssh = FakeSsh()
+        ..nextRun = SshCommandResult(
+          stdout: const JsonEncoder().convert(existing.toJson()),
+          stderr: '',
+          exitCode: 0,
+        )
+        ..responsesByContains['/tmp/partial'] = const SshCommandResult(
+          stdout: '',
+          stderr: 'permission denied',
+          exitCode: 1,
+        );
+      final controller = newController(
+        profileJson: baseProfileJson(
+          stockKeepSteps: [
+            {
+              'id': 'cmd',
+              'kind': 'ssh_commands',
+              'commands': ['touch /tmp/should-not-restart'],
+              'idempotency': {
+                'inputs': {'marker': 'cleanup-restart'},
+                'resume': 'cleanup_then_restart',
+                'cleanup': 'rm -rf /tmp/partial',
+              },
+            },
+          ],
+        ),
+        ssh: ssh,
+      );
+      await controller.loadProfile('test-printer');
+      controller.setFlow(WizardFlow.stockKeep);
+      controller.setSession(
+        const SshSession(id: 'fake', host: 'h', port: 22, user: 'root'),
+      );
+
+      await expectLater(
+        controller.startExecution(),
+        throwsA(isA<StepExecutionException>()),
+      );
+      expect(
+        ssh.runCalls.any((c) => c.contains('/tmp/should-not-restart')),
+        isFalse,
+      );
+    });
+
     test('flash_disk consumes confirmation token bound to target', () async {
       final security = FakeSecurity();
       final helper = FakeElevatedHelper();

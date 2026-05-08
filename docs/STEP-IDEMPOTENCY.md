@@ -196,8 +196,10 @@ On entering S900-progress with an existing session:
    - If `completed` and `input_hash` differs: mark yellow ("inputs
      changed"), prompt the user before re-running. Re-runs are
      normal when the user jumps back and changes a decision.
-   - If `in_progress`: invoke the step's resume strategy (pending
-     beyond restart semantics).
+   - If `in_progress`: invoke the step's resume strategy. `restart`
+     re-runs the step, and `cleanup_then_restart` runs the declared
+     `cleanup` command before the retry. Checkpointed `continue`
+     is not implemented yet and falls back to restart with a warning.
    - If `failed`: present the recorded error with "retry / skip"
      buttons (current S900 behaviour, now with full context).
 3. Steps not yet recorded are run in declared order.
@@ -301,6 +303,6 @@ needing review — it can contain home-directory paths.
   on enter and shows "continuing/re-running/skipping" is the
   remaining piece.
 - Profile DSL `idempotency` block on existing step kinds: partially
-  implemented — `inputs`, `pre_check`, and `post_check` are honored.
-  `resume`/`cleanup` strategies for interrupted in-progress steps are
-  still pending beyond restart/re-run behaviour.
+  implemented — `inputs`, `pre_check`, `post_check`, `resume:
+  restart`, and `resume: cleanup_then_restart` are honored.
+  Checkpointed `resume: continue` remains pending.

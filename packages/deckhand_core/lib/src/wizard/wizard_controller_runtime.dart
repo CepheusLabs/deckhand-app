@@ -161,6 +161,9 @@ Future<void> _startExecutionImpl(WizardController c) async {
         continue;
       }
     }
+    if (prior != null && prior.status == RunStateStatus.inProgress) {
+      await _prepareInterruptedStepForRestart(c, step);
+    }
     c._emit(StepStarted(id));
     await c._runStateRecord(
       RunStateStep(
@@ -208,6 +211,44 @@ Future<void> _startExecutionImpl(WizardController c) async {
     }
   }
   c._emit(const ExecutionCompleted());
+}
+
+Future<void> _prepareInterruptedStepForRestart(
+  WizardController c,
+  Map<String, dynamic> step,
+) async {
+  final id = step['id'] as String? ?? 'unnamed';
+  final idempotency = _idempotencyBlock(step);
+  final resume = idempotency?['resume']?.toString();
+  if (resume == 'cleanup_then_restart') {
+    final cleanup = idempotency?['cleanup'];
+    if (cleanup is! String || cleanup.trim().isEmpty) {
+      throw StepExecutionException(
+        'resume cleanup missing for interrupted step $id',
+      );
+    }
+    c._requireSession();
+    final rendered = c._render(cleanup, shellSafe: true);
+    c._log(step, '[run-state] cleaning up interrupted step $id');
+    final result = await c._runSsh(rendered);
+    if (!result.success) {
+      throw StepExecutionException(
+        'cleanup failed before retrying $id',
+        stderr: result.stderr,
+      );
+    }
+    return;
+  }
+  if (resume == 'continue') {
+    c._emit(
+      StepWarning(
+        stepId: id,
+        message:
+            'Interrupted step requested resume=continue, but checkpointed '
+            'continue is not implemented yet; restarting the step.',
+      ),
+    );
+  }
 }
 
 const _kindsWithBuiltInRunStateSkip = <String>{
