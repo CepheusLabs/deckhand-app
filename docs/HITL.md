@@ -43,9 +43,7 @@ The reference rig:
   detection).
 
 The full BOM and wiring diagram lives in
-[`packaging/hitl/README.md`](../packaging/hitl/README.md) (to be
-created — flagged as pending under "Implementation status"
-below).
+[`packaging/hitl/README.md`](../packaging/hitl/README.md).
 
 ## Workflow
 
@@ -94,9 +92,8 @@ On success: nothing. The run is green.
 On failure: the run uploads:
 
 - The session log from the wizard CLI driver
-  ([`packages/deckhand_ui/lib/src/screens/wizard_shell.dart`](../packages/deckhand_ui/lib/src/screens/wizard_shell.dart)
-  exposes a headless "automation mode" — pending in the spec
-  below).
+  ([`packages/deckhand_hitl/bin/deckhand-hitl.dart`](../packages/deckhand_hitl/bin/deckhand-hitl.dart)
+  runs the same controller without Flutter screens).
 - The on-printer run-state file fetched over SSH after the
   failure.
 - The sidecar's stderr capture.
@@ -108,9 +105,9 @@ On failure: the run uploads:
 
 ## CLI driver
 
-CI can't operate the wizard via mouse clicks. The wizard shell
-exposes a "headless" mode via a hidden command-line flag that
-takes a YAML scenario file:
+CI can't operate the wizard via mouse clicks. The `deckhand_hitl`
+package exposes a headless CLI driver that takes a YAML scenario
+file:
 
 ```yaml
 # scenarios/sovol-zero/stock-keep.yaml
@@ -135,11 +132,11 @@ expectations:
     80: open     # Mainsail
 ```
 
-The headless driver is the same Riverpod-wired wizard, but its
-adapters are wired against real services and the screens
-auto-advance with the YAML decisions instead of waiting for
-clicks. Failures land as scenario assertion errors with a stack
-trace pointing at the failing step.
+The headless driver wires the same `WizardController` as the UI,
+but its adapters are real or CI-safe headless services and the
+scenario YAML preloads the decisions that screens normally collect.
+Failures land as scenario assertion errors with the failing step
+and captured artifacts.
 
 `packaging/hitl/scenarios/` will hold one scenario file per flow
 per printer. Adding a printer to HITL is "add a rig + write a
@@ -192,7 +189,7 @@ Failure modes:
 - Headless CLI driver: **phase-2 implemented** at
   [`packages/deckhand_hitl/bin/deckhand-hitl.dart`](../packages/deckhand_hitl/bin/deckhand-hitl.dart),
   with the actual flow logic in
-  [`scenario_runner.dart`](../packages/deckhand_hitl/lib/scenario_runner.dart).
+  [`scenario_runner.dart`](../packages/deckhand_hitl/lib/src/scenario_runner.dart).
   The driver now wires a real
   [`WizardController`](../packages/deckhand_core/lib/src/wizard/wizard_controller.dart)
   against the sidecar + a real printer, replays the scenario's
@@ -216,7 +213,7 @@ Failure modes:
   [`packages/deckhand_ui/lib/trust_keyring_asset.dart`](../packages/deckhand_ui/lib/trust_keyring_asset.dart).
 - Headless service substitutes for plugins that need
   `WidgetsFlutterBinding`:
-  [`HeadlessSecurityService`](../packages/deckhand_hitl/lib/headless_services.dart)
+  [`HeadlessSecurityService`](../packages/deckhand_hitl/lib/src/headless_services.dart)
   replaces `DefaultSecurityService` (flutter_secure_storage),
   `StubDiscoveryService` replaces the Bonsoir-backed mDNS
   service, and `StubMoonrakerService` covers the Moonraker

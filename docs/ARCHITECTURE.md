@@ -469,7 +469,7 @@ discover them without needing to know to search:
   Where the bundled keyring lives, how the trust bootstraps without a
   chicken-and-egg problem, what the user sees on every fetch, and how
   the maintainer signing key rotates. The keyring asset is
-  [`packages/deckhand_core/lib/src/trust/keyring.asc`](../packages/deckhand_core/lib/src/trust/keyring.asc)
+  [`app/assets/keyring.asc`](../app/assets/keyring.asc)
   (placeholder until the production key exists); wired as a Flutter
   asset so the binary itself is the trust root.
 
@@ -516,11 +516,11 @@ discover them without needing to know to search:
 
 - **Hardware-in-the-loop CI** — [HITL.md](HITL.md). Self-hosted
   runners with real printers attached run both wizard flows on every
-  tag and nightly against main. The headless wizard driver (pending
-  in
-  [`wizard_shell.dart`](../packages/deckhand_ui/lib/src/screens/wizard_shell.dart))
-  is the bridge between CI scenarios and the same Riverpod-wired
-  controller production users drive.
+  tag and nightly against main. The headless driver lives in
+  [`deckhand_hitl`](../packages/deckhand_hitl/bin/deckhand-hitl.dart)
+  and wires the same `WizardController` that production users drive,
+  using CI-safe headless service substitutes instead of Flutter UI
+  screens.
 
 ## Decided
 

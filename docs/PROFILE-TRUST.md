@@ -40,7 +40,7 @@ Out of scope:
 ## Trust roots
 
 Deckhand ships with a **bundled trust bundle** at
-`packages/deckhand_core/lib/src/trust/keyring.asc`. Contents:
+`app/assets/keyring.asc`. Contents:
 
 - The current Cepheus Labs profile-signing key (offline; only
   used to sign deckhand-profiles release tags).
