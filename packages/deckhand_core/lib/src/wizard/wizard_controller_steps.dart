@@ -222,8 +222,14 @@ Future<void> _runInstallScreenImpl(
     orElse: () => throw StepExecutionException('unknown screen $screenId'),
   );
   final sourceKind = screen.raw['source_kind'] as String?;
-  if (sourceKind == 'bundled') {
-    final src = c._resolveProfilePath(screen.raw['source_path'] as String);
+  if (sourceKind == null || sourceKind == 'bundled') {
+    final sourcePath = screen.raw['source_path'] as String?;
+    if (sourcePath == null || sourcePath.trim().isEmpty) {
+      throw StepExecutionException(
+        'screen $screenId bundled source must declare source_path',
+      );
+    }
+    final src = c._resolveProfilePath(sourcePath);
     final remote = '~/${p.basename(src)}';
     await c._uploadDir(src, remote);
     final installScript = screen.raw['install_script'] as String?;

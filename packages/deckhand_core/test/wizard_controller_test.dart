@@ -2164,6 +2164,47 @@ void main() {
       );
     });
 
+    test('install_screen treats omitted source_kind as bundled', () async {
+      final tmp = await Directory.systemTemp.createTemp(
+        'deckhand-screen-default-',
+      );
+      addTearDown(() => tmp.delete(recursive: true));
+      final screenDir = Directory(p.join(tmp.path, 'lcd'));
+      await screenDir.create(recursive: true);
+      await File(p.join(screenDir.path, 'README.txt')).writeAsString('lcd');
+
+      final ssh = FakeSsh();
+      final controller = WizardController(
+        profiles: _PinnedLocationProfileService({
+          ...baseProfileJson(
+            stockKeepSteps: [
+              {'id': 'screen', 'kind': 'install_screen'},
+            ],
+          ),
+          'screens': [
+            {'id': 'lcd', 'source_path': './lcd'},
+          ],
+        }, profileDirPath: tmp.path),
+        ssh: ssh,
+        flash: _StubFlashService(),
+        discovery: _StubDiscoveryService(),
+        moonraker: _StubMoonrakerService(),
+        upstream: FakeUpstream(),
+        security: FakeSecurity(),
+      );
+      await controller.loadProfile('test-printer');
+      controller.setFlow(WizardFlow.stockKeep);
+      await controller.setDecision('screen', 'lcd');
+      controller.setSession(
+        const SshSession(id: 'fake', host: 'h', port: 22, user: 'root'),
+      );
+
+      await controller.startExecution();
+
+      expect(ssh.uploadCalls, isNotEmpty);
+      expect(ssh.steps.last, contains('tar -xf'));
+    });
+
     test('install_screen restore/source gaps fail loudly', () async {
       final controller = newController(
         profileJson: {
