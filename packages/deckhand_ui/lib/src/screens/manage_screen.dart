@@ -507,7 +507,7 @@ class _BackupTab extends StatelessWidget {
             alignment: Alignment.centerLeft,
             child: FilledButton.icon(
               icon: const Icon(Icons.inventory_2_outlined, size: 16),
-              label: const Text('Open backup flow'),
+              label: const Text('Back up eMMC'),
               onPressed: () => context.go('/manage-emmc-backup'),
             ),
           ),

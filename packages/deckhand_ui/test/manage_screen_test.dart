@@ -61,6 +61,30 @@ void main() {
     expect(clipboardWrites, contains('ssh mks@192.168.1.50'));
   });
 
+  testWidgets('backup tab uses a direct eMMC backup action label', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1200, 900));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final controller = stubWizardController(profileJson: testProfileJson());
+    await controller.loadProfile('test-printer');
+
+    await tester.pumpWidget(
+      testHarness(
+        controller: controller,
+        child: const ManageScreen(),
+        initialLocation: '/manage',
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Backup').first);
+    await tester.pump();
+
+    expect(find.widgetWithText(FilledButton, 'Back up eMMC'), findsOneWidget);
+    expect(find.text('Open backup flow'), findsNothing);
+  });
+
   testWidgets('restore tab surfaces indexed backups and arms restore action', (
     tester,
   ) async {
