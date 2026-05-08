@@ -1982,6 +1982,82 @@ void main() {
             'SFTP cannot expand tildes; remote path must not start with `~/`',
       );
     });
+
+    test('honors target_dir for profile config uploads', () async {
+      final ssh = FakeSsh();
+      final tmp = await Directory.systemTemp.createTemp('linkx-config-test');
+      addTearDown(() async => tmp.delete(recursive: true));
+      final configDir = Directory(p.join(tmp.path, 'configs'));
+      await configDir.create();
+      await File(
+        p.join(configDir.path, 'printer.cfg'),
+      ).writeAsString('[printer]\nkinematics: corexy\n');
+      await File(
+        p.join(configDir.path, 'moonraker.conf'),
+      ).writeAsString('[server]\nhost: 0.0.0.0\n');
+
+      final controller = WizardController(
+        profiles: _PinnedLocationProfileService(
+          baseProfileJson(
+            stockKeepSteps: [
+              {
+                'id': 'install_configs',
+                'kind': 'link_extras',
+                'target_dir': '~/printer_data/config/',
+                'method': 'copy_with_backup',
+                'sources': [
+                  './configs/printer.cfg',
+                  './configs/moonraker.conf',
+                ],
+              },
+            ],
+          ),
+          profileDirPath: tmp.path,
+        ),
+        ssh: ssh,
+        flash: _StubFlashService(),
+        discovery: _StubDiscoveryService(),
+        moonraker: _StubMoonrakerService(),
+        upstream: FakeUpstream(),
+        security: FakeSecurity(),
+      );
+      await controller.loadProfile('test-printer');
+      controller.setFlow(WizardFlow.stockKeep);
+      controller.setSession(
+        const SshSession(id: 'fake', host: 'h', port: 22, user: 'root'),
+      );
+
+      final events = <WizardEvent>[];
+      final sub = controller.events.listen(events.add);
+      await controller.startExecution();
+      await sub.cancel();
+
+      expect(events.whereType<StepFailed>(), isEmpty);
+      expect(
+        ssh.runCalls.any(
+          (c) => c.contains('mkdir -p') && c.contains('printer_data/config'),
+        ),
+        isTrue,
+      );
+      expect(
+        ssh.runCalls.any(
+          (c) =>
+              c.contains('printer_data/config/printer.cfg') &&
+              c.contains('.deckhand-pre-'),
+        ),
+        isTrue,
+        reason: 'copy_with_backup should snapshot an existing config first',
+      );
+      expect(
+        ssh.runCalls.any((c) => c.contains('klippy/extras')),
+        isFalse,
+        reason: 'target_dir installs must not fall back to Klipper extras',
+      );
+      expect(
+        ssh.uploadCalls.map((u) => p.basename(u.local)),
+        containsAll(<String>['printer.cfg', 'moonraker.conf']),
+      );
+    });
   });
 
   group('security review regressions', () {

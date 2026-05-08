@@ -147,10 +147,16 @@ Future<void> _runLinkExtrasImpl(
   Map<String, dynamic> step,
 ) async {
   final s = c._requireSession();
+  final sources = ((step['sources'] as List?) ?? const []).cast<String>();
+  final targetDir = step['target_dir'] as String?;
+  if (targetDir != null && targetDir.trim().isNotEmpty) {
+    await _runTargetDirLinkExtras(c, step, sources);
+    return;
+  }
+
   final fw = c._selectedFirmware();
   if (fw == null) throw StepExecutionException('no firmware selected');
   final install = fw.installPath ?? '~/klipper';
-  final sources = ((step['sources'] as List?) ?? const []).cast<String>();
   // Make sure the destination tree exists ONCE up front so single-file
   // uploads below have somewhere to land. SFTP itself can't expand
   // `~`; running `mkdir -p` via shell does, and a single round-trip
@@ -176,6 +182,130 @@ Future<void> _runLinkExtrasImpl(
     c._log(step, '[link_extras] installed $basename');
   }
 }
+
+Future<void> _runTargetDirLinkExtras(
+  WizardController c,
+  Map<String, dynamic> step,
+  List<String> sources,
+) async {
+  final s = c._requireSession();
+  final targetDir = c._render((step['target_dir'] as String).trim());
+  c._validateRemoteInstallPath(targetDir, 'link_extras target_dir');
+  final method = (step['method'] as String?) ?? 'copy';
+  if (!const {
+    'copy',
+    'copy_with_backup',
+    'copy_with_mode_0755',
+  }.contains(method)) {
+    throw StepExecutionException('unsupported link_extras method "$method"');
+  }
+
+  final qTargetDir = shellPathEscape(targetDir);
+  final mk = await c._runSsh('mkdir -p -- $qTargetDir');
+  if (!mk.success) {
+    throw StepExecutionException('remote mkdir failed', stderr: mk.stderr);
+  }
+
+  for (final src in sources) {
+    final localPath = c._resolveProfilePath(src);
+    final basename = c._safeRemoteBasename(
+      p.basename(localPath),
+      'link_extras source',
+    );
+    final remote = _joinRemoteDir(targetDir, basename);
+    if (await Directory(localPath).exists()) {
+      if (method == 'copy_with_backup') {
+        await _backupRemoteIfPresent(c, remote);
+      }
+      await c._uploadDir(localPath, remote);
+    } else {
+      await _uploadLinkExtraFile(c, s, localPath, remote, method, step);
+    }
+    c._log(step, '[link_extras] installed $basename');
+  }
+}
+
+Future<void> _uploadLinkExtraFile(
+  WizardController c,
+  SshSession s,
+  String localPath,
+  String remote,
+  String method,
+  Map<String, dynamic> step,
+) async {
+  final mode = _linkExtrasMode(step, method);
+  if (method == 'copy') {
+    await c.ssh.upload(s, localPath, _sftpPath(remote), mode: mode);
+    return;
+  }
+
+  final basename = c._safeRemoteBasename(
+    p.basename(localPath),
+    'link_extras source',
+  );
+  final tmpRemote =
+      '/tmp/deckhand-link-${DateTime.now().microsecondsSinceEpoch}-'
+      '${c._randomSuffix()}-$basename';
+  await c.ssh.upload(s, localPath, tmpRemote, mode: mode);
+  final installMode = _linkExtrasInstallMode(mode);
+  final qTmp = shellSingleQuote(tmpRemote);
+  final qRemote = shellPathEscape(remote);
+  final qBackup = shellPathEscape(_backupPathForRemote(c, remote));
+  final cmd =
+      'if [ -e $qRemote ] || [ -L $qRemote ]; then '
+      'cp -a -- $qRemote $qBackup; fi && '
+      'install -m $installMode -- $qTmp $qRemote && rm -f -- $qTmp';
+  final res = await c._runSsh(cmd);
+  if (!res.success) {
+    throw StepExecutionException('remote install failed', stderr: res.stderr);
+  }
+}
+
+Future<void> _backupRemoteIfPresent(WizardController c, String remote) async {
+  final qRemote = shellPathEscape(remote);
+  final qBackup = shellPathEscape(_backupPathForRemote(c, remote));
+  final res = await c._runSsh(
+    'if [ -e $qRemote ] || [ -L $qRemote ]; then '
+    'cp -a -- $qRemote $qBackup; fi',
+  );
+  if (!res.success) {
+    throw StepExecutionException('remote backup failed', stderr: res.stderr);
+  }
+}
+
+String _joinRemoteDir(String dir, String basename) {
+  final trimmed = dir.trim();
+  final separator = trimmed.endsWith('/') ? '' : '/';
+  return '$trimmed$separator$basename';
+}
+
+String _sftpPath(String remote) =>
+    remote.startsWith('~/') ? remote.substring(2) : remote;
+
+String _backupPathForRemote(WizardController c, String remote) {
+  final profileId = c._safeRemoteBasename(
+    c._profile?.id ?? 'profile',
+    'profile id',
+  );
+  final stamp = DateTime.now().toUtc().toIso8601String().replaceAll(
+    RegExp(r'[^0-9A-Za-z]'),
+    '',
+  );
+  return '$remote.deckhand-pre-$profileId-$stamp';
+}
+
+int? _linkExtrasMode(Map<String, dynamic> step, String method) {
+  final raw = step['mode'];
+  if (raw is int) return raw;
+  if (raw is String && raw.trim().isNotEmpty) {
+    return int.parse(raw.trim(), radix: 8);
+  }
+  if (method == 'copy_with_mode_0755') return int.parse('0755', radix: 8);
+  return null;
+}
+
+String _linkExtrasInstallMode(int? mode) =>
+    (mode ?? int.parse('0644', radix: 8)).toRadixString(8).padLeft(4, '0');
 
 Future<void> _runInstallStackImpl(
   WizardController c,
