@@ -287,6 +287,68 @@ void main() {
       expect(find.text('All done'), findsOneWidget);
     });
 
+    testWidgets('running install can be canceled from progress screen', (
+      tester,
+    ) async {
+      final releaseDownload = Completer<void>();
+      final upstream = _HoldingProgressUpstream(releaseDownload);
+      final controller = stubWizardController(
+        upstream: upstream,
+        profileJson: testProfileJson(
+          os: {
+            'fresh_install_options': [
+              {
+                'id': 'trixie',
+                'display_name': 'Debian',
+                'url': 'https://downloads.example.com/image.img',
+                'sha256':
+                    'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+                'recommended': true,
+              },
+            ],
+          },
+          freshFlashSteps: [
+            {'id': 'download_os', 'kind': 'os_download'},
+            {'id': 'next_step', 'kind': 'ssh_commands', 'commands': <String>[]},
+          ],
+        ),
+      );
+      await controller.loadProfile('test-printer');
+      controller.setFlow(WizardFlow.freshFlash);
+      await controller.setDecision('flash.os', 'trixie');
+
+      await tester.pumpWidget(
+        testHarness(
+          controller: controller,
+          child: const ProgressScreen(),
+          initialLocation: '/progress',
+        ),
+      );
+      for (var i = 0; i < 10; i++) {
+        await tester.pump(const Duration(milliseconds: 50));
+      }
+
+      expect(find.widgetWithText(TextButton, 'Cancel install'), findsOneWidget);
+      await tester.tap(find.widgetWithText(TextButton, 'Cancel install'));
+      for (var i = 0; i < 5; i++) {
+        await tester.pump(const Duration(milliseconds: 50));
+      }
+      expect(find.text('Cancel install?'), findsOneWidget);
+
+      await tester.tap(find.widgetWithText(FilledButton, 'Cancel install'));
+      await tester.pump();
+      expect(find.text('Cancel requested...'), findsOneWidget);
+
+      releaseDownload.complete();
+      for (var i = 0; i < 10; i++) {
+        await tester.pump(const Duration(milliseconds: 50));
+      }
+
+      expect(find.text('Install canceled'), findsOneWidget);
+      expect(find.text('Run canceled'), findsOneWidget);
+      expect(find.text('next_step'), findsNothing);
+    });
+
     testWidgets('extracting without a reported total is indeterminate', (
       tester,
     ) async {

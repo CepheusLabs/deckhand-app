@@ -717,10 +717,12 @@ confirmation checkbox).
   spinner; completed rows expand on click to reveal the full URL
   and timestamps. The tab badge shows a count of in-flight
   requests so the user can switch to it without watching the log
-  scroll past. Users uncomfortable with what they see can pause
-  the install (the "Pause after current step" button) and revoke
-  hosts in Settings.
+  scroll past. Users uncomfortable with what they see can cancel
+  the install; Deckhand stops before the next queued step once the
+  current command yields, and hosts can be revoked later in Settings.
 - Top: overall progress bar (derived from steps completed).
+- Footer: "Cancel install" while running, "Close" on failure/cancel,
+  and "Finish" on success.
 
 Each step sends a notification when it starts, emits progress for
 long-running steps, and signals completion with a summary.

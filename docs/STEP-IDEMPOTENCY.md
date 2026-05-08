@@ -228,12 +228,13 @@ finishes (or its `await` resolves) and then `startExecution`
 throws [`WizardCancelledException`](../packages/deckhand_core/lib/src/wizard/wizard_events.dart)
 before dispatching the next step.
 
-Today the only call sites are:
+Today the call sites are:
 
 - HITL runner — fires when a step requests user input the
   scenario didn't pre-decide.
-- Production "Cancel install" button on S900 — pending; when
-  added it'll wire the same call.
+- Production "Cancel install" button on S900 — asks for confirmation,
+  calls `cancelExecution`, and shows a canceled state once the current
+  step yields.
 
 Distinct from `StepExecutionException`: a cancellation is a
 deliberate user/automation action and should produce a different

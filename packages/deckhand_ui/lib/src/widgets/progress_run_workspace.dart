@@ -19,7 +19,7 @@ class RunStep {
 
 enum RunStepStatus { queued, active, done, warning, failed }
 
-enum RunBannerSeverity { success, error }
+enum RunBannerSeverity { success, warning, error }
 
 class RunBanner extends StatelessWidget {
   const RunBanner({
@@ -36,8 +36,11 @@ class RunBanner extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final tokens = DeckhandTokens.of(context);
-    final isError = severity == RunBannerSeverity.error;
-    final color = isError ? tokens.bad : tokens.ok;
+    final color = switch (severity) {
+      RunBannerSeverity.success => tokens.ok,
+      RunBannerSeverity.warning => tokens.warn,
+      RunBannerSeverity.error => tokens.bad,
+    };
     final bg = color.withValues(alpha: 0.08);
     return Container(
       width: double.infinity,
@@ -51,7 +54,11 @@ class RunBanner extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Icon(
-            isError ? Icons.error_outline : Icons.check_circle_outline,
+            switch (severity) {
+              RunBannerSeverity.success => Icons.check_circle_outline,
+              RunBannerSeverity.warning => Icons.warning_amber_outlined,
+              RunBannerSeverity.error => Icons.error_outline,
+            },
             color: color,
             size: 20,
           ),

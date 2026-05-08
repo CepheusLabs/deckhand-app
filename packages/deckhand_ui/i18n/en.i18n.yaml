@@ -307,6 +307,18 @@ progress:
   action_finish: Finish
   action_close: Close
   action_running: Running...
+  action_cancel: Cancel install
+  action_cancel_requested: Cancel requested...
+  title_cancelled: Install canceled
+  helper_cancelled: Deckhand stopped before starting another queued step.
+  cancel_title: Cancel install?
+  cancel_body: |
+    Deckhand will stop before the next queued step. If the current
+    command is already running, it may finish before cancellation
+    takes effect.
+  cancel_keep_running: Keep running
+  cancel_confirm: Cancel install
+  banner_cancelled_title: Run canceled
   prompt_default_title: One moment
   prompt_default_action: Continue
   choose_one_default_title: Pick one

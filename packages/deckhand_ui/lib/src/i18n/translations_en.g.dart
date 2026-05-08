@@ -713,6 +713,33 @@ class TranslationsProgressEn {
 	/// en: 'Running...'
 	String get action_running => 'Running...';
 
+	/// en: 'Cancel install'
+	String get action_cancel => 'Cancel install';
+
+	/// en: 'Cancel requested...'
+	String get action_cancel_requested => 'Cancel requested...';
+
+	/// en: 'Install canceled'
+	String get title_cancelled => 'Install canceled';
+
+	/// en: 'Deckhand stopped before starting another queued step.'
+	String get helper_cancelled => 'Deckhand stopped before starting another queued step.';
+
+	/// en: 'Cancel install?'
+	String get cancel_title => 'Cancel install?';
+
+	/// en: 'Deckhand will stop before the next queued step. If the current command is already running, it may finish before cancellation takes effect. '
+	String get cancel_body => 'Deckhand will stop before the next queued step. If the current\ncommand is already running, it may finish before cancellation\ntakes effect.\n';
+
+	/// en: 'Keep running'
+	String get cancel_keep_running => 'Keep running';
+
+	/// en: 'Cancel install'
+	String get cancel_confirm => 'Cancel install';
+
+	/// en: 'Run canceled'
+	String get banner_cancelled_title => 'Run canceled';
+
 	/// en: 'One moment'
 	String get prompt_default_title => 'One moment';
 
@@ -1215,6 +1242,15 @@ extension on Translations {
 			'progress.action_finish' => 'Finish',
 			'progress.action_close' => 'Close',
 			'progress.action_running' => 'Running...',
+			'progress.action_cancel' => 'Cancel install',
+			'progress.action_cancel_requested' => 'Cancel requested...',
+			'progress.title_cancelled' => 'Install canceled',
+			'progress.helper_cancelled' => 'Deckhand stopped before starting another queued step.',
+			'progress.cancel_title' => 'Cancel install?',
+			'progress.cancel_body' => 'Deckhand will stop before the next queued step. If the current\ncommand is already running, it may finish before cancellation\ntakes effect.\n',
+			'progress.cancel_keep_running' => 'Keep running',
+			'progress.cancel_confirm' => 'Cancel install',
+			'progress.banner_cancelled_title' => 'Run canceled',
 			'progress.prompt_default_title' => 'One moment',
 			'progress.prompt_default_action' => 'Continue',
 			'progress.choose_one_default_title' => 'Pick one',

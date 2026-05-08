@@ -34,6 +34,8 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> {
   StreamSubscription<EgressEvent>? _egressSub;
   bool _done = false;
   bool _failed = false;
+  bool _cancelled = false;
+  bool _cancelRequested = false;
   String? _error;
   double? _currentFraction;
   bool _currentProgressIndeterminate = false;
@@ -90,6 +92,7 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> {
       if (!mounted) return;
       setState(() {
         _done = true;
+        _cancelled = false;
         _currentStepKind = null;
         _currentStepId = null;
         _currentProgressIndeterminate = false;
@@ -99,16 +102,31 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> {
       setState(() {
         _done = false;
         _failed = false;
+        _cancelled = false;
         _error = null;
         _currentStepKind = null;
         _currentStepId = null;
         _currentProgressIndeterminate = false;
       });
       context.go(e.route);
+    } on WizardCancelledException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _done = false;
+        _failed = false;
+        _cancelled = true;
+        _cancelRequested = false;
+        _error = e.reason;
+        _currentStepKind = null;
+        _currentStepId = null;
+        _currentProgressIndeterminate = false;
+      });
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _failed = true;
+        _cancelled = false;
+        _cancelRequested = false;
         _error = '$e';
         _currentStepKind = null;
         _currentStepId = null;
@@ -509,11 +527,44 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> {
     );
   }
 
+  Future<void> _requestCancel() async {
+    if (_cancelRequested || _done || _failed || _cancelled) return;
+    final confirmed = await _showFadedDialog<bool>(
+      child: AlertDialog(
+        icon: const Icon(Icons.warning_amber_outlined),
+        title: Text(t.progress.cancel_title),
+        content: Text(t.progress.cancel_body),
+        actions: [
+          TextButton(
+            onPressed: () =>
+                Navigator.of(context, rootNavigator: true).pop(false),
+            child: Text(t.progress.cancel_keep_running),
+          ),
+          FilledButton(
+            onPressed: () =>
+                Navigator.of(context, rootNavigator: true).pop(true),
+            child: Text(t.progress.cancel_confirm),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    ref
+        .read(wizardControllerProvider)
+        .cancelExecution(reason: 'Canceled by user.');
+    if (!mounted) return;
+    setState(() {
+      _cancelRequested = true;
+      _currentProgressMessage = t.progress.helper_cancelled;
+    });
+  }
+
   /// Title text driven by the currently-running step kind. Keeps the
   /// header honest: during eMMC writes it says "Writing image", not
   /// "Installing..."
   String _titleForState() {
     if (_failed) return t.progress.title_failed;
+    if (_cancelled) return t.progress.title_cancelled;
     if (_done) return t.progress.title_done;
     if (_currentStepKind == 'os_download' &&
         (_currentProgressMessage?.startsWith('extracting image') ?? false)) {
@@ -612,7 +663,7 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> {
       title: _titleForState(),
       helperText: _failed
           ? 'The run stopped before Deckhand changed anything further. Review the failed step below.'
-          : null,
+          : (_cancelled ? t.progress.helper_cancelled : null),
       maxContentWidth: 1440,
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -645,6 +696,13 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> {
               severity: RunBannerSeverity.error,
             ),
             const SizedBox(height: 16),
+          ] else if (_cancelled) ...[
+            RunBanner(
+              title: t.progress.banner_cancelled_title,
+              message: _error ?? t.progress.helper_cancelled,
+              severity: RunBannerSeverity.warning,
+            ),
+            const SizedBox(height: 16),
           ] else if (_done) ...[
             const RunBanner(
               title: 'Run complete',
@@ -667,11 +725,22 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> {
       primaryAction: WizardAction(
         label: _done
             ? t.progress.action_finish
-            : (_failed ? t.progress.action_close : t.progress.action_running),
+            : ((_failed || _cancelled)
+                  ? t.progress.action_close
+                  : t.progress.action_running),
         onPressed: _done
             ? () => context.go('/done')
-            : (_failed ? () => context.go('/') : null),
+            : ((_failed || _cancelled) ? () => context.go('/') : null),
       ),
+      secondaryActions: [
+        if (!_done && !_failed && !_cancelled)
+          WizardAction(
+            label: _cancelRequested
+                ? t.progress.action_cancel_requested
+                : t.progress.action_cancel,
+            onPressed: _cancelRequested ? null : _requestCancel,
+          ),
+      ],
     );
   }
 }
