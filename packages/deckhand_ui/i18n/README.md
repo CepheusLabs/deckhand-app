@@ -7,14 +7,14 @@ rest of the UI reads via `t.path.to.key`.
 ## Generating
 
 ```powershell
-cd D:\git\3dprinting\deckhand\packages\deckhand_ui
-D:\git\flutter\bin\flutter.bat pub run slang
+cd D:\git\3dprinting\installer\deckhand\packages\deckhand_ui
+dart run slang
 ```
 
 ## Adding a new string
 
 1. Add the key under the appropriate section in `en.i18n.yaml`.
-2. Re-generate (`flutter pub run slang`).
+2. Re-generate (`dart run slang`).
 3. Reference from code: `t.<section>.<key>`.
 
 ## Adding a locale
