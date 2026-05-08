@@ -156,6 +156,57 @@ void main() {
     expect(messages, contains('asset_pattern'));
   });
 
+  group('unsupported runtime features', () {
+    test('flags screen restore-from-backup sources', () async {
+      _writeRegistry(tmp, ['screen-restore']);
+      final profile =
+          '${_minimalValidProfile('screen-restore')}'
+          '\nscreens:\n'
+          '  - id: lcd\n'
+          '    source_kind: restore_from_backup\n'
+          '\nflows:\n'
+          '  stock_keep:\n'
+          '    enabled: true\n'
+          '    steps:\n'
+          '      - id: screen\n'
+          '        kind: install_screen\n'
+          '        safe_to_rerun: true\n';
+      _writeProfile(tmp, 'screen-restore', profile);
+      final report = await runProfileLint(['--root', tmp.path]);
+
+      expect(report.hasErrors, isTrue);
+      final messages = report.results
+          .expand((r) => r.findings.map((f) => f.message))
+          .join('\n');
+      expect(messages, contains('restore_from_backup'));
+    });
+
+    test('flags flash_mcus steps with explicit targets', () async {
+      _writeRegistry(tmp, ['mcu-flash']);
+      final profile =
+          '${_minimalValidProfile('mcu-flash')}'
+          '\nflows:\n'
+          '  stock_keep:\n'
+          '    enabled: true\n'
+          '    steps:\n'
+          '      - id: flash_mcus\n'
+          '        kind: flash_mcus\n'
+          '        safe_to_rerun: true\n'
+          '        which: [main]\n'
+          '\nmcus:\n'
+          '  - id: main\n'
+          '    chip: stm32f407xx\n';
+      _writeProfile(tmp, 'mcu-flash', profile);
+      final report = await runProfileLint(['--root', tmp.path]);
+
+      expect(report.hasErrors, isTrue);
+      final messages = report.results
+          .expand((r) => r.findings.map((f) => f.message))
+          .join('\n');
+      expect(messages, contains('flash_mcus'));
+    });
+  });
+
   test('flags folder/profile_id mismatch', () async {
     _writeRegistry(tmp, ['right-id']);
     _writeProfile(tmp, 'wrong-folder', _minimalValidProfile('right-id'));

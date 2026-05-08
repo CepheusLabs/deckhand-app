@@ -332,6 +332,12 @@ Future<LintReport> runProfileLint(List<String> argv) async {
     // and multi-word interpreters can still alter command semantics.
     _walkCommandSurfaces(parsed, findings);
 
+    // Runtime support gate: profile schema may allow forward-looking
+    // constructs before the app can execute them. Catch those in lint
+    // so a tagged profile cannot fail mid-install with "not
+    // implemented" after the user already committed to a flow.
+    _walkUnsupportedRuntimeFeatures(parsed, findings);
+
     // Idempotency contract: every executable step in a flow must
     // either declare an `idempotency` block (pre-check / resume /
     // post-check) per docs/STEP-IDEMPOTENCY.md, or carry an
@@ -458,6 +464,52 @@ void _walkCommandSurfaces(Map<String, dynamic> profile, List<LintFinding> out) {
           ),
         );
       }
+    }
+  });
+}
+
+void _walkUnsupportedRuntimeFeatures(
+  Map<String, dynamic> profile,
+  List<LintFinding> out,
+) {
+  final screens = profile['screens'];
+  if (screens is List) {
+    for (var i = 0; i < screens.length; i++) {
+      final screen = screens[i];
+      if (screen is! Map) continue;
+      final sourceKind = screen['source_kind'];
+      if (sourceKind is String && sourceKind == 'bundled') continue;
+      out.add(
+        LintFinding(
+          LintSeverity.error,
+          'screens[$i].source_kind',
+          'screen source_kind "${sourceKind ?? '<missing>'}" is not '
+              'supported by Deckhand yet; supported value: bundled',
+        ),
+      );
+    }
+  }
+
+  final flows = profile['flows'];
+  if (flows is! Map) return;
+  flows.forEach((flowName, flow) {
+    if (flow is! Map) return;
+    final steps = flow['steps'];
+    if (steps is! List) return;
+    for (var i = 0; i < steps.length; i++) {
+      final step = steps[i];
+      if (step is! Map || step['kind'] != 'flash_mcus') continue;
+      final which = step['which'];
+      if (which is! List || which.isEmpty) continue;
+      out.add(
+        LintFinding(
+          LintSeverity.error,
+          'flows.$flowName.steps[$i].which',
+          'flash_mcus with explicit MCU targets is not supported by '
+              'Deckhand yet; keep this out of tagged profiles until the '
+              'MCU flash transport contract exists',
+        ),
+      );
     }
   });
 }
