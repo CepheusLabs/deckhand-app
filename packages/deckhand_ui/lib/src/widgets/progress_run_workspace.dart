@@ -497,6 +497,31 @@ class _PaneTabCell extends StatelessWidget {
 }
 
 String _stepTitle(String id) {
+  final mapped = switch (id) {
+    'choose_os_image' => 'Choose OS image',
+    'choose_target_disk' => 'Check selected disk',
+    'download_os' => 'Prepare OS image',
+    'flash_disk' => 'Write OS image',
+    'flash_done_prompt' => 'Confirm flash',
+    'wait_for_ssh' => 'Wait for printer',
+    'first_boot_setup' => 'Run first-boot setup',
+    'install_firmware' => 'Install firmware',
+    'install_stack' => 'Install Klipper services',
+    'link_extras' => 'Install profile extras',
+    'install_screen' => 'Install touchscreen UI',
+    'flash_mcus' => 'MCU flashing unavailable',
+    'apply_services' => 'Clean up stock services',
+    'apply_files' => 'Clean up stock files',
+    'snapshot_paths' => 'Back up stock files',
+    'write_file' => 'Write config',
+    'install_marker' => 'Mark printer as managed',
+    'verify' => 'Verify install',
+    'script' => 'Run setup script',
+    'ssh_commands' => 'Run remote commands',
+    'conditional' => 'Evaluate condition',
+    _ => null,
+  };
+  if (mapped != null) return mapped;
   final spaced = id.replaceAll('_', ' ').replaceAll('-', ' ').trim();
   if (spaced.isEmpty) return id;
   return spaced[0].toUpperCase() + spaced.substring(1);

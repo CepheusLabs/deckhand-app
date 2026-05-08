@@ -39,6 +39,42 @@ void main() {
     expect(find.byType(DeckhandSpinner), findsOneWidget);
   });
 
+  testWidgets('step rail uses human task names instead of raw ids', (
+    tester,
+  ) async {
+    final controller = stubWizardController(profileJson: testProfileJson());
+    await controller.loadProfile('test-printer');
+    await tester.pumpWidget(
+      testHarness(
+        controller: controller,
+        child: Scaffold(
+          body: Center(
+            child: SizedBox(
+              width: 1200,
+              height: 520,
+              child: ProgressRunWorkspace(
+                steps: const [
+                  RunStep(id: 'download_os', kind: 'os_download'),
+                  RunStep(id: 'flash_disk', kind: 'flash_disk'),
+                  RunStep(id: 'wait_for_ssh', kind: 'wait_for_ssh'),
+                ],
+                statusFor: (_) => RunStepStatus.queued,
+                log: const [],
+                networkEvents: const [],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Prepare OS image'), findsOneWidget);
+    expect(find.text('Write OS image'), findsOneWidget);
+    expect(find.text('Wait for printer'), findsOneWidget);
+    expect(find.text('Download os'), findsNothing);
+    expect(find.text('Wait for ssh'), findsNothing);
+  });
+
   testWidgets('network tab renders captured egress events', (tester) async {
     final controller = stubWizardController(profileJson: testProfileJson());
     await controller.loadProfile('test-printer');
