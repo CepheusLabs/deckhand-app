@@ -140,6 +140,8 @@ func main() {
 	switch op {
 	case "write-image":
 		runWriteImage(args)
+	case "write-image-smoke":
+		runWriteImageSmoke(args)
 	case "read-image":
 		runReadImage(args)
 	case "hash-device":
@@ -481,8 +483,30 @@ func rejectDeviceOutput(output string) error {
 	return nil
 }
 
-func runWriteImage(args []string) {
-	fs := flag.NewFlagSet("write-image", flag.ExitOnError)
+type writeImageRequestOptions struct {
+	OpName        string
+	Args          []string
+	RequireAccess bool
+}
+
+type writeImageRequest struct {
+	Image       string
+	Target      string
+	TokenFile   string
+	CancelFile  string
+	Manifest    string
+	Verify      bool
+	ExpectedSHA string
+	DevicePath  string
+}
+
+func validateWriteImageRequest(opts writeImageRequestOptions) (writeImageRequest, error) {
+	opName := strings.TrimSpace(opts.OpName)
+	if opName == "" {
+		opName = "write-image"
+	}
+	fs := flag.NewFlagSet(opName, flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
 	image := fs.String("image", "", "path to the source image file")
 	target := fs.String("target", "", "target disk id, e.g. PhysicalDrive3 on Windows, /dev/sde on Linux, /dev/rdisk4 on macOS")
 	tokenFile := fs.String("token-file", "", "path to a 0600-mode file containing the UI-issued confirmation token; deleted on read")
@@ -490,21 +514,20 @@ func runWriteImage(args []string) {
 	manifestPath := fs.String("manifest", "", "Deckhand sidecar write manifest binding token/image/target/expiry")
 	verify := fs.Bool("verify", true, "read the written disk back and compare sha256")
 	expectedSha := fs.String("sha256", "", "required expected sha256 of the image (post-write verification compares against this)")
-	// flag.ExitOnError calls os.Exit on parse failure, so Parse's return
-	// is only informational in that mode. Keep the explicit call so a
-	// future switch to ContinueOnError still surfaces the error.
-	if err := fs.Parse(args); err != nil {
-		fatalf("parse flags: %v", err)
+	if err := fs.Parse(opts.Args); err != nil {
+		return writeImageRequest{}, fmt.Errorf("parse flags: %w", err)
 	}
 
 	if *image == "" || *target == "" || *tokenFile == "" || *manifestPath == "" {
-		fatalf("write-image requires --image, --target, --token-file, and --manifest")
+		return writeImageRequest{}, fmt.Errorf("%s requires --image, --target, --token-file, and --manifest", opName)
 	}
-	fatalIfCanceled(*cancelFile, nil)
+	if operationCanceled(*cancelFile) {
+		return writeImageRequest{}, fmt.Errorf("operation canceled by user")
+	}
 
 	token, err := readAndRemoveTokenFile(*tokenFile)
 	if err != nil {
-		fatalf("read token: %v", err)
+		return writeImageRequest{}, fmt.Errorf("read token: %w", err)
 	}
 
 	// The token is a UI-flow linearization gate: the UI's
@@ -515,29 +538,78 @@ func runWriteImage(args []string) {
 	// either way. This length+shape check is a sanity gate against
 	// accidentally launching the helper without a token at all.
 	if len(token) < 16 {
-		fatalf("token is implausibly short; refusing")
+		return writeImageRequest{}, fmt.Errorf("token is implausibly short; refusing")
 	}
 	if err := validateExpectedSHA(*expectedSha); err != nil {
-		fatalf("validate sha256: %v", err)
+		return writeImageRequest{}, fmt.Errorf("validate sha256: %w", err)
 	}
-	fatalIfCanceled(*cancelFile, nil)
+	if operationCanceled(*cancelFile) {
+		return writeImageRequest{}, fmt.Errorf("operation canceled by user")
+	}
 
 	devicePath, err := targetToDevicePath(*target)
 	if err != nil {
-		fatalf("validate target: %v", err)
+		return writeImageRequest{}, fmt.Errorf("validate target: %w", err)
 	}
-	if err := requireRawDeviceAccess(); err != nil {
-		fatalf("check privileges: %v", err)
+	if opts.RequireAccess {
+		if err := requireRawDeviceAccess(); err != nil {
+			return writeImageRequest{}, fmt.Errorf("check privileges: %w", err)
+		}
 	}
 	if err := validateWriteManifest(*manifestPath, *image, *target, *expectedSha, token); err != nil {
-		fatalf("validate manifest: %v", err)
+		return writeImageRequest{}, fmt.Errorf("validate manifest: %w", err)
 	}
 	if err := validateManagedImagePath(*image, *expectedSha); err != nil {
-		fatalf("validate image: %v", err)
+		return writeImageRequest{}, fmt.Errorf("validate image: %w", err)
 	}
-	emitJSON(map[string]any{"event": "preparing", "device": devicePath, "image": *image})
 
-	src, err := os.Open(*image)
+	return writeImageRequest{
+		Image:       *image,
+		Target:      *target,
+		TokenFile:   *tokenFile,
+		CancelFile:  *cancelFile,
+		Manifest:    *manifestPath,
+		Verify:      *verify,
+		ExpectedSHA: *expectedSha,
+		DevicePath:  devicePath,
+	}, nil
+}
+
+func runWriteImageSmoke(args []string) {
+	req, err := validateWriteImageRequest(writeImageRequestOptions{
+		OpName:        "write-image-smoke",
+		Args:          args,
+		RequireAccess: false,
+	})
+	if err != nil {
+		fatalf("%v", err)
+	}
+	emitJSON(map[string]any{
+		"event":  "preparing",
+		"device": req.DevicePath,
+		"image":  req.Image,
+		"smoke":  true,
+	})
+	emitJSON(map[string]any{
+		"event":  "done",
+		"sha256": req.ExpectedSHA,
+		"bytes":  0,
+		"smoke":  true,
+	})
+}
+
+func runWriteImage(args []string) {
+	req, err := validateWriteImageRequest(writeImageRequestOptions{
+		OpName:        "write-image",
+		Args:          args,
+		RequireAccess: true,
+	})
+	if err != nil {
+		fatalf("%v", err)
+	}
+	emitJSON(map[string]any{"event": "preparing", "device": req.DevicePath, "image": req.Image})
+
+	src, err := os.Open(req.Image)
 	if err != nil {
 		fatalf("open image: %v", err)
 	}
@@ -549,7 +621,7 @@ func runWriteImage(args []string) {
 		total = info.Size()
 	}
 
-	releaseTarget, err := prepareWriteTarget(devicePath)
+	releaseTarget, err := prepareWriteTarget(req.DevicePath)
 	if err != nil {
 		fatalf("prepare target: %v", err)
 	}
@@ -559,7 +631,7 @@ func runWriteImage(args []string) {
 	// for only the access level we actually need makes auditing clearer
 	// and avoids rejections on systems that have different read/write
 	// permissions for the same device node.
-	dst, err := openDeviceForWrite(devicePath)
+	dst, err := openDeviceForWrite(req.DevicePath)
 	if err != nil {
 		fatalf("open device: %v", err)
 	}
@@ -573,7 +645,7 @@ func runWriteImage(args []string) {
 	lastEmit := time.Now()
 
 	for {
-		fatalIfCanceled(*cancelFile, nil)
+		fatalIfCanceled(req.CancelFile, nil)
 		n, rerr := src.Read(buf)
 		if n > 0 {
 			if _, werr := mw.Write(buf[:n]); werr != nil {
@@ -590,7 +662,7 @@ func runWriteImage(args []string) {
 				lastEmit = time.Now()
 			}
 		}
-		fatalIfCanceled(*cancelFile, nil)
+		fatalIfCanceled(req.CancelFile, nil)
 		if errors.Is(rerr, io.EOF) {
 			break
 		}
@@ -599,14 +671,14 @@ func runWriteImage(args []string) {
 		}
 	}
 
-	fatalIfCanceled(*cancelFile, nil)
+	fatalIfCanceled(req.CancelFile, nil)
 	if err := dst.Sync(); err != nil {
 		fatalf("sync: %v", err)
 	}
 
 	srcSha := hex.EncodeToString(hasher.Sum(nil))
-	if *expectedSha != "" && srcSha != *expectedSha {
-		fatalf("image sha256 mismatch (got %s, want %s) - aborting before verification pass", srcSha, *expectedSha)
+	if req.ExpectedSHA != "" && srcSha != req.ExpectedSHA {
+		fatalf("image sha256 mismatch (got %s, want %s) - aborting before verification pass", srcSha, req.ExpectedSHA)
 	}
 
 	emitJSON(map[string]any{
@@ -615,8 +687,8 @@ func runWriteImage(args []string) {
 		"bytes_done": done, "bytes_total": total, "sha256": srcSha,
 	})
 
-	if *verify {
-		verifySha, err := verifyDevice(devicePath, done, *cancelFile)
+	if req.Verify {
+		verifySha, err := verifyDevice(req.DevicePath, done, req.CancelFile)
 		if err != nil {
 			fatalf("verify: %v", err)
 		}

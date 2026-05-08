@@ -258,6 +258,52 @@ func TestValidateImagePathRequiresManagedImageAndSha(t *testing.T) {
 	}
 }
 
+func TestValidateWriteImageRequestSmokeSkipsRawDeviceAccess(t *testing.T) {
+	root := makeHelperTempRoot(t)
+	imageRoot := filepath.Join(os.TempDir(), downloadTempRootName)
+	if err := os.MkdirAll(imageRoot, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	image := filepath.Join(imageRoot, "deckhand-helper-smoke-"+strings.ReplaceAll(t.Name(), "/", "-")+".img")
+	t.Cleanup(func() { _ = os.Remove(image) })
+	payload := []byte("smoke image")
+	if err := os.WriteFile(image, payload, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256(payload)
+	sha := hex.EncodeToString(sum[:])
+	tokenFile := filepath.Join(root, "token.txt")
+	token := "tok-1234567890abcd"
+	if err := os.WriteFile(tokenFile, []byte(token+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	manifest := filepath.Join(root, "write-manifest.json")
+	writeManifestFile(t, manifest, writeManifest{
+		Version:     1,
+		Op:          "write-image",
+		ImagePath:   image,
+		ImageSHA256: sha,
+		Target:      "PhysicalDrive3",
+		TokenSHA256: tokenDigest(token),
+		ExpiresAt:   time.Now().Add(time.Minute).UTC(),
+	})
+
+	request, err := validateWriteImageRequest(writeImageRequestOptions{
+		OpName:        "write-image-smoke",
+		Args:          []string{"--image", image, "--target", "PhysicalDrive3", "--token-file", tokenFile, "--manifest", manifest, "--sha256", sha},
+		RequireAccess: false,
+	})
+	if err != nil {
+		t.Fatalf("validateWriteImageRequest() error = %v", err)
+	}
+	if request.Image != image || request.Target != "PhysicalDrive3" || request.ExpectedSHA != sha {
+		t.Fatalf("request = %+v", request)
+	}
+	if _, err := os.Stat(tokenFile); !os.IsNotExist(err) {
+		t.Fatalf("token file should be consumed, stat err = %v", err)
+	}
+}
+
 func TestHashReaderHashesEveryByte(t *testing.T) {
 	payload := "deckhand live disk hash"
 	wantBytes := int64(len(payload))
