@@ -908,7 +908,9 @@ func validateManagedImagePath(path, expectedSha string) error {
 		return fmt.Errorf("resolve image: %w", err)
 	}
 	if !isDirectChildOfAnyRoot(clean, managedImageRoots()) {
-		return fmt.Errorf("image %q is not under a Deckhand-managed OS image cache", path)
+		if err := validateManagedBackupImagePath(clean); err != nil {
+			return fmt.Errorf("image %q is not under a Deckhand-managed OS image cache or backup root: %w", path, err)
+		}
 	}
 	info, err := os.Lstat(clean)
 	if err != nil {
@@ -946,6 +948,56 @@ func managedImageRoots() []string {
 		}
 	}
 	return roots
+}
+
+func validateManagedBackupImagePath(clean string) error {
+	if filepath.Ext(clean) != ".img" {
+		return fmt.Errorf("backup image must use .img extension")
+	}
+	root, ok := findBackupRootForImage(clean)
+	if !ok {
+		return fmt.Errorf("no marked emmc-backups ancestor")
+	}
+	if err := validateBackupImageRoot(root); err != nil {
+		return err
+	}
+	return validateBackupOutputParent(root, clean)
+}
+
+func findBackupRootForImage(clean string) (string, bool) {
+	dir := filepath.Dir(clean)
+	for {
+		if filepath.Base(dir) == "emmc-backups" {
+			return dir, true
+		}
+		next := filepath.Dir(dir)
+		if next == dir {
+			return "", false
+		}
+		dir = next
+	}
+}
+
+func validateBackupImageRoot(root string) error {
+	info, err := os.Lstat(root)
+	if err != nil {
+		return fmt.Errorf("inspect backup root: %w", err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("backup root %q is a symlink", root)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("backup root %q is not a directory", root)
+	}
+	marker := filepath.Join(root, backupRootMarker)
+	markerInfo, err := os.Lstat(marker)
+	if err != nil {
+		return fmt.Errorf("backup root marker missing: %w", err)
+	}
+	if !markerInfo.Mode().IsRegular() {
+		return fmt.Errorf("backup root marker %q is not a regular file", marker)
+	}
+	return nil
 }
 
 func userCacheDir() string {

@@ -258,6 +258,49 @@ func TestValidateImagePathRequiresManagedImageAndSha(t *testing.T) {
 	}
 }
 
+func TestValidateManagedImagePathAllowsMarkedBackupImage(t *testing.T) {
+	root := makeBackupRoot(t)
+	nested := filepath.Join(root, "phrozen-arco", "2026-05-07T18-19-20Z")
+	if err := os.MkdirAll(nested, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	image := filepath.Join(nested, "emmc.img")
+	payload := []byte("restorable backup image")
+	if err := os.WriteFile(image, payload, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256(payload)
+	sha := hex.EncodeToString(sum[:])
+
+	if err := validateManagedImagePath(image, sha); err != nil {
+		t.Fatalf("expected marked backup image to pass: %v", err)
+	}
+}
+
+func TestValidateManagedImagePathRejectsBackupSymlinkAncestor(t *testing.T) {
+	root := makeBackupRoot(t)
+	realDir := filepath.Join(root, "real")
+	if err := os.MkdirAll(realDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	linkDir := filepath.Join(root, "linked")
+	if err := os.Symlink(realDir, linkDir); err != nil {
+		t.Skipf("symlink not supported in this test environment: %v", err)
+	}
+	image := filepath.Join(linkDir, "emmc.img")
+	payload := []byte("restorable backup image")
+	if err := os.WriteFile(filepath.Join(realDir, "emmc.img"), payload, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256(payload)
+	sha := hex.EncodeToString(sum[:])
+
+	err := validateManagedImagePath(image, sha)
+	if err == nil || !strings.Contains(err.Error(), "symlink") {
+		t.Fatalf("expected symlink ancestor to be rejected, got %v", err)
+	}
+}
+
 func TestValidateWriteImageRequestSmokeSkipsRawDeviceAccess(t *testing.T) {
 	root := makeHelperTempRoot(t)
 	imageRoot := filepath.Join(os.TempDir(), downloadTempRootName)
