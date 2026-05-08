@@ -245,6 +245,8 @@ void main() {
 
     expect(find.text('Restore an eMMC backup.'), findsOneWidget);
     expect(find.text('BACKUP IMAGE'), findsOneWidget);
+    expect(find.widgetWithText(OutlinedButton, 'Back'), findsOneWidget);
+    expect(find.text('Done'), findsNothing);
     await tester.tap(find.widgetWithText(FilledButton, 'Continue to target'));
     await tester.pump();
     expect(find.textContaining('Generic STORAGE DEVICE'), findsWidgets);
@@ -386,6 +388,7 @@ void main() {
 
     await tester.tap(find.widgetWithText(FilledButton, 'Continue to target'));
     await tester.pump();
+    await tester.pump();
     expect(find.textContaining('Generic STORAGE DEVICE'), findsWidgets);
     final button = tester.widget<FilledButton>(
       find.widgetWithText(FilledButton, 'Review restore'),
@@ -444,6 +447,7 @@ void main() {
     expect(find.textContaining('restore-smaller.img'), findsOneWidget);
 
     await tester.tap(find.widgetWithText(FilledButton, 'Continue to target'));
+    await tester.pump();
     await tester.pump();
     expect(find.textContaining('Generic STORAGE DEVICE'), findsWidgets);
     final button = tester.widget<FilledButton>(
@@ -633,6 +637,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 250));
 
     await tester.tap(find.widgetWithText(FilledButton, 'Continue to target'));
+    await tester.pump();
     await tester.pump();
 
     expect(find.text('TARGET EMMC'), findsOneWidget);
@@ -885,9 +890,11 @@ void main() {
 
     await tester.tap(find.widgetWithText(FilledButton, 'Continue to target'));
     await tester.pump();
+    await tester.pump();
     expect(find.text('TARGET EMMC'), findsOneWidget);
 
     await tester.tap(find.widgetWithText(FilledButton, 'Review restore'));
+    await tester.pump();
     await tester.pump();
     expect(find.text('RESTORE CONFIRMATION'), findsOneWidget);
 

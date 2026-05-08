@@ -48,23 +48,46 @@ class ManageScreen extends ConsumerStatefulWidget {
 /// This intentionally reuses the same restore tab body as Manage so
 /// the future printer-registry submodule only has to route users into
 /// one restore implementation.
-class EmmcRestoreScreen extends StatelessWidget {
+class EmmcRestoreScreen extends StatefulWidget {
   const EmmcRestoreScreen({super.key});
 
   @override
+  State<EmmcRestoreScreen> createState() => _EmmcRestoreScreenState();
+}
+
+class _EmmcRestoreScreenState extends State<EmmcRestoreScreen> {
+  late final ValueNotifier<_RestoreFooterAction> _footerAction =
+      ValueNotifier<_RestoreFooterAction>(const _RestoreFooterAction.none());
+
+  @override
+  void dispose() {
+    _footerAction.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return WizardScaffold(
-      screenId: 'MGR-restore',
-      title: 'Restore an eMMC backup.',
-      helperText:
-          'Writes a Deckhand backup image back to a selected eMMC adapter. '
-          'Use this when you need to roll a printer back to a known image.',
-      body: const _RestoreTab(),
-      primaryAction: WizardAction(
-        label: 'Done',
-        onPressed: () => context.go('/'),
-        isBack: true,
-      ),
+    return ValueListenableBuilder<_RestoreFooterAction>(
+      valueListenable: _footerAction,
+      child: _RestoreTab(footerAction: _footerAction),
+      builder: (context, footerAction, body) {
+        return WizardScaffold(
+          screenId: 'MGR-restore',
+          title: 'Restore an eMMC backup.',
+          helperText:
+              'Writes a Deckhand backup image back to a selected eMMC adapter. '
+              'Use this when you need to roll a printer back to a known image.',
+          body: body!,
+          primaryAction: footerAction.primaryAction,
+          secondaryActions: [
+            WizardAction(
+              label: 'Back',
+              onPressed: () => context.go('/'),
+              isBack: true,
+            ),
+          ],
+        );
+      },
     );
   }
 }
@@ -72,6 +95,15 @@ class EmmcRestoreScreen extends StatelessWidget {
 enum _ManageTab { status, tune, backup, restore, mcu, wizard }
 
 enum _RestoreStep { backup, target, confirm, progress }
+
+class _RestoreFooterAction {
+  const _RestoreFooterAction({required this.signature, this.primaryAction});
+
+  const _RestoreFooterAction.none() : signature = 'none', primaryAction = null;
+
+  final String signature;
+  final WizardAction? primaryAction;
+}
 
 class _ManageScreenState extends ConsumerState<ManageScreen> {
   _ManageTab _currentTab = _ManageTab.status;
@@ -539,7 +571,9 @@ class _BackupTab extends StatelessWidget {
 // Restore tab — full eMMC image restore via elevated helper.
 // ---------------------------------------------------------------------
 class _RestoreTab extends ConsumerStatefulWidget {
-  const _RestoreTab();
+  const _RestoreTab({this.footerAction});
+
+  final ValueNotifier<_RestoreFooterAction>? footerAction;
 
   @override
   ConsumerState<_RestoreTab> createState() => _RestoreTabState();
@@ -591,6 +625,64 @@ class _RestoreTabState extends ConsumerState<_RestoreTab> {
   bool get _busy =>
       _checking || _indexing || (_progress != null && !_done && _error == null);
 
+  bool get _usesFooterActions => widget.footerAction != null;
+
+  void _publishFooterAction(_RestoreFooterAction action) {
+    final notifier = widget.footerAction;
+    if (notifier == null || notifier.value.signature == action.signature) {
+      return;
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || notifier.value.signature == action.signature) return;
+      notifier.value = action;
+    });
+  }
+
+  _RestoreFooterAction _footerActionFor({
+    required _RestoreImage? image,
+    required DiskInfo? target,
+  }) {
+    return switch (_step) {
+      _RestoreStep.backup => _RestoreFooterAction(
+        signature: 'backup:${image?.imagePath ?? '<none>'}:$_busy',
+        primaryAction: WizardAction(
+          label: 'Continue to target',
+          onPressed: image == null || _busy
+              ? null
+              : () => setState(() => _step = _RestoreStep.target),
+        ),
+      ),
+      _RestoreStep.target => _RestoreFooterAction(
+        signature:
+            'target:${image?.imagePath ?? '<none>'}:'
+            '${image?.indexed ?? false}:'
+            '${target?.id ?? '<none>'}:$_busy',
+        primaryAction: WizardAction(
+          label: 'Review restore',
+          onPressed: target == null || _busy
+              ? null
+              : () => setState(() => _step = _RestoreStep.confirm),
+        ),
+      ),
+      _RestoreStep.confirm => _RestoreFooterAction(
+        signature:
+            'confirm:${image?.imagePath ?? '<none>'}:'
+            '${image?.indexed ?? false}:'
+            '${image?.manifestSha256 ?? ''}:'
+            '${image?.imageBytes ?? 0}:'
+            '${target?.id ?? '<none>'}:$_busy',
+        primaryAction: WizardAction(
+          label: 'Restore backup',
+          destructive: true,
+          onPressed: image == null || target == null || _busy
+              ? null
+              : () => _confirmRestore(image, target),
+        ),
+      ),
+      _RestoreStep.progress => const _RestoreFooterAction.none(),
+    };
+  }
+
   @override
   Widget build(BuildContext context) {
     final manifestsAsync = ref.watch(emmcBackupManifestsProvider);
@@ -601,6 +693,7 @@ class _RestoreTabState extends ConsumerState<_RestoreTab> {
 
     if ((manifestsAsync.isLoading && !manifestsAsync.hasValue) ||
         (candidatesAsync.isLoading && !candidatesAsync.hasValue)) {
+      _publishFooterAction(const _RestoreFooterAction.none());
       return const Padding(
         padding: EdgeInsets.only(top: 8),
         child: DeckhandLoadingBlock(
@@ -612,9 +705,11 @@ class _RestoreTabState extends ConsumerState<_RestoreTab> {
       );
     }
     if (manifestsAsync.hasError) {
+      _publishFooterAction(const _RestoreFooterAction.none());
       return _RestoreProblem(message: '${manifestsAsync.error}');
     }
     if (candidatesAsync.hasError) {
+      _publishFooterAction(const _RestoreFooterAction.none());
       return _RestoreProblem(message: '${candidatesAsync.error}');
     }
 
@@ -623,6 +718,7 @@ class _RestoreTabState extends ConsumerState<_RestoreTab> {
     final candidates =
         candidatesAsync.valueOrNull ?? const <EmmcBackupImageCandidate>[];
     if (disksAsync.isLoading && !disksAsync.hasValue) {
+      _publishFooterAction(const _RestoreFooterAction.none());
       return const Padding(
         padding: EdgeInsets.only(top: 8),
         child: DeckhandLoadingBlock(
@@ -633,6 +729,7 @@ class _RestoreTabState extends ConsumerState<_RestoreTab> {
       );
     }
     if (disksAsync.hasError) {
+      _publishFooterAction(const _RestoreFooterAction.none());
       return _RestoreProblem(message: '${disksAsync.error}');
     }
 
@@ -642,6 +739,7 @@ class _RestoreTabState extends ConsumerState<_RestoreTab> {
       candidates: candidates,
     );
     if (images.isEmpty) {
+      _publishFooterAction(const _RestoreFooterAction.none());
       return _Panel(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -690,6 +788,7 @@ class _RestoreTabState extends ConsumerState<_RestoreTab> {
     final targetDisks = _restoreTargetDisks(disks);
     final hiddenDiskCount = disks.length - targetDisks.length;
     final target = image == null ? null : _selectedDisk(targetDisks, image);
+    _publishFooterAction(_footerActionFor(image: image, target: target));
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -796,19 +895,21 @@ class _RestoreTabState extends ConsumerState<_RestoreTab> {
               ),
             const SizedBox(height: 8),
           ],
-          const SizedBox(height: 6),
-          Row(
-            children: [
-              const Spacer(),
-              FilledButton.icon(
-                onPressed: selected == null || _busy
-                    ? null
-                    : () => setState(() => _step = _RestoreStep.target),
-                icon: const Icon(Icons.arrow_forward, size: 14),
-                label: const Text('Continue to target'),
-              ),
-            ],
-          ),
+          if (!_usesFooterActions) ...[
+            const SizedBox(height: 6),
+            Row(
+              children: [
+                const Spacer(),
+                FilledButton.icon(
+                  onPressed: selected == null || _busy
+                      ? null
+                      : () => setState(() => _step = _RestoreStep.target),
+                  icon: const Icon(Icons.arrow_forward, size: 14),
+                  label: const Text('Continue to target'),
+                ),
+              ],
+            ),
+          ],
         ],
       ),
     );
@@ -893,14 +994,16 @@ class _RestoreTabState extends ConsumerState<_RestoreTab> {
                 icon: const Icon(Icons.arrow_back, size: 14),
                 label: const Text('Back to backups'),
               ),
-              const Spacer(),
-              FilledButton.icon(
-                onPressed: selectedDisk == null || _busy
-                    ? null
-                    : () => setState(() => _step = _RestoreStep.confirm),
-                icon: const Icon(Icons.arrow_forward, size: 14),
-                label: const Text('Review restore'),
-              ),
+              if (!_usesFooterActions) ...[
+                const Spacer(),
+                FilledButton.icon(
+                  onPressed: selectedDisk == null || _busy
+                      ? null
+                      : () => setState(() => _step = _RestoreStep.confirm),
+                  icon: const Icon(Icons.arrow_forward, size: 14),
+                  label: const Text('Review restore'),
+                ),
+              ],
             ],
           ),
         ],
@@ -948,18 +1051,20 @@ class _RestoreTabState extends ConsumerState<_RestoreTab> {
                 icon: const Icon(Icons.arrow_back, size: 14),
                 label: const Text('Back to target'),
               ),
-              const Spacer(),
-              FilledButton.icon(
-                style: FilledButton.styleFrom(
-                  backgroundColor: tokens.bad,
-                  foregroundColor: const Color(0xFFFCFCFC),
+              if (!_usesFooterActions) ...[
+                const Spacer(),
+                FilledButton.icon(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: tokens.bad,
+                    foregroundColor: const Color(0xFFFCFCFC),
+                  ),
+                  onPressed: _busy
+                      ? null
+                      : () => _confirmRestore(selectedImage, selectedDisk),
+                  icon: const Icon(Icons.restore, size: 16),
+                  label: const Text('Restore backup'),
                 ),
-                onPressed: _busy
-                    ? null
-                    : () => _confirmRestore(selectedImage, selectedDisk),
-                icon: const Icon(Icons.restore, size: 16),
-                label: const Text('Restore backup'),
-              ),
+              ],
             ],
           ),
         ],
