@@ -952,6 +952,15 @@ class _RestoreTabState extends ConsumerState<_RestoreTab> {
         if (image.imagePath == selected) return image;
       }
     }
+    for (final image in images) {
+      if (image.indexed && image.fullSize) return image;
+    }
+    for (final image in images) {
+      if (image.fullSize) return image;
+    }
+    for (final image in images) {
+      if (image.indexed) return image;
+    }
     return images.first;
   }
 
