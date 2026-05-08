@@ -294,7 +294,10 @@ needing review — it can contain home-directory paths.
   Steps without an `idempotency` block (and without
   `safe_to_rerun: true`) are warnings under default lint and
   errors under `--strict`, which is what `deckhand-profiles` CI
-  runs. Built-in idempotent kinds (snapshot_archive,
+  runs. The linter also validates `inputs`, `pre_check`,
+  `post_check`, `resume`, and `cleanup` field shape so malformed
+  runtime contracts fail before install. Built-in idempotent kinds
+  (snapshot_archive,
   wait_for_ssh, os_download, verify, conditional, install_marker)
   and interactive kinds (prompt, choose_one, disk_picker) are
   exempt.

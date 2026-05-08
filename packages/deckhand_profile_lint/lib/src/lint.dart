@@ -411,9 +411,80 @@ void _walkIdempotency(Map<String, dynamic> profile, List<LintFinding> out) {
             'docs/STEP-IDEMPOTENCY.md.',
           ),
         );
+        continue;
       }
+      _validateIdempotencyBlock(idem, path, out);
     }
   });
+}
+
+const _resumeStrategies = <String>{
+  'restart',
+  'cleanup_then_restart',
+  'continue',
+};
+
+void _validateIdempotencyBlock(
+  Map<dynamic, dynamic> idem,
+  String path,
+  List<LintFinding> out,
+) {
+  final inputs = idem['inputs'];
+  if (inputs != null && inputs is! Map) {
+    out.add(
+      LintFinding(LintSeverity.error, path, 'idempotency.inputs must be a map'),
+    );
+  }
+
+  for (final field in const ['pre_check', 'post_check', 'cleanup']) {
+    final value = idem[field];
+    if (value == null) continue;
+    if (value is! String) {
+      out.add(
+        LintFinding(
+          LintSeverity.error,
+          path,
+          'idempotency.$field must be a string',
+        ),
+      );
+      continue;
+    }
+    if (value.trim().isEmpty) {
+      out.add(
+        LintFinding(
+          LintSeverity.error,
+          path,
+          'idempotency.$field must not be empty',
+        ),
+      );
+    }
+  }
+
+  final resume = idem['resume'];
+  if (resume != null &&
+      (resume is! String || !_resumeStrategies.contains(resume))) {
+    out.add(
+      LintFinding(
+        LintSeverity.error,
+        path,
+        'idempotency.resume must be one of: '
+        '${_resumeStrategies.join(', ')}',
+      ),
+    );
+  }
+
+  if (resume == 'cleanup_then_restart') {
+    final cleanup = idem['cleanup'];
+    if (cleanup is! String || cleanup.trim().isEmpty) {
+      out.add(
+        LintFinding(
+          LintSeverity.error,
+          path,
+          'idempotency.cleanup is required for cleanup_then_restart',
+        ),
+      );
+    }
+  }
 }
 
 void _walkSnapshotPaths(Map<String, dynamic> profile, List<LintFinding> out) {

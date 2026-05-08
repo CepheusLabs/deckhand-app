@@ -455,10 +455,57 @@ void main() {
           '        kind: install_firmware\n'
           '        idempotency:\n'
           '          pre_check: "test -d ~/klipper"\n'
-          '          resume: cleanup_then_restart\n';
+          '          resume: cleanup_then_restart\n'
+          '          cleanup: "rm -rf ~/klipper.partial"\n';
       _writeProfile(tmp, 'declared-idem', profile);
       final strict = await runProfileLint(['--root', tmp.path, '--strict']);
       expect(strict.hasErrors, isFalse);
+    });
+
+    test('rejects malformed idempotency block fields', () async {
+      _writeRegistry(tmp, ['bad-idem']);
+      final profile =
+          '${_minimalValidProfile('bad-idem')}'
+          '\nflows:\n  stock_keep:\n    enabled: true\n    steps:\n'
+          '      - id: install_klipper\n'
+          '        kind: install_firmware\n'
+          '        idempotency:\n'
+          '          inputs: []\n'
+          '          pre_check: []\n'
+          '          post_check: ""\n'
+          '          resume: teleport\n';
+      _writeProfile(tmp, 'bad-idem', profile);
+      final report = await runProfileLint(['--root', tmp.path]);
+      expect(report.hasErrors, isTrue);
+      final messages = report.results
+          .expand((r) => r.findings.map((f) => f.message))
+          .join('\n');
+      expect(messages, contains('idempotency.inputs must be a map'));
+      expect(messages, contains('idempotency.pre_check must be a string'));
+      expect(messages, contains('idempotency.post_check must not be empty'));
+      expect(messages, contains('idempotency.resume must be one of'));
+    });
+
+    test('cleanup_then_restart requires a cleanup command', () async {
+      _writeRegistry(tmp, ['missing-cleanup']);
+      final profile =
+          '${_minimalValidProfile('missing-cleanup')}'
+          '\nflows:\n  stock_keep:\n    enabled: true\n    steps:\n'
+          '      - id: install_klipper\n'
+          '        kind: install_firmware\n'
+          '        idempotency:\n'
+          '          pre_check: "test -d ~/klipper"\n'
+          '          resume: cleanup_then_restart\n';
+      _writeProfile(tmp, 'missing-cleanup', profile);
+      final report = await runProfileLint(['--root', tmp.path]);
+      expect(report.hasErrors, isTrue);
+      final messages = report.results
+          .expand((r) => r.findings.map((f) => f.message))
+          .join('\n');
+      expect(
+        messages,
+        contains('idempotency.cleanup is required for cleanup_then_restart'),
+      );
     });
   });
 }
