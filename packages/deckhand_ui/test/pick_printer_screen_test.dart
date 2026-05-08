@@ -73,6 +73,96 @@ void main() {
       expect(find.text('ChromaKit'), findsOneWidget);
     });
 
+    testWidgets('renders useful fallback facts for sparse registry cards', (
+      tester,
+    ) async {
+      final controller = stubWizardController(profileJson: testProfileJson());
+      await controller.loadProfile('test-printer');
+      await tester.pumpWidget(
+        testHarness(
+          controller: controller,
+          child: const PickPrinterScreen(),
+          initialLocation: '/pick-printer',
+          extraOverrides: [
+            profileServiceProvider.overrideWithValue(
+              const _RegistryProfileService(
+                ProfileRegistry(
+                  entries: [
+                    ProfileRegistryEntry(
+                      id: 'test-printer',
+                      displayName: 'Test Printer',
+                      manufacturer: 'Acme',
+                      model: 'Robo',
+                      status: 'beta',
+                      directory: 'printers/test-printer',
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+
+      expect(find.text('MODEL'), findsOneWidget);
+      expect(find.text('Robo'), findsOneWidget);
+      expect(find.text('STATUS'), findsOneWidget);
+      expect(find.text('Beta'), findsOneWidget);
+      expect(find.text('PROFILE'), findsOneWidget);
+      expect(find.text('test-printer'), findsNWidgets(2));
+      expect(find.text('REF'), findsOneWidget);
+      expect(find.text('untagged'), findsNWidgets(2));
+      expect(find.text('SBC'), findsNothing);
+      expect(find.text('—'), findsNothing);
+    });
+
+    testWidgets('falls back when core hardware facts are incomplete', (
+      tester,
+    ) async {
+      final controller = stubWizardController(profileJson: testProfileJson());
+      await controller.loadProfile('test-printer');
+      await tester.pumpWidget(
+        testHarness(
+          controller: controller,
+          child: const PickPrinterScreen(),
+          initialLocation: '/pick-printer',
+          extraOverrides: [
+            profileServiceProvider.overrideWithValue(
+              const _RegistryProfileService(
+                ProfileRegistry(
+                  entries: [
+                    ProfileRegistryEntry(
+                      id: 'test-printer',
+                      displayName: 'Test Printer',
+                      manufacturer: 'Acme',
+                      model: 'Robo',
+                      status: 'beta',
+                      directory: 'printers/test-printer',
+                      sbc: 'RK3328',
+                      extras: 'ChromaKit',
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+
+      expect(find.text('MODEL'), findsOneWidget);
+      expect(find.text('Robo'), findsOneWidget);
+      expect(find.text('SBC'), findsNothing);
+      expect(find.text('RK3328'), findsNothing);
+      expect(find.text('ChromaKit'), findsNothing);
+      expect(find.text('—'), findsNothing);
+    });
+
     testWidgets('approves selected profile network hosts in one prompt', (
       tester,
     ) async {

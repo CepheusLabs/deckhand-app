@@ -15,6 +15,8 @@
 |---------|--------------|--------------|
 | `deckhand-sidecar doctor` (CLI) | User invokes the binary directly | Writes a human-readable report to stdout, exits 0 if every check passed. Used by [`RELEASING.md`](RELEASING.md) hardware-in-the-loop checks and by support to ask users for a quick paste. |
 | `deckhand-sidecar helper-smoke` (CLI) | Developer/support validates the packaged elevated helper | Launches `deckhand-elevated-helper version` through the same events-file path used by the app and verifies `started` + `version` events. |
+| `deckhand-sidecar flash-smoke` (CLI) | Developer/support validates the elevated flash launch path | Launches the elevated helper's `write-image-smoke` operation with the selected disk, managed OS image, expected sha256, token file, cancel file, and manifest. The helper validates the request but stops before opening or writing the disk. |
+| `deckhand-sidecar restore-smoke` (CLI) | Developer/support validates the elevated restore launch path | Launches the same `write-image-smoke` operation with a Deckhand backup image. This exercises restore's helper launch and image/path validation without writing the disk. |
 | `deckhand-sidecar backup-smoke` (CLI) | Developer/support validates a real read-only eMMC backup | Launches the elevated helper's `read-image` operation against a supplied disk id and leaves the resulting `.img` in Deckhand's marked `emmc-backups` root. |
 | `deckhand-sidecar download-os` (CLI) | Developer/support validates OS image acquisition without driving Flutter | Downloads or reuses a verified OS image in Deckhand's managed image cache. Requires the final raw image sha256 and refuses unmanaged destinations. |
 | `doctor.run` (JSON-RPC) | UI calls on launch + on demand from Settings | Returns structured results plus the same human-readable report. UI renders pass/fail badges; users who want raw output click "View report." |
@@ -25,6 +27,30 @@ same private temp root enforced by the elevated helper:
 `<temp>/deckhand-elevated-helper`. If a smoke command reports an empty
 events file, check that directory policy first; plain temp-file paths
 are intentionally rejected by the helper.
+
+`flash-smoke` and `restore-smoke` are launch/validation probes, not
+write tests. They require a disk id, an image path, and the expected
+64-character sha256. They use the same elevation mechanism as the real
+write path, validate the token manifest and managed image rules inside
+the helper, and exit before any raw-device handle is opened:
+
+```powershell
+deckhand-sidecar flash-smoke `
+  --disk PhysicalDrive3 `
+  --image "$env:LOCALAPPDATA\Deckhand\os-images\armbian-trixie-minimal.img" `
+  --sha256 43f0e0e5cf1adf47dc56b740aea94852be14f057eb1ebeeceb353fee702c7b2d
+
+deckhand-sidecar restore-smoke `
+  --disk PhysicalDrive3 `
+  --image "$env:APPDATA\CepheusLabs\Deckhand\state\emmc-backups\phrozen-arco\backup.img" `
+  --sha256 <64-hex backup image sha256>
+```
+
+`flash-smoke` expects an image from Deckhand's managed OS-image cache.
+`restore-smoke` expects a backup image under a marked Deckhand
+`emmc-backups` root. Both commands fail if the helper cannot be
+launched, if the image hash does not match, or if the image path violates
+the helper's managed-path policy.
 
 `download-os` mirrors the guarded `os.download` RPC behavior for
 support/debugging:
@@ -121,9 +147,12 @@ and wants to re-verify without restarting the wizard.
 ## Implementation status
 
 - `doctor` package + CLI: implemented.
-- `helper-smoke` and `backup-smoke` CLI probes: implemented. Both use
-  the elevated helper's private temp-root policy for events/token/cancel
-  files.
+- `helper-smoke`, `flash-smoke`, `restore-smoke`, and `backup-smoke`
+  CLI probes: implemented. All helper-backed probes use the elevated
+  helper's private temp-root policy for events/token/cancel files.
+- `flash-smoke` and `restore-smoke` stop before opening or writing the
+  raw disk. They validate helper launch, token manifest binding, image
+  hash, and managed image path rules.
 - `download-os` CLI probe: implemented. It requires a 64-hex sha256,
   writes only to Deckhand-managed image roots, and reuses existing cache
   entries only after hashing them.

@@ -586,12 +586,20 @@ class _SpecGrid extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final tokens = DeckhandTokens.of(context);
-    final cells = <_SpecCell>[
+    final hardwareCells = <_SpecCell>[
       _SpecCell('SBC', entry.sbc),
       _SpecCell('KINEMATICS', entry.kinematics),
       _SpecCell('MCU', entry.mcu),
       _SpecCell('EXTRAS', entry.extras),
     ];
+    final cells = _hasCompleteHardwareSpecs(entry)
+        ? hardwareCells
+        : <_SpecCell>[
+            _SpecCell('MODEL', entry.model),
+            _SpecCell('STATUS', _profileStatusLabel(entry.status)),
+            _SpecCell('PROFILE', entry.id),
+            _SpecCell('REF', entry.latestTag ?? 'untagged'),
+          ];
     return Container(
       decoration: BoxDecoration(
         // The "background" you see between cells is just the soft-line
@@ -661,6 +669,19 @@ class _SpecCell {
       ),
     );
   }
+}
+
+bool _hasSpecText(String? value) => value != null && value.trim().isNotEmpty;
+
+bool _hasCompleteHardwareSpecs(ProfileRegistryEntry entry) =>
+    _hasSpecText(entry.sbc) &&
+    _hasSpecText(entry.kinematics) &&
+    _hasSpecText(entry.mcu);
+
+String _profileStatusLabel(String status) {
+  final clean = status.trim();
+  if (clean.isEmpty) return 'Unknown';
+  return clean[0].toUpperCase() + clean.substring(1).toLowerCase();
 }
 
 class _Footer extends StatelessWidget {
