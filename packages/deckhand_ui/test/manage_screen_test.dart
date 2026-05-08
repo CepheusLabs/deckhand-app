@@ -386,7 +386,135 @@ void main() {
     expect(find.text('TARGET EMMC'), findsOneWidget);
     expect(find.textContaining('Generic STORAGE DEVICE'), findsWidgets);
     expect(find.textContaining('Samsung SSD'), findsNothing);
-    expect(find.textContaining('1 internal disk hidden'), findsOneWidget);
+    expect(find.textContaining('1 disk hidden'), findsOneWidget);
+  });
+
+  testWidgets('restore target step hides fixed-bus disks even if removable', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1400, 1000));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    const adapter = DiskInfo(
+      id: 'PhysicalDrive3',
+      path: r'\\.\PHYSICALDRIVE3',
+      sizeBytes: 8 * 1024 * 1024,
+      bus: 'USB',
+      model: 'Generic STORAGE DEVICE',
+      removable: true,
+      partitions: [],
+    );
+    const nvme = DiskInfo(
+      id: 'PhysicalDrive0',
+      path: r'\\.\PHYSICALDRIVE0',
+      sizeBytes: 1024 * 1024 * 1024 * 1024,
+      bus: 'NVMe',
+      model: 'Samsung SSD 970 EVO Plus 1TB',
+      removable: true,
+      partitions: [],
+    );
+    final candidate = EmmcBackupImageCandidate(
+      imagePath: r'C:\Deckhand\emmc-backups\restore.img',
+      imageBytes: adapter.sizeBytes,
+      modifiedAt: DateTime.utc(2026, 5, 4, 12),
+      inferredProfileId: 'phrozen-arco',
+    );
+
+    final controller = stubWizardController(profileJson: testProfileJson());
+    await controller.loadProfile('test-printer');
+
+    await tester.pumpWidget(
+      testHarness(
+        controller: controller,
+        child: const EmmcRestoreScreen(),
+        initialLocation: '/emmc-restore',
+        extraOverrides: [
+          emmcBackupManifestsProvider.overrideWith((ref) async => const []),
+          emmcBackupImageCandidatesProvider.overrideWith(
+            (ref) async => [candidate],
+          ),
+          flashServiceProvider.overrideWithValue(
+            _RestoreFlash(
+              disks: [nvme, adapter],
+              sha256Value:
+                  'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
+            ),
+          ),
+        ],
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+
+    await tester.tap(find.widgetWithText(FilledButton, 'Continue to target'));
+    await tester.pump();
+
+    expect(find.text('TARGET EMMC'), findsOneWidget);
+    expect(find.textContaining('Generic STORAGE DEVICE'), findsWidgets);
+    expect(find.textContaining('Samsung SSD'), findsNothing);
+    expect(find.textContaining('1 disk hidden'), findsOneWidget);
+  });
+
+  testWidgets('restore target step keeps unknown-bus storage adapters', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1400, 1000));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    const adapter = DiskInfo(
+      id: 'PhysicalDrive3',
+      path: r'\\.\PHYSICALDRIVE3',
+      sizeBytes: 8 * 1024 * 1024,
+      bus: 'Unknown',
+      model: 'Generic STORAGE DEVICE USB Device',
+      removable: true,
+      partitions: [],
+    );
+    final candidate = EmmcBackupImageCandidate(
+      imagePath: r'C:\Deckhand\emmc-backups\restore.img',
+      imageBytes: adapter.sizeBytes,
+      modifiedAt: DateTime.utc(2026, 5, 4, 12),
+      inferredProfileId: 'phrozen-arco',
+    );
+
+    final controller = stubWizardController(profileJson: testProfileJson());
+    await controller.loadProfile('test-printer');
+
+    await tester.pumpWidget(
+      testHarness(
+        controller: controller,
+        child: const EmmcRestoreScreen(),
+        initialLocation: '/emmc-restore',
+        extraOverrides: [
+          emmcBackupManifestsProvider.overrideWith((ref) async => const []),
+          emmcBackupImageCandidatesProvider.overrideWith(
+            (ref) async => [candidate],
+          ),
+          flashServiceProvider.overrideWithValue(
+            _RestoreFlash(
+              disks: [adapter],
+              sha256Value:
+                  'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
+            ),
+          ),
+        ],
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+
+    await tester.tap(find.widgetWithText(FilledButton, 'Continue to target'));
+    await tester.pump();
+
+    expect(find.text('TARGET EMMC'), findsOneWidget);
+    expect(
+      find.textContaining('Generic STORAGE DEVICE USB Device'),
+      findsWidgets,
+    );
+    final button = tester.widget<FilledButton>(
+      find.widgetWithText(FilledButton, 'Review restore'),
+    );
+    expect(button.onPressed, isNotNull);
   });
 
   testWidgets('restore view groups backups and collapses duplicate hashes', (

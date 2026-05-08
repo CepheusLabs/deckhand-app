@@ -843,7 +843,7 @@ class _RestoreTabState extends ConsumerState<_RestoreTab> {
             const SizedBox(height: 8),
             _MutedBox(
               text:
-                  '$hiddenDiskCount internal disk'
+                  '$hiddenDiskCount disk'
                   '${hiddenDiskCount == 1 ? '' : 's'} hidden from restore '
                   'targets.',
             ),
@@ -1815,6 +1815,8 @@ String _restoreDiskSubtitle(DiskInfo disk, _RestoreImage? image) {
             '${disk.partitions.length == 1 ? '' : 's'}';
   final match = !disk.removable
       ? 'not removable'
+      : !_isRestoreAdapterDisk(disk)
+      ? 'not an adapter'
       : image != null && disk.sizeBytes < image.imageBytes
       ? 'target too small'
       : image?.diskIdentity?.matches(disk) == true
@@ -1826,12 +1828,23 @@ String _restoreDiskSubtitle(DiskInfo disk, _RestoreImage? image) {
 }
 
 List<DiskInfo> _restoreTargetDisks(List<DiskInfo> disks) =>
-    disks.where((disk) => disk.removable).toList(growable: false);
+    disks.where(_isRestoreAdapterDisk).toList(growable: false);
 
 bool _restoreDiskSelectable(DiskInfo disk, _RestoreImage? image) {
-  if (!disk.removable) return false;
+  if (!_isRestoreAdapterDisk(disk)) return false;
   if (image == null) return true;
   return disk.sizeBytes >= image.imageBytes;
+}
+
+bool _isRestoreAdapterDisk(DiskInfo disk) {
+  if (!disk.removable) return false;
+  final bus = disk.bus.trim().toLowerCase();
+  if (bus == 'usb' || bus == 'sd' || bus == 'mmc') return true;
+  if (bus.isNotEmpty && bus != 'unknown') return false;
+  final model = disk.model.trim().toLowerCase();
+  return model.contains('usb') ||
+      model.contains('storage device') ||
+      model.contains('card reader');
 }
 
 final _sha256Re = RegExp(r'^[0-9a-f]{64}$');
