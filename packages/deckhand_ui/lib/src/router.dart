@@ -15,6 +15,7 @@ import 'screens/hardening_screen.dart';
 import 'screens/kiauh_screen.dart';
 import 'screens/manage_screen.dart';
 import 'screens/pick_printer_screen.dart';
+import 'screens/printers_screen.dart';
 import 'screens/progress_screen.dart';
 import 'screens/review_screen.dart';
 import 'screens/screen_choice_screen.dart';
@@ -68,6 +69,7 @@ GoRouter buildDeckhandRouter() => GoRouter(
       builder: (context, state, child) => DeckhandAppChrome(child: child),
       routes: [
         _fade('/', () => const WelcomeScreen()),
+        _fade('/printers', () => const PrintersScreen()),
         _fade('/pick-printer', () => const PickPrinterScreen()),
         _fade('/connect', () => const ConnectScreen()),
         _fade('/verify', () => const VerifyScreen()),

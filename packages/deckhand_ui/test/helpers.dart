@@ -22,6 +22,7 @@ Widget testHarness({
     routes: [
       for (final path in const [
         '/',
+        '/printers',
         '/pick-printer',
         '/connect',
         '/verify',
@@ -92,6 +93,7 @@ Widget testHarnessWithSettings({
     routes: [
       for (final path in const [
         '/',
+        '/printers',
         '/pick-printer',
         '/connect',
         '/verify',

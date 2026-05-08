@@ -404,9 +404,9 @@ class _ManagedPrintersPanelState extends ConsumerState<_ManagedPrintersPanel> {
               label: const Text('Add a printer'),
             )
           : OutlinedButton.icon(
-              onPressed: () => context.go('/pick-printer'),
-              icon: const Icon(Icons.add, size: 14),
-              label: const Text('Add another printer'),
+              onPressed: () => context.go('/printers'),
+              icon: const Icon(Icons.list_alt, size: 14),
+              label: const Text('View all printers'),
             ),
     );
   }
