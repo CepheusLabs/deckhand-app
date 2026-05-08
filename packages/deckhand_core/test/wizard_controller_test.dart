@@ -2205,6 +2205,38 @@ void main() {
       expect(ssh.steps.last, contains('tar -xf'));
     });
 
+    test('install_screen rejects bundled source path traversal', () async {
+      final controller = newController(
+        profileJson: {
+          ...baseProfileJson(
+            stockKeepSteps: [
+              {'id': 'screen', 'kind': 'install_screen'},
+            ],
+          ),
+          'screens': [
+            {'id': 'lcd', 'source_path': '../outside'},
+          ],
+        },
+      );
+      await controller.loadProfile('test-printer');
+      controller.setFlow(WizardFlow.stockKeep);
+      await controller.setDecision('screen', 'lcd');
+      controller.setSession(
+        const SshSession(id: 'fake', host: 'h', port: 22, user: 'root'),
+      );
+
+      await expectLater(
+        controller.startExecution(),
+        throwsA(
+          isA<StepExecutionException>().having(
+            (e) => e.toString(),
+            'message',
+            contains('profile-local'),
+          ),
+        ),
+      );
+    });
+
     test('install_screen restore/source gaps fail loudly', () async {
       final controller = newController(
         profileJson: {

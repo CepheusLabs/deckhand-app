@@ -757,6 +757,8 @@ class WizardController {
 
   /// Helper dispatchers. Bodies in wizard_controller_helpers.dart.
   String _resolveProfilePath(String ref) => _resolveProfilePathImpl(this, ref);
+  String _resolveBundledProfileAssetPath(String ref) =>
+      _resolveBundledProfileAssetPathImpl(this, ref);
   Future<void> _uploadDir(String localDir, String remote) =>
       _uploadDirImpl(this, localDir, remote);
   bool _isDangerousPath(String path) => _isDangerousPathImpl(path);

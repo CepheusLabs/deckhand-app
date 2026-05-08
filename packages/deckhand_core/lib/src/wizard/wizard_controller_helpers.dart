@@ -77,6 +77,31 @@ String _resolveProfilePathImpl(WizardController c, String ref) {
   return p.join(profileDir, ref);
 }
 
+String _resolveBundledProfileAssetPathImpl(WizardController c, String ref) {
+  if (!_isSafeProfileAssetPath(ref)) {
+    throw StepExecutionException(
+      'profile-local source path is required; absolute paths and '
+      'parent-directory traversal are not allowed',
+    );
+  }
+  return _resolveProfilePathImpl(c, ref);
+}
+
+bool _isSafeProfileAssetPath(String value) {
+  final trimmed = value.trim();
+  if (trimmed.isEmpty || trimmed.contains('\u0000')) return false;
+  if (trimmed.startsWith('/') || trimmed.startsWith('\\')) return false;
+  if (RegExp(r'^[A-Za-z]:[\\/]').hasMatch(trimmed)) return false;
+  if (trimmed.startsWith('~')) return false;
+
+  final normalized = trimmed.replaceAll('\\', '/');
+  final relative = normalized.startsWith('./')
+      ? normalized.substring(2)
+      : normalized;
+  if (relative.isEmpty) return false;
+  return !relative.split('/').any((part) => part == '..');
+}
+
 Future<void> _uploadDirImpl(
   WizardController c,
   String localDir,

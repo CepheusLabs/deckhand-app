@@ -488,6 +488,28 @@ void _walkUnsupportedRuntimeFeatures(
               'bundled screen sources must declare source_path',
             ),
           );
+        } else if (!_isSafeProfileAssetPath(sourcePath)) {
+          out.add(
+            LintFinding(
+              LintSeverity.error,
+              'screens[$i].source_path',
+              'bundled screen source_path must be a profile-local path '
+                  'or shared/... path with no traversal',
+            ),
+          );
+        }
+        final installScript = screen['install_script'];
+        if (installScript is String &&
+            installScript.trim().isNotEmpty &&
+            !_isSafeProfileAssetPath(installScript)) {
+          out.add(
+            LintFinding(
+              LintSeverity.error,
+              'screens[$i].install_script',
+              'bundled screen install_script must be a profile-local path '
+                  'or shared/... path with no traversal',
+            ),
+          );
         }
         continue;
       }
@@ -608,6 +630,21 @@ bool _isSafeGitRef(String value) {
       !value.contains('..') &&
       !value.contains('\\') &&
       RegExp(r'^[A-Za-z0-9._/-]+$').hasMatch(value);
+}
+
+bool _isSafeProfileAssetPath(String value) {
+  final trimmed = value.trim();
+  if (trimmed.isEmpty || trimmed.contains('\u0000')) return false;
+  if (trimmed.startsWith('/') || trimmed.startsWith('\\')) return false;
+  if (RegExp(r'^[A-Za-z]:[\\/]').hasMatch(trimmed)) return false;
+  if (trimmed.startsWith('~')) return false;
+
+  final normalized = trimmed.replaceAll('\\', '/');
+  final relative = normalized.startsWith('./')
+      ? normalized.substring(2)
+      : normalized;
+  if (relative.isEmpty) return false;
+  return !relative.split('/').any((part) => part == '..');
 }
 
 void _walkUrlsAndHashes(Object? node, String path, List<LintFinding> out) {

@@ -229,12 +229,12 @@ Future<void> _runInstallScreenImpl(
         'screen $screenId bundled source must declare source_path',
       );
     }
-    final src = c._resolveProfilePath(sourcePath);
+    final src = c._resolveBundledProfileAssetPath(sourcePath);
     final remote = '~/${p.basename(src)}';
     await c._uploadDir(src, remote);
     final installScript = screen.raw['install_script'] as String?;
-    if (installScript != null) {
-      final srcInstall = c._resolveProfilePath(installScript);
+    if (installScript != null && installScript.trim().isNotEmpty) {
+      final srcInstall = c._resolveBundledProfileAssetPath(installScript);
       const remoteInstall = '~/deckhand-screen-install.sh';
       await c.ssh.upload(s, srcInstall, remoteInstall, mode: 493); // 0o755
       final res = await c._runSsh(

@@ -218,6 +218,31 @@ void main() {
       expect(messages, contains('source_path'));
     });
 
+    test('flags bundled screen sources outside the profile checkout', () async {
+      _writeRegistry(tmp, ['screen-unsafe-source']);
+      final profile =
+          '${_minimalValidProfile('screen-unsafe-source')}'
+          '\nscreens:\n'
+          '  - id: traversal\n'
+          '    source_path: ../outside\n'
+          '  - id: absolute\n'
+          '    source_kind: bundled\n'
+          '    source_path: C:\\\\tmp\\\\lcd\n'
+          '  - id: script\n'
+          '    source_path: ./screens/lcd\n'
+          '    install_script: ../install.sh\n';
+      _writeProfile(tmp, 'screen-unsafe-source', profile);
+      final report = await runProfileLint(['--root', tmp.path]);
+
+      expect(report.hasErrors, isTrue);
+      final messages = report.results
+          .expand((r) => r.findings.map((f) => f.message))
+          .join('\n');
+      expect(messages, contains('source_path'));
+      expect(messages, contains('install_script'));
+      expect(messages, contains('profile-local path'));
+    });
+
     test('flags flash_mcus steps with explicit targets', () async {
       _writeRegistry(tmp, ['mcu-flash']);
       final profile =
