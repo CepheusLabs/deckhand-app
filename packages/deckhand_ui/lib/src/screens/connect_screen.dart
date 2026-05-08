@@ -292,11 +292,14 @@ class _ConnectScreenState extends ConsumerState<ConnectScreen> {
       }
       if (mounted) {
         final state = controller.state;
-        final nextRoute =
+        final firstBootHandoff =
             state.flow == WizardFlow.freshFlash &&
-                state.currentStep == 'first-boot'
-            ? '/first-boot-setup'
-            : '/verify';
+            state.currentStep == 'first-boot';
+        if (firstBootHandoff) {
+          await controller.setDecision(firstBootReadyForSshWaitDecision, true);
+          if (!mounted) return;
+        }
+        final nextRoute = firstBootHandoff ? '/first-boot-setup' : '/verify';
         context.go(nextRoute);
       }
     } on HostKeyUnpinnedException catch (e) {

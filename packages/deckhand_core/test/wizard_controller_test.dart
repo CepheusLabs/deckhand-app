@@ -61,6 +61,7 @@ void main() {
     FakeSsh? ssh,
     FakeUpstream? upstream,
     _StubFlashService? flash,
+    _StubDiscoveryService? discovery,
     FakeElevatedHelper? helper,
     FakeSecurity? security,
     String? osImagesDir,
@@ -70,7 +71,7 @@ void main() {
       profiles: _StubProfileService(profile),
       ssh: ssh ?? FakeSsh(),
       flash: flash ?? _StubFlashService(),
-      discovery: _StubDiscoveryService(),
+      discovery: discovery ?? _StubDiscoveryService(),
       moonraker: _StubMoonrakerService(),
       upstream: upstream ?? FakeUpstream(),
       security: security ?? FakeSecurity(),
@@ -110,6 +111,56 @@ void main() {
         expect(events.whereType<StepFailed>(), isEmpty);
       },
     );
+
+    test(
+      'pauses fresh flash before polling even when a prior SSH host exists',
+      () async {
+        final discovery = _StubDiscoveryService();
+        final controller = newController(
+          profileJson: baseProfileJson(
+            freshFlashSteps: [
+              {'id': 'wait_for_ssh', 'kind': 'wait_for_ssh'},
+            ],
+          ),
+          discovery: discovery,
+        );
+        await controller.loadProfile('test-printer');
+        controller.setFlow(WizardFlow.freshFlash);
+        await controller.connectSsh(host: '192.168.1.50');
+
+        await expectLater(
+          controller.startExecution(),
+          throwsA(
+            isA<WizardHandoffRequiredException>()
+                .having((e) => e.step, 'step', 'first-boot')
+                .having((e) => e.route, 'route', '/first-boot'),
+          ),
+        );
+
+        expect(controller.state.currentStep, 'first-boot');
+        expect(discovery.waitForSshCalls, isEmpty);
+      },
+    );
+
+    test('polls SSH after first-boot handoff is acknowledged', () async {
+      final discovery = _StubDiscoveryService();
+      final controller = newController(
+        profileJson: baseProfileJson(
+          freshFlashSteps: [
+            {'id': 'wait_for_ssh', 'kind': 'wait_for_ssh'},
+          ],
+        ),
+        discovery: discovery,
+      );
+      await controller.loadProfile('test-printer');
+      controller.setFlow(WizardFlow.freshFlash);
+      await controller.connectSsh(host: '192.168.1.50');
+      await controller.setDecision(firstBootReadyForSshWaitDecision, true);
+
+      await controller.startExecution();
+
+      expect(discovery.waitForSshCalls, ['192.168.1.50']);
+    });
   });
 
   group('WizardController._resolveOrAwaitInput', () {
@@ -3008,6 +3059,8 @@ class _StubFlashService implements FlashService {
 }
 
 class _StubDiscoveryService implements DiscoveryService {
+  final waitForSshCalls = <String>[];
+
   @override
   Future<List<DiscoveredPrinter>> scanCidr({
     required String cidr,
@@ -3023,7 +3076,10 @@ class _StubDiscoveryService implements DiscoveryService {
     required String host,
     int port = 22,
     Duration timeout = const Duration(minutes: 10),
-  }) async => true;
+  }) async {
+    waitForSshCalls.add(host);
+    return true;
+  }
 }
 
 class _StubMoonrakerService implements MoonrakerService {

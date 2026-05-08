@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:deckhand_core/deckhand_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -52,6 +53,12 @@ class _FirstBootScreenState extends ConsumerState<FirstBootScreen> {
         .waitForSsh(host: host, timeout: _pollTimeout);
     _ticker?.cancel();
     if (!mounted) return;
+    if (ok) {
+      await ref
+          .read(wizardControllerProvider)
+          .setDecision(firstBootReadyForSshWaitDecision, true);
+      if (!mounted) return;
+    }
     setState(() {
       _waiting = false;
       _ready = ok;

@@ -3,6 +3,11 @@ import 'dart:io';
 
 import 'wizard_flow.dart';
 
+/// Decision key set once the user has reinstalled the flashed eMMC,
+/// powered the printer on, and selected/confirmed the printer that
+/// Deckhand should wait for over SSH.
+const firstBootReadyForSshWaitDecision = 'first_boot.ready_for_ssh_wait';
+
 /// Immutable snapshot of the wizard at a point in time.
 ///
 /// Only data the wizard owns goes here — no live SSH session, no

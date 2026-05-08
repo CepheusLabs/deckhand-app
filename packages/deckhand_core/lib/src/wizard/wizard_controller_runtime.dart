@@ -711,6 +711,22 @@ Future<void> _runWaitForSshImpl(
   WizardController c,
   Map<String, dynamic> step,
 ) async {
+  final firstBootAcknowledged =
+      c._state.decisions[firstBootReadyForSshWaitDecision] == true;
+  if (c._state.flow == WizardFlow.freshFlash && !firstBootAcknowledged) {
+    c._log(
+      step,
+      '[handoff] reinstall the eMMC, power on the printer, then connect to it',
+    );
+    c.setCurrentStep('first-boot');
+    throw const WizardHandoffRequiredException(
+      step: 'first-boot',
+      route: '/first-boot',
+      message:
+          'Install the eMMC in the printer, power it on, then connect to the printer to continue.',
+    );
+  }
+
   final host = c._state.sshHost;
   if (host == null || host.trim().isEmpty) {
     c._log(
