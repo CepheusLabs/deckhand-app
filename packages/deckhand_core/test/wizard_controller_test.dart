@@ -2153,6 +2153,171 @@ void main() {
       );
       expect(cleanupAfterFailure, isNotEmpty);
     });
+
+    test('rejects link_extras sources outside the profile checkout', () async {
+      final ssh = FakeSsh();
+      final tmp = await Directory.systemTemp.createTemp('linkx-source-test');
+      addTearDown(() async => tmp.delete(recursive: true));
+      await File(p.join(tmp.path, 'safe.py')).writeAsString('# safe\n');
+
+      final controller = WizardController(
+        profiles: _PinnedLocationProfileService({
+          ...baseProfileJson(
+            stockKeepSteps: [
+              {
+                'id': 'install_klipper_extras',
+                'kind': 'link_extras',
+                'sources': ['./safe.py', '../outside.py'],
+              },
+            ],
+          ),
+          'firmware': {
+            'choices': [
+              {
+                'id': 'kalico',
+                'repo': 'https://github.com/KalicoCrew/kalico',
+                'ref': 'main',
+                'install_path': '~/kalico',
+                'recommended': true,
+              },
+            ],
+          },
+        }, profileDirPath: tmp.path),
+        ssh: ssh,
+        flash: _StubFlashService(),
+        discovery: _StubDiscoveryService(),
+        moonraker: _StubMoonrakerService(),
+        upstream: FakeUpstream(),
+        security: FakeSecurity(),
+      );
+      await controller.loadProfile('test-printer');
+      controller.setFlow(WizardFlow.stockKeep);
+      await controller.setDecision('firmware', 'kalico');
+      controller.setSession(
+        const SshSession(id: 'fake', host: 'h', port: 22, user: 'root'),
+      );
+
+      await expectLater(
+        controller.startExecution(),
+        throwsA(
+          isA<StepExecutionException>().having(
+            (e) => e.toString(),
+            'message',
+            contains('profile-local'),
+          ),
+        ),
+      );
+      expect(ssh.steps, isEmpty);
+      expect(ssh.uploadCalls, isEmpty);
+    });
+
+    test('rejects unsafe target_dir link_extras before remote work', () async {
+      final ssh = FakeSsh();
+      final tmp = await Directory.systemTemp.createTemp(
+        'linkx-target-source-test',
+      );
+      addTearDown(() async => tmp.delete(recursive: true));
+      await File(p.join(tmp.path, 'safe.cfg')).writeAsString('[safe]\n');
+
+      final controller = WizardController(
+        profiles: _PinnedLocationProfileService(
+          baseProfileJson(
+            stockKeepSteps: [
+              {
+                'id': 'install_configs',
+                'kind': 'link_extras',
+                'target_dir': '~/printer_data/config/',
+                'sources': ['./safe.cfg', '../outside.cfg'],
+              },
+            ],
+          ),
+          profileDirPath: tmp.path,
+        ),
+        ssh: ssh,
+        flash: _StubFlashService(),
+        discovery: _StubDiscoveryService(),
+        moonraker: _StubMoonrakerService(),
+        upstream: FakeUpstream(),
+        security: FakeSecurity(),
+      );
+      await controller.loadProfile('test-printer');
+      controller.setFlow(WizardFlow.stockKeep);
+      controller.setSession(
+        const SshSession(id: 'fake', host: 'h', port: 22, user: 'root'),
+      );
+
+      await expectLater(
+        controller.startExecution(),
+        throwsA(
+          isA<StepExecutionException>().having(
+            (e) => e.toString(),
+            'message',
+            contains('profile-local'),
+          ),
+        ),
+      );
+      expect(ssh.steps, isEmpty);
+      expect(ssh.uploadCalls, isEmpty);
+    });
+
+    test('rejects directory sources with rewritten remote names', () async {
+      final ssh = FakeSsh();
+      final tmp = await Directory.systemTemp.createTemp('linkx-dir-name-test');
+      addTearDown(() async => tmp.delete(recursive: true));
+      final localDir = Directory(p.join(tmp.path, 'my extras'));
+      await localDir.create();
+      await File(p.join(localDir.path, 'module.py')).writeAsString('# noop\n');
+
+      final controller = WizardController(
+        profiles: _PinnedLocationProfileService({
+          ...baseProfileJson(
+            stockKeepSteps: [
+              {
+                'id': 'install_klipper_extras',
+                'kind': 'link_extras',
+                'sources': ['./my extras'],
+              },
+            ],
+          ),
+          'firmware': {
+            'choices': [
+              {
+                'id': 'kalico',
+                'repo': 'https://github.com/KalicoCrew/kalico',
+                'ref': 'main',
+                'install_path': '~/kalico',
+                'recommended': true,
+              },
+            ],
+          },
+        }, profileDirPath: tmp.path),
+        ssh: ssh,
+        flash: _StubFlashService(),
+        discovery: _StubDiscoveryService(),
+        moonraker: _StubMoonrakerService(),
+        upstream: FakeUpstream(),
+        security: FakeSecurity(),
+      );
+      await controller.loadProfile('test-printer');
+      controller.setFlow(WizardFlow.stockKeep);
+      await controller.setDecision('firmware', 'kalico');
+      controller.setSession(
+        const SshSession(id: 'fake', host: 'h', port: 22, user: 'root'),
+      );
+
+      await expectLater(
+        controller.startExecution(),
+        throwsA(
+          isA<StepExecutionException>().having(
+            (e) => e.toString(),
+            'message',
+            contains('safe file name'),
+          ),
+        ),
+      );
+      expect(ssh.steps, isEmpty);
+      expect(ssh.uploadCalls, isEmpty);
+    });
   });
 
   group('security review regressions', () {

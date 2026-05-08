@@ -157,6 +157,7 @@ Future<void> _runLinkExtrasImpl(
   final fw = c._selectedFirmware();
   if (fw == null) throw StepExecutionException('no firmware selected');
   final install = fw.installPath ?? '~/klipper';
+  final resolvedSources = await _resolveLinkExtraSources(c, sources);
   // Make sure the destination tree exists ONCE up front so single-file
   // uploads below have somewhere to land. SFTP itself can't expand
   // `~`; running `mkdir -p` via shell does, and a single round-trip
@@ -166,20 +167,18 @@ Future<void> _runLinkExtrasImpl(
   if (!mk.success) {
     throw StepExecutionException('remote mkdir failed', stderr: mk.stderr);
   }
-  for (final src in sources) {
-    final localPath = c._resolveProfilePath(src);
-    final basename = p.basename(localPath);
-    final remote = '$install/klippy/extras/$basename';
-    if (await Directory(localPath).exists()) {
-      await c._uploadDir(localPath, remote);
+  for (final source in resolvedSources) {
+    final remote = '$install/klippy/extras/${source.basename}';
+    if (source.isDirectory) {
+      await c._uploadDir(source.localPath, remote);
     } else {
       // SFTP doesn't expand `~`; OpenSSH's SFTP subsystem defaults the
       // cwd to the user's home, so dropping the `~/` prefix gives a
       // path that resolves correctly. Absolute paths pass through.
       final sftpPath = remote.startsWith('~/') ? remote.substring(2) : remote;
-      await c.ssh.upload(s, localPath, sftpPath);
+      await c.ssh.upload(s, source.localPath, sftpPath);
     }
-    c._log(step, '[link_extras] installed $basename');
+    c._log(step, '[link_extras] installed ${source.basename}');
   }
 }
 
@@ -199,6 +198,7 @@ Future<void> _runTargetDirLinkExtras(
   }.contains(method)) {
     throw StepExecutionException('unsupported link_extras method "$method"');
   }
+  final resolvedSources = await _resolveLinkExtraSources(c, sources);
 
   final qTargetDir = shellPathEscape(targetDir);
   final mk = await c._runSsh('mkdir -p -- $qTargetDir');
@@ -206,23 +206,41 @@ Future<void> _runTargetDirLinkExtras(
     throw StepExecutionException('remote mkdir failed', stderr: mk.stderr);
   }
 
-  for (final src in sources) {
-    final localPath = c._resolveProfilePath(src);
-    final basename = c._safeRemoteBasename(
-      p.basename(localPath),
-      'link_extras source',
-    );
-    final remote = _joinRemoteDir(targetDir, basename);
-    if (await Directory(localPath).exists()) {
+  for (final source in resolvedSources) {
+    final remote = _joinRemoteDir(targetDir, source.basename);
+    if (source.isDirectory) {
       if (method == 'copy_with_backup') {
         await _backupRemoteIfPresent(c, remote);
       }
-      await c._uploadDir(localPath, remote);
+      await c._uploadDir(source.localPath, remote);
     } else {
-      await _uploadLinkExtraFile(c, s, localPath, remote, method, step);
+      await _uploadLinkExtraFile(c, s, source.localPath, remote, method, step);
     }
-    c._log(step, '[link_extras] installed $basename');
+    c._log(step, '[link_extras] installed ${source.basename}');
   }
+}
+
+Future<List<({String localPath, String basename, bool isDirectory})>>
+_resolveLinkExtraSources(WizardController c, List<String> sources) async {
+  final resolved = <({String localPath, String basename, bool isDirectory})>[];
+  for (final src in sources) {
+    final localPath = c._resolveBundledProfileAssetPath(src);
+    final rawBasename = p.basename(localPath);
+    final basename = c._safeRemoteBasename(rawBasename, 'link_extras source');
+    final isDirectory = await Directory(localPath).exists();
+    if (isDirectory && basename != rawBasename) {
+      throw StepExecutionException(
+        'link_extras directory source "$rawBasename" must already use '
+        'a safe file name',
+      );
+    }
+    resolved.add((
+      localPath: localPath,
+      basename: basename,
+      isDirectory: isDirectory,
+    ));
+  }
+  return resolved;
 }
 
 Future<void> _uploadLinkExtraFile(

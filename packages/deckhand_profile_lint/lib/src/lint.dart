@@ -606,7 +606,27 @@ void _walkUnsupportedRuntimeFeatures(
     if (steps is! List) return;
     for (var i = 0; i < steps.length; i++) {
       final step = steps[i];
-      if (step is! Map || step['kind'] != 'flash_mcus') continue;
+      if (step is! Map) continue;
+      if (step['kind'] == 'link_extras') {
+        final sources = step['sources'];
+        if (sources is List) {
+          for (var j = 0; j < sources.length; j++) {
+            final source = sources[j];
+            if (source is String && _isSafeProfileAssetPath(source)) {
+              continue;
+            }
+            out.add(
+              LintFinding(
+                LintSeverity.error,
+                'flows.$flowName.steps[$i].sources[$j]',
+                'link_extras sources must be profile-local paths or '
+                    'shared/... paths with no traversal',
+              ),
+            );
+          }
+        }
+      }
+      if (step['kind'] != 'flash_mcus') continue;
       out.add(
         LintFinding(
           LintSeverity.error,

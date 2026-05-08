@@ -243,6 +243,32 @@ void main() {
       expect(messages, contains('profile-local path'));
     });
 
+    test('flags link_extras sources outside bundled profile assets', () async {
+      _writeRegistry(tmp, ['link-extra-unsafe-source']);
+      final profile =
+          '${_minimalValidProfile('link-extra-unsafe-source')}'
+          '\nflows:\n'
+          '  stock_keep:\n'
+          '    enabled: true\n'
+          '    steps:\n'
+          '      - id: install_klipper_extras\n'
+          '        kind: link_extras\n'
+          '        safe_to_rerun: true\n'
+          '        sources:\n'
+          '          - ./extras/safe.py\n'
+          '          - ../outside.py\n'
+          '          - C:\\\\tmp\\\\unsafe.py\n';
+      _writeProfile(tmp, 'link-extra-unsafe-source', profile);
+      final report = await runProfileLint(['--root', tmp.path]);
+
+      expect(report.hasErrors, isTrue);
+      final messages = report.results
+          .expand((r) => r.findings.map((f) => f.message))
+          .join('\n');
+      expect(messages, contains('link_extras'));
+      expect(messages, contains('profile-local path'));
+    });
+
     test('flags flash_mcus steps with explicit targets', () async {
       _writeRegistry(tmp, ['mcu-flash']);
       final profile =
