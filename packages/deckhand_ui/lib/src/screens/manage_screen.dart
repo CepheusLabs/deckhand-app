@@ -275,7 +275,14 @@ class _StatusTabState extends ConsumerState<_StatusTab> {
     final webUiUrl = host == null || host.isEmpty
         ? null
         : _webUiUrl(host: host, profile: profile);
-    final sshUser = controller.sshSession?.user ?? _defaultSshUser(profile);
+    final sshSession = controller.sshSession;
+    final sshUser =
+        sshSession?.user ?? widget.state.sshUser ?? _defaultSshUser(profile);
+    final sshPort =
+        sshSession?.port ??
+        widget.state.sshPort ??
+        profile?.ssh.defaultPort ??
+        22;
     return _Panel(
       child: FutureBuilder<_StatusSnapshot>(
         future: _snapshot,
@@ -369,7 +376,7 @@ class _StatusTabState extends ConsumerState<_StatusTab> {
                       label: const Text('Copy SSH command'),
                       onPressed: () => _copyToClipboard(
                         context,
-                        'ssh $sshUser@$host',
+                        _sshCommand(user: sshUser, host: host!, port: sshPort),
                         'SSH command copied',
                       ),
                     ),
@@ -428,6 +435,17 @@ int _webUiPort(PrinterProfile? profile) {
 String _defaultSshUser(PrinterProfile? profile) {
   final credentials = profile?.ssh.defaultCredentials ?? const [];
   return credentials.isEmpty ? 'root' : credentials.first.user;
+}
+
+String _sshCommand({
+  required String user,
+  required String host,
+  required int port,
+}) {
+  final cleanUser = user.trim().isEmpty ? 'root' : user.trim();
+  final cleanHost = host.trim();
+  final portArg = port == 22 ? '' : '-p $port ';
+  return 'ssh $portArg$cleanUser@$cleanHost';
 }
 
 class _StatusSnapshot {

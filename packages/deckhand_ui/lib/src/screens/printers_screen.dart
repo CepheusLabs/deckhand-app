@@ -32,6 +32,8 @@ class _PrintersScreenState extends ConsumerState<PrintersScreen> {
               currentStep: 'manage',
               flow: WizardFlow.none,
               sshHost: printer.host,
+              sshPort: printer.port,
+              sshUser: printer.user,
             ),
           );
       if (!mounted) return;

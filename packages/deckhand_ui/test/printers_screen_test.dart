@@ -66,6 +66,8 @@ void main() {
 
       expect(controller.state.profileId, 'test-printer');
       expect(controller.state.sshHost, '192.168.1.51');
+      expect(controller.state.sshPort, 2222);
+      expect(controller.state.sshUser, 'mks');
       expect(controller.profile?.displayName, 'Test Printer');
     });
 

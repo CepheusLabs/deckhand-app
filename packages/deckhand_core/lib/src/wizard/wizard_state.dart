@@ -18,6 +18,8 @@ class WizardState {
     required this.currentStep,
     required this.flow,
     this.sshHost,
+    this.sshPort,
+    this.sshUser,
   });
 
   factory WizardState.initial() => const WizardState(
@@ -48,6 +50,8 @@ class WizardState {
       currentStep: (json['currentStep'] as String?) ?? 'welcome',
       flow: flow,
       sshHost: json['sshHost'] as String?,
+      sshPort: _decodePort(json['sshPort']),
+      sshUser: _decodeOptionalString(json['sshUser']),
     );
   }
 
@@ -56,6 +60,8 @@ class WizardState {
   final String currentStep;
   final WizardFlow flow;
   final String? sshHost;
+  final int? sshPort;
+  final String? sshUser;
 
   Map<String, dynamic> toJson() => <String, dynamic>{
     'schema': 'deckhand.wizard_state/1',
@@ -64,6 +70,8 @@ class WizardState {
     'currentStep': currentStep,
     'flow': flow.name,
     if (sshHost != null) 'sshHost': sshHost,
+    if (sshPort != null) 'sshPort': sshPort,
+    if (sshUser != null) 'sshUser': sshUser,
   };
 
   WizardState copyWith({
@@ -72,13 +80,29 @@ class WizardState {
     String? currentStep,
     WizardFlow? flow,
     String? sshHost,
+    int? sshPort,
+    String? sshUser,
   }) => WizardState(
     profileId: profileId ?? this.profileId,
     decisions: decisions ?? this.decisions,
     currentStep: currentStep ?? this.currentStep,
     flow: flow ?? this.flow,
     sshHost: sshHost ?? this.sshHost,
+    sshPort: sshPort ?? this.sshPort,
+    sshUser: sshUser ?? this.sshUser,
   );
+}
+
+int? _decodePort(Object? raw) {
+  final port = raw is num ? raw.toInt() : null;
+  if (port == null || port < 1 || port > 65535) return null;
+  return port;
+}
+
+String? _decodeOptionalString(Object? raw) {
+  if (raw is! String) return null;
+  final value = raw.trim();
+  return value.isEmpty ? null : value;
 }
 
 /// On-disk persistence layer for [WizardState]. Writes are atomic

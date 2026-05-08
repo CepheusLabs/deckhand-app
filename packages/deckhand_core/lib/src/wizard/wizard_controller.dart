@@ -187,7 +187,11 @@ class WizardController {
   void setSession(SshSession session) {
     assert(() {
       _session = session;
-      _state = _state.copyWith(sshHost: session.host);
+      _state = _state.copyWith(
+        sshHost: session.host,
+        sshPort: session.port,
+        sshUser: session.user,
+      );
       return true;
     }());
   }
@@ -289,7 +293,11 @@ class WizardController {
         break;
       }
     }
-    _state = _state.copyWith(sshHost: host);
+    _state = _state.copyWith(
+      sshHost: session.host,
+      sshPort: session.port,
+      sshUser: session.user,
+    );
     await _runStateAttachSession();
     _emit(SshConnected(host: host, user: session.user));
     // Fire the inventory probe in the background so the services /
@@ -323,7 +331,11 @@ class WizardController {
     );
     _session = session;
     _sshPassword = password;
-    _state = _state.copyWith(sshHost: host);
+    _state = _state.copyWith(
+      sshHost: session.host,
+      sshPort: session.port,
+      sshUser: session.user,
+    );
     await _runStateAttachSession();
     _emit(SshConnected(host: host, user: session.user));
     // Probe failures emit StepWarning internally; the .catchError is a

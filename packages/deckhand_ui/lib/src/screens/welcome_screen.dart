@@ -331,6 +331,8 @@ class _ManagedPrintersPanelState extends ConsumerState<_ManagedPrintersPanel> {
               currentStep: 'manage',
               flow: WizardFlow.none,
               sshHost: printer.host,
+              sshPort: printer.port,
+              sshUser: printer.user,
             ),
           );
       if (!mounted) return;

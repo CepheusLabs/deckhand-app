@@ -61,6 +61,56 @@ void main() {
     expect(clipboardWrites, contains('ssh mks@192.168.1.50'));
   });
 
+  testWidgets('status tab copies saved printer ssh user and port', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1200, 900));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final controller = stubWizardController(profileJson: testProfileJson());
+    await controller.restore(
+      const WizardState(
+        profileId: 'test-printer',
+        decisions: {},
+        currentStep: 'manage',
+        flow: WizardFlow.none,
+        sshHost: '192.168.1.51',
+        sshPort: 2222,
+        sshUser: 'mks',
+      ),
+    );
+    final clipboardWrites = <String>[];
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async {
+        if (call.method == 'Clipboard.setData') {
+          final data = (call.arguments as Map?)?['text'] as String?;
+          if (data != null) clipboardWrites.add(data);
+        }
+        return null;
+      },
+    );
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      ),
+    );
+
+    await tester.pumpWidget(
+      testHarness(
+        controller: controller,
+        child: const ManageScreen(),
+        initialLocation: '/manage',
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.widgetWithText(OutlinedButton, 'Copy SSH command'));
+    await tester.pump();
+
+    expect(clipboardWrites, contains('ssh -p 2222 mks@192.168.1.51'));
+  });
+
   testWidgets('backup tab uses a direct eMMC backup action label', (
     tester,
   ) async {

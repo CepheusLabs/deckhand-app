@@ -14,7 +14,9 @@ void main() {
   });
 
   tearDown(() {
-    try { tmp.deleteSync(recursive: true); } catch (_) {}
+    try {
+      tmp.deleteSync(recursive: true);
+    } catch (_) {}
   });
 
   group('WizardState JSON round-trip', () {
@@ -31,10 +33,16 @@ void main() {
     test('decisions + flow + host round-trip', () {
       final s = const WizardState(
         profileId: 'sovol-zero',
-        decisions: {'firmware': 'kalico', 'kiauh': true, 'flash.disk': 'mmcblk0'},
+        decisions: {
+          'firmware': 'kalico',
+          'kiauh': true,
+          'flash.disk': 'mmcblk0',
+        },
         currentStep: 's200-choose-os',
         flow: WizardFlow.freshFlash,
         sshHost: '10.0.0.42',
+        sshPort: 2222,
+        sshUser: 'mks',
       );
       final json = s.toJson();
       final decoded = WizardState.fromJson(json);
@@ -43,6 +51,8 @@ void main() {
       expect(decoded.currentStep, 's200-choose-os');
       expect(decoded.flow, WizardFlow.freshFlash);
       expect(decoded.sshHost, '10.0.0.42');
+      expect(decoded.sshPort, 2222);
+      expect(decoded.sshUser, 'mks');
     });
 
     test('unknown flow name degrades to WizardFlow.none', () {
@@ -79,24 +89,37 @@ void main() {
       expect(loaded.decisions['probe.os_id'], 'armbian');
     });
 
-    test('save is atomic — corrupted tmp does not poison prior snapshot', () async {
-      final store = WizardStateStore(path: sessionPath);
-      await store.save(const WizardState(
-        profileId: 'a', decisions: {}, currentStep: 'x', flow: WizardFlow.none,
-      ));
-      expect(await File(sessionPath).exists(), isTrue);
-      final before = await File(sessionPath).readAsString();
-      // Drop a broken tmp to simulate an interrupted write.
-      await File('$sessionPath.tmp').writeAsString('{not: valid');
-      // A fresh save should still succeed (rename replaces the good
-      // file; tmp gets reused).
-      await store.save(const WizardState(
-        profileId: 'b', decisions: {}, currentStep: 'y', flow: WizardFlow.none,
-      ));
-      final after = await File(sessionPath).readAsString();
-      expect(after, isNot(equals(before)));
-      expect(after, contains('"profileId": "b"'));
-    });
+    test(
+      'save is atomic — corrupted tmp does not poison prior snapshot',
+      () async {
+        final store = WizardStateStore(path: sessionPath);
+        await store.save(
+          const WizardState(
+            profileId: 'a',
+            decisions: {},
+            currentStep: 'x',
+            flow: WizardFlow.none,
+          ),
+        );
+        expect(await File(sessionPath).exists(), isTrue);
+        final before = await File(sessionPath).readAsString();
+        // Drop a broken tmp to simulate an interrupted write.
+        await File('$sessionPath.tmp').writeAsString('{not: valid');
+        // A fresh save should still succeed (rename replaces the good
+        // file; tmp gets reused).
+        await store.save(
+          const WizardState(
+            profileId: 'b',
+            decisions: {},
+            currentStep: 'y',
+            flow: WizardFlow.none,
+          ),
+        );
+        final after = await File(sessionPath).readAsString();
+        expect(after, isNot(equals(before)));
+        expect(after, contains('"profileId": "b"'));
+      },
+    );
 
     test('load returns null on unknown schema', () async {
       await File(sessionPath).writeAsString('{"schema":"other/1"}');
@@ -135,8 +158,11 @@ void main() {
 
       await store.save(WizardState.initial());
 
-      expect(captured, isNotEmpty,
-          reason: 'errorSink must fire when the FS rejects the write');
+      expect(
+        captured,
+        isNotEmpty,
+        reason: 'errorSink must fire when the FS rejects the write',
+      );
       expect(captured.first, isA<FileSystemException>());
     });
 
@@ -148,13 +174,22 @@ void main() {
       // came through.
       final store = WizardStateStore(path: sessionPath);
       const a = WizardState(
-        profileId: 'a', decisions: {}, currentStep: 's1', flow: WizardFlow.none,
+        profileId: 'a',
+        decisions: {},
+        currentStep: 's1',
+        flow: WizardFlow.none,
       );
       const b = WizardState(
-        profileId: 'b', decisions: {}, currentStep: 's2', flow: WizardFlow.none,
+        profileId: 'b',
+        decisions: {},
+        currentStep: 's2',
+        flow: WizardFlow.none,
       );
       const c = WizardState(
-        profileId: 'c', decisions: {}, currentStep: 's3', flow: WizardFlow.none,
+        profileId: 'c',
+        decisions: {},
+        currentStep: 's3',
+        flow: WizardFlow.none,
       );
 
       // Fire three saves without awaiting the first two — the third
@@ -167,8 +202,11 @@ void main() {
 
       final loaded = await store.load();
       expect(loaded, isNotNull);
-      expect(loaded!.profileId, 'c',
-          reason: 'coalesced save must land on the most-recent state');
+      expect(
+        loaded!.profileId,
+        'c',
+        reason: 'coalesced save must land on the most-recent state',
+      );
     });
   });
 }
