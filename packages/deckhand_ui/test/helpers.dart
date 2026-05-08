@@ -15,6 +15,7 @@ Widget testHarness({
   required WizardController controller,
   required Widget child,
   String initialLocation = '/',
+  DoctorService? doctor,
   List<Override> extraOverrides = const [],
 }) {
   final router = GoRouter(
@@ -54,7 +55,7 @@ Widget testHarness({
   );
   return ProviderScope(
     overrides: [
-      ...overrideForController(controller),
+      ...overrideForController(controller, doctor: doctor),
       // Default in-memory settings so screens that read
       // deckhandSettingsProvider (verify_screen does, for prune
       // preferences) don't trip the _throwUnimplemented guard.

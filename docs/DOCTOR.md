@@ -142,5 +142,5 @@ and wants to re-verify without restarting the wizard.
 - S10 preflight strip: implemented in
   [`preflight_strip.dart`](../packages/deckhand_ui/lib/src/widgets/preflight_strip.dart);
   wired into [`welcome_screen.dart`](../packages/deckhand_ui/lib/src/screens/welcome_screen.dart).
-- Settings → "Run preflight" button: pending in
+- Settings → "Run preflight" button: implemented in
   [`settings_screen.dart`](../packages/deckhand_ui/lib/src/screens/settings_screen.dart).

@@ -57,6 +57,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   bool _developerMode = false;
   late final TextEditingController _cacheRetentionController;
   String? _cacheRetentionError;
+  bool _preflightRunning = false;
+  DoctorReport? _preflightReport;
+  String? _preflightError;
 
   Future<List<String>>? _approvedHostsFuture;
   Future<Map<String, String>>? _fingerprintsFuture;
@@ -71,6 +74,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     _githubTokenController = TextEditingController();
     _verifyAfterWrite = settings.verifyAfterWrite;
     _developerMode = settings.developerMode;
+    _preflightReport = _decodePreflightReport(settings.lastPreflight);
     _cacheRetentionController = TextEditingController(
       text: settings.cacheRetentionDays.toString(),
     );
@@ -184,6 +188,62 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     _toast('Flash settings saved.');
   }
 
+  Future<void> _runPreflightNow() async {
+    if (_preflightRunning) return;
+    setState(() {
+      _preflightRunning = true;
+      _preflightError = null;
+    });
+    try {
+      final report = await ref.read(doctorServiceProvider).run();
+      final settings = ref.read(deckhandSettingsProvider);
+      settings.lastPreflight = _encodePreflightReport(report);
+      await settings.save();
+      ref.invalidate(preflightReportProvider);
+      if (!mounted) return;
+      setState(() {
+        _preflightReport = report;
+        _preflightRunning = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _preflightRunning = false;
+        _preflightError = '$e';
+      });
+    }
+  }
+
+  void _showPreflightReport() {
+    final report = _preflightReport;
+    if (report == null) return;
+    showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Preflight report'),
+        content: SizedBox(
+          width: 720,
+          child: SingleChildScrollView(
+            child: SelectableText(
+              report.report,
+              style: const TextStyle(
+                fontFamily: DeckhandTokens.fontMono,
+                fontSize: DeckhandTokens.tSm,
+                height: 1.4,
+              ),
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _forgetFingerprint(String host) async {
     await ref.read(securityServiceProvider).forgetHostFingerprint(host);
     _refreshHostLists();
@@ -268,6 +328,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        _preflightPanel(tokens),
+        const _SettingsDivider(),
         _RowSwitch(
           title: 'Verify after flash',
           subtitle:
@@ -312,6 +374,92 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             label: const Text('Save general settings'),
             onPressed: _saveFlashSettings,
           ),
+        ),
+      ],
+    );
+  }
+
+  Widget _preflightPanel(DeckhandTokens tokens) {
+    final report = _preflightReport;
+    DoctorResult? firstIssue;
+    if (report != null) {
+      for (final result in report.results) {
+        if (result.status == DoctorStatus.fail) {
+          firstIssue = result;
+          break;
+        }
+      }
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const _FieldLabel('PREFLIGHT'),
+        const SizedBox(height: 6),
+        Text(
+          'Re-check sidecar runtime, helper availability, disk access, '
+          'mDNS, and GitHub reachability after changing your machine or '
+          'Deckhand build.',
+          style: TextStyle(
+            fontFamily: DeckhandTokens.fontSans,
+            fontSize: DeckhandTokens.tSm,
+            color: tokens.text3,
+            height: 1.45,
+          ),
+        ),
+        const SizedBox(height: 12),
+        if (_preflightError != null) ...[
+          Text(
+            'Preflight failed to run: $_preflightError',
+            style: TextStyle(color: tokens.bad),
+          ),
+          const SizedBox(height: 10),
+        ] else if (report != null) ...[
+          Text(
+            _preflightSummary(report),
+            style: TextStyle(
+              fontFamily: DeckhandTokens.fontSans,
+              fontSize: DeckhandTokens.tMd,
+              fontWeight: FontWeight.w700,
+              color: report.passed ? tokens.ok : tokens.bad,
+            ),
+          ),
+          if (firstIssue != null) ...[
+            const SizedBox(height: 4),
+            Text(
+              '${firstIssue.name}: ${firstIssue.detail}',
+              style: TextStyle(
+                fontFamily: DeckhandTokens.fontSans,
+                fontSize: DeckhandTokens.tSm,
+                color: tokens.text3,
+              ),
+            ),
+          ],
+          const SizedBox(height: 10),
+        ],
+        Wrap(
+          spacing: 10,
+          runSpacing: 10,
+          children: [
+            FilledButton.icon(
+              icon: _preflightRunning
+                  ? const SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: DeckhandSpinner(size: 14, strokeWidth: 2),
+                    )
+                  : const Icon(Icons.health_and_safety_outlined, size: 16),
+              label: Text(
+                _preflightRunning ? 'Running preflight...' : 'Run preflight',
+              ),
+              onPressed: _preflightRunning ? null : _runPreflightNow,
+            ),
+            if (report != null)
+              OutlinedButton.icon(
+                icon: const Icon(Icons.article_outlined, size: 16),
+                label: const Text('View report'),
+                onPressed: _showPreflightReport,
+              ),
+          ],
         ),
       ],
     );
@@ -985,6 +1133,70 @@ class _AllowListRow extends StatelessWidget {
       ),
     );
   }
+}
+
+Map<String, dynamic> _encodePreflightReport(DoctorReport report) {
+  return {
+    'passed': report.passed,
+    'report': report.report,
+    'at': DateTime.now().toIso8601String(),
+    'results': [
+      for (final result in report.results)
+        {
+          'name': result.name,
+          'status': _doctorStatusString(result.status),
+          'detail': result.detail,
+        },
+    ],
+  };
+}
+
+DoctorReport? _decodePreflightReport(Map<String, dynamic>? raw) {
+  if (raw == null) return null;
+  final passed = raw['passed'];
+  final report = raw['report'];
+  final resultsRaw = raw['results'];
+  if (passed is! bool || report is! String || resultsRaw is! List) {
+    return null;
+  }
+  final results = <DoctorResult>[];
+  for (final item in resultsRaw) {
+    if (item is! Map) continue;
+    final entry = item.cast<dynamic, dynamic>();
+    final name = entry['name'];
+    final status = entry['status'];
+    final detail = entry['detail'];
+    if (name is! String || status is! String || detail is! String) continue;
+    results.add(
+      DoctorResult(
+        name: name,
+        status: doctorStatusFromString(status),
+        detail: detail,
+      ),
+    );
+  }
+  return DoctorReport(passed: passed, results: results, report: report);
+}
+
+String _preflightSummary(DoctorReport report) {
+  final failures = report.failures.length;
+  if (failures > 0) {
+    return 'Preflight found $failures issue${failures == 1 ? '' : 's'}';
+  }
+  final warnings = report.warnings.length;
+  if (warnings > 0) {
+    return 'Preflight ready ($warnings warning${warnings == 1 ? '' : 's'})';
+  }
+  return 'Preflight ready';
+}
+
+String _doctorStatusString(DoctorStatus status) {
+  return switch (status) {
+    DoctorStatus.pass => 'PASS',
+    DoctorStatus.warn => 'WARN',
+    DoctorStatus.fail => 'FAIL',
+    DoctorStatus.unknown => 'UNKNOWN',
+  };
 }
 
 class _ThemeRadio extends StatelessWidget {
