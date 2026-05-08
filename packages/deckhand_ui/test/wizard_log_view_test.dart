@@ -69,4 +69,26 @@ void main() {
       findsOneWidget,
     );
   });
+
+  testWidgets('user log hides raw Windows disk identifiers', (tester) async {
+    final controller = stubWizardController(profileJson: testProfileJson());
+    await controller.loadProfile('test-printer');
+
+    await tester.pumpWidget(
+      testHarness(
+        controller: controller,
+        child: const WizardLogView(
+          lines: [
+            '[input] using existing decision: PhysicalDrive3',
+            '[flash] writing C:/Deckhand/os.img -> PhysicalDrive3 (verify=true)',
+            r'[fail] flash_disk - StepExecutionException: write \\.\PHYSICALDRIVE3: The parameter is incorrect.',
+          ],
+        ),
+      ),
+    );
+
+    expect(find.textContaining('Windows disk 3'), findsWidgets);
+    expect(find.textContaining('PhysicalDrive3'), findsNothing);
+    expect(find.textContaining('PHYSICALDRIVE3'), findsNothing);
+  });
 }

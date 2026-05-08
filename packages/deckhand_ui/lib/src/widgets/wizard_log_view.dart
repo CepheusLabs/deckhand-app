@@ -278,7 +278,7 @@ class _LogLine extends StatelessWidget {
       r'^writing\s+(.+)\s+->\s+(.+?)\s+\(verify=(true|false)\)$',
     ).firstMatch(message);
     if (write != null) {
-      final target = write.group(2)!;
+      final target = _friendlyValue(write.group(2)!);
       final verify = write.group(3) == 'true';
       return verify
           ? 'Writing the OS image to $target, then verifying it'
@@ -303,14 +303,16 @@ class _LogLine extends StatelessWidget {
 
   static String _friendlyWarning(String message) {
     final dash = message.indexOf(' - ');
-    if (dash <= 0) return message;
-    return '${_friendlyStepName(message.substring(0, dash))}: ${message.substring(dash + 3)}';
+    if (dash <= 0) return _friendlyError(message);
+    return '${_friendlyStepName(message.substring(0, dash))}: '
+        '${_friendlyError(message.substring(dash + 3))}';
   }
 
   static String _friendlyFailure(String message) {
     final dash = message.indexOf(' - ');
     if (dash <= 0) return _friendlyStepName(message);
-    return '${_friendlyStepName(message.substring(0, dash))}: ${message.substring(dash + 3)}';
+    return '${_friendlyStepName(message.substring(0, dash))}: '
+        '${_friendlyError(message.substring(dash + 3))}';
   }
 
   static String _friendlyStepAction(String stepId) {
@@ -335,8 +337,23 @@ class _LogLine extends StatelessWidget {
 
   static String _friendlyValue(String value) {
     final trimmed = value.trim();
+    final physicalDrive = _friendlyPhysicalDrive(trimmed);
+    if (physicalDrive != null) return physicalDrive;
     if (!trimmed.contains('-') && !trimmed.contains('_')) return trimmed;
     return _titleCaseIdentifier(trimmed);
+  }
+
+  static String _friendlyError(String message) {
+    return message.replaceAllMapped(
+      _windowsPhysicalDriveRe,
+      (match) => 'Windows disk ${match.group(1)!}',
+    );
+  }
+
+  static String? _friendlyPhysicalDrive(String value) {
+    final match = _windowsPhysicalDriveRe.firstMatch(value);
+    if (match == null || match.group(0) != value) return null;
+    return 'Windows disk ${match.group(1)!}';
   }
 
   static String _titleCaseIdentifier(String value) {
@@ -386,6 +403,11 @@ class _LogLine extends StatelessWidget {
 }
 
 enum _LogKind { ok, fail, warn, exec, info, input, dim }
+
+final RegExp _windowsPhysicalDriveRe = RegExp(
+  r'(?:\\\\\.\\)?physical\s*drive\s*([0-9]+)',
+  caseSensitive: false,
+);
 
 class _Parsed {
   _Parsed(this.kind, this.tag, this.msg);
