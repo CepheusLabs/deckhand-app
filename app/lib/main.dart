@@ -18,6 +18,8 @@ import 'package:window_manager/window_manager.dart';
 
 import 'window_geometry_observer.dart';
 
+const profileTrustKeyringAssetPath = 'app/assets/keyring.asc';
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   const isReleaseBuild = bool.fromEnvironment(
@@ -220,7 +222,7 @@ Future<void> main() async {
         StateError(
           'profile-trust keyring is the dev placeholder; signed-tag '
           'verification is OFF. Production builds must replace '
-          'packages/deckhand_core/lib/src/trust/keyring.asc.',
+          '$profileTrustKeyringAssetPath.',
         ),
         StackTrace.current,
       );
@@ -428,7 +430,7 @@ void enforceProfileTrustKeyringForBuild({
   if (isReleaseBuild && trustKeyring.isPlaceholder) {
     throw StateError(
       'Release build cannot start with the placeholder profile-trust '
-      'keyring. Replace app/assets/keyring.asc with the production '
+      'keyring. Replace $profileTrustKeyringAssetPath with the production '
       'trusted signing keys before packaging.',
     );
   }

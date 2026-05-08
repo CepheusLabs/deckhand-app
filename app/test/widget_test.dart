@@ -9,6 +9,7 @@ import 'package:flutter_test/flutter_test.dart';
 // packages/*/test. App-level tests cover startup wiring and release gates.
 void main() {
   test('release builds fail closed with placeholder profile trust keyring', () {
+    expect(app.profileTrustKeyringAssetPath, 'app/assets/keyring.asc');
     expect(
       () => app.enforceProfileTrustKeyringForBuild(
         isReleaseBuild: true,

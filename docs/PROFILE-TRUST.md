@@ -169,19 +169,20 @@ banner on every wizard screen for the rest of the session.
 - `profiles.fetch` IPC contract: documented in
   [IPC.md:148](IPC.md:148).
 - Bundled keyring asset: **placeholder present** at
-  [`packages/deckhand_core/lib/src/trust/keyring.asc`](../packages/deckhand_core/lib/src/trust/keyring.asc).
+  [`app/assets/keyring.asc`](../app/assets/keyring.asc).
   The placeholder's first-line marker is detected at runtime by
-  [`TrustKeyring.load`](../packages/deckhand_core/lib/src/trust/trust_keyring.dart);
-  `require_signed_tag` is forced off when the placeholder is
-  still in place. Production builds must replace this file with
-  an armored PGP keyring containing the active and previous
-  Cepheus Labs signing keys, at which point `requireSignedTag`
-  flips on automatically in [`app/lib/main.dart`](../app/lib/main.dart).
+  [`TrustKeyring.loadFromString`](../packages/deckhand_core/lib/src/trust/trust_keyring.dart);
+  dev builds force `require_signed_tag` off when the placeholder is still
+  in place. Release builds fail closed before the wizard starts if packaging
+  forgot to replace the placeholder. Production builds must replace this file
+  with an armored PGP keyring containing the active and previous Cepheus Labs
+  signing keys, at which point `requireSignedTag` flips on automatically in
+  [`app/lib/main.dart`](../app/lib/main.dart).
 - Production wiring in `main.dart`: implemented — keyring is
   loaded at startup and forwarded into `SidecarProfileService`
   via the `trustKeyring`/`requireSignedTag` constructor params.
-  A persistence-error log entry fires when the placeholder is
-  detected so production builds reliably notice the gap.
+  A persistence-error log entry fires when the placeholder is detected in
+  dev builds so contributors notice signed-tag verification is off.
 - Rotation procedure in [RELEASING.md](RELEASING.md): pending —
   belongs in a new "Profile signing" section.
 - E-profile-untrusted screen: pending in
