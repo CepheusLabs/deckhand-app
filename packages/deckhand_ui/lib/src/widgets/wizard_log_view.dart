@@ -326,7 +326,7 @@ class _LogLine extends StatelessWidget {
       'install_stack' => 'Install Klipper services',
       'link_extras' => 'Install profile extras',
       'install_screen' => 'Install the screen package',
-      'flash_mcus' => 'Flash MCUs',
+      'flash_mcus' => 'Reject unsupported MCU flash step',
       _ => _titleCaseIdentifier(stepId),
     };
   }

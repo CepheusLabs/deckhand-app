@@ -294,7 +294,7 @@ progress:
   phase_install_stack: Installing Moonraker + web UI
   phase_link_extras: Copying Klipper extras
   phase_install_screen: Installing the touchscreen UI
-  phase_flash_mcus: Flashing MCU firmware
+  phase_flash_mcus: MCU flashing unavailable
   phase_apply_services: Cleaning up stock services
   phase_apply_files: Cleaning up stock files
   phase_snapshot_paths: Backing up stock files

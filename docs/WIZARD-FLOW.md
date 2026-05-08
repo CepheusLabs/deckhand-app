@@ -815,7 +815,7 @@ update paths already handle stays with those native tools.
 | **Printer status** | Moonraker state, current job if any, quick links to the web UI | read-only, mirrors the web UI's summary so user doesn't switch apps just to check |
 | **Backup** | `dd` the eMMC to a local `.img`, verify SHA256 | No native Klipper/Kalico/Moonraker tool does raw-disk backups. Essential before stock-keep conversions and nice to have otherwise. |
 | **Restore from backup** | Reverse of fresh-flash using a previously-captured `.img` | Same reasoning as backup. |
-| **Flash MCU firmware** | Rebuild and reflash any declared MCU | Deckhand already has the toolchain (make menuconfig + stm32flash / dfu-util) pinned per profile. Exposing it here means users don't re-derive the args. |
+| **Flash MCU firmware** | Currently unavailable until profile metadata defines a concrete flash transport contract | Deckhand should eventually own this because MCU flash commands are hardware-specific and risky, but the app must not pretend a build-only step reflashed hardware. |
 | **Re-run setup wizard** | Jump back to S40 (choose path) preserving known printer identity | Handles reconfigure / repair / migrate. |
 
 **Explicitly NOT in Deckhand's manage view:**

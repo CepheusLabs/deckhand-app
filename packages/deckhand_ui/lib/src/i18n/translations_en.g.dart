@@ -674,8 +674,8 @@ class TranslationsProgressEn {
 	/// en: 'Installing the touchscreen UI'
 	String get phase_install_screen => 'Installing the touchscreen UI';
 
-	/// en: 'Flashing MCU firmware'
-	String get phase_flash_mcus => 'Flashing MCU firmware';
+	/// en: 'MCU flashing unavailable'
+	String get phase_flash_mcus => 'MCU flashing unavailable';
 
 	/// en: 'Cleaning up stock services'
 	String get phase_apply_services => 'Cleaning up stock services';
@@ -1202,7 +1202,7 @@ extension on Translations {
 			'progress.phase_install_stack' => 'Installing Moonraker + web UI',
 			'progress.phase_link_extras' => 'Copying Klipper extras',
 			'progress.phase_install_screen' => 'Installing the touchscreen UI',
-			'progress.phase_flash_mcus' => 'Flashing MCU firmware',
+			'progress.phase_flash_mcus' => 'MCU flashing unavailable',
 			'progress.phase_apply_services' => 'Cleaning up stock services',
 			'progress.phase_apply_files' => 'Cleaning up stock files',
 			'progress.phase_snapshot_paths' => 'Backing up stock files',
