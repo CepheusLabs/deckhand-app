@@ -2617,6 +2617,42 @@ void main() {
       );
     });
 
+    test(
+      'install_screen no-ops for stock and optional screen choices',
+      () async {
+        for (final sourceKind in <String>[
+          'stock_in_place',
+          'hardware_optional',
+        ]) {
+          final ssh = FakeSsh();
+          final controller = newController(
+            profileJson: {
+              ...baseProfileJson(
+                stockKeepSteps: [
+                  {'id': 'screen', 'kind': 'install_screen'},
+                ],
+              ),
+              'screens': [
+                {'id': 'lcd', 'source_kind': sourceKind},
+              ],
+            },
+            ssh: ssh,
+          );
+          await controller.loadProfile('test-printer');
+          controller.setFlow(WizardFlow.stockKeep);
+          await controller.setDecision('screen', 'lcd');
+          controller.setSession(
+            const SshSession(id: 'fake', host: 'h', port: 22, user: 'root'),
+          );
+
+          await controller.startExecution();
+
+          expect(ssh.uploadCalls, isEmpty);
+          expect(ssh.steps, isEmpty);
+        }
+      },
+    );
+
     test('install_screen restore/source gaps fail loudly', () async {
       final controller = newController(
         profileJson: {

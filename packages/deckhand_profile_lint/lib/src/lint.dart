@@ -584,6 +584,9 @@ void _walkUnsupportedRuntimeFeatures(
         }
         continue;
       }
+      if (sourceKind == 'stock_in_place' || sourceKind == 'hardware_optional') {
+        continue;
+      }
       out.add(
         LintFinding(
           LintSeverity.error,

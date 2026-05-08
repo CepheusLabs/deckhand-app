@@ -249,6 +249,12 @@ Future<void> _runInstallScreenImpl(
       }
     }
     c._log(step, '[screen] installed $screenId');
+  } else if (sourceKind == 'stock_in_place' ||
+      sourceKind == 'hardware_optional') {
+    c._log(
+      step,
+      '[screen] $screenId already handled by the printer - skipping',
+    );
   } else if (sourceKind == 'restore_from_backup') {
     throw StepExecutionException(
       'screen $screenId restore-from-backup is not implemented',

@@ -508,6 +508,45 @@ void main() {
       );
     });
   });
+
+  group('screen source lint', () {
+    test('allows stock and optional no-install screen choices', () async {
+      _writeRegistry(tmp, ['screen-noop']);
+      _writeProfile(tmp, 'screen-noop', '''
+${_minimalValidProfile('screen-noop')}
+screens:
+  - id: stock_screen
+    source_kind: stock_in_place
+  - id: optional_lcd
+    source_kind: hardware_optional
+''');
+
+      final report = await runProfileLint(['--root', tmp.path]);
+
+      expect(report.hasErrors, isFalse);
+    });
+
+    test(
+      'rejects restore-from-backup screen choices until implemented',
+      () async {
+        _writeRegistry(tmp, ['screen-restore']);
+        _writeProfile(tmp, 'screen-restore', '''
+${_minimalValidProfile('screen-restore')}
+screens:
+  - id: stock_screen
+    source_kind: restore_from_backup
+''');
+
+        final report = await runProfileLint(['--root', tmp.path]);
+
+        expect(report.hasErrors, isTrue);
+        final messages = report.results
+            .expand((r) => r.findings.map((f) => f.message))
+            .join('\n');
+        expect(messages, contains('restore_from_backup'));
+      },
+    );
+  });
 }
 
 void _writeSchema(Directory root) {
