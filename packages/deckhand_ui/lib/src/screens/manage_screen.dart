@@ -24,7 +24,7 @@ import 'manage_tuning_panel.dart';
 ///  * Printer status — live Klippy state from Moonraker, plus
 ///    quick links (copy Mainsail URL, copy SSH host).
 ///  * Backup — kicks the user into the existing eMMC backup
-///    flow at `/emmc-backup`.
+///    flow at `/manage-emmc-backup` so cancel/finish returns here.
 ///  * Restore — writes a previously captured full-eMMC backup image
 ///    back to a selected removable target through the elevated helper.
 ///  * Flash MCU — same story; MCU detection + reflashing is a
@@ -477,7 +477,7 @@ class _StateDot extends StatelessWidget {
 }
 
 // ---------------------------------------------------------------------
-// Backup tab — defers to the existing /emmc-backup flow.
+// Backup tab — defers to the existing /manage-emmc-backup flow.
 // ---------------------------------------------------------------------
 class _BackupTab extends StatelessWidget {
   const _BackupTab();

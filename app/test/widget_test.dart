@@ -5,14 +5,9 @@ import 'package:deckhand_core/deckhand_core.dart';
 import 'package:path/path.dart' as p;
 import 'package:flutter_test/flutter_test.dart';
 
-// Deckhand's widget tests live in the individual packages under
-// packages/*/test. This file is intentionally minimal so `flutter test`
-// has something to run.
+// Deckhand's detailed widget coverage lives in the individual packages under
+// packages/*/test. App-level tests cover startup wiring and release gates.
 void main() {
-  test('placeholder', () {
-    expect(1 + 1, 2);
-  });
-
   test('release builds fail closed with placeholder profile trust keyring', () {
     expect(
       () => app.enforceProfileTrustKeyringForBuild(
