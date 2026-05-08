@@ -343,7 +343,10 @@ phrozen_master as stub).
 Supported screen sources:
 
 - Omitted `source_kind` or `source_kind: bundled` uses the screen payload
-  bundled with the selected profile.
+  bundled with the selected profile. `source_path` and optional
+  `install_script` must be profile-local paths such as `./screens/arco` or
+  repository-shared paths such as `shared/screens/arco`; absolute paths and
+  parent-directory traversal are rejected by the linter and runtime.
 - `source_kind: restore_from_backup` is not supported by the current
   runtime. The profile linter rejects tagged profiles that declare it until
   the schema defines which backup artifact should be restored and how it
