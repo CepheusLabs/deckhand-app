@@ -478,7 +478,19 @@ void _walkUnsupportedRuntimeFeatures(
       final screen = screens[i];
       if (screen is! Map) continue;
       final sourceKind = screen['source_kind'];
-      if (sourceKind == null || sourceKind == 'bundled') continue;
+      if (sourceKind == null || sourceKind == 'bundled') {
+        final sourcePath = screen['source_path'];
+        if (sourcePath is! String || sourcePath.trim().isEmpty) {
+          out.add(
+            LintFinding(
+              LintSeverity.error,
+              'screens[$i].source_path',
+              'bundled screen sources must declare source_path',
+            ),
+          );
+        }
+        continue;
+      }
       out.add(
         LintFinding(
           LintSeverity.error,
