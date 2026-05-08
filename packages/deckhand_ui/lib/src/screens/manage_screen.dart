@@ -664,7 +664,9 @@ class _RestoreTabState extends ConsumerState<_RestoreTab> {
       );
     }
     final image = _selectedImage(images);
-    final target = image == null ? null : _selectedDisk(disks, image);
+    final targetDisks = _restoreTargetDisks(disks);
+    final hiddenDiskCount = disks.length - targetDisks.length;
+    final target = image == null ? null : _selectedDisk(targetDisks, image);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -679,7 +681,8 @@ class _RestoreTabState extends ConsumerState<_RestoreTab> {
           ),
           _RestoreStep.target => _buildTargetStep(
             context: context,
-            disks: disks,
+            disks: targetDisks,
+            hiddenDiskCount: hiddenDiskCount,
             selectedImage: image,
             selectedDisk: target,
           ),
@@ -791,6 +794,7 @@ class _RestoreTabState extends ConsumerState<_RestoreTab> {
   Widget _buildTargetStep({
     required BuildContext context,
     required List<DiskInfo> disks,
+    required int hiddenDiskCount,
     required _RestoreImage? selectedImage,
     required DiskInfo? selectedDisk,
   }) {
@@ -811,7 +815,8 @@ class _RestoreTabState extends ConsumerState<_RestoreTab> {
           if (disks.isEmpty)
             const _MutedBox(
               text:
-                  'No disks are visible. Connect the eMMC adapter and refresh.',
+                  'No removable eMMC adapters are visible. Connect the '
+                  'adapter and refresh.',
             )
           else
             for (final d in disks)
@@ -834,6 +839,15 @@ class _RestoreTabState extends ConsumerState<_RestoreTab> {
                         }),
                 ),
               ),
+          if (hiddenDiskCount > 0) ...[
+            const SizedBox(height: 8),
+            _MutedBox(
+              text:
+                  '$hiddenDiskCount internal disk'
+                  '${hiddenDiskCount == 1 ? '' : 's'} hidden from restore '
+                  'targets.',
+            ),
+          ],
           if (!selectedImage.indexed) ...[
             const SizedBox(height: 8),
             _IndexImagePanel(
@@ -1801,6 +1815,9 @@ String _restoreDiskSubtitle(DiskInfo disk, _RestoreImage? image) {
       : 'manual target';
   return '$parts · ${diskTechnicalLabel(disk)} · $match';
 }
+
+List<DiskInfo> _restoreTargetDisks(List<DiskInfo> disks) =>
+    disks.where((disk) => disk.removable).toList(growable: false);
 
 bool _restoreDiskSelectable(DiskInfo disk, _RestoreImage? image) {
   if (!disk.removable) return false;
