@@ -8,6 +8,7 @@ import 'package:go_router/go_router.dart';
 import '../i18n/translations.g.dart';
 import '../providers.dart';
 import '../theming/deckhand_tokens.dart';
+import '../utils/user_facing_errors.dart';
 import '../widgets/deckhand_loading.dart';
 import '../widgets/host_approval_gate.dart';
 import '../widgets/id_tag.dart';
@@ -57,7 +58,9 @@ class _PickPrinterScreenState extends ConsumerState<PickPrinterScreen> {
           );
         } else if (snap.hasError) {
           body = _ErrorBox(
-            message: 'Failed to load printer registry: ${snap.error}',
+            message:
+                'Could not load the printer registry. '
+                '${userFacingError(snap.error)}',
             onRetry: () => setState(() {
               _registryFuture = _fetchRegistry(context);
             }),
@@ -150,7 +153,7 @@ class _PickPrinterScreenState extends ConsumerState<PickPrinterScreen> {
       context.go('/choose-path');
     } catch (e) {
       if (!mounted) return;
-      setState(() => _loadProfileError = '$e');
+      setState(() => _loadProfileError = userFacingError(e));
     } finally {
       if (mounted) setState(() => _loadingProfile = false);
     }
