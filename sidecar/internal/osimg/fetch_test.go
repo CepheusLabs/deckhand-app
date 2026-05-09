@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -300,6 +301,36 @@ func TestDownloadReportsXZExtractionProgressWithUncompressedTotal(t *testing.T) 
 		if event.BytesDone < 0 || event.BytesDone > event.BytesTotal {
 			t.Fatalf("extracting bytes done out of range: %+v", event)
 		}
+	}
+}
+
+func TestDecompressXZHonorsCanceledContext(t *testing.T) {
+	var compressed bytes.Buffer
+	xw, err := xz.NewWriter(&compressed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := xw.Write([]byte("raw disk image")); err != nil {
+		t.Fatal(err)
+	}
+	if err := xw.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	dir := t.TempDir()
+	source := filepath.Join(dir, "image.img.xz")
+	dest := filepath.Join(dir, "image.img")
+	if err := os.WriteFile(source, compressed.Bytes(), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	if _, _, err := decompressXZ(ctx, source, dest, &recordingNotifier{}); !errors.Is(err, context.Canceled) {
+		t.Fatalf("decompressXZ error = %v, want context canceled", err)
+	}
+	if _, err := os.Stat(dest); !os.IsNotExist(err) {
+		t.Fatalf("dest exists after canceled extraction: %v", err)
 	}
 }
 

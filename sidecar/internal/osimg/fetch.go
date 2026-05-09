@@ -117,7 +117,7 @@ func Download(ctx context.Context, rawURL, destPath, expectedSha string, note rp
 	if reusedPart, actual, err := reuseVerifiedDownloadPart(downloadPath, expectedSha); err != nil {
 		return "", err
 	} else if reusedPart {
-		return finishDownloadedFile(rawURL, destPath, downloadPath, finalPartPath, actual, 0, 0, note)
+		return finishDownloadedFile(ctx, rawURL, destPath, downloadPath, finalPartPath, actual, 0, 0, note)
 	}
 
 	resp, err := httpClient.Do(req)
@@ -215,10 +215,11 @@ func Download(ctx context.Context, rawURL, destPath, expectedSha string, note rp
 	}
 
 	removeTmpOnErr = false
-	return finishDownloadedFile(rawURL, destPath, downloadPath, finalPartPath, actual, done, total, note)
+	return finishDownloadedFile(ctx, rawURL, destPath, downloadPath, finalPartPath, actual, done, total, note)
 }
 
 func finishDownloadedFile(
+	ctx context.Context,
 	rawURL, destPath, downloadPath, finalPartPath, downloadedSha string,
 	done, total int64,
 	note rpc.Notifier,
@@ -234,7 +235,7 @@ func finishDownloadedFile(
 		return "", err
 	}
 	if isXZ {
-		imageSha, imageBytes, err := decompressXZ(downloadPath, finalPartPath, note)
+		imageSha, imageBytes, err := decompressXZ(ctx, downloadPath, finalPartPath, note)
 		if err != nil {
 			return "", err
 		}
@@ -342,7 +343,10 @@ func downloadedFileIsXZ(rawURL, filePath string) (bool, error) {
 		magic[5] == xzMagic5, nil
 }
 
-func decompressXZ(sourcePath, destPath string, note rpc.Notifier) (string, int64, error) {
+func decompressXZ(ctx context.Context, sourcePath, destPath string, note rpc.Notifier) (string, int64, error) {
+	if err := ctx.Err(); err != nil {
+		return "", 0, err
+	}
 	uncompressedTotal, totalKnown, err := xzUncompressedSize(sourcePath)
 	if err != nil {
 		return "", 0, fmt.Errorf("probe xz uncompressed size: %w", err)
@@ -375,6 +379,9 @@ func decompressXZ(sourcePath, destPath string, note rpc.Notifier) (string, int64
 		note.Notify("progress", DownloadProgress{BytesDone: 0, BytesTotal: uncompressedTotal, Phase: "extracting"})
 	}
 	for {
+		if err := ctx.Err(); err != nil {
+			return "", done, err
+		}
 		n, rerr := xr.Read(buf)
 		if n > 0 {
 			if _, werr := mw.Write(buf[:n]); werr != nil {
