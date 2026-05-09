@@ -70,17 +70,12 @@ class _PickPrinterScreenState extends ConsumerState<PickPrinterScreen> {
               .where((e) => e.status != 'stub')
               .toList(growable: false);
           final filtered = _filter(all, _query);
-          selectedEntry = _selectedId == null
-              ? null
-              : all.firstWhere(
-                  (e) => e.id == _selectedId,
-                  orElse: () => all.first,
-                );
+          selectedEntry = _selectedEntry(all);
           body = _Body(
             registrySize: all.length,
             visible: filtered,
             query: _query,
-            selectedId: _selectedId,
+            selectedId: selectedEntry == null ? null : _selectedId,
             loadingProfile: _loadingProfile,
             loadProfileError: _loadProfileError,
             onQuery: (q) => setState(() => _query = q),
@@ -104,7 +99,7 @@ class _PickPrinterScreenState extends ConsumerState<PickPrinterScreen> {
           body: body,
           primaryAction: WizardAction(
             label: primaryLabel,
-            onPressed: _selectedId == null || _loadingProfile
+            onPressed: selectedEntry == null || _loadingProfile
                 ? null
                 : _loadSelectedProfile,
           ),
@@ -173,6 +168,15 @@ class _PickPrinterScreenState extends ConsumerState<PickPrinterScreen> {
               e.model.toLowerCase().contains(q),
         )
         .toList(growable: false);
+  }
+
+  ProfileRegistryEntry? _selectedEntry(List<ProfileRegistryEntry> entries) {
+    final selectedId = _selectedId;
+    if (selectedId == null) return null;
+    for (final entry in entries) {
+      if (entry.id == selectedId) return entry;
+    }
+    return null;
   }
 }
 
