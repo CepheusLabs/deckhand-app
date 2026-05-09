@@ -12,6 +12,16 @@ String userFacingDiskOperationError(Object? error) {
     (error ?? 'Unknown error').toString().trim(),
   );
   final lower = message.toLowerCase();
+  if (lower == 'no ssh host set') {
+    return 'Deckhand does not have a printer address yet. Connect to the printer before continuing.';
+  }
+  if (lower.contains('validate sha256') ||
+      lower.contains('sha256 is required and must be 64 lowercase hex')) {
+    return 'The selected OS image is missing a valid SHA-256 checksum. Refresh profiles or choose another OS image before flashing.';
+  }
+  if (lower.contains('unexpected status 404')) {
+    return 'Deckhand could not download the OS image because the configured URL was not found. Refresh profiles or choose another OS image.';
+  }
   if (lower.contains('elevated helper never started')) {
     return 'Windows did not start Deckhand\'s disk helper. Deckhand cannot write raw disks until that helper launches with administrator rights. Start Deckhand as Administrator, then retry.';
   }
