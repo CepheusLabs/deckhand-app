@@ -43,6 +43,39 @@ void main() {
       );
     });
 
+    test('rejects incomplete connection identities', () {
+      expect(
+        () => ManagedPrinter.fromConnection(
+          profileId: '',
+          displayName: 'Phrozen Arco',
+          host: '192.168.1.50',
+          port: 22,
+          user: 'mks',
+        ),
+        throwsFormatException,
+      );
+      expect(
+        () => ManagedPrinter.fromConnection(
+          profileId: 'phrozen-arco',
+          displayName: 'Phrozen Arco',
+          host: ' ',
+          port: 22,
+          user: 'mks',
+        ),
+        throwsFormatException,
+      );
+      expect(
+        () => ManagedPrinter.fromConnection(
+          profileId: 'phrozen-arco',
+          displayName: 'Phrozen Arco',
+          host: '192.168.1.50',
+          port: 22,
+          user: '',
+        ),
+        throwsFormatException,
+      );
+    });
+
     test('round trips through settings json', () {
       final settings = DeckhandSettings(path: '<memory>');
       settings.recordManagedPrinter(

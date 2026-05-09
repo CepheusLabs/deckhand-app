@@ -506,6 +506,9 @@ class ManagedPrinter {
     final cleanProfile = profileId.trim();
     final cleanHost = host.trim();
     final cleanUser = user.trim();
+    if (cleanProfile.isEmpty || cleanHost.isEmpty || cleanUser.isEmpty) {
+      throw const FormatException('missing managed printer connection field');
+    }
     if (port < 1 || port > 65535) {
       throw const FormatException('invalid managed printer port');
     }
