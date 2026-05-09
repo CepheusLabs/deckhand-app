@@ -1,5 +1,6 @@
 import 'package:deckhand_core/deckhand_core.dart';
 import 'package:deckhand_ui/src/providers.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// Pure-logic tests for the "is this state worth saving?" predicate
@@ -8,6 +9,39 @@ import 'package:flutter_test/flutter_test.dart';
 /// tests pin the predicate so a future refactor can't reintroduce
 /// that regression.
 void main() {
+  group('preflightReportProvider', () {
+    test('returns the live report when first-run cache save fails', () async {
+      final settings = _ThrowingSettings();
+      final doctor = _StaticDoctor(
+        const DoctorReport(
+          passed: true,
+          results: [
+            DoctorResult(
+              name: 'runtime',
+              status: DoctorStatus.pass,
+              detail: 'ok',
+            ),
+          ],
+          report: '[PASS] runtime - ok',
+        ),
+      );
+      final container = ProviderContainer(
+        overrides: [
+          deckhandSettingsProvider.overrideWithValue(settings),
+          doctorServiceProvider.overrideWithValue(doctor),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      final report = await container.read(preflightReportProvider.future);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(report.passed, isTrue);
+      expect(doctor.calls, 1);
+      expect(settings.saveCalls, 1);
+    });
+  });
+
   group('isPersistableWizardState', () {
     test('initial state (welcome + empty profile + no decisions) is NOT '
         'persistable', () {
@@ -69,4 +103,29 @@ void main() {
       expect(isPersistableWizardState(s), isFalse);
     });
   });
+}
+
+class _ThrowingSettings extends DeckhandSettings {
+  _ThrowingSettings() : super(path: '<memory>');
+
+  int saveCalls = 0;
+
+  @override
+  Future<void> save() async {
+    saveCalls++;
+    throw StateError('settings save failed');
+  }
+}
+
+class _StaticDoctor implements DoctorService {
+  _StaticDoctor(this.report);
+
+  final DoctorReport report;
+  int calls = 0;
+
+  @override
+  Future<DoctorReport> run() async {
+    calls++;
+    return report;
+  }
 }

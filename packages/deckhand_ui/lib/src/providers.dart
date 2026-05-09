@@ -112,10 +112,21 @@ final preflightReportProvider = FutureProvider<DoctorReport>((ref) async {
   final report = await ref.read(doctorServiceProvider).run();
   if (settings != null) {
     settings.lastPreflight = _encodeReport(report);
-    unawaited(settings.save());
+    unawaited(_saveSettingsBestEffort(settings));
   }
   return report;
 });
+
+Future<void> _saveSettingsBestEffort(DeckhandSettings settings) async {
+  try {
+    await settings.save();
+  } catch (_) {
+    // The live report has already been produced. A cache-write
+    // failure should not turn a passing preflight into a launch
+    // failure; Settings can run preflight again and surface save
+    // errors explicitly.
+  }
+}
 
 Map<String, dynamic> _encodeReport(DoctorReport r) => {
   'passed': r.passed,
