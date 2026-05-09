@@ -552,7 +552,11 @@ class ManagedPrinter {
     final lastSeenRaw = json['last_seen'];
     DateTime? lastSeen;
     if (lastSeenRaw is String && lastSeenRaw.trim().isNotEmpty) {
-      lastSeen = DateTime.parse(lastSeenRaw);
+      try {
+        lastSeen = DateTime.parse(lastSeenRaw);
+      } catch (_) {
+        lastSeen = null;
+      }
     }
     final labelsRaw = json['labels'];
     final labels = <String, String>{};

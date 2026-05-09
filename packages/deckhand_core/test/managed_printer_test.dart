@@ -128,6 +128,21 @@ void main() {
       expect(printer.labels, {'source': 'deckhand'});
     });
 
+    test('keeps persisted printers with malformed lastSeen', () {
+      final printer = ManagedPrinter.fromJson({
+        'id': 'local:phrozen-arco:mks@192.168.1.50:22',
+        'profile_id': 'phrozen-arco',
+        'display_name': 'Phrozen Arco',
+        'host': '192.168.1.50',
+        'port': 22,
+        'user': 'mks',
+        'last_seen': 'not-a-date',
+      });
+
+      expect(printer.profileId, 'phrozen-arco');
+      expect(printer.lastSeen, isNull);
+    });
+
     test('round trips through settings json', () {
       final settings = DeckhandSettings(path: '<memory>');
       settings.recordManagedPrinter(
