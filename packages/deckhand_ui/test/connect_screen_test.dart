@@ -198,13 +198,54 @@ void main() {
       expect(settings.managedPrinters.single.displayName, 'Test Printer');
       expect(settings.managedPrinters.single.host, '192.168.1.50');
     });
+
+    testWidgets('connect surfaces managed-printer persistence failures', (
+      tester,
+    ) async {
+      final controller = stubWizardController(profileJson: testProfileJson());
+      await controller.loadProfile('test-printer');
+      final settings = _RecordingSettings(
+        saveError: StateError(r'write settings failed on \\.\PHYSICALDRIVE3'),
+      );
+
+      await tester.pumpWidget(
+        testHarness(
+          controller: controller,
+          child: const ConnectScreen(),
+          initialLocation: '/connect',
+          extraOverrides: [
+            deckhandSettingsProvider.overrideWithValue(settings),
+          ],
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+
+      await tester.tap(find.text('Manual host'));
+      await tester.pump();
+      await tester.enterText(find.byType(TextField), '192.168.1.50');
+      await tester.pump();
+      await tester.tap(find.text('Connect'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      expect(
+        find.textContaining('could not save this printer'),
+        findsOneWidget,
+      );
+      expect(find.textContaining('Windows disk 3'), findsOneWidget);
+      expect(find.textContaining('PHYSICALDRIVE3'), findsNothing);
+      expect(settings.savedHosts, hasLength(1));
+      expect(settings.managedPrinters, hasLength(1));
+    });
   });
 }
 
 class _RecordingSettings extends DeckhandSettings {
-  _RecordingSettings() : super(path: '<recording>');
+  _RecordingSettings({this.saveError}) : super(path: '<recording>');
 
   final Completer<void> _saved = Completer<void>();
+  final Object? saveError;
   int saveCount = 0;
 
   Future<void> get saved => _saved.future;
@@ -214,6 +255,10 @@ class _RecordingSettings extends DeckhandSettings {
     saveCount++;
     if (!_saved.isCompleted) {
       _saved.complete();
+    }
+    final error = saveError;
+    if (error != null) {
+      throw error;
     }
   }
 }

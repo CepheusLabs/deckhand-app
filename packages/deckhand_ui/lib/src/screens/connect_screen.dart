@@ -279,17 +279,19 @@ class _ConnectScreenState extends ConsumerState<ConnectScreen> {
               ),
             );
           }
-          unawaited(
-            _persistConnectedPrinterState(
-              settings: settings,
-              registry: registry,
-            ),
+          await _persistConnectedPrinterState(
+            settings: settings,
+            registry: registry,
           );
         }
-      } catch (_) {
-        // Saved-host persistence is best-effort; a failed save must
-        // not block navigation to /verify on an otherwise-successful
-        // connect.
+      } catch (e) {
+        if (!mounted) return;
+        setState(() {
+          _error =
+              'Connected, but Deckhand could not save this printer. '
+              '${userFacingError(e)}';
+        });
+        return;
       }
       if (mounted) {
         final state = controller.state;
@@ -376,17 +378,12 @@ class _ConnectScreenState extends ConsumerState<ConnectScreen> {
     required DeckhandSettings settings,
     required ManagedPrinterRegistry registry,
   }) async {
-    try {
-      if (registry is SettingsManagedPrinterRegistry &&
-          identical(registry.settings, settings)) {
-        await settings.save();
-        return;
-      }
-      await Future.wait([settings.save(), registry.save()]);
-    } catch (_) {
-      // Saved-host persistence is best-effort; a failed save must
-      // not block navigation after an otherwise-successful connect.
+    if (registry is SettingsManagedPrinterRegistry &&
+        identical(registry.settings, settings)) {
+      await settings.save();
+      return;
     }
+    await Future.wait([settings.save(), registry.save()]);
   }
 
   SshDefaultCredential? _defaultCredentialForUser(
