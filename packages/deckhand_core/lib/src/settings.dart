@@ -19,10 +19,7 @@ class DeckhandSettings {
     try {
       final text = await file.readAsString();
       final json = jsonDecode(text);
-      return DeckhandSettings(
-        path: path,
-        initial: (json as Map).cast<String, dynamic>(),
-      );
+      return DeckhandSettings(path: path, initial: _stringKeyMap(json));
     } catch (_) {
       return DeckhandSettings(path: path);
     }
@@ -68,14 +65,15 @@ class DeckhandSettings {
     if (raw is! List) return const [];
     final out = <SavedHost>[];
     for (final entry in raw) {
-      if (entry is Map) {
-        try {
-          out.add(SavedHost.fromJson(entry.cast<String, dynamic>()));
-        } catch (_) {
-          // Skip malformed entries silently — a single bad row
-          // shouldn't blank the whole list. The next save() pass
-          // rewrites the file with only the valid rows.
-        }
+      final row = _stringKeyMap(entry);
+      if (row == null) continue;
+      try {
+        final saved = SavedHost.fromJson(row);
+        if (saved.host.isNotEmpty && saved.user.isNotEmpty) out.add(saved);
+      } catch (_) {
+        // Skip malformed entries silently — a single bad row
+        // shouldn't blank the whole list. The next save() pass
+        // rewrites the file with only the valid rows.
       }
     }
     return out;
@@ -135,12 +133,12 @@ class DeckhandSettings {
     if (raw is! List) return const [];
     final out = <ManagedPrinter>[];
     for (final entry in raw) {
-      if (entry is Map) {
-        try {
-          out.add(ManagedPrinter.fromJson(entry.cast<String, dynamic>()));
-        } catch (_) {
-          // Skip malformed rows; the next write compacts the list.
-        }
+      final row = _stringKeyMap(entry);
+      if (row == null) continue;
+      try {
+        out.add(ManagedPrinter.fromJson(row));
+      } catch (_) {
+        // Skip malformed rows; the next write compacts the list.
       }
     }
     out.sort((a, b) {
@@ -570,7 +568,7 @@ class ManagedPrinter {
     final labels = <String, String>{};
     if (labelsRaw is Map) {
       labelsRaw.forEach((key, value) {
-        if (value is String) labels[key.toString()] = value;
+        if (key is String && value is String) labels[key] = value;
       });
     }
     return ManagedPrinter(
@@ -662,6 +660,16 @@ double? _finiteNumber(Object? value) {
   if (value is! num) return null;
   final number = value.toDouble();
   return number.isFinite ? number : null;
+}
+
+Map<String, dynamic>? _stringKeyMap(Object? value) {
+  if (value is! Map) return null;
+  final out = <String, dynamic>{};
+  for (final entry in value.entries) {
+    final key = entry.key;
+    if (key is String) out[key] = entry.value;
+  }
+  return out;
 }
 
 Map<String, String> _normalizeLabels(Map<String, String> labels) {

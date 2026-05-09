@@ -28,6 +28,23 @@ void main() {
       expect(settings.savedHosts, isEmpty);
     });
 
+    test('skips incomplete persisted saved hosts', () {
+      final settings = DeckhandSettings(
+        path: '<memory>',
+        initial: {
+          'saved_hosts': [
+            {'host': ' ', 'user': 'mks', 'port': 22},
+            {'host': '192.168.1.50', 'user': '', 'port': 22},
+            {'host': '192.168.1.51', 'user': 'root', 'port': 22},
+          ],
+        },
+      );
+
+      expect(settings.savedHosts, hasLength(1));
+      expect(settings.savedHosts.single.host, '192.168.1.51');
+      expect(settings.savedHosts.single.user, 'root');
+    });
+
     test('forgets saved hosts with normalized input', () {
       final settings = DeckhandSettings(path: '<memory>');
       settings.recordSavedHost(
@@ -121,6 +138,7 @@ void main() {
           ' source ': ' deckhand ',
           'blank-value': ' ',
           'number-value': 42,
+          1: 'bad key',
           ' ': 'ignored',
         },
       });
