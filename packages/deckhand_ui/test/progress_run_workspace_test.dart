@@ -75,6 +75,50 @@ void main() {
     expect(find.text('Wait for ssh'), findsNothing);
   });
 
+  testWidgets('step rail scrolls the active step into view', (tester) async {
+    final controller = stubWizardController(profileJson: testProfileJson());
+    await controller.loadProfile('test-printer');
+    const steps = [
+      RunStep(id: 'choose_os_image', kind: 'choose_one'),
+      RunStep(id: 'choose_target_disk', kind: 'disk_picker'),
+      RunStep(id: 'download_os', kind: 'os_download'),
+      RunStep(id: 'flash_disk', kind: 'flash_disk'),
+      RunStep(id: 'flash_done_prompt', kind: 'prompt'),
+      RunStep(id: 'wait_for_ssh', kind: 'wait_for_ssh'),
+      RunStep(id: 'first_boot_setup', kind: 'ssh_commands'),
+      RunStep(id: 'install_firmware', kind: 'install_firmware'),
+      RunStep(id: 'install_stack', kind: 'install_stack'),
+      RunStep(id: 'link_extras', kind: 'link_extras'),
+      RunStep(id: 'install_screen', kind: 'install_screen'),
+      RunStep(id: 'flash_mcus', kind: 'flash_mcus'),
+    ];
+
+    await tester.pumpWidget(
+      testHarness(
+        controller: controller,
+        child: Scaffold(
+          body: Center(
+            child: SizedBox(
+              width: 1200,
+              height: 260,
+              child: ProgressRunWorkspace(
+                steps: steps,
+                statusFor: (step) => step.id == 'flash_mcus'
+                    ? RunStepStatus.active
+                    : RunStepStatus.queued,
+                log: const [],
+                networkEvents: const [],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('MCU flashing unavailable'), findsOneWidget);
+  });
+
   testWidgets('network tab renders captured egress events', (tester) async {
     final controller = stubWizardController(profileJson: testProfileJson());
     await controller.loadProfile('test-printer');

@@ -137,41 +137,84 @@ class ProgressRunWorkspace extends StatelessWidget {
   }
 }
 
-class _StepRail extends StatelessWidget {
+class _StepRail extends StatefulWidget {
   const _StepRail({required this.steps, required this.statusFor});
 
   final List<RunStep> steps;
   final RunStepStatus Function(RunStep step) statusFor;
 
   @override
+  State<_StepRail> createState() => _StepRailState();
+}
+
+class _StepRailState extends State<_StepRail> {
+  final _controller = ScrollController();
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _showActiveStep());
+  }
+
+  @override
+  void didUpdateWidget(covariant _StepRail oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _showActiveStep());
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _showActiveStep() {
+    if (!_controller.hasClients) return;
+    final activeIndex = widget.steps.indexWhere(
+      (step) => widget.statusFor(step) == RunStepStatus.active,
+    );
+    if (activeIndex < 0) return;
+    const rowExtent = 58.0;
+    final target = (activeIndex * rowExtent).clamp(
+      0.0,
+      _controller.position.maxScrollExtent,
+    );
+    if ((target - _controller.offset).abs() < 1) return;
+    _controller.jumpTo(target);
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final done = steps.where((s) => statusFor(s) == RunStepStatus.done).length;
-    final active = steps
-        .where((s) => statusFor(s) == RunStepStatus.active)
+    final done = widget.steps
+        .where((s) => widget.statusFor(s) == RunStepStatus.done)
         .length;
-    final failed = steps
-        .where((s) => statusFor(s) == RunStepStatus.failed)
+    final active = widget.steps
+        .where((s) => widget.statusFor(s) == RunStepStatus.active)
+        .length;
+    final failed = widget.steps
+        .where((s) => widget.statusFor(s) == RunStepStatus.failed)
         .length;
     final summary = failed > 0
         ? '$done done · $failed failed'
-        : '$done done · $active active · ${steps.length - done - active} queued';
+        : '$done done · $active active · ${widget.steps.length - done - active} queued';
     return DeckhandPanel.flush(
       head: DeckhandPanelHead(
         label: 'Steps',
         trailing: Text(summary, style: _panelMetaStyle(context)),
       ),
-      child: steps.isEmpty
+      child: widget.steps.isEmpty
           ? const _StepRailEmpty()
           : ListView.separated(
+              controller: _controller,
               padding: EdgeInsets.zero,
-              itemCount: steps.length,
+              itemCount: widget.steps.length,
               separatorBuilder: (_, _) => const Divider(height: 1),
               itemBuilder: (context, i) {
-                final step = steps[i];
+                final step = widget.steps[i];
                 return _StepRow(
                   step: step,
                   index: i + 1,
-                  status: statusFor(step),
+                  status: widget.statusFor(step),
                 );
               },
             ),
