@@ -371,6 +371,44 @@ void main() {
       expect(manifest.disk.model, 'Test eMMC');
     });
 
+    testWidgets('standalone backup does not satisfy wizard snapshot state', (
+      tester,
+    ) async {
+      final controller = stubWizardController(profileJson: testProfileJson());
+      await controller.loadProfile('test-printer');
+      await controller.setDecision('flash.disk', 'disk-1');
+      final helper = _RecordingElevatedHelper();
+      final backupRoot = _createTempBackupRoot();
+
+      await tester.pumpWidget(
+        testHarness(
+          controller: controller,
+          child: const EmmcBackupScreen(returnRoute: '/emmc-restore'),
+          initialLocation: '/emmc-restore',
+          extraOverrides: [
+            flashServiceProvider.overrideWithValue(_OneDiskFlash()),
+            elevatedHelperServiceProvider.overrideWithValue(helper),
+            emmcBackupsDirProvider.overrideWithValue(backupRoot),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await _tapStartBackup(tester);
+      await tester.pump(const Duration(milliseconds: 50));
+      await tester.tap(find.text('Continue'));
+      await tester.pump();
+
+      expect(
+        controller.state.decisions,
+        isNot(contains('snapshot.emmc_backup_path')),
+      );
+      expect(
+        controller.state.decisions,
+        isNot(contains('snapshot.emmc_acknowledged')),
+      );
+    });
+
     testWidgets('manifest write failures hide raw disk ids', (tester) async {
       final controller = stubWizardController(profileJson: testProfileJson());
       await controller.loadProfile('test-printer');

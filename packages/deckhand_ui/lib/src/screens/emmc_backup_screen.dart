@@ -373,10 +373,19 @@ class _EmmcBackupScreenState extends ConsumerState<EmmcBackupScreen> {
         });
         return;
       }
-      await controller.setDecision('snapshot.emmc_backup_path', outputPath);
+      if (!_isStandaloneBackupFlow) {
+        await controller.setDecision('snapshot.emmc_backup_path', outputPath);
+      }
     }
-    await controller.setDecision('snapshot.emmc_acknowledged', true);
+    if (!_isStandaloneBackupFlow) {
+      await controller.setDecision('snapshot.emmc_acknowledged', true);
+    }
     if (mounted) context.go(_returnRoute());
+  }
+
+  bool get _isStandaloneBackupFlow {
+    final explicit = widget.returnRoute;
+    return explicit != null && explicit.isNotEmpty;
   }
 
   /// Where to bounce back to after the backup finishes (or is
