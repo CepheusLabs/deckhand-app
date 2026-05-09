@@ -229,6 +229,64 @@ void main() {
       expect(writtenManifest?.imageSha256, 'b' * 64);
       expect(helper.hashCalls, 1);
     });
+
+    testWidgets(
+      'does not trust verified candidates when manifest indexing fails',
+      (tester) async {
+        final candidate = EmmcBackupImageCandidate(
+          imagePath: r'C:\Deckhand\phrozen-arco-emmc-old.img',
+          imageBytes: 4096,
+          modifiedAt: DateTime(2026, 5, 4),
+          inferredProfileId: 'test-printer',
+        );
+
+        final controller = stubWizardController(profileJson: testProfileJson());
+        await controller.loadProfile('test-printer');
+        await controller.setDecision('flash.disk', 'disk-1');
+        final helper = _HashingElevatedHelper('c' * 64);
+        final security = _RecordingSecurity();
+
+        await tester.pumpWidget(
+          testHarness(
+            controller: controller,
+            child: const SnapshotScreen(),
+            initialLocation: '/snapshot',
+            extraOverrides: [
+              flashServiceProvider.overrideWithValue(_OneDiskFlash('c' * 64)),
+              elevatedHelperServiceProvider.overrideWithValue(helper),
+              securityServiceProvider.overrideWithValue(security),
+              emmcBackupManifestsProvider.overrideWith((_) async => const []),
+              emmcBackupImageCandidatesProvider.overrideWith(
+                (_) async => [candidate],
+              ),
+              emmcBackupManifestWriterProvider.overrideWithValue((
+                manifest,
+              ) async {
+                throw StateError(
+                  r'write manifest failed on \\.\PHYSICALDRIVE3',
+                );
+              }),
+            ],
+          ),
+        );
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+        await tester.pump();
+
+        await tester.tap(find.text('Verify exact match'));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+        await tester.pump();
+
+        expect(find.textContaining('Exact eMMC backup verified'), findsNothing);
+        expect(
+          find.textContaining('Could not save backup verification'),
+          findsOneWidget,
+        );
+        expect(find.textContaining('Windows disk 3'), findsOneWidget);
+        expect(find.textContaining('PHYSICALDRIVE3'), findsNothing);
+      },
+    );
   });
 }
 

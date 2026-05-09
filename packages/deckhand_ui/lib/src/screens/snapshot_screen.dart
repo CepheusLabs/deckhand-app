@@ -35,6 +35,7 @@ class _SnapshotScreenState extends ConsumerState<SnapshotScreen> {
   FlashProgress? _hashProgress;
   String? _hashError;
   EmmcBackupManifest? _verifiedEmmcBackup;
+  bool _hashFinalizing = false;
 
   @override
   void dispose() {
@@ -280,6 +281,7 @@ class _SnapshotScreenState extends ConsumerState<SnapshotScreen> {
     setState(() {
       _hashError = null;
       _verifiedEmmcBackup = null;
+      _hashFinalizing = false;
       _hashProgress = FlashProgress(
         bytesDone: 0,
         bytesTotal: candidate.imageBytes,
@@ -330,6 +332,7 @@ class _SnapshotScreenState extends ConsumerState<SnapshotScreen> {
             'Exact verification needs the elevated helper so Deckhand can '
             'read the raw eMMC.';
         _hashProgress = null;
+        _hashFinalizing = false;
       });
       return;
     }
@@ -353,6 +356,7 @@ class _SnapshotScreenState extends ConsumerState<SnapshotScreen> {
       setState(() {
         _hashError = null;
         _verifiedEmmcBackup = null;
+        _hashFinalizing = false;
         _hashProgress = FlashProgress(
           bytesDone: 0,
           bytesTotal: disk.sizeBytes,
@@ -386,42 +390,35 @@ class _SnapshotScreenState extends ConsumerState<SnapshotScreen> {
                   _hashError = event.message == null
                       ? 'Live eMMC hash failed.'
                       : userFacingError(event.message);
+                  _hashFinalizing = false;
                   _hashSub = null;
                 } else if (event.phase == FlashPhase.done) {
                   final gotSha = event.message?.toLowerCase();
                   final wantSha = manifest.imageSha256.toLowerCase();
                   if (gotSha == wantSha &&
                       event.bytesDone == manifest.imageBytes) {
-                    if (writeManifestOnSuccess) {
-                      unawaited(
-                        ref
-                            .read(emmcBackupManifestWriterProvider)(manifest)
-                            .then((_) {
-                              ref.invalidate(emmcBackupManifestsProvider);
-                              ref.invalidate(emmcBackupImageCandidatesProvider);
-                            }),
-                      );
-                    }
-                    _verifiedEmmcBackup = manifest;
+                    _hashFinalizing = true;
                     _hashError = null;
-                    unawaited(
-                      ref
-                          .read(wizardControllerProvider)
-                          .setDecision('snapshot.emmc_acknowledged', true),
+                    _hashProgress = FlashProgress(
+                      bytesDone: event.bytesDone,
+                      bytesTotal: mergedTotal,
+                      phase: FlashPhase.done,
+                      message: writeManifestOnSuccess
+                          ? 'saving backup verification'
+                          : event.message,
                     );
                     unawaited(
-                      ref
-                          .read(wizardControllerProvider)
-                          .setDecision(
-                            'snapshot.emmc_backup_path',
-                            manifest.imagePath,
-                          ),
+                      _finalizeVerifiedEmmcBackup(
+                        manifest,
+                        writeManifestOnSuccess: writeManifestOnSuccess,
+                      ),
                     );
                   } else {
                     _hashError =
                         'Live eMMC hash does not match this backup image. '
                         'Back up the eMMC again before continuing.';
                     _verifiedEmmcBackup = null;
+                    _hashFinalizing = false;
                   }
                   _hashSub = null;
                 }
@@ -439,11 +436,13 @@ class _SnapshotScreenState extends ConsumerState<SnapshotScreen> {
                   message: message,
                 );
                 _verifiedEmmcBackup = null;
+                _hashFinalizing = false;
                 _hashSub = null;
               });
             },
             onDone: () {
               if (!mounted) return;
+              if (_hashFinalizing) return;
               if (_verifiedEmmcBackup == null && _hashError == null) {
                 setState(() {
                   _hashError =
@@ -465,6 +464,52 @@ class _SnapshotScreenState extends ConsumerState<SnapshotScreen> {
           message: message,
         );
         _verifiedEmmcBackup = null;
+        _hashFinalizing = false;
+      });
+    }
+  }
+
+  Future<void> _finalizeVerifiedEmmcBackup(
+    EmmcBackupManifest manifest, {
+    required bool writeManifestOnSuccess,
+  }) async {
+    try {
+      if (writeManifestOnSuccess) {
+        await ref.read(emmcBackupManifestWriterProvider)(manifest);
+        ref.invalidate(emmcBackupManifestsProvider);
+        ref.invalidate(emmcBackupImageCandidatesProvider);
+      }
+      final controller = ref.read(wizardControllerProvider);
+      await controller.setDecision('snapshot.emmc_acknowledged', true);
+      await controller.setDecision(
+        'snapshot.emmc_backup_path',
+        manifest.imagePath,
+      );
+      if (!mounted) return;
+      setState(() {
+        _verifiedEmmcBackup = manifest;
+        _hashError = null;
+        _hashFinalizing = false;
+        _hashProgress = FlashProgress(
+          bytesDone: manifest.imageBytes,
+          bytesTotal: manifest.imageBytes,
+          phase: FlashPhase.done,
+          message: manifest.imageSha256.toLowerCase(),
+        );
+      });
+    } catch (e) {
+      if (!mounted) return;
+      final message = userFacingError(e);
+      setState(() {
+        _verifiedEmmcBackup = null;
+        _hashFinalizing = false;
+        _hashError = 'Could not save backup verification: $message';
+        _hashProgress = FlashProgress(
+          bytesDone: 0,
+          bytesTotal: manifest.imageBytes,
+          phase: FlashPhase.failed,
+          message: message,
+        );
       });
     }
   }
