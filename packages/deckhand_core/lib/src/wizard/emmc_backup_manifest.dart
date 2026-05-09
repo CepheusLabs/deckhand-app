@@ -367,10 +367,18 @@ class EmmcBackupOrganizeFailure {
 Future<String> writeEmmcBackupManifest(EmmcBackupManifest manifest) async {
   final manifestPath = emmcBackupManifestPath(manifest.imagePath);
   await Directory(p.dirname(manifestPath)).create(recursive: true);
-  await File(manifestPath).writeAsString(
+  final manifestFile = File(manifestPath);
+  final tmp = File('$manifestPath.tmp');
+  await tmp.writeAsString(
     const JsonEncoder.withIndent('  ').convert(manifest.toJson()),
     flush: true,
   );
+  try {
+    await tmp.rename(manifestPath);
+  } on FileSystemException {
+    if (await manifestFile.exists()) await manifestFile.delete();
+    await tmp.rename(manifestPath);
+  }
   return manifestPath;
 }
 

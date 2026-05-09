@@ -113,6 +113,37 @@ void main() {
     expect(manifests.single.imagePath, image.path);
   });
 
+  test('manifest writes replace stale temp files atomically', () async {
+    final dir = await Directory.systemTemp.createTemp(
+      'deckhand_emmc_manifest_atomic_',
+    );
+    addTearDown(() async {
+      if (await dir.exists()) await dir.delete(recursive: true);
+    });
+
+    final image = File(p.join(dir.path, 'backup.img'));
+    await image.writeAsBytes(List<int>.filled(4096, 7), flush: true);
+    final manifest = EmmcBackupManifest.create(
+      profileId: 'phrozen-arco',
+      imagePath: image.path,
+      imageBytes: 4096,
+      imageSha256: 'b' * 64,
+      disk: disk,
+      deckhandVersion: 'dev',
+    );
+    final manifestPath = emmcBackupManifestPath(image.path);
+    await File('$manifestPath.tmp').writeAsString('{partial');
+
+    final writtenPath = await writeEmmcBackupManifest(manifest);
+
+    expect(writtenPath, manifestPath);
+    expect(await File('$manifestPath.tmp').exists(), isFalse);
+    final decoded =
+        jsonDecode(await File(manifestPath).readAsString())
+            as Map<String, dynamic>;
+    expect(decoded['profile_id'], 'phrozen-arco');
+  });
+
   test('scanner accepts case-insensitive manifest file names', () async {
     final dir = await Directory.systemTemp.createTemp(
       'deckhand_emmc_manifest_case_',
