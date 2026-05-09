@@ -21,8 +21,9 @@ type HelperSmokeOptions struct {
 
 // RunHelperSmoke launches deckhand-elevated-helper with the harmless
 // "version" op and verifies that the helper can write its events file.
-// On Windows it uses the same PowerShell Start-Process elevation dance
-// as the Flutter app; on other platforms it execs the helper directly.
+// On Windows it mirrors the Flutter app launcher: direct process launch
+// when the caller is already elevated, and Start-Process RunAs only
+// when elevation still needs to be requested.
 func RunHelperSmoke(ctx context.Context, w io.Writer, opts HelperSmokeOptions) (bool, error) {
 	if opts.Timeout <= 0 {
 		opts.Timeout = 30 * time.Second
@@ -121,27 +122,46 @@ func runHelperSmokeCommand(ctx context.Context, helper string, args []string) (i
 		return commandExitCode(err), string(out), err
 	}
 
+	ps := windowsHelperSmokePowerShell(helper, args)
+
+	cmd := exec.CommandContext(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-Command", ps)
+	out, err := cmd.CombinedOutput()
+	return commandExitCode(err), string(out), err
+}
+
+func windowsHelperSmokePowerShell(helper string, args []string) string {
 	argList := make([]string, 0, len(args))
+	directArgList := make([]string, 0, len(args))
 	for _, arg := range args {
 		argList = append(argList, powerShellDoubleQuoted(arg))
+		directArgList = append(directArgList, windowsCommandLineQuoted(arg))
 	}
-	helperLiteral := powerShellDoubleQuoted(helper)
-	ps := strings.Join([]string{
+	return strings.Join([]string{
 		`$ErrorActionPreference = "Stop";`,
+		fmt.Sprintf(`$helperPath = %s;`, powerShellSingleQuoted(helper)),
+		fmt.Sprintf(`$argv = @(%s);`, strings.Join(argList, ",")),
+		fmt.Sprintf(`$directArgs = %s;`, powerShellSingleQuoted(strings.Join(directArgList, " "))),
 		`try {`,
 		`$isAdmin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltinRole]::Administrator);`,
-		fmt.Sprintf(`if ($isAdmin) { $p = Start-Process -FilePath %s -ArgumentList %s -Wait -PassThru -WindowStyle Hidden; }`, helperLiteral, strings.Join(argList, ",")),
-		fmt.Sprintf(`else { $p = Start-Process -FilePath %s -ArgumentList %s -Verb RunAs -Wait -PassThru; }`, helperLiteral, strings.Join(argList, ",")),
+		`if ($isAdmin) {`,
+		`$psi = [System.Diagnostics.ProcessStartInfo]::new();`,
+		`$psi.FileName = $helperPath;`,
+		`$psi.Arguments = $directArgs;`,
+		`$psi.UseShellExecute = $false;`,
+		`$psi.CreateNoWindow = $true;`,
+		`$p = [System.Diagnostics.Process]::Start($psi);`,
+		`if ($null -eq $p) { throw "helper launch returned no process" }`,
+		`$p.WaitForExit();`,
+		`} else {`,
+		`$p = Start-Process -FilePath $helperPath -ArgumentList $argv -Verb RunAs -Wait -PassThru;`,
+		`if ($null -eq $p) { throw "helper launch returned no process" }`,
+		`}`,
 		`exit $p.ExitCode`,
 		`} catch {`,
 		`[Console]::Error.WriteLine($_.Exception.Message);`,
 		`exit 1`,
 		`}`,
 	}, " ")
-
-	cmd := exec.CommandContext(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-Command", ps)
-	out, err := cmd.CombinedOutput()
-	return commandExitCode(err), string(out), err
 }
 
 func commandExitCode(err error) int {
@@ -156,4 +176,37 @@ func commandExitCode(err error) int {
 
 func powerShellDoubleQuoted(s string) string {
 	return `"` + strings.ReplaceAll(s, `"`, `""`) + `"`
+}
+
+func powerShellSingleQuoted(s string) string {
+	return `'` + strings.ReplaceAll(s, `'`, `''`) + `'`
+}
+
+func windowsCommandLineQuoted(arg string) string {
+	if arg == "" {
+		return `""`
+	}
+	if !strings.ContainsAny(arg, " \t\r\n\"") {
+		return arg
+	}
+	var b strings.Builder
+	b.WriteByte('"')
+	backslashes := 0
+	for _, r := range arg {
+		switch r {
+		case '\\':
+			backslashes++
+		case '"':
+			b.WriteString(strings.Repeat(`\`, backslashes*2+1))
+			b.WriteRune(r)
+			backslashes = 0
+		default:
+			b.WriteString(strings.Repeat(`\`, backslashes))
+			b.WriteRune(r)
+			backslashes = 0
+		}
+	}
+	b.WriteString(strings.Repeat(`\`, backslashes*2))
+	b.WriteByte('"')
+	return b.String()
 }
