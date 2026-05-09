@@ -138,6 +138,27 @@ void main() {
     expect(find.text('Open backup flow'), findsNothing);
   });
 
+  testWidgets('manage screen uses a left-side Back footer action', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1200, 900));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final controller = stubWizardController(profileJson: testProfileJson());
+    await controller.loadProfile('test-printer');
+
+    await tester.pumpWidget(
+      testHarness(
+        controller: controller,
+        child: const ManageScreen(),
+        initialLocation: '/manage',
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.widgetWithText(OutlinedButton, 'Back'), findsOneWidget);
+    expect(find.widgetWithText(FilledButton, 'Back'), findsNothing);
+  });
+
   testWidgets('restore tab surfaces indexed backups and arms restore action', (
     tester,
   ) async {

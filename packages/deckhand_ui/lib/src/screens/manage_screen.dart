@@ -138,11 +138,13 @@ class _ManageScreenState extends ConsumerState<ManageScreen> {
           _buildTabBody(state, profile),
         ],
       ),
-      primaryAction: WizardAction(
-        label: 'Done',
-        onPressed: () => context.go('/'),
-        isBack: true,
-      ),
+      secondaryActions: [
+        WizardAction(
+          label: 'Back',
+          onPressed: () => context.go('/'),
+          isBack: true,
+        ),
+      ],
     );
   }
 
