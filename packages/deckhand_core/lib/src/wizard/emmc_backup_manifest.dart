@@ -63,11 +63,11 @@ class EmmcBackupManifest {
 
   factory EmmcBackupManifest.fromJson(Map<String, dynamic> json) {
     return EmmcBackupManifest(
-      schemaVersion: (json['schema_version'] as num?)?.toInt() ?? 0,
-      createdAt: DateTime.parse(_jsonString(json['created_at']) ?? ''),
+      schemaVersion: _jsonInt(json['schema_version']),
+      createdAt: _jsonDateTime(json['created_at']),
       profileId: _jsonString(json['profile_id']) ?? '',
       imagePath: _jsonString(json['image_path']) ?? '',
-      imageBytes: (json['image_bytes'] as num?)?.toInt() ?? 0,
+      imageBytes: _jsonInt(json['image_bytes']),
       imageSha256: (_jsonString(json['image_sha256']) ?? '')
           .trim()
           .toLowerCase(),
@@ -131,10 +131,10 @@ class EmmcBackupDiskIdentity {
     return EmmcBackupDiskIdentity(
       id: _jsonString(json['id']) ?? '',
       path: _jsonString(json['path']) ?? '',
-      sizeBytes: (json['size_bytes'] as num?)?.toInt() ?? 0,
+      sizeBytes: _jsonInt(json['size_bytes']),
       bus: _jsonString(json['bus']) ?? '',
       model: _jsonString(json['model']) ?? '',
-      removable: json['removable'] as bool? ?? false,
+      removable: _jsonBool(json['removable']),
     );
   }
 
@@ -697,6 +697,22 @@ bool _isValidIndexedManifest(EmmcBackupManifest manifest) {
 }
 
 String? _jsonString(Object? value) => value is String ? value : null;
+
+int _jsonInt(Object? value) {
+  if (value is! num || !value.isFinite) return 0;
+  return value.toInt();
+}
+
+bool _jsonBool(Object? value) => value is bool && value;
+
+DateTime _jsonDateTime(Object? value) {
+  final raw = _jsonString(value)?.trim();
+  if (raw == null || raw.isEmpty) {
+    return DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
+  }
+  return DateTime.tryParse(raw)?.toUtc() ??
+      DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
+}
 
 Map<String, dynamic>? _stringKeyMap(Object? value) {
   if (value is! Map) return null;

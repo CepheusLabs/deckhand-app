@@ -94,6 +94,35 @@ void main() {
     expect(parsed.disk.sizeBytes, 0);
   });
 
+  test('fromJson tolerates malformed scalar fields', () {
+    final parsed = EmmcBackupManifest.fromJson({
+      'schema_version': '1',
+      'created_at': 42,
+      'profile_id': 'phrozen-arco',
+      'image_path': r'C:\Deckhand\phrozen-arco.img',
+      'image_bytes': '4096',
+      'image_sha256': 'A' * 64,
+      'disk': {
+        'id': 'disk-1',
+        'path': r'\\.\PhysicalDrive3',
+        'size_bytes': '4096',
+        'bus': 'USB',
+        'model': 'Generic STORAGE DEVICE',
+        'removable': 'true',
+      },
+      'deckhand_version': 'dev',
+    });
+
+    expect(parsed.schemaVersion, 0);
+    expect(
+      parsed.createdAt,
+      DateTime.fromMillisecondsSinceEpoch(0, isUtc: true),
+    );
+    expect(parsed.imageBytes, 0);
+    expect(parsed.disk.sizeBytes, 0);
+    expect(parsed.disk.removable, isFalse);
+  });
+
   test('scanner returns only manifests with existing images', () async {
     final dir = await Directory.systemTemp.createTemp(
       'deckhand_emmc_manifest_',
