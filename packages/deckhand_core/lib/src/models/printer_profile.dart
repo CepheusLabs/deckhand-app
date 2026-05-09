@@ -71,12 +71,12 @@ class PrinterProfile {
   factory PrinterProfile.fromJson(Map<String, dynamic> json) {
     return PrinterProfile(
       raw: json,
-      id: json['profile_id'] as String? ?? '',
-      version: json['profile_version'] as String? ?? '0.0.0',
-      displayName: json['display_name'] as String? ?? '',
-      status: ProfileStatusX.parse(json['status'] as String? ?? 'alpha'),
-      manufacturer: json['manufacturer'] as String? ?? '',
-      model: json['model'] as String? ?? '',
+      id: _optionalString(json['profile_id']) ?? '',
+      version: _optionalString(json['profile_version']) ?? '0.0.0',
+      displayName: _optionalString(json['display_name']) ?? '',
+      status: ProfileStatusX.parse(_optionalString(json['status']) ?? 'alpha'),
+      manufacturer: _optionalString(json['manufacturer']) ?? '',
+      model: _optionalString(json['model']) ?? '',
       hardware: HardwareSpec.fromJson(_mapOr(json['hardware'])),
       os: OsSpec.fromJson(_mapOr(json['os'])),
       ssh: SshConfig.fromJson(_mapOr(json['ssh'])),
@@ -142,10 +142,10 @@ class ProfileIdentification {
 
   factory ProfileIdentification.fromJson(Map<String, dynamic> j) =>
       ProfileIdentification(
-        markerFile: j['marker_file'] as String?,
+        markerFile: _optionalString(j['marker_file']),
         moonrakerObjects: _stringList(j['moonraker_objects']),
         hostnamePatterns: _stringList(j['hostname_patterns']),
-        probeTimeoutSeconds: (j['probe_timeout_seconds'] as num?)?.toInt() ?? 3,
+        probeTimeoutSeconds: _optionalInt(j['probe_timeout_seconds']) ?? 3,
       );
 }
 
@@ -275,8 +275,8 @@ class MaintainerSpec {
   final String name;
   final String? contact;
   factory MaintainerSpec.fromJson(Map<String, dynamic> j) => MaintainerSpec(
-    name: j['name'] as String? ?? '',
-    contact: j['contact'] as String?,
+    name: _optionalString(j['name']) ?? '',
+    contact: _optionalString(j['contact']),
   );
 }
 
@@ -299,9 +299,9 @@ class HardwareSpec {
   final List<String> features;
 
   factory HardwareSpec.fromJson(Map<String, dynamic> j) => HardwareSpec(
-    architecture: j['architecture'] as String?,
+    architecture: _optionalString(j['architecture']),
     sbc: _fromMapOrNull(j['sbc'], SbcSpec.fromJson),
-    kinematics: j['kinematics'] as String?,
+    kinematics: _optionalString(j['kinematics']),
     buildVolumeMm: _fromMapOrNull(j['build_volume_mm'], BuildVolume.fromJson),
     steppers: _listOfMap(j['steppers']),
     sensors: _listOfMap(j['sensors']),
@@ -315,9 +315,9 @@ class SbcSpec {
   final String? board;
   final int? emmcSizeBytes;
   factory SbcSpec.fromJson(Map<String, dynamic> j) => SbcSpec(
-    soc: j['soc'] as String?,
-    board: j['board'] as String?,
-    emmcSizeBytes: (j['emmc_size_bytes'] as num?)?.toInt(),
+    soc: _optionalString(j['soc']),
+    board: _optionalString(j['board']),
+    emmcSizeBytes: _optionalInt(j['emmc_size_bytes']),
   );
 }
 
@@ -327,9 +327,9 @@ class BuildVolume {
   final int y;
   final int z;
   factory BuildVolume.fromJson(Map<String, dynamic> j) => BuildVolume(
-    x: (j['x'] as num).toInt(),
-    y: (j['y'] as num).toInt(),
-    z: (j['z'] as num).toInt(),
+    x: _requiredInt(j, 'x', 'hardware.build_volume_mm'),
+    y: _requiredInt(j, 'y', 'hardware.build_volume_mm'),
+    z: _requiredInt(j, 'z', 'hardware.build_volume_mm'),
   );
 }
 
@@ -348,7 +348,7 @@ class OsSpec {
     freshInstallOptions: _listOfMap(
       j['fresh_install_options'],
     ).map(OsImageOption.fromJson).toList(),
-    bootMode: j['boot_mode'] as String?,
+    bootMode: _optionalString(j['boot_mode']),
   );
 }
 
@@ -366,11 +366,11 @@ class OsStockSpec {
   final String? python;
   final String? notes;
   factory OsStockSpec.fromJson(Map<String, dynamic> j) => OsStockSpec(
-    distro: j['distro'] as String?,
-    version: j['version'] as String?,
-    codename: j['codename'] as String?,
-    python: j['python'] as String?,
-    notes: j['notes'] as String?,
+    distro: _optionalString(j['distro']),
+    version: _optionalString(j['version']),
+    codename: _optionalString(j['codename']),
+    python: _optionalString(j['python']),
+    notes: _optionalString(j['notes']),
   );
 }
 
@@ -396,14 +396,14 @@ class OsImageOption {
   factory OsImageOption.fromJson(Map<String, dynamic> j) => OsImageOption(
     id: _requiredString(j, 'id', 'os.fresh_install_options[]'),
     displayName:
-        j['display_name'] as String? ??
+        _optionalString(j['display_name']) ??
         _requiredString(j, 'id', 'os.fresh_install_options[]'),
     url: _requiredString(j, 'url', 'os.fresh_install_options[]'),
-    sha256: j['sha256'] as String?,
-    sizeBytesApprox: (j['size_bytes_approx'] as num?)?.toInt(),
-    recommended: j['recommended'] as bool? ?? false,
-    architecture: j['architecture'] as String?,
-    notes: j['notes'] as String?,
+    sha256: _optionalString(j['sha256']),
+    sizeBytesApprox: _optionalInt(j['size_bytes_approx']),
+    recommended: _optionalBool(j['recommended']) ?? false,
+    architecture: _optionalString(j['architecture']),
+    notes: _optionalString(j['notes']),
   );
 }
 
@@ -417,11 +417,13 @@ class SshConfig {
   final List<SshDefaultCredential> defaultCredentials;
   final String? recommendedUserAfterInstall;
   factory SshConfig.fromJson(Map<String, dynamic> j) => SshConfig(
-    defaultPort: (j['default_port'] as num?)?.toInt() ?? 22,
+    defaultPort: _optionalInt(j['default_port']) ?? 22,
     defaultCredentials: _listOfMap(
       j['default_credentials'],
     ).map(SshDefaultCredential.fromJson).toList(),
-    recommendedUserAfterInstall: j['recommended_user_after_install'] as String?,
+    recommendedUserAfterInstall: _optionalString(
+      j['recommended_user_after_install'],
+    ),
   );
 }
 
@@ -433,8 +435,8 @@ class SshDefaultCredential {
   factory SshDefaultCredential.fromJson(Map<String, dynamic> j) =>
       SshDefaultCredential(
         user: _requiredString(j, 'user', 'ssh.default_credentials[]'),
-        password: j['password'] as String?,
-        keyPath: j['key_path'] as String?,
+        password: _optionalString(j['password']),
+        keyPath: _optionalString(j['key_path']),
       );
 }
 
@@ -451,9 +453,9 @@ class FirmwareConfig {
   final bool snapshotBeforeReplace;
   factory FirmwareConfig.fromJson(Map<String, dynamic> j) => FirmwareConfig(
     choices: _listOfMap(j['choices']).map(FirmwareChoice.fromJson).toList(),
-    defaultChoice: j['default_choice'] as String?,
-    replaceStockInPlace: j['replace_stock_in_place'] as bool? ?? true,
-    snapshotBeforeReplace: j['snapshot_before_replace'] as bool? ?? true,
+    defaultChoice: _optionalString(j['default_choice']),
+    replaceStockInPlace: _optionalBool(j['replace_stock_in_place']) ?? true,
+    snapshotBeforeReplace: _optionalBool(j['snapshot_before_replace']) ?? true,
   );
 }
 
@@ -481,15 +483,15 @@ class FirmwareChoice {
   factory FirmwareChoice.fromJson(Map<String, dynamic> j) => FirmwareChoice(
     id: _requiredString(j, 'id', 'firmware.choices[]'),
     displayName:
-        j['display_name'] as String? ??
+        _optionalString(j['display_name']) ??
         _requiredString(j, 'id', 'firmware.choices[]'),
     repo: _requiredString(j, 'repo', 'firmware.choices[]'),
-    ref: j['ref'] as String? ?? 'main',
-    description: j['description'] as String?,
-    installPath: j['install_path'] as String?,
-    venvPath: j['venv_path'] as String?,
-    pythonMin: j['python_min'] as String?,
-    recommended: j['recommended'] as bool? ?? false,
+    ref: _optionalString(j['ref']) ?? 'main',
+    description: _optionalString(j['description']),
+    installPath: _optionalString(j['install_path']),
+    venvPath: _optionalString(j['venv_path']),
+    pythonMin: _optionalString(j['python_min']),
+    recommended: _optionalBool(j['recommended']) ?? false,
   );
 }
 
@@ -514,7 +516,7 @@ class McuConfig {
   final Map<String, dynamic> raw;
   factory McuConfig.fromJson(Map<String, dynamic> j) => McuConfig(
     id: _requiredString(j, 'id', 'mcus[]'),
-    displayName: j['display_name'] as String?,
+    displayName: _optionalString(j['display_name']),
     raw: j,
   );
 }
@@ -534,9 +536,9 @@ class ScreenConfig {
   final Map<String, dynamic> raw;
   factory ScreenConfig.fromJson(Map<String, dynamic> j) => ScreenConfig(
     id: _requiredString(j, 'id', 'screens[]'),
-    displayName: j['display_name'] as String?,
-    status: j['status'] as String?,
-    recommended: j['recommended'] as bool? ?? false,
+    displayName: _optionalString(j['display_name']),
+    status: _optionalString(j['status']),
+    recommended: _optionalBool(j['recommended']) ?? false,
     raw: j,
   );
 }
@@ -554,8 +556,8 @@ class AddonConfig {
   final Map<String, dynamic> raw;
   factory AddonConfig.fromJson(Map<String, dynamic> j) => AddonConfig(
     id: _requiredString(j, 'id', 'addons[]'),
-    kind: j['kind'] as String?,
-    displayName: j['display_name'] as String?,
+    kind: _optionalString(j['kind']),
+    displayName: _optionalString(j['display_name']),
     raw: j,
   );
 }
@@ -616,9 +618,7 @@ class StockSnapshotPath {
             _optionalString(j['display_name']) ??
             _requiredString(j, 'id', 'stock_os.snapshot_paths[]'),
         path: _requiredString(j, 'path', 'stock_os.snapshot_paths[]'),
-        defaultSelected: j['default_selected'] is bool
-            ? j['default_selected'] as bool
-            : true,
+        defaultSelected: _optionalBool(j['default_selected']) ?? true,
         helperText: _optionalString(j['helper_text']),
       );
 }
@@ -634,7 +634,7 @@ class DetectionRule {
   final Map<String, dynamic> raw;
   factory DetectionRule.fromJson(Map<String, dynamic> j) => DetectionRule(
     kind: _requiredString(j, 'kind', 'stock_os.detections[]'),
-    required: j['required'] as bool? ?? true,
+    required: _optionalBool(j['required']) ?? true,
     raw: j,
   );
 }
@@ -650,12 +650,15 @@ class StockService {
   final String displayName;
   final String defaultAction;
   final Map<String, dynamic> raw;
-  factory StockService.fromJson(Map<String, dynamic> j) => StockService(
-    id: _requiredString(j, 'id', 'stock_os.services[]'),
-    displayName: j['display_name'] as String? ?? j['id'] as String,
-    defaultAction: j['default_action'] as String? ?? 'keep',
-    raw: j,
-  );
+  factory StockService.fromJson(Map<String, dynamic> j) {
+    final id = _requiredString(j, 'id', 'stock_os.services[]');
+    return StockService(
+      id: id,
+      displayName: _optionalString(j['display_name']) ?? id,
+      defaultAction: _optionalString(j['default_action']) ?? 'keep',
+      raw: j,
+    );
+  }
 }
 
 class StockFile {
@@ -674,10 +677,10 @@ class StockFile {
   factory StockFile.fromJson(Map<String, dynamic> j) => StockFile(
     id: _requiredString(j, 'id', 'stock_os.files[]'),
     displayName:
-        j['display_name'] as String? ??
+        _optionalString(j['display_name']) ??
         _requiredString(j, 'id', 'stock_os.files[]'),
     paths: _stringList(j['paths']),
-    defaultAction: j['default_action'] as String? ?? 'keep',
+    defaultAction: _optionalString(j['default_action']) ?? 'keep',
     raw: j,
   );
 }
@@ -698,9 +701,9 @@ class StockPath {
   factory StockPath.fromJson(Map<String, dynamic> j) => StockPath(
     id: _requiredString(j, 'id', 'stock_os.paths[]'),
     path: _requiredString(j, 'path', 'stock_os.paths[]'),
-    action: j['action'] as String? ?? 'preserve',
-    snapshotTo: j['snapshot_to'] as String?,
-    role: j['role'] as String?,
+    action: _optionalString(j['action']) ?? 'preserve',
+    snapshotTo: _optionalString(j['snapshot_to']),
+    role: _optionalString(j['role']),
   );
 }
 
@@ -714,7 +717,7 @@ class WizardConfig {
   final Map<String, dynamic>? stepsOverride;
   final List<Map<String, dynamic>> extraSteps;
   factory WizardConfig.fromJson(Map<String, dynamic> j) => WizardConfig(
-    title: j['title'] as String?,
+    title: _optionalString(j['title']),
     stepsOverride: _mapOrNull(j['steps_override']),
     extraSteps: _listOfMap(j['extra_steps']),
   );
@@ -740,7 +743,7 @@ class FlowSpec {
   final List<Map<String, dynamic>> preconditions;
   final List<Map<String, dynamic>> steps;
   factory FlowSpec.fromJson(Map<String, dynamic> j) => FlowSpec(
-    enabled: j['enabled'] as bool? ?? false,
+    enabled: _optionalBool(j['enabled']) ?? false,
     preconditions: _listOfMap(j['preconditions']),
     steps: _listOfMap(j['steps']),
   );
@@ -799,3 +802,13 @@ String _requiredString(Map<String, dynamic> j, String key, String context) {
 }
 
 String? _optionalString(Object? value) => value is String ? value : null;
+
+bool? _optionalBool(Object? value) => value is bool ? value : null;
+
+int? _optionalInt(Object? value) => value is num ? value.toInt() : null;
+
+int _requiredInt(Map<String, dynamic> j, String key, String context) {
+  final value = j[key];
+  if (value is num) return value.toInt();
+  throw ProfileFormatException('$context.$key is required');
+}

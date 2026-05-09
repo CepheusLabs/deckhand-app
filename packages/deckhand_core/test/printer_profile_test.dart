@@ -245,6 +245,149 @@ void main() {
       expect(path.defaultSelected, isTrue);
       expect(path.helperText, isNull);
     });
+
+    test('drops malformed optional scalar metadata instead of crashing', () {
+      final p = PrinterProfile.fromJson({
+        'profile_id': 'x',
+        'profile_version': 7,
+        'display_name': ['bad'],
+        'status': false,
+        'manufacturer': 10,
+        'model': {'bad': true},
+        'identification': {
+          'marker_file': ['deckhand.json'],
+          'probe_timeout_seconds': '9',
+        },
+        'hardware': {
+          'architecture': 42,
+          'kinematics': ['cartesian'],
+          'sbc': {'soc': 1, 'board': false, 'emmc_size_bytes': '8GiB'},
+        },
+        'os': {
+          'stock': {
+            'distro': 42,
+            'version': ['x'],
+            'codename': false,
+            'python': {'bad': true},
+            'notes': 9,
+          },
+          'boot_mode': ['emmc'],
+          'fresh_install_options': [
+            {
+              'id': 'img',
+              'url': 'https://example.com/img.xz',
+              'display_name': 42,
+              'recommended': 'yes',
+              'size_bytes_approx': 'large',
+              'architecture': false,
+              'notes': ['bad'],
+            },
+          ],
+        },
+        'ssh': {
+          'default_port': '22',
+          'recommended_user_after_install': 42,
+          'default_credentials': [
+            {'user': 'mks', 'password': 10, 'key_path': false},
+          ],
+        },
+        'firmware': {
+          'default_choice': ['kalico'],
+          'replace_stock_in_place': 'true',
+          'snapshot_before_replace': 1,
+          'choices': [
+            {
+              'id': 'kalico',
+              'repo': 'https://github.com/KalicoCrew/kalico',
+              'display_name': 42,
+              'ref': ['main'],
+              'description': 7,
+              'install_path': false,
+              'venv_path': 9,
+              'python_min': ['3.11'],
+              'recommended': 'yes',
+            },
+          ],
+        },
+        'mcus': [
+          {'id': 'main', 'display_name': 42},
+        ],
+        'screens': [
+          {
+            'id': 'screen',
+            'display_name': 42,
+            'status': false,
+            'recommended': 'yes',
+          },
+        ],
+        'addons': [
+          {'id': 'addon', 'kind': 42, 'display_name': false},
+        ],
+        'stock_os': {
+          'detections': [
+            {'kind': 'service', 'required': 'yes'},
+          ],
+          'services': [
+            {'id': 'frpc', 'display_name': 42, 'default_action': false},
+          ],
+          'files': [
+            {'id': 'cache', 'display_name': 42, 'default_action': false},
+          ],
+          'paths': [
+            {
+              'id': 'config',
+              'path': '/config',
+              'action': false,
+              'snapshot_to': 42,
+              'role': ['config'],
+            },
+          ],
+        },
+        'wizard': {'title': 42},
+        'flows': {
+          'stock_keep': {'enabled': 'true'},
+        },
+      });
+
+      expect(p.version, '0.0.0');
+      expect(p.displayName, '');
+      expect(p.status, ProfileStatus.alpha);
+      expect(p.identification.markerFile, isNull);
+      expect(p.identification.probeTimeoutSeconds, 3);
+      expect(p.hardware.architecture, isNull);
+      expect(p.hardware.sbc?.emmcSizeBytes, isNull);
+      expect(p.os.bootMode, isNull);
+      expect(p.os.stock?.distro, isNull);
+      expect(p.os.freshInstallOptions.single.displayName, 'img');
+      expect(p.os.freshInstallOptions.single.recommended, isFalse);
+      expect(p.ssh.defaultPort, 22);
+      expect(p.ssh.defaultCredentials.single.password, isNull);
+      expect(p.firmware.defaultChoice, isNull);
+      expect(p.firmware.replaceStockInPlace, isTrue);
+      expect(p.firmware.choices.single.ref, 'main');
+      expect(p.firmware.choices.single.recommended, isFalse);
+      expect(p.mcus.single.displayName, isNull);
+      expect(p.screens.single.recommended, isFalse);
+      expect(p.addons.single.kind, isNull);
+      expect(p.stockOs.detections.single.required, isTrue);
+      expect(p.stockOs.services.single.displayName, 'frpc');
+      expect(p.stockOs.files.single.defaultAction, 'keep');
+      expect(p.stockOs.paths.single.action, 'preserve');
+      expect(p.wizard.title, isNull);
+      expect(p.flows.stockKeep?.enabled, isFalse);
+    });
+
+    test('throws ProfileFormatException for malformed build volume', () {
+      expect(
+        () => PrinterProfile.fromJson({
+          'profile_id': 'x',
+          'hardware': {
+            'build_volume_mm': {'x': 300, 'y': '300', 'z': 300},
+          },
+        }),
+        throwsA(isA<ProfileFormatException>()),
+      );
+    });
   });
 
   group('PrinterMatch.score', () {
