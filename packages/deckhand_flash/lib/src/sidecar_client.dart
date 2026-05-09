@@ -162,6 +162,9 @@ class SidecarClient implements SidecarConnection {
     String method,
     Map<String, dynamic> params,
   ) {
+    if (!_started) {
+      throw StateError('SidecarClient not started');
+    }
     final id = _uuid.v4();
     final controller = StreamController<SidecarEvent>();
     final opSub = _operationSubscribers.putIfAbsent(

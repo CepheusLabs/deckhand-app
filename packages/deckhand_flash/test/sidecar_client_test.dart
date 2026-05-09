@@ -13,6 +13,21 @@ import 'package:flutter_test/flutter_test.dart';
 /// production stdout stream uses, without touching Process or IOSink.
 void main() {
   group('SidecarClient response routing', () {
+    test('callStreaming before start throws a controlled StateError', () {
+      final client = SidecarClient(binaryPath: '/does/not/exist');
+
+      expect(
+        () => client.callStreaming('disks.write_image', const {}).listen(null),
+        throwsA(
+          isA<StateError>().having(
+            (e) => e.message,
+            'message',
+            contains('not started'),
+          ),
+        ),
+      );
+    });
+
     test(
       'successful response resolves the pending future with result',
       () async {
