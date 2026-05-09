@@ -46,15 +46,18 @@ void main() {
       final image = File(p.join(root.path, 'arco.img'));
       final manifest = File('${image.path}$osImageDownloadManifestSuffix');
       final part = File('${image.path}.part');
+      final downloadPart = File('${image.path}.download.part');
       await image.writeAsBytes([1]);
       await manifest.writeAsString('{}');
       await part.writeAsBytes([2]);
+      await downloadPart.writeAsBytes([3]);
 
       await deleteOsImageCacheEntry(root: root.path, imagePath: image.path);
 
       expect(await image.exists(), isFalse);
       expect(await manifest.exists(), isFalse);
       expect(await part.exists(), isFalse);
+      expect(await downloadPart.exists(), isFalse);
     },
   );
 

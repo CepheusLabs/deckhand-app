@@ -104,6 +104,7 @@ Future<void> deleteOsImageCacheEntry({
   }
   for (final related in <String>[
     '$safeImage.part',
+    '$safeImage.download.part',
     '$safeImage$osImageDownloadManifestSuffix',
   ]) {
     final type = await FileSystemEntity.type(related, followLinks: false);
