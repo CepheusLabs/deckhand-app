@@ -494,7 +494,7 @@ Future<void> _runScriptImpl(
   Map<String, dynamic> step,
 ) async {
   final s = c._requireSession();
-  final rel = step['path'] as String?;
+  final rel = _stringValue(step['path']);
   if (rel == null) {
     throw StepExecutionException('script step missing "path"');
   }
@@ -510,7 +510,7 @@ Future<void> _runScriptImpl(
   final basename = c._safeRemoteBasename(rel, 'script path');
   final remote = '/tmp/deckhand-${c._randomSuffix()}-$basename';
   await c.ssh.upload(s, local, remote, mode: 448); // 0o700
-  final extraArgs = ((step['args'] as List?) ?? const []).cast<String>();
+  final extraArgs = _stringList(step['args']);
   final ignoreErrors = step['ignore_errors'] as bool? ?? false;
   final timeoutSecs = (step['timeout_seconds'] as num?)?.toInt() ?? 600;
   // Two orthogonal knobs, intentionally un-coupled:

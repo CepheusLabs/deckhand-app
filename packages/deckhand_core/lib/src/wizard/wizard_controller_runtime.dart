@@ -869,3 +869,5 @@ List<String> _stringList(Object? value) {
   if (value is! Iterable) return const [];
   return value.whereType<String>().where((s) => s.isNotEmpty).toList();
 }
+
+String? _stringValue(Object? value) => value is String ? value : null;

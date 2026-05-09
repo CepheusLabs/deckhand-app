@@ -1961,6 +1961,40 @@ void main() {
         reason: 'install_stack should be a no-op when no webui chosen',
       );
     });
+
+    test('skips malformed component list entries', () async {
+      final ssh = FakeSsh();
+      final controller = newController(
+        profileJson: {
+          ...baseProfileJson(
+            stockKeepSteps: [
+              {
+                'id': 'install_stack',
+                'kind': 'install_stack',
+                'components': [42, 'moonraker'],
+              },
+            ],
+          ),
+          'stack': {
+            'moonraker': {
+              'repo': 'https://github.com/Arksine/moonraker',
+              'install_path': '~/moonraker',
+            },
+          },
+        },
+        ssh: ssh,
+      );
+      await controller.loadProfile('test-printer');
+      controller.setFlow(WizardFlow.stockKeep);
+      controller.setSession(
+        const SshSession(id: 'fake', host: 'h', port: 22, user: 'root'),
+      );
+
+      await controller.startExecution();
+
+      expect(ssh.runCalls.any((c) => c.contains('moonraker')), isTrue);
+      expect(ssh.runCalls.any((c) => c.trim() == '42'), isFalse);
+    });
   });
 
   group('install_klipper_extras regression', () {
@@ -2488,6 +2522,36 @@ void main() {
         );
       },
     );
+
+    test('script skips malformed arg rows', () async {
+      final tmp = await _stageLocalScript('with-args.sh');
+      final ssh = FakeSsh();
+      final controller = newController(
+        profileJson: baseProfileJson(
+          stockKeepSteps: [
+            {
+              'id': 'sh',
+              'kind': 'script',
+              'path': tmp,
+              'args': ['--safe', 42],
+              'askpass': false,
+            },
+          ],
+        ),
+        ssh: ssh,
+      );
+      await controller.loadProfile('test-printer');
+      controller.setFlow(WizardFlow.stockKeep);
+      controller.setSession(
+        const SshSession(id: 'fake', host: 'h', port: 22, user: 'root'),
+      );
+
+      await controller.startExecution();
+
+      final run = ssh.steps.firstWhere((c) => c.contains('/tmp/deckhand-'));
+      expect(run, contains("'--safe'"));
+      expect(run, isNot(contains("'42'")));
+    });
 
     test('runtime skips malformed command and conditional rows', () async {
       final ssh = FakeSsh();

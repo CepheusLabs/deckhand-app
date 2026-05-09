@@ -147,8 +147,8 @@ Future<void> _runLinkExtrasImpl(
   Map<String, dynamic> step,
 ) async {
   final s = c._requireSession();
-  final sources = ((step['sources'] as List?) ?? const []).cast<String>();
-  final targetDir = step['target_dir'] as String?;
+  final sources = _stringList(step['sources']);
+  final targetDir = _stringValue(step['target_dir']);
   if (targetDir != null && targetDir.trim().isNotEmpty) {
     await _runTargetDirLinkExtras(c, step, sources);
     return;
@@ -188,7 +188,11 @@ Future<void> _runTargetDirLinkExtras(
   List<String> sources,
 ) async {
   final s = c._requireSession();
-  final targetDir = c._render((step['target_dir'] as String).trim());
+  final rawTargetDir = _stringValue(step['target_dir']);
+  if (rawTargetDir == null || rawTargetDir.trim().isEmpty) {
+    throw StepExecutionException('link_extras target_dir missing');
+  }
+  final targetDir = c._render(rawTargetDir.trim());
   c._validateRemoteInstallPath(targetDir, 'link_extras target_dir');
   final method = (step['method'] as String?) ?? 'copy';
   if (!const {
@@ -341,8 +345,7 @@ Future<void> _runInstallStackImpl(
   Map<String, dynamic> step,
 ) async {
   c._requireSession();
-  final rawComponents = ((step['components'] as List?) ?? const [])
-      .cast<String>();
+  final rawComponents = _stringList(step['components']);
   // Expand the `{{stack.webui.selected}}` token into the user's actual
   // webui choices. The profile's `components: [moonraker,
   // "{{stack.webui.selected}}", kiauh, crowsnest]` expects this slot
@@ -351,8 +354,7 @@ Future<void> _runInstallStackImpl(
   // multiple when they picked Both. The general `_render` engine
   // can't fan one token into many list entries, so the expansion
   // happens here.
-  final webuiSelected = ((c._state.decisions['webui'] as List?) ?? const [])
-      .cast<String>();
+  final webuiSelected = _stringList(c._state.decisions['webui']);
   final components = <String>[];
   for (final raw in rawComponents) {
     final stripped = raw.trim();
