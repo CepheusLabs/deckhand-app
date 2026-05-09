@@ -173,6 +173,27 @@ status: alpha
         );
       });
 
+      test('non-string mapping keys throw ProfileFormatException', () {
+        const numericKey = '''
+schema_version: 1
+profile_id: bad-key
+profile_version: 0.1.0
+display_name: Bad Key
+status: alpha
+1: not allowed
+''';
+        expect(
+          () => parseProfileYaml(numericKey),
+          throwsA(
+            isA<ProfileFormatException>().having(
+              (e) => e.message,
+              'message',
+              contains('mapping keys must be strings'),
+            ),
+          ),
+        );
+      });
+
       test('ProfileFormatException.toString includes the message', () {
         const e = ProfileFormatException('missing field `foo`');
         expect(e.toString(), contains('missing field `foo`'));
@@ -335,12 +356,14 @@ profiles:
       expect(entry.extras, 'ChromaKit');
     });
 
-    test('skips malformed registry entries without hiding valid profiles', () async {
-      final tmp = await Directory.systemTemp.createTemp(
-        'deckhand-profile-registry-',
-      );
-      addTearDown(() async => tmp.delete(recursive: true));
-      await File(p.join(tmp.path, 'registry.yaml')).writeAsString('''
+    test(
+      'skips malformed registry entries without hiding valid profiles',
+      () async {
+        final tmp = await Directory.systemTemp.createTemp(
+          'deckhand-profile-registry-',
+        );
+        addTearDown(() async => tmp.delete(recursive: true));
+        await File(p.join(tmp.path, 'registry.yaml')).writeAsString('''
 schema_version: 1
 profiles:
   - id: valid-printer
@@ -352,22 +375,23 @@ profiles:
   - not even a map
 ''');
 
-      final svc = SidecarProfileService(
-        sidecar: _FakeSidecar(),
-        paths: DeckhandPaths(
-          cacheDir: p.join(tmp.path, 'cache'),
-          stateDir: p.join(tmp.path, 'state'),
-          logsDir: p.join(tmp.path, 'logs'),
-          settingsFile: p.join(tmp.path, 'settings.json'),
-        ),
-        security: _AllowAllSecurity(),
-        localProfilesDir: tmp.path,
-      );
+        final svc = SidecarProfileService(
+          sidecar: _FakeSidecar(),
+          paths: DeckhandPaths(
+            cacheDir: p.join(tmp.path, 'cache'),
+            stateDir: p.join(tmp.path, 'state'),
+            logsDir: p.join(tmp.path, 'logs'),
+            settingsFile: p.join(tmp.path, 'settings.json'),
+          ),
+          security: _AllowAllSecurity(),
+          localProfilesDir: tmp.path,
+        );
 
-      final registry = await svc.fetchRegistry();
+        final registry = await svc.fetchRegistry();
 
-      expect(registry.entries.map((entry) => entry.id), ['valid-printer']);
-    });
+        expect(registry.entries.map((entry) => entry.id), ['valid-printer']);
+      },
+    );
 
     test('deduplicates registry entries by profile id', () async {
       final tmp = await Directory.systemTemp.createTemp(

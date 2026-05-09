@@ -102,9 +102,9 @@ class SidecarProfileService implements ProfileService {
         : <ProfileRegistryEntry>[];
     return ProfileRegistry(
       entries: await Future.wait(
-        _dedupeRegistryEntries(entries).map(
-          (e) => _withProfileSpecFallback(e, local),
-        ),
+        _dedupeRegistryEntries(
+          entries,
+        ).map((e) => _withProfileSpecFallback(e, local)),
       ),
     );
   }
@@ -488,11 +488,17 @@ PrinterProfile parseProfileYaml(String yamlText) {
 // pure Dart Map/List for downstream models.
 Object? _deepConvert(Object? node) {
   if (node is YamlMap) {
-    return Map<String, dynamic>.fromEntries(
-      node.entries.map(
-        (e) => MapEntry(e.key.toString(), _deepConvert(e.value)),
-      ),
-    );
+    final out = <String, dynamic>{};
+    for (final entry in node.entries) {
+      final key = entry.key;
+      if (key is! String) {
+        throw const ProfileFormatException(
+          'profile.yaml mapping keys must be strings',
+        );
+      }
+      out[key] = _deepConvert(entry.value);
+    }
+    return out;
   }
   if (node is YamlList) {
     return node.map(_deepConvert).toList();
