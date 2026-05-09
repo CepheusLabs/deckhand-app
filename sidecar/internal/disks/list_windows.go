@@ -164,6 +164,9 @@ func listDisksViaCIM(ctx context.Context, getDiskErr error) ([]DiskInfo, error) 
 
 	results := make([]DiskInfo, 0, len(disks))
 	for _, d := range disks {
+		if d.Index < 0 || d.Size <= 0 {
+			continue
+		}
 		busName := strings.TrimSpace(d.InterfaceType)
 		if busName == "" {
 			busName = "Unknown"
@@ -178,6 +181,9 @@ func listDisksViaCIM(ctx context.Context, getDiskErr error) ([]DiskInfo, error) 
 			Removable:  isRemovableBus(busName) || strings.Contains(mediaType, "removable"),
 			Partitions: nil,
 		})
+	}
+	if len(results) == 0 {
+		return nil, fmt.Errorf("Get-Disk failed: %w; Win32_DiskDrive returned no usable disks", getDiskErr)
 	}
 	return results, nil
 }

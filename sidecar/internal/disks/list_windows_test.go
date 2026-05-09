@@ -120,3 +120,63 @@ func TestListDropsInvalidGetDiskRecords(t *testing.T) {
 		t.Fatalf("disk id = %q, want PhysicalDrive6", got[0].ID)
 	}
 }
+
+func TestCIMFallbackDropsInvalidRecords(t *testing.T) {
+	orig := runPowerShell
+	t.Cleanup(func() { runPowerShell = orig })
+
+	runPowerShell = func(_ context.Context, script string) ([]byte, error) {
+		switch {
+		case strings.Contains(script, "Get-Disk"):
+			return nil, errors.New("Get-Disk unavailable")
+		case strings.Contains(script, "Win32_DiskDrive"):
+			return []byte(`[
+				{"Index": -1, "Model": "bad index", "Size": 8000000000, "InterfaceType": "USB", "MediaType": "Removable Media"},
+				{"Index": 2, "Model": "bad size", "Size": 0, "InterfaceType": "USB", "MediaType": "Removable Media"},
+				{"Index": 8, "Model": "Fallback USB", "Size": 16000000000, "InterfaceType": "USB", "MediaType": "Removable Media"}
+			]`), nil
+		default:
+			t.Fatalf("unexpected PowerShell script: %s", script)
+			return nil, nil
+		}
+	}
+
+	got, err := List(context.Background())
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("List() returned %d disks, want 1: %#v", len(got), got)
+	}
+	if got[0].ID != "PhysicalDrive8" || got[0].Model != "Fallback USB" {
+		t.Fatalf("fallback disk = %#v", got[0])
+	}
+}
+
+func TestCIMFallbackErrorsWhenNoRecordsAreUsable(t *testing.T) {
+	orig := runPowerShell
+	t.Cleanup(func() { runPowerShell = orig })
+
+	runPowerShell = func(_ context.Context, script string) ([]byte, error) {
+		switch {
+		case strings.Contains(script, "Get-Disk"):
+			return nil, errors.New("Get-Disk unavailable")
+		case strings.Contains(script, "Win32_DiskDrive"):
+			return []byte(`[
+				{"Index": -1, "Model": "bad index", "Size": 8000000000, "InterfaceType": "USB", "MediaType": "Removable Media"},
+				{"Index": 2, "Model": "bad size", "Size": 0, "InterfaceType": "USB", "MediaType": "Removable Media"}
+			]`), nil
+		default:
+			t.Fatalf("unexpected PowerShell script: %s", script)
+			return nil, nil
+		}
+	}
+
+	_, err := List(context.Background())
+	if err == nil {
+		t.Fatal("List() error = nil, want error")
+	}
+	if !strings.Contains(err.Error(), "Win32_DiskDrive returned no usable disks") {
+		t.Fatalf("List() error = %v", err)
+	}
+}
