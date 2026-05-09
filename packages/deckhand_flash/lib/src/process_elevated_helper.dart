@@ -957,50 +957,67 @@ String _buildWindowsLaunchPowerShellCommand({
 
 FlashProgress? _parseHelperLine(String line) {
   if (line.trim().isEmpty) return null;
-  Map<String, dynamic> obj;
-  try {
-    obj = jsonDecode(line) as Map<String, dynamic>;
-  } catch (_) {
-    return null;
-  }
-  final event = obj['event'] as String?;
+  final obj = _decodeJsonObject(line);
+  if (obj == null) return null;
+
+  final event = _jsonString(obj['event']);
   switch (event) {
     case 'preparing':
       return FlashProgress(
         bytesDone: 0,
         bytesTotal: 0,
         phase: FlashPhase.preparing,
-        message: obj['device'] as String?,
+        message: _jsonString(obj['device']),
       );
     case 'progress':
-      final done = (obj['bytes_done'] as num?)?.toInt() ?? 0;
-      final total = (obj['bytes_total'] as num?)?.toInt() ?? 0;
-      final phase = _phaseFromString(obj['phase'] as String?);
+      final done = _jsonInt(obj['bytes_done']);
+      final total = _jsonInt(obj['bytes_total']);
+      final phase = _phaseFromString(_jsonString(obj['phase']));
       return FlashProgress(
         bytesDone: done,
         bytesTotal: total,
         phase: phase,
-        message: obj['sha256'] as String?,
+        message: _jsonString(obj['sha256']),
       );
     case 'done':
-      final done = (obj['bytes'] as num?)?.toInt() ?? 0;
+      final done = _jsonInt(obj['bytes']);
       return FlashProgress(
         bytesDone: done,
         bytesTotal: done,
         phase: FlashPhase.done,
-        message: obj['sha256'] as String?,
+        message: _jsonString(obj['sha256']),
       );
     case 'error':
       return FlashProgress(
         bytesDone: 0,
         bytesTotal: 0,
         phase: FlashPhase.failed,
-        message: obj['message'] as String?,
+        message: _jsonString(obj['message']),
       );
     default:
       return null;
   }
 }
+
+Map<String, dynamic>? _decodeJsonObject(String line) {
+  try {
+    final decoded = jsonDecode(line);
+    if (decoded is! Map) return null;
+    final out = <String, dynamic>{};
+    for (final entry in decoded.entries) {
+      final key = entry.key;
+      if (key is String) out[key] = entry.value;
+    }
+    return out;
+  } catch (_) {
+    return null;
+  }
+}
+
+String? _jsonString(Object? value) => value is String ? value : null;
+
+int _jsonInt(Object? value) =>
+    value is num && value.isFinite ? value.toInt() : 0;
 
 class _HelperEventState {
   bool started = false;
@@ -1010,22 +1027,18 @@ class _HelperEventState {
   void addLine(String line) {
     final trimmed = line.trim();
     if (trimmed.isEmpty) return;
-    try {
-      final obj = jsonDecode(trimmed);
-      if (obj is! Map<String, dynamic>) return;
-      switch (obj['event']) {
-        case 'started':
-          started = true;
-        case 'done':
-          done = true;
-        case 'error':
-          final msg = obj['message'];
-          if (msg is String && msg.trim().isNotEmpty) {
-            errorMessage = msg.trim();
-          }
-      }
-    } catch (_) {
-      return;
+    final obj = _decodeJsonObject(trimmed);
+    if (obj == null) return;
+    switch (_jsonString(obj['event'])) {
+      case 'started':
+        started = true;
+      case 'done':
+        done = true;
+      case 'error':
+        final msg = _jsonString(obj['message']);
+        if (msg != null && msg.trim().isNotEmpty) {
+          errorMessage = msg.trim();
+        }
     }
   }
 }
@@ -1095,12 +1108,8 @@ Iterable<Map<String, dynamic>> _decodeHelperEvents(String events) sync* {
   for (final line in const LineSplitter().convert(events)) {
     final trimmed = line.trim();
     if (trimmed.isEmpty) continue;
-    try {
-      final obj = jsonDecode(trimmed);
-      if (obj is Map<String, dynamic>) yield obj;
-    } catch (_) {
-      continue;
-    }
+    final obj = _decodeJsonObject(trimmed);
+    if (obj != null) yield obj;
   }
 }
 

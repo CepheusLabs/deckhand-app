@@ -79,6 +79,32 @@ void main() {
       );
     });
 
+    test('malformed event fields do not crash the stream', () {
+      final progress = parseHelperLineForTesting(
+        '{"event":"progress","phase":7,"bytes_done":"bad","bytes_total":{}}',
+      );
+      expect(progress, isNotNull);
+      expect(progress!.phase, FlashPhase.preparing);
+      expect(progress.bytesDone, 0);
+      expect(progress.bytesTotal, 0);
+
+      final done = parseHelperLineForTesting(
+        '{"event":"done","bytes":"bad","sha256":false}',
+      );
+      expect(done, isNotNull);
+      expect(done!.phase, FlashPhase.done);
+      expect(done.bytesDone, 0);
+      expect(done.bytesTotal, 0);
+      expect(done.message, isNull);
+
+      final error = parseHelperLineForTesting(
+        '{"event":"error","message":["not","a","string"]}',
+      );
+      expect(error, isNotNull);
+      expect(error!.phase, FlashPhase.failed);
+      expect(error.message, isNull);
+    });
+
     test('windows-style trailing CRLF is tolerated', () {
       // PowerShell-redirected stdout on NTFS sometimes lands with
       // \r\n line endings; the parser sees the pre-split line
