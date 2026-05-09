@@ -59,6 +59,44 @@ void main() {
       expect(doctor.calls, 1);
       expect(settings.saveCalls, 1);
     });
+
+    test('decodes malformed cached result maps defensively', () async {
+      final settings = DeckhandSettings(
+        path: '<memory>',
+        initial: {
+          'last_preflight': {
+            'passed': true,
+            'report': '[PASS] cached',
+            'results': [
+              <Object?, Object?>{
+                42: 'ignored',
+                'name': 'runtime',
+                'status': 'PASS',
+                'detail': 'ok',
+              },
+            ],
+          },
+        },
+      );
+      final container = ProviderContainer(
+        overrides: [
+          deckhandSettingsProvider.overrideWithValue(settings),
+          doctorServiceProvider.overrideWithValue(
+            _StaticDoctor(
+              const DoctorReport(passed: true, results: [], report: ''),
+            ),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      final report = await container.read(preflightReportProvider.future);
+
+      expect(report.passed, isTrue);
+      expect(report.results.single.name, 'runtime');
+      expect(report.results.single.status, DoctorStatus.pass);
+      expect(report.results.single.detail, 'ok');
+    });
   });
 
   group('isPersistableWizardState', () {

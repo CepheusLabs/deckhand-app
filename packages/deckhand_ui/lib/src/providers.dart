@@ -155,7 +155,11 @@ DoctorReport _decodeCachedReport(Map<String, dynamic> raw) {
   if (list is List) {
     for (final entry in list) {
       if (entry is Map) {
-        final m = entry.cast<String, dynamic>();
+        final m = <String, dynamic>{};
+        for (final row in entry.entries) {
+          final key = row.key;
+          if (key is String) m[key] = row.value;
+        }
         results.add(
           DoctorResult(
             name: m['name'] as String? ?? '',
