@@ -513,8 +513,8 @@ Future<void> _runScriptImpl(
   final remote = '/tmp/deckhand-${c._randomSuffix()}-$basename';
   await c.ssh.upload(s, local, remote, mode: 448); // 0o700
   final extraArgs = _stringList(step['args']);
-  final ignoreErrors = step['ignore_errors'] as bool? ?? false;
-  final timeoutSecs = (step['timeout_seconds'] as num?)?.toInt() ?? 600;
+  final ignoreErrors = _boolValue(step['ignore_errors']);
+  final timeoutSecs = _positiveIntValue(step['timeout_seconds'], 600);
   // Two orthogonal knobs, intentionally un-coupled:
   //   - `sudo: true`  -> wrap the whole invocation in `sudo -E`
   //                      so the script runs as root from line 1.
@@ -525,9 +525,9 @@ Future<void> _runScriptImpl(
   //                      cached password (i.e. password SSH). Turn
   //                      off with `askpass: false` for scripts you
   //                      want to prove don't elevate at all.
-  final useSudo = step['sudo'] as bool? ?? false;
+  final useSudo = _boolValue(step['sudo']);
   final setUpAskpass =
-      (step['askpass'] as bool? ?? true) && c._sshPassword != null;
+      _boolValueOr(step['askpass'], true) && c._sshPassword != null;
 
   final argStr = extraArgs.map(shellSingleQuote).join(' ');
   final qRemote = shellSingleQuote(remote);

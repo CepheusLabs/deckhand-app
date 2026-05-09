@@ -744,7 +744,7 @@ Future<void> _runWaitForSshImpl(
           'Install the eMMC in the printer, power it on, then connect to the printer to continue.',
     );
   }
-  final timeoutSecs = (step['timeout_seconds'] as num?)?.toInt() ?? 600;
+  final timeoutSecs = _positiveIntValue(step['timeout_seconds'], 600);
   final ok = await c.discovery.waitForSsh(
     host: host,
     timeout: Duration(seconds: timeoutSecs),
@@ -889,3 +889,16 @@ List<String> _stringList(Object? value) {
 String? _stringValue(Object? value) => value is String ? value : null;
 
 bool _boolValue(Object? value) => value is bool ? value : false;
+
+bool _boolValueOr(Object? value, bool fallback) =>
+    value is bool ? value : fallback;
+
+int _positiveIntValue(Object? value, int fallback) {
+  final parsed = switch (value) {
+    num() => value.toInt(),
+    String() => int.tryParse(value.trim()),
+    _ => null,
+  };
+  if (parsed == null || parsed <= 0) return fallback;
+  return parsed;
+}

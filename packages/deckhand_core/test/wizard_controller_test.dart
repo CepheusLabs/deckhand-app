@@ -285,6 +285,30 @@ void main() {
 
       expect(discovery.waitForSshCalls, ['192.168.1.50']);
     });
+
+    test('falls back when wait timeout metadata is malformed', () async {
+      final discovery = _StubDiscoveryService();
+      final controller = newController(
+        profileJson: baseProfileJson(
+          stockKeepSteps: [
+            {
+              'id': 'wait_for_ssh',
+              'kind': 'wait_for_ssh',
+              'timeout_seconds': ['600'],
+            },
+          ],
+        ),
+        discovery: discovery,
+      );
+      await controller.loadProfile('test-printer');
+      controller.setFlow(WizardFlow.stockKeep);
+      await controller.connectSsh(host: '192.168.1.50');
+
+      await controller.startExecution();
+
+      expect(discovery.waitForSshCalls, ['192.168.1.50']);
+      expect(discovery.waitForSshTimeouts, [const Duration(seconds: 600)]);
+    });
   });
 
   group('WizardController._resolveOrAwaitInput', () {
@@ -2782,6 +2806,37 @@ void main() {
       expect(run, isNot(contains("'42'")));
     });
 
+    test('script falls back on malformed execution flags', () async {
+      final tmp = await _stageLocalScript('flags.sh');
+      final ssh = FakeSsh();
+      final controller = newController(
+        profileJson: baseProfileJson(
+          stockKeepSteps: [
+            {
+              'id': 'sh',
+              'kind': 'script',
+              'path': tmp,
+              'ignore_errors': ['false'],
+              'timeout_seconds': ['600'],
+              'sudo': ['true'],
+              'askpass': ['true'],
+            },
+          ],
+        ),
+        ssh: ssh,
+      );
+      await controller.loadProfile('test-printer');
+      controller.setFlow(WizardFlow.stockKeep);
+      controller.setSession(
+        const SshSession(id: 'fake', host: 'h', port: 22, user: 'root'),
+      );
+
+      await controller.startExecution();
+
+      final run = ssh.steps.firstWhere((c) => c.contains('/tmp/deckhand-'));
+      expect(run, startsWith('bash '));
+    });
+
     test('runtime skips malformed command and conditional rows', () async {
       final ssh = FakeSsh();
       final controller = newController(
@@ -3464,6 +3519,7 @@ class _StubFlashService implements FlashService {
 
 class _StubDiscoveryService implements DiscoveryService {
   final waitForSshCalls = <String>[];
+  final waitForSshTimeouts = <Duration>[];
 
   @override
   Future<List<DiscoveredPrinter>> scanCidr({
@@ -3482,6 +3538,7 @@ class _StubDiscoveryService implements DiscoveryService {
     Duration timeout = const Duration(minutes: 10),
   }) async {
     waitForSshCalls.add(host);
+    waitForSshTimeouts.add(timeout);
     return true;
   }
 }
