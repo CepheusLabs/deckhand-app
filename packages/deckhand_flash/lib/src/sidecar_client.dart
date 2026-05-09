@@ -12,10 +12,7 @@ import 'package:uuid/uuid.dart';
 /// type so they can be wired against either at the binding site
 /// without code change.
 abstract class SidecarConnection {
-  Future<Map<String, dynamic>> call(
-    String method,
-    Map<String, dynamic> params,
-  );
+  Future<Map<String, dynamic>> call(String method, Map<String, dynamic> params);
   Stream<SidecarEvent> callStreaming(
     String method,
     Map<String, dynamic> params,
@@ -147,7 +144,8 @@ class SidecarClient implements SidecarConnection {
   /// can't trace that ownership chain.
   @override
   Stream<SidecarNotification> subscribeToOperation(String operationId) {
-    final c = _operationSubscribers.putIfAbsent( // ignore: close_sinks
+    final c = _operationSubscribers.putIfAbsent(
+      // ignore: close_sinks
       operationId,
       () => StreamController<SidecarNotification>.broadcast(),
     );
@@ -257,20 +255,15 @@ class SidecarClient implements SidecarConnection {
 
   void _handleLine(String line) {
     if (line.trim().isEmpty) return;
-    Map<String, dynamic> obj;
-    try {
-      obj = jsonDecode(line) as Map<String, dynamic>;
-    } catch (_) {
-      return; // malformed line, ignore
-    }
+    final obj = _decodeJsonObject(line);
+    if (obj == null) return; // malformed line, ignore
 
     // Notification (no id)
     if (!obj.containsKey('id')) {
-      final params =
-          (obj['params'] as Map?)?.cast<String, dynamic>() ?? const {};
-      final opId = params['operation_id'] as String?;
+      final params = _jsonMap(obj['params']) ?? const <String, dynamic>{};
+      final opId = _jsonString(params['operation_id']);
       final note = SidecarNotification(
-        method: obj['method'] as String? ?? '',
+        method: _jsonString(obj['method']) ?? '',
         params: params,
         operationId: opId,
       );
@@ -294,27 +287,27 @@ class SidecarClient implements SidecarConnection {
       // with a readable message instead of crashing the isolate.
       final errRaw = obj['error'];
       if (errRaw is! Map) {
-        completer.completeError(const SidecarError(
-          code: -1,
-          message: 'sidecar returned malformed error envelope',
-        ));
+        completer.completeError(
+          const SidecarError(
+            code: -1,
+            message: 'sidecar returned malformed error envelope',
+          ),
+        );
         return;
       }
-      final err = errRaw.cast<String, dynamic>();
+      final err = _stringKeyMap(errRaw);
       final rawCode = err['code'];
       final code = rawCode is num ? rawCode.toInt() : -1;
       completer.completeError(
         SidecarError(
           code: code,
-          message: err['message'] as String? ?? '',
+          message: _jsonString(err['message']) ?? '',
           data: err['data'],
         ),
       );
     } else {
       final result = obj['result'];
-      completer.complete(
-        result is Map<String, dynamic> ? result : {'value': result},
-      );
+      completer.complete(_jsonMap(result) ?? {'value': result});
     }
   }
 
@@ -331,6 +324,29 @@ class SidecarClient implements SidecarConnection {
     _pending.clear();
   }
 }
+
+Map<String, dynamic>? _decodeJsonObject(String line) {
+  try {
+    final decoded = jsonDecode(line);
+    return _jsonMap(decoded);
+  } catch (_) {
+    return null;
+  }
+}
+
+Map<String, dynamic>? _jsonMap(Object? value) =>
+    value is Map ? _stringKeyMap(value) : null;
+
+Map<String, dynamic> _stringKeyMap(Map value) {
+  final out = <String, dynamic>{};
+  for (final entry in value.entries) {
+    final key = entry.key;
+    if (key is String) out[key] = entry.value;
+  }
+  return out;
+}
+
+String? _jsonString(Object? value) => value is String ? value : null;
 
 /// A notification emitted by the sidecar (no response expected).
 class SidecarNotification {
