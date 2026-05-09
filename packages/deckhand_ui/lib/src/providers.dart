@@ -28,18 +28,20 @@ class ThemeModeController extends Notifier<ThemeMode> {
     return _decode(settings.themeModeName);
   }
 
-  /// Update the runtime mode and persist it. Save errors are
-  /// swallowed (logged at the OS level by [DeckhandSettings.save]'s
-  /// caller) — a flaky disk shouldn't block a theme toggle.
+  /// Update the runtime mode and persist it. If the write fails, roll
+  /// the runtime state back so the UI does not imply a preference was
+  /// saved when a restart would lose it.
   Future<void> set(ThemeMode mode) async {
+    final previousState = state;
     state = mode;
     final settings = ref.read(deckhandSettingsProvider);
+    final previousName = settings.themeModeName;
     settings.themeModeName = _encode(mode);
     try {
       await settings.save();
     } catch (_) {
-      // Persistence is best-effort; theme will reset on restart if
-      // the disk write failed, which is a tolerable degradation.
+      settings.themeModeName = previousName;
+      state = previousState;
     }
   }
 

@@ -1,5 +1,6 @@
 import 'package:deckhand_core/deckhand_core.dart';
 import 'package:deckhand_ui/src/providers.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -9,6 +10,24 @@ import 'package:flutter_test/flutter_test.dart';
 /// tests pin the predicate so a future refactor can't reintroduce
 /// that regression.
 void main() {
+  group('themeModeProvider', () {
+    test('rolls runtime state back when saving the preference fails', () async {
+      final settings = _ThrowingSettings();
+      final container = ProviderContainer(
+        overrides: [deckhandSettingsProvider.overrideWithValue(settings)],
+      );
+      addTearDown(container.dispose);
+
+      expect(container.read(themeModeProvider), ThemeMode.system);
+
+      await container.read(themeModeProvider.notifier).set(ThemeMode.dark);
+
+      expect(container.read(themeModeProvider), ThemeMode.system);
+      expect(settings.themeModeName, 'system');
+      expect(settings.saveCalls, 1);
+    });
+  });
+
   group('preflightReportProvider', () {
     test('returns the live report when first-run cache save fails', () async {
       final settings = _ThrowingSettings();
