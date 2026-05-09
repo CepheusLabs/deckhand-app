@@ -454,11 +454,12 @@ class SavedHost {
         lastUsed = null;
       }
     }
-    final port = (j['port'] is num) ? (j['port'] as num).toInt() : 22;
+    final rawPort = (j['port'] is num) ? (j['port'] as num).toInt() : 22;
+    final port = rawPort >= 1 && rawPort <= 65535 ? rawPort : 22;
     return SavedHost(
-      host: (j['host'] as String?) ?? '',
+      host: ((j['host'] as String?) ?? '').trim(),
       port: port,
-      user: (j['user'] as String?) ?? '',
+      user: ((j['user'] as String?) ?? '').trim(),
       lastUsed: lastUsed,
     );
   }

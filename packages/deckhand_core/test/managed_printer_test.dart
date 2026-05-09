@@ -2,6 +2,20 @@ import 'package:deckhand_core/deckhand_core.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  group('SavedHost', () {
+    test('normalizes malformed persisted ports', () {
+      final saved = SavedHost.fromJson({
+        'host': ' 192.168.1.50 ',
+        'user': ' mks ',
+        'port': 70000,
+      });
+
+      expect(saved.host, '192.168.1.50');
+      expect(saved.user, 'mks');
+      expect(saved.port, 22);
+    });
+  });
+
   group('ManagedPrinter', () {
     test('round trips through settings json', () {
       final settings = DeckhandSettings(path: '<memory>');
