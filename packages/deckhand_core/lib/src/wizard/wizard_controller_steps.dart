@@ -281,7 +281,7 @@ Future<void> _runOsDownloadImpl(
   WizardController c,
   Map<String, dynamic> step,
 ) async {
-  final osId = c._state.decisions['flash.os'] as String?;
+  final osId = _stringValue(c._state.decisions['flash.os']);
   if (osId == null) throw StepExecutionException('no OS image selected');
   final opt = c._profile!.os.freshInstallOptions.firstWhere(
     (o) => o.id == osId,
@@ -300,11 +300,11 @@ Future<void> _runOsDownloadImpl(
   final defaultOsImageDir =
       c.osImagesDir ?? p.join(Directory.systemTemp.path, 'deckhand-os-images');
   final dest =
-      step['dest'] as String? ??
+      _stringValue(step['dest']) ??
       p.join(defaultOsImageDir, '${_safeOsImageCacheIdImpl(opt.id)}.img');
   c._log(step, '[os] preparing ${opt.url} -> $dest');
 
-  final stepId = step['id'] as String? ?? 'os_download';
+  final stepId = _stringValue(step['id']) ?? 'os_download';
   String? sha;
   var actualPath = dest;
   await for (final ev in c.upstream.osDownload(
@@ -381,10 +381,10 @@ Future<void> _runFlashDiskImpl(
   WizardController c,
   Map<String, dynamic> step,
 ) async {
-  final diskId = c._state.decisions['flash.disk'] as String?;
+  final diskId = _stringValue(c._state.decisions['flash.disk']);
   if (diskId == null) throw StepExecutionException('no flash disk selected');
   final diskName = await _userFacingDiskNameForIdImpl(c, diskId);
-  final imagePath = c._state.decisions['flash.image_path'] as String?;
+  final imagePath = _stringValue(c._state.decisions['flash.image_path']);
   if (imagePath == null) {
     throw StepExecutionException(
       'no image path recorded - did os_download run?',
@@ -441,9 +441,9 @@ Future<void> _runFlashDiskImpl(
       'confirmation token was rejected before helper launch',
     );
   }
-  final verify = step['verify_after_write'] as bool? ?? true;
+  final verify = _boolValueOr(step['verify_after_write'], true);
   final expectedSha = await _resolveExpectedFlashSha256Impl(c);
-  final stepId = step['id'] as String? ?? 'flash_disk';
+  final stepId = _stringValue(step['id']) ?? 'flash_disk';
   c._log(step, '[flash] writing $imagePath -> $diskName (verify=$verify)');
 
   await for (final ev in helper.writeImage(
@@ -463,9 +463,9 @@ Future<void> _runFlashDiskImpl(
 }
 
 Future<String> _resolveExpectedFlashSha256Impl(WizardController c) async {
-  final recorded = (c._state.decisions['flash.image_sha256'] as String?)
-      ?.trim()
-      .toLowerCase();
+  final recorded = _stringValue(
+    c._state.decisions['flash.image_sha256'],
+  )?.trim().toLowerCase();
   if (recorded != null && _isSha256HexImpl(recorded)) {
     if (recorded != c._state.decisions['flash.image_sha256']) {
       await c.setDecision('flash.image_sha256', recorded);
@@ -473,7 +473,7 @@ Future<String> _resolveExpectedFlashSha256Impl(WizardController c) async {
     return recorded;
   }
 
-  final osId = c._state.decisions['flash.os'] as String?;
+  final osId = _stringValue(c._state.decisions['flash.os']);
   if (osId != null) {
     for (final opt
         in c._profile?.os.freshInstallOptions ?? const <OsImageOption>[]) {

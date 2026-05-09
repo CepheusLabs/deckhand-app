@@ -557,6 +557,45 @@ void main() {
       expect(controller.state.decisions['flash.image_path'], expectedPath);
     });
 
+    test('uses configured cache when dest metadata is malformed', () async {
+      final cacheDir = await Directory.systemTemp.createTemp(
+        'deckhand-core-os-cache-',
+      );
+      addTearDown(() async => cacheDir.delete(recursive: true));
+      final expectedPath = p.join(cacheDir.path, 'debian-bookworm.img');
+      final upstream = FakeUpstream()
+        ..addDownloadEvent(
+          const OsDownloadProgress(
+            bytesDone: 0,
+            bytesTotal: 0,
+            phase: OsDownloadPhase.done,
+            sha256: validImageSha,
+          ),
+        );
+
+      final controller = newController(
+        profileJson: baseProfileJson(
+          freshFlashSteps: [
+            {
+              'id': 'download_os',
+              'kind': 'os_download',
+              'dest': ['C:/tmp/bad.img'],
+            },
+          ],
+        ),
+        upstream: upstream,
+        osImagesDir: cacheDir.path,
+      );
+      await controller.loadProfile('test-printer');
+      controller.setFlow(WizardFlow.freshFlash);
+      await controller.setDecision('flash.os', 'debian-bookworm');
+
+      await controller.startExecution();
+
+      expect(upstream.downloadCalls.single.destPath, expectedPath);
+      expect(controller.state.decisions['flash.image_path'], expectedPath);
+    });
+
     test(
       'rejects OS image profiles without an authenticated download',
       () async {
@@ -718,6 +757,45 @@ void main() {
         expect(helper.calls, hasLength(1));
         expect(helper.calls.single.expectedSha256, validImageSha);
         expect(controller.state.decisions['flash.image_sha256'], validImageSha);
+      },
+    );
+
+    test(
+      'falls back on malformed verify flag and recorded sha metadata',
+      () async {
+        final helper = FakeElevatedHelper()
+          ..addEvent(
+            const FlashProgress(
+              bytesDone: 1,
+              bytesTotal: 1,
+              phase: FlashPhase.done,
+            ),
+          );
+        final controller = newController(
+          profileJson: baseProfileJson(
+            freshFlashSteps: [
+              {
+                'id': 'flash_disk',
+                'kind': 'flash_disk',
+                'verify_after_write': ['false'],
+              },
+            ],
+          ),
+          helper: helper,
+          security: FakeSecurity(),
+        );
+        await controller.loadProfile('test-printer');
+        controller.setFlow(WizardFlow.freshFlash);
+        await controller.setDecision('flash.os', 'debian-bookworm');
+        await controller.setDecision('flash.disk', 'PhysicalDrive3');
+        await controller.setDecision('flash.image_path', 'C:/tmp/test.img');
+        await controller.setDecision('flash.image_sha256', ['bad']);
+
+        await controller.startExecution();
+
+        expect(helper.calls, hasLength(1));
+        expect(helper.calls.single.verifyAfterWrite, true);
+        expect(helper.calls.single.expectedSha256, validImageSha);
       },
     );
 
