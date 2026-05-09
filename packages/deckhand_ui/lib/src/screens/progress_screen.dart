@@ -205,14 +205,14 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> {
       (s) => s['id'] == stepId,
       orElse: () => const <String, dynamic>{},
     );
-    return step?['kind'] as String?;
+    return _jsonString(step?['kind']);
   }
 
   Future<void> _handleUserInput(
     String stepId,
     Map<String, dynamic> step,
   ) async {
-    final kind = step['kind'] as String? ?? '';
+    final kind = _jsonString(step['kind']) ?? '';
     final controller = ref.read(wizardControllerProvider);
     switch (kind) {
       case 'prompt':
@@ -233,8 +233,8 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> {
   }
 
   Future<String?> _showPromptDialog(Map<String, dynamic> step) async {
-    final message = step['message'] as String? ?? '';
-    final rawActions = (step['actions'] as List?) ?? const [];
+    final message = _jsonString(step['message']) ?? '';
+    final rawActions = _jsonList(step['actions']);
     final actions = rawActions
         .map(_stringKeyMap)
         .whereType<Map<String, dynamic>>()
@@ -249,7 +249,7 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> {
     final buttons = actions.isEmpty
         ? [(id: 'continue', label: t.progress.prompt_default_action)]
         : actions;
-    final title = step['title'] as String? ?? t.progress.prompt_default_title;
+    final title = _jsonString(step['title']) ?? t.progress.prompt_default_title;
     return _showFadedDialog<String>(
       barrierDismissible: false,
       child: Center(
@@ -292,13 +292,13 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> {
       child: StatefulBuilder(
         builder: (context, setLocal) => AlertDialog(
           title: Text(
-            step['title'] as String? ?? t.progress.choose_one_default_title,
+            _jsonString(step['title']) ?? t.progress.choose_one_default_title,
           ),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              if (step['question'] != null) ...[
-                Text(flattenProfileText(step['question'] as String)),
+              if (_jsonString(step['question']) case final question?) ...[
+                Text(flattenProfileText(question)),
                 const SizedBox(height: 16),
               ],
               RadioGroup<String>(
@@ -346,7 +346,7 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> {
     Map<String, dynamic> step,
     PrinterProfile? profile,
   ) {
-    final inline = (step['options'] as List?) ?? const [];
+    final inline = _jsonList(step['options']);
     if (inline.isNotEmpty) {
       return inline
           .map(_stringKeyMap)
@@ -362,7 +362,7 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> {
           .where((o) => o.id.isNotEmpty && o.label.isNotEmpty)
           .toList();
     }
-    final from = step['options_from'] as String?;
+    final from = _jsonString(step['options_from']);
     if (from == null || profile == null) return const [];
     switch (from) {
       case 'os.fresh_install_options':
@@ -381,7 +381,7 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> {
               (s) => (
                 id: s.id,
                 label: s.displayName ?? s.id,
-                subtitle: s.raw['description'] as String?,
+                subtitle: _jsonString(s.raw['description']),
               ),
             )
             .toList();
@@ -391,7 +391,7 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> {
               (a) => (
                 id: a.id,
                 label: a.displayName ?? a.id,
-                subtitle: a.raw['description'] as String?,
+                subtitle: _jsonString(a.raw['description']),
               ),
             )
             .toList();
@@ -401,12 +401,12 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> {
               (m) => (
                 id: m.id,
                 label: m.displayName ?? m.id,
-                subtitle: m.raw['description'] as String?,
+                subtitle: _jsonString(m.raw['description']),
               ),
             )
             .toList();
       case 'stack.webui.choices':
-        final choices = (profile.stack.webui?['choices'] as List?) ?? const [];
+        final choices = _jsonList(profile.stack.webui?['choices']);
         return choices
             .map(_stringKeyMap)
             .whereType<Map<String, dynamic>>()
@@ -484,7 +484,9 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> {
       barrierDismissible: false,
       child: StatefulBuilder(
         builder: (context, setLocal) => AlertDialog(
-          title: Text(step['title'] as String? ?? t.progress.disk_picker_title),
+          title: Text(
+            _jsonString(step['title']) ?? t.progress.disk_picker_title,
+          ),
           content: SizedBox(
             width: 480,
             child: RadioGroup<String>(
@@ -623,8 +625,8 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> {
     return [
       for (final step in rawSteps)
         RunStep(
-          id: step['id'] as String? ?? '',
-          kind: step['kind'] as String? ?? '',
+          id: _jsonString(step['id']) ?? '',
+          kind: _jsonString(step['kind']) ?? '',
         ),
     ].where((step) => step.id.isNotEmpty).toList();
   }
@@ -766,6 +768,8 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> {
 }
 
 String? _jsonString(Object? value) => value is String ? value : null;
+
+List<Object?> _jsonList(Object? value) => value is List ? value : const [];
 
 Map<String, dynamic>? _stringKeyMap(Object? value) {
   if (value is! Map) return null;

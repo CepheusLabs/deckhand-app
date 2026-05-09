@@ -158,6 +158,41 @@ void main() {
       await tester.pumpAndSettle();
     });
 
+    testWidgets('prompt step tolerates malformed optional text fields', (
+      tester,
+    ) async {
+      final controller = stubWizardController(
+        profileJson: testProfileJson(
+          stockKeepSteps: [
+            {
+              'id': 'continue_prompt',
+              'kind': 'prompt',
+              'title': 42,
+              'message': ['bad shape'],
+              'actions': {'not': 'a list'},
+            },
+          ],
+        ),
+      );
+      await controller.loadProfile('test-printer');
+      controller.setFlow(WizardFlow.stockKeep);
+      await tester.pumpWidget(
+        testHarness(
+          controller: controller,
+          child: const ProgressScreen(),
+          initialLocation: '/progress',
+        ),
+      );
+
+      for (var i = 0; i < 10; i++) {
+        await tester.pump(const Duration(milliseconds: 50));
+      }
+
+      expect(find.text('Continue'), findsOneWidget);
+      await tester.tap(find.text('Continue'));
+      await tester.pumpAndSettle();
+    });
+
     testWidgets('prompt step with no actions falls back to a Continue button', (
       tester,
     ) async {
@@ -350,6 +385,87 @@ void main() {
         await tester.pump(const Duration(milliseconds: 50));
       }
       expect(find.text('All done'), findsOneWidget);
+    });
+
+    testWidgets('choose_one step tolerates malformed optional text fields', (
+      tester,
+    ) async {
+      final controller = stubWizardController(
+        profileJson: testProfileJson(
+          stockKeepSteps: [
+            {
+              'id': 'choice',
+              'kind': 'choose_one',
+              'title': 42,
+              'question': ['bad shape'],
+              'options': [
+                {
+                  'id': 'a',
+                  'label': 'Option A',
+                  'description': ['bad'],
+                },
+              ],
+            },
+          ],
+        ),
+      );
+      await controller.loadProfile('test-printer');
+      controller.setFlow(WizardFlow.stockKeep);
+      await tester.pumpWidget(
+        testHarness(
+          controller: controller,
+          child: const ProgressScreen(),
+          initialLocation: '/progress',
+        ),
+      );
+
+      for (var i = 0; i < 10; i++) {
+        await tester.pump(const Duration(milliseconds: 50));
+      }
+
+      expect(find.text('Option A'), findsOneWidget);
+      expect(find.textContaining('bad shape'), findsNothing);
+      await tester.tap(find.widgetWithText(FilledButton, 'OK'));
+      await tester.pumpAndSettle();
+    });
+
+    testWidgets('choose_one screens skip malformed descriptions', (
+      tester,
+    ) async {
+      final controller = stubWizardController(
+        profileJson: {
+          ...testProfileJson(
+            stockKeepSteps: [
+              {'id': 'screen', 'kind': 'choose_one', 'options_from': 'screens'},
+            ],
+          ),
+          'screens': [
+            {
+              'id': 'stock',
+              'display_name': 'Stock screen',
+              'description': ['bad shape'],
+            },
+          ],
+        },
+      );
+      await controller.loadProfile('test-printer');
+      controller.setFlow(WizardFlow.stockKeep);
+      await tester.pumpWidget(
+        testHarness(
+          controller: controller,
+          child: const ProgressScreen(),
+          initialLocation: '/progress',
+        ),
+      );
+
+      for (var i = 0; i < 10; i++) {
+        await tester.pump(const Duration(milliseconds: 50));
+      }
+
+      expect(find.text('Stock screen'), findsOneWidget);
+      expect(find.textContaining('bad shape'), findsNothing);
+      await tester.tap(find.widgetWithText(FilledButton, 'OK'));
+      await tester.pumpAndSettle();
     });
 
     test('progressRunErrorMessage explains Windows volume lock failures', () {
