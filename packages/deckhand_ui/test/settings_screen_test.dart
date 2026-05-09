@@ -208,13 +208,53 @@ void main() {
     expect(find.textContaining('PHYSICALDRIVE3'), findsNothing);
     expect(find.textContaining('StateError'), findsNothing);
   });
+
+  testWidgets('Developer mode toggle rolls back when saving fails', (
+    tester,
+  ) async {
+    final settings = _MemorySettings(
+      saveError: StateError(r'write settings failed on \\.\PHYSICALDRIVE3'),
+    );
+    final controller = stubWizardController(profileJson: testProfileJson());
+    await controller.loadProfile('test-printer');
+
+    await tester.pumpWidget(
+      testHarness(
+        controller: controller,
+        child: const SettingsScreen(),
+        initialLocation: '/settings',
+        extraOverrides: [deckhandSettingsProvider.overrideWithValue(settings)],
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(find.text('Advanced'));
+    await tester.pump();
+    await tester.tap(find.byType(Switch));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+
+    final toggle = tester.widget<Switch>(find.byType(Switch));
+    expect(toggle.value, isFalse);
+    expect(settings.developerMode, isFalse);
+    expect(find.textContaining('Could not save developer mode'), findsOne);
+    expect(find.textContaining('Windows disk 3'), findsOne);
+    expect(find.textContaining('PHYSICALDRIVE3'), findsNothing);
+  });
 }
 
 class _MemorySettings extends DeckhandSettings {
-  _MemorySettings() : super(path: '<memory>');
+  _MemorySettings({this.saveError}) : super(path: '<memory>');
+
+  final Object? saveError;
 
   @override
-  Future<void> save() async {}
+  Future<void> save() async {
+    final error = saveError;
+    if (error != null) {
+      throw error;
+    }
+  }
 }
 
 class _CountingDoctor implements DoctorService {

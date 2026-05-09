@@ -171,12 +171,17 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   }
 
   Future<void> _setDeveloperMode(bool value) async {
+    final previous = _developerMode;
     setState(() => _developerMode = value);
     final settings = ref.read(deckhandSettingsProvider);
     settings.developerMode = value;
     try {
       await settings.save();
     } catch (e) {
+      settings.developerMode = previous;
+      if (mounted) {
+        setState(() => _developerMode = previous);
+      }
       _toast('Could not save developer mode: ${userFacingError(e)}');
     }
   }
