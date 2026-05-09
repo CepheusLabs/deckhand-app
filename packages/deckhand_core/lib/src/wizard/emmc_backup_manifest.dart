@@ -413,14 +413,52 @@ Future<List<EmmcBackupManifest>> scanEmmcBackupManifests(String dir) async {
     }
     final manifest = await _readManifest(entity);
     if (manifest == null) continue;
-    final image = File(manifest.imagePath);
+    final manifestImagePath = await _manifestImagePath(manifest, entity);
+    if (manifestImagePath == null) continue;
+    final image = File(manifestImagePath);
     if (!await image.exists()) continue;
     if (await image.length() != manifest.imageBytes) continue;
-    manifests.add(manifest);
+    manifests.add(
+      manifest.imagePath == manifestImagePath
+          ? manifest
+          : _copyManifestWithImagePath(manifest, manifestImagePath),
+    );
   }
   manifests.sort((a, b) => b.createdAt.compareTo(a.createdAt));
   return manifests;
 }
+
+Future<String?> _manifestImagePath(
+  EmmcBackupManifest manifest,
+  File manifestFile,
+) async {
+  if (manifest.imagePath.isNotEmpty && await File(manifest.imagePath).exists()) {
+    return manifest.imagePath;
+  }
+  final sibling = _imagePathFromManifestPath(manifestFile.path);
+  if (sibling == null || !await File(sibling).exists()) return null;
+  return sibling;
+}
+
+String? _imagePathFromManifestPath(String manifestPath) {
+  const suffix = '.manifest.json';
+  if (!manifestPath.toLowerCase().endsWith(suffix)) return null;
+  return manifestPath.substring(0, manifestPath.length - suffix.length);
+}
+
+EmmcBackupManifest _copyManifestWithImagePath(
+  EmmcBackupManifest manifest,
+  String imagePath,
+) => EmmcBackupManifest(
+  schemaVersion: manifest.schemaVersion,
+  createdAt: manifest.createdAt,
+  profileId: manifest.profileId,
+  imagePath: imagePath,
+  imageBytes: manifest.imageBytes,
+  imageSha256: manifest.imageSha256,
+  disk: manifest.disk,
+  deckhandVersion: manifest.deckhandVersion,
+);
 
 Future<List<EmmcBackupImageCandidate>> scanEmmcBackupImageCandidates(
   String dir,

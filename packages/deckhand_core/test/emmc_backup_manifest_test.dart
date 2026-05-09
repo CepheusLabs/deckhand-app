@@ -141,6 +141,34 @@ void main() {
     expect(manifests.single.imagePath, image.path);
   });
 
+  test('scanner recovers moved backup folders from sibling image path', () async {
+    final dir = await Directory.systemTemp.createTemp(
+      'deckhand_emmc_manifest_moved_',
+    );
+    addTearDown(() async {
+      if (await dir.exists()) await dir.delete(recursive: true);
+    });
+
+    final image = File(p.join(dir.path, 'emmc.img'));
+    await image.writeAsBytes(List<int>.filled(4096, 7), flush: true);
+    final manifest = EmmcBackupManifest.create(
+      profileId: 'phrozen-arco',
+      imagePath: p.join(dir.path, 'old-location', 'emmc.img'),
+      imageBytes: 4096,
+      imageSha256: 'b' * 64,
+      disk: disk,
+      deckhandVersion: 'dev',
+    );
+    await File(
+      emmcBackupManifestPath(image.path),
+    ).writeAsString(jsonEncode(manifest.toJson()), flush: true);
+
+    final manifests = await scanEmmcBackupManifests(dir.path);
+
+    expect(manifests, hasLength(1));
+    expect(manifests.single.imagePath, image.path);
+  });
+
   test(
     'scanner returns full-size image candidates without manifests',
     () async {
