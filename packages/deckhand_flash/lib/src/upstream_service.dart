@@ -58,9 +58,18 @@ class SidecarUpstreamService implements UpstreamService {
       'ref': ref,
       'dest': destPath,
     });
+    final localPath = _jsonString(res['local_path']);
+    if (localPath == null || localPath.trim().isEmpty) {
+      throw UpstreamException(
+        'profiles.fetch returned no local_path for $repoUrl@$ref',
+      );
+    }
+    final resolvedRef = _jsonString(res['resolved_ref']);
     return UpstreamFetchResult(
-      localPath: res['local_path'] as String,
-      resolvedRef: res['resolved_ref'] as String? ?? ref,
+      localPath: localPath,
+      resolvedRef: resolvedRef == null || resolvedRef.trim().isEmpty
+          ? ref
+          : resolvedRef,
     );
   }
 
@@ -74,8 +83,8 @@ class SidecarUpstreamService implements UpstreamService {
   }) async {
     _validateReleaseRepoSlug(repoSlug);
     _validateAssetPattern(assetPattern);
-    final normalizedExpected = expectedSha256.trim().toLowerCase();
-    if (!RegExp(r'^[0-9a-f]{64}$').hasMatch(normalizedExpected)) {
+    final normalizedExpected = _normalizedSha256(expectedSha256);
+    if (normalizedExpected == null) {
       throw UpstreamException(
         'release asset $repoSlug/$assetPattern has invalid sha256',
       );
@@ -86,7 +95,7 @@ class SidecarUpstreamService implements UpstreamService {
         : 'https://api.github.com/repos/$repoSlug/releases/tags/$tag';
 
     final rel = await _getReleaseJson(url);
-    final tagName = rel['tag_name'] as String? ?? tag ?? 'unknown';
+    final tagName = _jsonString(rel['tag_name']) ?? tag ?? 'unknown';
     final assets = _releaseAssets(rel['assets']);
     final match = assets.firstWhere(
       (a) => _matches(_jsonString(a['name']) ?? '', assetPattern),
@@ -216,7 +225,13 @@ class SidecarUpstreamService implements UpstreamService {
 
   Future<String> _hashFile(String outPath) async {
     final hashRes = await sidecar.call('disks.hash', {'path': outPath});
-    return (hashRes['sha256'] as String? ?? '').trim().toLowerCase();
+    final sha = _normalizedSha256(_jsonString(hashRes['sha256']));
+    if (sha == null) {
+      throw UpstreamException(
+        'disks.hash returned an invalid sha256 for $outPath',
+      );
+    }
+    return sha;
   }
 
   @override
@@ -229,9 +244,8 @@ class SidecarUpstreamService implements UpstreamService {
     if (parsed == null || parsed.scheme != 'https' || parsed.host.isEmpty) {
       throw UpstreamException('OS image downloads must use https:// URLs');
     }
-    final normalizedExpected = expectedSha256?.trim().toLowerCase();
-    if (normalizedExpected == null ||
-        !RegExp(r'^[0-9a-f]{64}$').hasMatch(normalizedExpected)) {
+    final normalizedExpected = _normalizedSha256(expectedSha256);
+    if (normalizedExpected == null) {
       throw UpstreamException('OS image downloads require a 64-hex sha256');
     }
     final safeDestPath = _validateManagedOsImageDest(destPath);
@@ -295,6 +309,12 @@ class SidecarUpstreamService implements UpstreamService {
         }
         if (progress.bytesDone > bytesSeen) bytesSeen = progress.bytesDone;
         if (progress.phase == OsDownloadPhase.done) {
+          final actualSha = _normalizedSha256(progress.sha256);
+          if (actualSha == null) {
+            throw UpstreamException(
+              'os.download returned an invalid sha256 for $safeDestPath',
+            );
+          }
           final resultPath = progress.path == null
               ? safeDestPath
               : _validateSidecarResultPath(progress.path!);
@@ -307,7 +327,7 @@ class SidecarUpstreamService implements UpstreamService {
             url: url,
             destPath: resultPath,
             expectedSha256: normalizedExpected,
-            actualSha256: progress.sha256 ?? normalizedExpected,
+            actualSha256: actualSha,
             reused: progress.reused,
           );
           completed = true;
@@ -326,6 +346,15 @@ class SidecarUpstreamService implements UpstreamService {
               ),
             );
           }
+          yield OsDownloadProgress(
+            bytesDone: progress.bytesDone,
+            bytesTotal: progress.bytesTotal,
+            phase: progress.phase,
+            sha256: actualSha,
+            path: resultPath,
+            reused: progress.reused,
+          );
+          continue;
         }
         yield progress;
       }
@@ -479,10 +508,11 @@ class SidecarUpstreamService implements UpstreamService {
       return null;
     }
     final actualSha = _jsonString(decoded['actual_sha256']);
-    if (actualSha == null || !RegExp(r'^[0-9a-f]{64}$').hasMatch(actualSha)) {
+    final normalizedActualSha = _normalizedSha256(actualSha);
+    if (normalizedActualSha == null) {
       return null;
     }
-    return actualSha;
+    return normalizedActualSha;
   }
 
   Future<String> _hashLocalFile(String path) async {
@@ -639,9 +669,9 @@ final _osDownloadTransformer =
         switch (event) {
           case SidecarProgress(:final notification):
             final p = notification.params;
-            final done = (p['bytes_done'] as num?)?.toInt() ?? 0;
-            final total = (p['bytes_total'] as num?)?.toInt() ?? 0;
-            final phase = _phaseFromString(p['phase'] as String?);
+            final done = _eventInt(p['bytes_done']);
+            final total = _eventInt(p['bytes_total']);
+            final phase = _phaseFromString(_eventString(p['phase']));
             sink.add(
               OsDownloadProgress(
                 bytesDone: done,
@@ -655,14 +685,31 @@ final _osDownloadTransformer =
                 bytesDone: 0,
                 bytesTotal: 0,
                 phase: OsDownloadPhase.done,
-                sha256: result['sha256'] as String?,
-                path: result['path'] as String?,
-                reused: result['reused'] as bool? ?? false,
+                sha256: _eventString(result['sha256']),
+                path: _eventString(result['path']),
+                reused: _eventBool(result['reused']),
               ),
             );
         }
       },
     );
+
+final _sha256Pattern = RegExp(r'^[0-9a-f]{64}$');
+
+String? _normalizedSha256(String? value) {
+  final normalized = value?.trim().toLowerCase();
+  if (normalized == null || !_sha256Pattern.hasMatch(normalized)) return null;
+  return normalized;
+}
+
+String? _eventString(Object? value) => value is String ? value : null;
+
+bool _eventBool(Object? value) => value is bool && value;
+
+int _eventInt(Object? value) {
+  if (value is! num || !value.isFinite || value <= 0) return 0;
+  return value.toInt();
+}
 
 OsDownloadPhase _phaseFromString(String? s) => switch (s) {
   'downloading' => OsDownloadPhase.downloading,

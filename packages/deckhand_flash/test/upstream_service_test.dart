@@ -11,6 +11,35 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
 
 void main() {
+  group('SidecarUpstreamService.gitFetch', () {
+    test('rejects sidecar profile fetch responses without local_path', () async {
+      final sidecar = _FakeSidecar(
+        hash:
+            'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        profilesFetchResult: const {'resolved_ref': 'abc123'},
+      );
+      final svc = SidecarUpstreamService(
+        sidecar: sidecar,
+        security: _AllowAllSecurity(),
+      );
+
+      await expectLater(
+        svc.gitFetch(
+          repoUrl: 'https://example.com/profiles.git',
+          ref: 'main',
+          destPath: '/tmp/profiles',
+        ),
+        throwsA(
+          isA<UpstreamException>().having(
+            (e) => e.message,
+            'message',
+            contains('local_path'),
+          ),
+        ),
+      );
+    });
+  });
+
   group('SidecarUpstreamService.releaseFetch', () {
     test('verifies downloaded release asset sha256 before returning', () async {
       final tmp = await Directory.systemTemp.createTemp('deckhand-upstream-');
@@ -65,6 +94,37 @@ void main() {
         throwsA(isA<UpstreamException>()),
       );
       expect(File(p.join(tmp.path, 'fluidd.zip')).existsSync(), isFalse);
+    });
+
+    test('rejects invalid sidecar hash responses', () async {
+      final tmp = await Directory.systemTemp.createTemp('deckhand-upstream-');
+      addTearDown(() async => tmp.delete(recursive: true));
+
+      final expected =
+          'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+      final sidecar = _FakeSidecar(hash: 'not-a-sha');
+      final dio = Dio()..httpClientAdapter = _FakeGitHubAdapter();
+      final svc = SidecarUpstreamService(
+        sidecar: sidecar,
+        security: _AllowAllSecurity(),
+        dio: dio,
+      );
+
+      await expectLater(
+        svc.releaseFetch(
+          repoSlug: 'fluidd-core/fluidd',
+          assetPattern: 'fluidd.zip',
+          destPath: tmp.path,
+          expectedSha256: expected,
+        ),
+        throwsA(
+          isA<UpstreamException>().having(
+            (e) => e.message,
+            'message',
+            contains('invalid sha256'),
+          ),
+        ),
+      );
     });
 
     test('requires approval for the actual release asset host', () async {
@@ -728,6 +788,83 @@ void main() {
       expect(security.egressRecords.last.bytes, 1024);
     });
 
+    test('tolerates malformed sidecar progress fields', () async {
+      final dest = _managedOsImageDest('malformed-progress.img');
+      addTearDown(() async {
+        await _deleteIfExists(dest);
+        await _deleteIfExists('$dest.deckhand-download.json');
+      });
+      final expected =
+          'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+      final sidecar = _FakeSidecar(
+        hash: expected,
+        streamEvents: [
+          const SidecarProgress(
+            SidecarNotification(
+              method: 'os.download.progress',
+              params: {
+                'bytes_done': 'bad',
+                'bytes_total': ['bad'],
+                'phase': 42,
+              },
+            ),
+          ),
+          SidecarResult({'sha256': expected, 'path': dest, 'reused': false}),
+        ],
+      );
+      final security = _AllowAllSecurity();
+      final svc = SidecarUpstreamService(sidecar: sidecar, security: security);
+
+      final events = await svc
+          .osDownload(
+            url: 'https://example.com/image.img',
+            destPath: dest,
+            expectedSha256: expected,
+          )
+          .toList();
+
+      expect(events.first.bytesDone, 0);
+      expect(events.first.bytesTotal, 0);
+      expect(events.first.phase, OsDownloadPhase.downloading);
+      expect(events.last.phase, OsDownloadPhase.done);
+    });
+
+    test('rejects sidecar completion without a valid image sha256', () async {
+      final dest = _managedOsImageDest('invalid-result-sha.img');
+      addTearDown(() async {
+        await _deleteIfExists(dest);
+        await _deleteIfExists('$dest.deckhand-download.json');
+      });
+      final expected =
+          'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+      final sidecar = _FakeSidecar(
+        hash: expected,
+        streamEvents: [
+          SidecarResult({'sha256': 'not-a-sha', 'path': dest}),
+        ],
+      );
+      final security = _AllowAllSecurity();
+      final svc = SidecarUpstreamService(sidecar: sidecar, security: security);
+
+      await expectLater(
+        svc
+            .osDownload(
+              url: 'https://example.com/image.img',
+              destPath: dest,
+              expectedSha256: expected,
+            )
+            .drain<void>(),
+        throwsA(
+          isA<UpstreamException>().having(
+            (e) => e.message,
+            'message',
+            contains('invalid sha256'),
+          ),
+        ),
+      );
+      expect(File('$dest.deckhand-download.json').existsSync(), isFalse);
+    });
+
     test(
       'does not record egress when only extracting a cached artifact',
       () async {
@@ -899,11 +1036,15 @@ class _FakeGitHubAdapter implements HttpClientAdapter {
 }
 
 class _FakeSidecar implements SidecarConnection {
-  _FakeSidecar({required this.hash, List<SidecarEvent>? streamEvents})
-    : _streamEvents = streamEvents ?? const [];
+  _FakeSidecar({
+    required this.hash,
+    List<SidecarEvent>? streamEvents,
+    this.profilesFetchResult,
+  }) : _streamEvents = streamEvents ?? const [];
 
   final String hash;
   final List<SidecarEvent> _streamEvents;
+  final Map<String, dynamic>? profilesFetchResult;
   final hashPaths = <String>[];
   final streamingCalls = <({String method, Map<String, dynamic> params})>[];
 
@@ -915,6 +1056,10 @@ class _FakeSidecar implements SidecarConnection {
     if (method == 'disks.hash') {
       hashPaths.add(params['path'] as String);
       return {'sha256': hash};
+    }
+    if (method == 'profiles.fetch') {
+      return profilesFetchResult ??
+          {'local_path': params['dest'], 'resolved_ref': 'abc123'};
     }
     throw StateError('unexpected sidecar method: $method');
   }
