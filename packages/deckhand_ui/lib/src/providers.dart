@@ -253,6 +253,13 @@ final osImageCacheProvider = FutureProvider<List<OsImageCacheEntry>>((
 ) async {
   final dir = ref.watch(osImagesDirProvider);
   if (dir == null || dir.trim().isEmpty) return const [];
+  final retentionDays = ref.watch(deckhandSettingsProvider).cacheRetentionDays;
+  if (retentionDays > 0) {
+    await pruneOsImageCache(
+      root: dir,
+      olderThan: DateTime.now().subtract(Duration(days: retentionDays)),
+    );
+  }
   return scanOsImageCache(dir);
 });
 

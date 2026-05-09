@@ -145,4 +145,62 @@ void main() {
     expect(clearOsImageCache(root.path), throwsA(isA<FileSystemException>()));
     expect(await target.exists(), isTrue);
   });
+
+  test('pruneOsImageCache removes entries older than cutoff', () async {
+    final root = await Directory.systemTemp.createTemp('deckhand-cache-test-');
+    addTearDown(() => root.delete(recursive: true));
+
+    final stale = File(p.join(root.path, 'stale.img'));
+    final fresh = File(p.join(root.path, 'fresh.img'));
+    await stale.writeAsBytes([1]);
+    await fresh.writeAsBytes([2]);
+    final staleManifest = File('${stale.path}$osImageDownloadManifestSuffix');
+    await staleManifest.writeAsString(
+      jsonEncode({
+        'schema_version': 1,
+        'downloaded_at': '2026-05-01T00:00:00Z',
+      }),
+    );
+    await File('${stale.path}.part').writeAsBytes([3]);
+    await File('${fresh.path}$osImageDownloadManifestSuffix').writeAsString(
+      jsonEncode({
+        'schema_version': 1,
+        'downloaded_at': '2026-05-08T00:00:00Z',
+      }),
+    );
+
+    final deleted = await pruneOsImageCache(
+      root: root.path,
+      olderThan: DateTime.utc(2026, 5, 4),
+    );
+
+    expect(deleted, 1);
+    expect(await stale.exists(), isFalse);
+    expect(await staleManifest.exists(), isFalse);
+    expect(await File('${stale.path}.part').exists(), isFalse);
+    expect(await fresh.exists(), isTrue);
+  });
+
+  test('pruneOsImageCache keeps entries touched at cutoff', () async {
+    final root = await Directory.systemTemp.createTemp('deckhand-cache-test-');
+    addTearDown(() => root.delete(recursive: true));
+
+    final image = File(p.join(root.path, 'edge.img'));
+    await image.writeAsBytes([1]);
+    await File('${image.path}$osImageDownloadManifestSuffix').writeAsString(
+      jsonEncode({
+        'schema_version': 1,
+        'reused_at': '2026-05-04T00:00:00Z',
+        'downloaded_at': '2026-05-01T00:00:00Z',
+      }),
+    );
+
+    final deleted = await pruneOsImageCache(
+      root: root.path,
+      olderThan: DateTime.utc(2026, 5, 4),
+    );
+
+    expect(deleted, 0);
+    expect(await image.exists(), isTrue);
+  });
 }

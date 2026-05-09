@@ -144,6 +144,20 @@ Future<int> clearOsImageCache(String root) async {
   return deleted;
 }
 
+Future<int> pruneOsImageCache({
+  required String root,
+  required DateTime olderThan,
+}) async {
+  final entries = await scanOsImageCache(root);
+  var deleted = 0;
+  for (final entry in entries) {
+    if (!entry.lastTouchedAt.isBefore(olderThan)) continue;
+    await deleteOsImageCacheEntry(root: root, imagePath: entry.imagePath);
+    deleted++;
+  }
+  return deleted;
+}
+
 Future<_OsImageManifest?> _readOsImageManifest(String imagePath) async {
   final manifestPath = '$imagePath$osImageDownloadManifestSuffix';
   final type = await FileSystemEntity.type(manifestPath, followLinks: false);

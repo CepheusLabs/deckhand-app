@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:deckhand_core/deckhand_core.dart';
@@ -157,6 +158,11 @@ Future<void> main() async {
       osImagesDir = p.join(Directory.systemTemp.path, 'deckhand-os-images');
     }
     await Directory(osImagesDir).create(recursive: true);
+    startOsImageCachePrune(
+      root: osImagesDir,
+      retentionDays: settings.cacheRetentionDays,
+      errorSink: persistenceErrorSink,
+    );
 
     // Env var still takes precedence over settings (developer override
     // that's more visible than a JSON file). For non-release builds we
@@ -324,6 +330,26 @@ Future<void> main() async {
       ),
     );
   }
+}
+
+void startOsImageCachePrune({
+  required String root,
+  required int retentionDays,
+  required void Function(Object error, StackTrace stackTrace) errorSink,
+}) {
+  if (retentionDays <= 0) return;
+  unawaited(
+    Future<void>(() async {
+      try {
+        await pruneOsImageCache(
+          root: root,
+          olderThan: DateTime.now().subtract(Duration(days: retentionDays)),
+        );
+      } catch (e, st) {
+        errorSink(e, st);
+      }
+    }),
+  );
 }
 
 String _resolveSidecarPath() {
