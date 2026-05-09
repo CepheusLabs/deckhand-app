@@ -152,6 +152,95 @@ void main() {
       expect(find.text('Provider Printer'), findsNothing);
     });
 
+    testWidgets('shows a warning when forgetting a printer cannot be saved', (
+      tester,
+    ) async {
+      await tester.binding.setSurfaceSize(const Size(1200, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      final controller = stubWizardController(profileJson: testProfileJson());
+      await controller.loadProfile('test-printer');
+      final registry = _MemoryManagedPrinterRegistry([
+        ManagedPrinter.fromConnection(
+          profileId: 'test-printer',
+          displayName: 'Provider Printer',
+          host: '192.168.1.60',
+          port: 22,
+          user: 'mks',
+          lastSeen: DateTime.utc(2026, 5, 4, 14),
+        ),
+      ], failSave: true);
+
+      await tester.pumpWidget(
+        testHarness(
+          controller: controller,
+          child: const PrintersScreen(),
+          initialLocation: '/printers',
+          extraOverrides: [
+            managedPrinterRegistryProvider.overrideWithValue(registry),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byTooltip('Forget printer'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 250));
+
+      expect(registry.listManagedPrinters(), isEmpty);
+      expect(find.text('Provider Printer'), findsNothing);
+      expect(
+        find.textContaining("Deckhand couldn't save that change"),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('sanitizes profile load errors when opening manage', (
+      tester,
+    ) async {
+      await tester.binding.setSurfaceSize(const Size(1200, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      final profiles = _SelectiveProfileService(
+        PrinterProfile.fromJson(testProfileJson()),
+      );
+      final controller = stubWizardController(
+        profileJson: testProfileJson(),
+        profiles: profiles,
+      );
+      await controller.loadProfile('test-printer');
+      final registry = _MemoryManagedPrinterRegistry([
+        ManagedPrinter.fromConnection(
+          profileId: 'missing-profile',
+          displayName: 'Missing Profile Printer',
+          host: '192.168.1.60',
+          port: 22,
+          user: 'mks',
+          lastSeen: DateTime.utc(2026, 5, 4, 14),
+        ),
+      ]);
+
+      await tester.pumpWidget(
+        testHarness(
+          controller: controller,
+          child: const PrintersScreen(),
+          initialLocation: '/printers',
+          extraOverrides: [
+            managedPrinterRegistryProvider.overrideWithValue(registry),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.widgetWithText(OutlinedButton, 'Manage'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+
+      expect(find.text("Couldn't open this printer"), findsOneWidget);
+      expect(find.textContaining('Windows disk 3'), findsOneWidget);
+      expect(find.textContaining('PHYSICALDRIVE3'), findsNothing);
+    });
+
     testWidgets('filters saved printers by name, host, profile, or user', (
       tester,
     ) async {
@@ -211,10 +300,13 @@ void main() {
 }
 
 class _MemoryManagedPrinterRegistry implements ManagedPrinterRegistry {
-  _MemoryManagedPrinterRegistry(List<ManagedPrinter> printers)
-    : _printers = printers.toList();
+  _MemoryManagedPrinterRegistry(
+    List<ManagedPrinter> printers, {
+    this.failSave = false,
+  }) : _printers = printers.toList();
 
   final List<ManagedPrinter> _printers;
+  final bool failSave;
   bool saved = false;
 
   @override
@@ -235,5 +327,38 @@ class _MemoryManagedPrinterRegistry implements ManagedPrinterRegistry {
   @override
   Future<void> save() async {
     saved = true;
+    if (failSave) {
+      throw StateError('write settings failed on \\\\.\\PHYSICALDRIVE3');
+    }
   }
+}
+
+class _SelectiveProfileService implements ProfileService {
+  _SelectiveProfileService(this.profile);
+
+  final PrinterProfile profile;
+
+  @override
+  Future<ProfileCacheEntry> ensureCached({
+    required String profileId,
+    String? ref,
+    bool force = false,
+  }) async {
+    if (profileId != profile.id) {
+      throw StateError('profile load failed on \\\\.\\PHYSICALDRIVE3');
+    }
+    return ProfileCacheEntry(
+      profileId: profileId,
+      ref: ref ?? 'main',
+      localPath: '.',
+      resolvedSha: '',
+    );
+  }
+
+  @override
+  Future<ProfileRegistry> fetchRegistry({bool force = false}) async =>
+      const ProfileRegistry(entries: []);
+
+  @override
+  Future<PrinterProfile> load(ProfileCacheEntry cacheEntry) async => profile;
 }

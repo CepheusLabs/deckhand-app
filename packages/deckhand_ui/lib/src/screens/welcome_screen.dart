@@ -370,9 +370,17 @@ class _ManagedPrintersPanelState extends ConsumerState<_ManagedPrintersPanel> {
     setState(() {});
     try {
       await registry.save();
-    } catch (_) {
-      // The registry is still updated in memory; a later settings
-      // write can persist it if the file is temporarily unavailable.
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            "Deckhand couldn't save that change. The printer is removed "
+            'for this session, but may return after restart: '
+            '${userFacingError(error)}',
+          ),
+        ),
+      );
     }
   }
 

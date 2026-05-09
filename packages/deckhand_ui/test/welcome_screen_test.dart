@@ -239,6 +239,49 @@ void main() {
       expect(find.text('Provider Printer'), findsNothing);
     });
 
+    testWidgets('known printers panel warns when forget cannot be saved', (
+      tester,
+    ) async {
+      await tester.binding.setSurfaceSize(const Size(1200, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      final controller = stubWizardController(profileJson: testProfileJson());
+      await controller.loadProfile('test-printer');
+      final registry = _MemoryManagedPrinterRegistry([
+        ManagedPrinter.fromConnection(
+          profileId: 'test-printer',
+          displayName: 'Provider Printer',
+          host: '192.168.1.60',
+          port: 22,
+          user: 'mks',
+          lastSeen: DateTime.utc(2026, 5, 4, 14),
+        ),
+      ], failSave: true);
+
+      await tester.pumpWidget(
+        testHarness(
+          controller: controller,
+          child: const WelcomeScreen(),
+          initialLocation: '/',
+          extraOverrides: [
+            managedPrinterRegistryProvider.overrideWithValue(registry),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byTooltip('Forget printer'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 250));
+
+      expect(registry.listManagedPrinters(), isEmpty);
+      expect(find.text('Provider Printer'), findsNothing);
+      expect(
+        find.textContaining("Deckhand couldn't save that change"),
+        findsOneWidget,
+      );
+    });
+
     testWidgets('known printers panel links to overflow printers', (
       tester,
     ) async {
@@ -280,10 +323,13 @@ void main() {
 }
 
 class _MemoryManagedPrinterRegistry implements ManagedPrinterRegistry {
-  _MemoryManagedPrinterRegistry(List<ManagedPrinter> printers)
-    : _printers = printers.toList();
+  _MemoryManagedPrinterRegistry(
+    List<ManagedPrinter> printers, {
+    this.failSave = false,
+  }) : _printers = printers.toList();
 
   final List<ManagedPrinter> _printers;
+  final bool failSave;
   bool saved = false;
 
   @override
@@ -304,5 +350,8 @@ class _MemoryManagedPrinterRegistry implements ManagedPrinterRegistry {
   @override
   Future<void> save() async {
     saved = true;
+    if (failSave) {
+      throw StateError('write settings failed on \\\\.\\PHYSICALDRIVE3');
+    }
   }
 }

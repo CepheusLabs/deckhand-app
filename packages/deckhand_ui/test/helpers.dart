@@ -190,12 +190,14 @@ Map<String, dynamic> testProfileJson({
 /// widget tests to mount screens that read from the provider.
 WizardController stubWizardController({
   required Map<String, dynamic> profileJson,
+  ProfileService? profiles,
   SshService? ssh,
   UpstreamService? upstream,
   SecurityService? security,
 }) {
   return WizardController(
-    profiles: _StubProfileService(PrinterProfile.fromJson(profileJson)),
+    profiles:
+        profiles ?? _StubProfileService(PrinterProfile.fromJson(profileJson)),
     ssh: ssh ?? _StubSsh(),
     flash: _StubFlash(),
     discovery: _StubDiscovery(),

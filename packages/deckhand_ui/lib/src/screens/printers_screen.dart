@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 
 import '../providers.dart';
 import '../theming/deckhand_tokens.dart';
+import '../utils/user_facing_errors.dart';
 import '../widgets/deckhand_loading.dart';
 import '../widgets/id_tag.dart';
 import '../widgets/wizard_scaffold.dart';
@@ -54,7 +55,8 @@ class _PrintersScreenState extends ConsumerState<PrintersScreen> {
           title: const Text("Couldn't open this printer"),
           content: Text(
             'Deckhand found "${printer.displayName}", but the profile '
-            '"${printer.profileId}" could not be loaded:\n\n${e.cause}',
+            '"${printer.profileId}" could not be loaded:\n\n'
+            '${userFacingError(e.cause)}',
           ),
           actions: [
             FilledButton(
@@ -76,9 +78,17 @@ class _PrintersScreenState extends ConsumerState<PrintersScreen> {
     setState(() {});
     try {
       await registry.save();
-    } catch (_) {
-      // Keep the in-memory registry updated even if the settings file
-      // is temporarily unavailable. A later settings write can persist it.
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            "Deckhand couldn't save that change. The printer is removed "
+            'for this session, but may return after restart: '
+            '${userFacingError(error)}',
+          ),
+        ),
+      );
     }
   }
 
