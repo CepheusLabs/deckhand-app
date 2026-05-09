@@ -87,13 +87,20 @@ class DeckhandSettings {
   /// duplicating it. Capped at 10 to keep the Saved tab scannable;
   /// older rows roll off.
   void recordSavedHost(SavedHost h) {
+    final normalized = SavedHost(
+      host: h.host.trim(),
+      port: h.port >= 1 && h.port <= 65535 ? h.port : 22,
+      user: h.user.trim(),
+      lastUsed: h.lastUsed,
+    );
+    if (normalized.host.isEmpty || normalized.user.isEmpty) return;
     final list = savedHosts.toList();
     list.removeWhere(
       (e) =>
-          e.host.toLowerCase() == h.host.toLowerCase() &&
-          e.user.toLowerCase() == h.user.toLowerCase(),
+          e.host.toLowerCase() == normalized.host.toLowerCase() &&
+          e.user.toLowerCase() == normalized.user.toLowerCase(),
     );
-    list.insert(0, h);
+    list.insert(0, normalized);
     while (list.length > 10) {
       list.removeLast();
     }

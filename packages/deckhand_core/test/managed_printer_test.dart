@@ -14,6 +14,19 @@ void main() {
       expect(saved.user, 'mks');
       expect(saved.port, 22);
     });
+
+    test('does not record incomplete saved hosts', () {
+      final settings = DeckhandSettings(path: '<memory>');
+
+      settings.recordSavedHost(
+        const SavedHost(host: ' ', port: 22, user: 'mks'),
+      );
+      settings.recordSavedHost(
+        const SavedHost(host: '192.168.1.50', port: 22, user: ''),
+      );
+
+      expect(settings.savedHosts, isEmpty);
+    });
   });
 
   group('ManagedPrinter', () {
