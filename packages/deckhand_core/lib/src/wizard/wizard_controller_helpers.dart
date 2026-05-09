@@ -232,7 +232,10 @@ String _buildEnvPrefixImpl(Object? rawEnv) {
 }
 
 String _validatedScriptInterpreterImpl(Object? raw) {
-  final interpreter = raw as String? ?? 'bash';
+  if (raw != null && raw is! String) {
+    throw StepExecutionException('script interpreter must be a string');
+  }
+  final interpreter = raw is String ? raw : 'bash';
   final commandName = RegExp(r'^[A-Za-z_][A-Za-z0-9._+-]*$');
   final absolutePath = RegExp(r'^/(?:[A-Za-z0-9._+-]+/)*[A-Za-z0-9._+-]+$');
   if (!commandName.hasMatch(interpreter) &&

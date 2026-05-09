@@ -1183,6 +1183,33 @@ void main() {
       expect(ssh.steps.any((c) => c.contains('/tmp/pwned')), isFalse);
     });
 
+    test('rejects non-string script interpreters before upload', () async {
+      final tmp = await _stageLocalScript('bad-interpreter.sh');
+      final ssh = FakeSsh();
+      final controller = newController(
+        profileJson: baseProfileJson(
+          stockKeepSteps: [
+            {
+              'id': 'sh',
+              'kind': 'script',
+              'path': tmp,
+              'interpreter': ['bash'],
+            },
+          ],
+        ),
+        ssh: ssh,
+      );
+      await controller.loadProfile('test-printer');
+      controller.setFlow(WizardFlow.stockKeep);
+      await controller.connectSsh(host: '127.0.0.1');
+
+      await expectLater(
+        controller.startExecution(),
+        throwsA(isA<StepExecutionException>()),
+      );
+      expect(ssh.uploadCalls, isEmpty);
+    });
+
     test(
       'script with sudo:true AND no askpass uses sudoPassword forwarding',
       () async {
