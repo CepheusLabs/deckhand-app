@@ -254,6 +254,42 @@ void main() {
       expect(find.textContaining('Test eMMC'), findsWidgets);
     });
 
+    testWidgets('backup helper failures hide raw disk ids', (tester) async {
+      final controller = stubWizardController(profileJson: testProfileJson());
+      await controller.loadProfile('test-printer');
+      await controller.setDecision('flash.disk', 'disk-1');
+      final helper = _StreamingElevatedHelper();
+      final backupRoot = _createTempBackupRoot();
+
+      await tester.pumpWidget(
+        testHarness(
+          controller: controller,
+          child: const EmmcBackupScreen(),
+          initialLocation: '/snapshot',
+          extraOverrides: [
+            flashServiceProvider.overrideWithValue(_OneDiskFlash()),
+            elevatedHelperServiceProvider.overrideWithValue(helper),
+            emmcBackupsDirProvider.overrideWithValue(backupRoot),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await _tapStartBackup(tester);
+      helper.add(
+        const FlashProgress(
+          bytesDone: 1024,
+          bytesTotal: 4096,
+          phase: FlashPhase.failed,
+          message: r'write \\.\PHYSICALDRIVE3: Access is denied.',
+        ),
+      );
+      await tester.pump();
+
+      expect(find.textContaining('Windows denied raw-disk access'), findsOne);
+      expect(find.textContaining('PHYSICALDRIVE3'), findsNothing);
+    });
+
     testWidgets('successful backup writes an eMMC manifest', (tester) async {
       final controller = stubWizardController(profileJson: testProfileJson());
       await controller.loadProfile('test-printer');
@@ -331,10 +367,7 @@ void main() {
         ('read-token-0123456789abcdef', 'disks.read_image'),
       ]);
       expect(helper.readCalls, 0);
-      expect(
-        find.textContaining('confirmation token was rejected'),
-        findsWidgets,
-      );
+      expect(find.textContaining('Deckhand rejected'), findsWidgets);
     });
 
     testWidgets(

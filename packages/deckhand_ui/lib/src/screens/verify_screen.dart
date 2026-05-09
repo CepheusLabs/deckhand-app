@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import '../i18n/translations.g.dart';
 import '../providers.dart';
 import '../theming/deckhand_tokens.dart';
+import '../utils/user_facing_errors.dart';
 import '../widgets/deckhand_loading.dart';
 import '../widgets/profile_text.dart';
 import '../widgets/status_pill.dart';
@@ -32,7 +33,7 @@ class _VerifyScreenState extends ConsumerState<VerifyScreen> {
       await ref.read(wizardControllerProvider).restoreBackup(b);
     } catch (e) {
       if (!mounted) return;
-      setState(() => _restoreError = '$e');
+      setState(() => _restoreError = userFacingError(e));
     } finally {
       if (mounted) setState(() => _restoring.remove(b.backupPath));
     }
@@ -49,7 +50,7 @@ class _VerifyScreenState extends ConsumerState<VerifyScreen> {
       await ref.read(wizardControllerProvider).deleteBackup(b);
     } catch (e) {
       if (!mounted) return;
-      setState(() => _restoreError = '$e');
+      setState(() => _restoreError = userFacingError(e));
     } finally {
       if (mounted) setState(() => _deleting.remove(b.backupPath));
     }

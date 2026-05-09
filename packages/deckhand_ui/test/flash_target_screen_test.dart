@@ -82,6 +82,30 @@ void main() {
       expect(find.text('Generic STORAGE DEVICE'), findsOneWidget);
       expect(find.text('PhysicalDrive3'), findsNothing);
     });
+
+    testWidgets('sanitizes disk enumeration errors', (tester) async {
+      final controller = stubWizardController(profileJson: testProfileJson());
+      await controller.loadProfile('test-printer');
+
+      await tester.pumpWidget(
+        testHarness(
+          controller: controller,
+          child: const FlashTargetScreen(),
+          initialLocation: '/flash-target',
+          extraOverrides: [
+            flashServiceProvider.overrideWithValue(
+              const _FailingFlashService(),
+            ),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('Error listing disks'), findsOneWidget);
+      expect(find.textContaining('Windows disk 3'), findsOneWidget);
+      expect(find.textContaining('PHYSICALDRIVE3'), findsNothing);
+      expect(find.textContaining('StateError'), findsNothing);
+    });
   });
 }
 
@@ -98,6 +122,35 @@ class _MutableFlashService implements FlashService {
 
   @override
   Future<List<DiskInfo>> listDisks() async => disks;
+
+  @override
+  Future<FlashSafetyVerdict> safetyCheck({required String diskId}) async =>
+      FlashSafetyVerdict(diskId: diskId, allowed: true);
+
+  @override
+  Stream<FlashProgress> readImage({
+    required String diskId,
+    required String outputPath,
+  }) => const Stream.empty();
+
+  @override
+  Future<String> sha256(String path) async => '';
+
+  @override
+  Stream<FlashProgress> writeImage({
+    required String imagePath,
+    required String diskId,
+    required String confirmationToken,
+    bool verifyAfterWrite = true,
+  }) => const Stream.empty();
+}
+
+class _FailingFlashService implements FlashService {
+  const _FailingFlashService();
+
+  @override
+  Future<List<DiskInfo>> listDisks() async =>
+      throw StateError(r'Get-Disk failed for \\.\PHYSICALDRIVE3');
 
   @override
   Future<FlashSafetyVerdict> safetyCheck({required String diskId}) async =>

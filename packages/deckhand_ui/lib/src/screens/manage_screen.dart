@@ -11,6 +11,7 @@ import '../providers.dart';
 import '../theming/deckhand_tokens.dart';
 import '../utils/disk_display.dart';
 import '../utils/disk_operation_errors.dart';
+import '../utils/user_facing_errors.dart';
 import '../widgets/deckhand_loading.dart';
 import '../widgets/wizard_progress_bar.dart';
 import '../widgets/wizard_scaffold.dart';
@@ -297,7 +298,7 @@ class _StatusTabState extends ConsumerState<_StatusTab> {
       final printing = await moonraker.isPrinting(host: host);
       return _StatusSnapshot.ok(info: info, printing: printing, host: host);
     } catch (e) {
-      return _StatusSnapshot.error(host: host, message: e.toString());
+      return _StatusSnapshot.error(host: host, message: userFacingError(e));
     }
   }
 

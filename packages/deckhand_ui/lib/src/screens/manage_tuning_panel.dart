@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers.dart';
 import '../theming/deckhand_tokens.dart';
+import '../utils/user_facing_errors.dart';
 import '../widgets/deckhand_loading.dart';
 import '../widgets/deckhand_panel.dart';
 
@@ -83,7 +84,7 @@ class _ManageTuningPanelState extends ConsumerState<ManageTuningPanel> {
       }
       return snapshot;
     } catch (e) {
-      return _TuningSnapshot.error(host: host, message: e.toString());
+      return _TuningSnapshot.error(host: host, message: userFacingError(e));
     }
   }
 
@@ -203,9 +204,9 @@ class _ManageTuningPanelState extends ConsumerState<ManageTuningPanel> {
       _refresh();
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Tuning command failed: $e')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Tuning command failed: ${userFacingError(e)}')),
+      );
     } finally {
       if (mounted) setState(() => _busyScript = null);
     }
@@ -256,7 +257,7 @@ class _ManageTuningPanelState extends ConsumerState<ManageTuningPanel> {
       setState(() => _managedPreview = preview);
     } catch (e) {
       if (!mounted) return;
-      setState(() => _managedError = '$e');
+      setState(() => _managedError = userFacingError(e));
     } finally {
       if (mounted) setState(() => _managedBusy = false);
     }
@@ -291,7 +292,7 @@ class _ManageTuningPanelState extends ConsumerState<ManageTuningPanel> {
       _refresh();
     } catch (e) {
       if (!mounted) return;
-      setState(() => _managedError = '$e');
+      setState(() => _managedError = userFacingError(e));
     } finally {
       if (mounted) setState(() => _managedBusy = false);
     }

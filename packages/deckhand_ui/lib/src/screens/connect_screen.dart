@@ -11,6 +11,7 @@ import '../i18n/translations.g.dart';
 import '../providers.dart';
 import '../screens/debug_bundle_screen.dart';
 import '../theming/deckhand_tokens.dart';
+import '../utils/user_facing_errors.dart';
 import '../widgets/deckhand_loading.dart';
 import '../widgets/save_debug_bundle.dart';
 import '../widgets/status_pill.dart';
@@ -360,7 +361,7 @@ class _ConnectScreenState extends ConsumerState<ConnectScreen> {
       }
       if (mounted) setState(() => _error = e.userTitle);
     } catch (e) {
-      setState(() => _error = '$e');
+      setState(() => _error = userFacingError(e));
     } finally {
       if (mounted) {
         setState(() {

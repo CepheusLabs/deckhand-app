@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import '../providers.dart';
 import '../theming/deckhand_tokens.dart';
 import '../utils/disk_display.dart';
+import '../utils/user_facing_errors.dart';
 import '../widgets/deckhand_loading.dart';
 import '../widgets/wizard_scaffold.dart';
 
@@ -186,7 +187,7 @@ class _FlashConfirmScreenState extends ConsumerState<FlashConfirmScreen> {
               : blockingError != null
               ? _FlashConfirmProblem(
                   title: 'Cannot prepare flash confirmation',
-                  message: '$blockingError',
+                  message: userFacingError(blockingError),
                   onBack: () => context.go('/choose-os'),
                 )
               : missingDisk

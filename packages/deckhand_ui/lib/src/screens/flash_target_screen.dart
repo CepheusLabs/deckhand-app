@@ -7,6 +7,7 @@ import '../i18n/translations.g.dart';
 import '../providers.dart';
 import '../theming/deckhand_tokens.dart';
 import '../utils/disk_display.dart';
+import '../utils/user_facing_errors.dart';
 import '../widgets/deckhand_loading.dart';
 import '../widgets/wizard_scaffold.dart';
 
@@ -64,7 +65,7 @@ class _FlashTargetScreenState extends ConsumerState<FlashTargetScreen> {
           }
           if (disksAsync.hasError) {
             return Text(
-              'Error listing disks: ${disksAsync.error}',
+              'Error listing disks: ${userFacingError(disksAsync.error)}',
               style: TextStyle(color: tokens.bad),
             );
           }

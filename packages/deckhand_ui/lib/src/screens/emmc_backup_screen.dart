@@ -11,6 +11,7 @@ import 'package:path/path.dart' as p;
 import '../providers.dart';
 import '../theming/deckhand_tokens.dart';
 import '../utils/disk_display.dart';
+import '../utils/user_facing_errors.dart';
 import '../widgets/danger_card.dart';
 import '../widgets/deckhand_loading.dart';
 import '../widgets/wizard_progress_bar.dart';
@@ -213,7 +214,7 @@ class _EmmcBackupScreenState extends ConsumerState<EmmcBackupScreen> {
     } catch (e) {
       if (mounted) {
         setState(() {
-          _error = 'Could not start backup: $e';
+          _error = 'Could not start backup: ${userFacingError(e)}';
           _progress = const FlashProgress(
             bytesDone: 0,
             bytesTotal: 0,
@@ -256,7 +257,7 @@ class _EmmcBackupScreenState extends ConsumerState<EmmcBackupScreen> {
             _finalSha256 = event.message;
           }
           if (event.phase == FlashPhase.failed && event.message != null) {
-            _error = event.message;
+            _error = userFacingError(event.message);
           }
         });
       },
@@ -264,7 +265,7 @@ class _EmmcBackupScreenState extends ConsumerState<EmmcBackupScreen> {
         if (!mounted) return;
         if (_cancelRequested) return;
         setState(() {
-          _error = '$e';
+          _error = userFacingError(e);
           _progress = const FlashProgress(
             bytesDone: 0,
             bytesTotal: 0,
@@ -864,7 +865,7 @@ class _DisksTable extends StatelessWidget {
                 return Padding(
                   padding: const EdgeInsets.all(20),
                   child: Text(
-                    'Error listing disks: ${snap.error}',
+                    'Error listing disks: ${userFacingError(snap.error)}',
                     style: TextStyle(color: tokens.bad),
                   ),
                 );
@@ -1582,6 +1583,7 @@ class _BackupFailedCard extends StatelessWidget {
   static List<String> _likelyCauses(String e) {
     final s = e.toLowerCase();
     if (s.contains('never started') ||
+        s.contains('windows did not start') ||
         s.contains('uac') ||
         s.contains('antivirus') ||
         s.contains('quarantine')) {
@@ -1591,7 +1593,9 @@ class _BackupFailedCard extends StatelessWidget {
         'Helper binary missing — reinstall Deckhand or verify deckhand-elevated-helper.exe sits next to deckhand.exe.',
       ];
     }
-    if (s.contains('access is denied') || s.contains('access denied')) {
+    if (s.contains('access is denied') ||
+        s.contains('access denied') ||
+        s.contains('windows denied raw-disk access')) {
       return const [
         'The disk is mounted by Windows — close any File Explorer window pointing at it.',
         'Another process is holding the device — disconnect and reconnect the USB adapter.',
@@ -1619,7 +1623,8 @@ class _BackupFailedCard extends StatelessWidget {
     }
     if (s.contains('sector') ||
         s.contains('i/o') ||
-        s.contains('read device')) {
+        s.contains('read device') ||
+        s.contains('windows rejected the raw disk')) {
       return const [
         'USB adapter disconnected mid-copy — reseat the cable and the eMMC module.',
         'eMMC has bad sectors — try a different module if the failure repeats at the same offset.',

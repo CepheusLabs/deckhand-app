@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 
 import '../providers.dart';
+import '../utils/user_facing_errors.dart';
 
 /// Riverpod hook that turns the [DebugBundleScreen]'s `onSave`
 /// callback into an actual zip on disk via [BundleBuilder].
@@ -51,10 +52,7 @@ Future<BundleResult?> saveDebugBundle({
   final redactor = Redactor(sessionValues: controller.redactionSessionValues());
 
   try {
-    final builder = BundleBuilder(
-      outputPath: outPath,
-      redactor: redactor,
-    );
+    final builder = BundleBuilder(outputPath: outPath, redactor: redactor);
     final result = await builder.build(
       sessionLog: redactedLog,
       wizardState: wizardState,
@@ -75,7 +73,7 @@ Future<BundleResult?> saveDebugBundle({
   } on Object catch (e) {
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Bundle write failed: $e')),
+        SnackBar(content: Text('Bundle write failed: ${userFacingError(e)}')),
       );
     }
     return null;
