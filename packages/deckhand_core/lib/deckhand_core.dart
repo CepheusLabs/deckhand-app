@@ -27,6 +27,7 @@ export 'src/diagnostics/redactor.dart';
 export 'src/trust/trust_keyring.dart';
 export 'src/wizard/dsl.dart';
 export 'src/wizard/emmc_backup_manifest.dart';
+export 'src/wizard/os_image_cache.dart';
 export 'src/wizard/printer_state_probe.dart';
 export 'src/wizard/run_state.dart';
 export 'src/wizard/wizard_controller.dart';

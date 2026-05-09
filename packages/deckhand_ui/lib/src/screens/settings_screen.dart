@@ -330,6 +330,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       children: [
         _preflightPanel(tokens),
         const _SettingsDivider(),
+        _osImageCachePanel(tokens),
+        const _SettingsDivider(),
         _RowSwitch(
           title: 'Verify after flash',
           subtitle:
@@ -377,6 +379,141 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         ),
       ],
     );
+  }
+
+  Widget _osImageCachePanel(DeckhandTokens tokens) {
+    final cacheRoot = ref.watch(osImagesDirProvider);
+    final cache = ref.watch(osImageCacheProvider);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            const _FieldLabel('OS IMAGE CACHE'),
+            const Spacer(),
+            TextButton.icon(
+              onPressed: () => ref.invalidate(osImageCacheProvider),
+              icon: const Icon(Icons.refresh, size: 14),
+              label: const Text('Refresh'),
+            ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        Text(
+          'Downloaded and verified OS images are reused across installs. '
+          'Delete a cached image if you want Deckhand to fetch and verify '
+          'a fresh copy.',
+          style: TextStyle(
+            fontFamily: DeckhandTokens.fontSans,
+            fontSize: DeckhandTokens.tSm,
+            color: tokens.text3,
+            height: 1.45,
+          ),
+        ),
+        const SizedBox(height: 8),
+        _MutedPath(
+          text: cacheRoot?.trim().isNotEmpty == true
+              ? cacheRoot!.trim()
+              : 'OS image cache is not configured for this build.',
+        ),
+        const SizedBox(height: 12),
+        cache.when(
+          loading: () => const SizedBox(
+            height: 18,
+            width: 18,
+            child: DeckhandSpinner(size: 18, strokeWidth: 2),
+          ),
+          error: (error, _) => Text(
+            'Could not read OS image cache: $error',
+            style: TextStyle(
+              fontFamily: DeckhandTokens.fontSans,
+              fontSize: DeckhandTokens.tSm,
+              color: tokens.bad,
+            ),
+          ),
+          data: (entries) {
+            if (cacheRoot == null || cacheRoot.trim().isEmpty) {
+              return Text(
+                'Cache details are unavailable until the app wires a cache root.',
+                style: TextStyle(
+                  fontFamily: DeckhandTokens.fontSans,
+                  fontSize: DeckhandTokens.tSm,
+                  color: tokens.text3,
+                ),
+              );
+            }
+            if (entries.isEmpty) {
+              return Text(
+                'No OS images are cached yet.',
+                style: TextStyle(
+                  fontFamily: DeckhandTokens.fontSans,
+                  fontSize: DeckhandTokens.tSm,
+                  color: tokens.text3,
+                ),
+              );
+            }
+            final totalBytes = entries.fold<int>(
+              0,
+              (sum, entry) => sum + entry.bytes,
+            );
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  '${entries.length} image${entries.length == 1 ? '' : 's'} '
+                  'using ${_humanBytes(totalBytes)}',
+                  style: TextStyle(
+                    fontFamily: DeckhandTokens.fontSans,
+                    fontSize: DeckhandTokens.tSm,
+                    color: tokens.text2,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                for (final entry in entries)
+                  _OsImageCacheRow(
+                    entry: entry,
+                    onDelete: () => _deleteOsImageCacheEntry(entry),
+                  ),
+              ],
+            );
+          },
+        ),
+      ],
+    );
+  }
+
+  Future<void> _deleteOsImageCacheEntry(OsImageCacheEntry entry) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        icon: const Icon(Icons.delete_outline),
+        title: const Text('Delete cached OS image?'),
+        content: Text(
+          'Deckhand will remove "${entry.fileName}" from the local cache. '
+          'Future installs can download it again.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    try {
+      await ref
+          .read(osImageCacheDeleteProvider)
+          .call(imagePath: entry.imagePath);
+      _toast('Deleted ${entry.fileName}.');
+    } catch (e) {
+      _toast('Could not delete ${entry.fileName}: $e');
+    }
   }
 
   Widget _preflightPanel(DeckhandTokens tokens) {
@@ -930,6 +1067,167 @@ class _SettingsDivider extends StatelessWidget {
   }
 }
 
+class _MutedPath extends StatelessWidget {
+  const _MutedPath({required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = DeckhandTokens.of(context);
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: tokens.ink2,
+        border: Border.all(color: tokens.lineSoft),
+        borderRadius: BorderRadius.circular(DeckhandTokens.r2),
+      ),
+      child: Text(
+        text,
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          fontFamily: DeckhandTokens.fontMono,
+          fontSize: DeckhandTokens.tXs,
+          color: tokens.text3,
+          height: 1.35,
+        ),
+      ),
+    );
+  }
+}
+
+class _OsImageCacheRow extends StatelessWidget {
+  const _OsImageCacheRow({required this.entry, required this.onDelete});
+
+  final OsImageCacheEntry entry;
+  final VoidCallback onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = DeckhandTokens.of(context);
+    final status = _cacheStatus(entry);
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        border: Border.all(color: tokens.line),
+        borderRadius: BorderRadius.circular(DeckhandTokens.r2),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.image_outlined, size: 16, color: status.color(tokens)),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 4,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    Text(
+                      entry.fileName,
+                      style: TextStyle(
+                        fontFamily: DeckhandTokens.fontSans,
+                        fontSize: DeckhandTokens.tMd,
+                        fontWeight: FontWeight.w600,
+                        color: tokens.text,
+                      ),
+                    ),
+                    _CacheStatusChip(status: status),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  [
+                    _humanBytes(entry.bytes),
+                    _cacheSource(entry),
+                    'last used ${_shortDateTime(entry.lastTouchedAt)}',
+                  ].join(' · '),
+                  style: TextStyle(
+                    fontFamily: DeckhandTokens.fontSans,
+                    fontSize: DeckhandTokens.tSm,
+                    color: tokens.text3,
+                    height: 1.35,
+                  ),
+                ),
+                if (entry.actualSha256 != null) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    'sha256 ${_shortSha(entry.actualSha256!)}',
+                    style: TextStyle(
+                      fontFamily: DeckhandTokens.fontMono,
+                      fontSize: DeckhandTokens.tXs,
+                      color: tokens.text4,
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 6),
+                Text(
+                  entry.imagePath,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontFamily: DeckhandTokens.fontMono,
+                    fontSize: DeckhandTokens.tXs,
+                    color: tokens.text4,
+                    height: 1.3,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          OutlinedButton.icon(
+            style: OutlinedButton.styleFrom(
+              foregroundColor: tokens.bad,
+              minimumSize: const Size(0, 32),
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+            onPressed: onDelete,
+            icon: const Icon(Icons.delete_outline, size: 14),
+            label: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CacheStatusChip extends StatelessWidget {
+  const _CacheStatusChip({required this.status});
+
+  final _CacheStatus status;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = DeckhandTokens.of(context);
+    final color = status.color(tokens);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.10),
+        border: Border.all(color: color.withValues(alpha: 0.35)),
+        borderRadius: BorderRadius.circular(DeckhandTokens.r2),
+      ),
+      child: Text(
+        status.label,
+        style: TextStyle(
+          fontFamily: DeckhandTokens.fontMono,
+          fontSize: 10,
+          color: color,
+          letterSpacing: 0.8,
+        ),
+      ),
+    );
+  }
+}
+
 /// Title + subtitle on the left, switch on the right. The mockup's
 /// canonical "toggleable preference" row.
 class _RowSwitch extends StatelessWidget {
@@ -1133,6 +1431,60 @@ class _AllowListRow extends StatelessWidget {
       ),
     );
   }
+}
+
+enum _CacheStatus {
+  verified('VERIFIED'),
+  unindexed('UNINDEXED'),
+  mismatch('MISMATCH');
+
+  const _CacheStatus(this.label);
+  final String label;
+
+  Color color(DeckhandTokens tokens) => switch (this) {
+    _CacheStatus.verified => tokens.ok,
+    _CacheStatus.unindexed => tokens.warn,
+    _CacheStatus.mismatch => tokens.bad,
+  };
+}
+
+_CacheStatus _cacheStatus(OsImageCacheEntry entry) {
+  if (!entry.hasManifest) return _CacheStatus.unindexed;
+  return entry.hashMatchesManifest
+      ? _CacheStatus.verified
+      : _CacheStatus.mismatch;
+}
+
+String _cacheSource(OsImageCacheEntry entry) {
+  final raw = entry.url;
+  if (raw == null || raw.trim().isEmpty) return 'local file';
+  final uri = Uri.tryParse(raw);
+  final host = uri?.host;
+  if (host == null || host.isEmpty) return 'local file';
+  return host;
+}
+
+String _shortSha(String sha) {
+  final value = sha.trim();
+  if (value.length <= 16) return value;
+  return '${value.substring(0, 12)}...${value.substring(value.length - 8)}';
+}
+
+String _shortDateTime(DateTime dateTime) {
+  final local = dateTime.toLocal();
+  String two(int value) => value.toString().padLeft(2, '0');
+  return '${local.year}-${two(local.month)}-${two(local.day)} '
+      '${two(local.hour)}:${two(local.minute)}';
+}
+
+String _humanBytes(int bytes) {
+  const kib = 1024;
+  const mib = kib * 1024;
+  const gib = mib * 1024;
+  if (bytes < kib) return '$bytes B';
+  if (bytes < mib) return '${(bytes / kib).toStringAsFixed(1)} KiB';
+  if (bytes < gib) return '${(bytes / mib).toStringAsFixed(1)} MiB';
+  return '${(bytes / gib).toStringAsFixed(2)} GiB';
 }
 
 Map<String, dynamic> _encodePreflightReport(DoctorReport report) {

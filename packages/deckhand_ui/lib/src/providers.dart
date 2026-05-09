@@ -235,6 +235,27 @@ final snapshotsDirProvider = Provider<String?>((_) => null);
 /// be reused across app launches.
 final osImagesDirProvider = Provider<String?>((_) => null);
 
+final osImageCacheProvider = FutureProvider<List<OsImageCacheEntry>>((
+  ref,
+) async {
+  final dir = ref.watch(osImagesDirProvider);
+  if (dir == null || dir.trim().isEmpty) return const [];
+  return scanOsImageCache(dir);
+});
+
+typedef OsImageCacheDelete = Future<void> Function({required String imagePath});
+
+final osImageCacheDeleteProvider = Provider<OsImageCacheDelete>((ref) {
+  return ({required String imagePath}) async {
+    final dir = ref.read(osImagesDirProvider);
+    if (dir == null || dir.trim().isEmpty) {
+      throw StateError('OS image cache is not configured.');
+    }
+    await deleteOsImageCacheEntry(root: dir, imagePath: imagePath);
+    ref.invalidate(osImageCacheProvider);
+  };
+});
+
 /// Cached host-disk enumeration. Populated lazily by whichever screen
 /// asks first (flash-target on freshFlash, emmc-backup on either
 /// flow). Once cached, both screens share the same future — no
