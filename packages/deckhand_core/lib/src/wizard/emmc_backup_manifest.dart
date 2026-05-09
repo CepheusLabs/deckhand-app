@@ -55,7 +55,7 @@ class EmmcBackupManifest {
       profileId: profileId,
       imagePath: imagePath,
       imageBytes: imageBytes,
-      imageSha256: imageSha256,
+      imageSha256: imageSha256.trim().toLowerCase(),
       disk: EmmcBackupDiskIdentity.fromDisk(disk),
       deckhandVersion: deckhandVersion,
     );
@@ -68,7 +68,9 @@ class EmmcBackupManifest {
       profileId: json['profile_id'] as String? ?? '',
       imagePath: json['image_path'] as String? ?? '',
       imageBytes: (json['image_bytes'] as num?)?.toInt() ?? 0,
-      imageSha256: json['image_sha256'] as String? ?? '',
+      imageSha256: ((json['image_sha256'] as String?) ?? '')
+          .trim()
+          .toLowerCase(),
       disk: EmmcBackupDiskIdentity.fromJson(
         (json['disk'] as Map).cast<String, dynamic>(),
       ),
@@ -421,6 +423,7 @@ Future<List<EmmcBackupManifest>> scanEmmcBackupManifests(String dir) async {
     }
     final manifest = await _readManifest(entity);
     if (manifest == null) continue;
+    if (!_isValidIndexedManifest(manifest)) continue;
     final manifestImagePath = await _manifestImagePath(manifest, entity);
     if (manifestImagePath == null) continue;
     final image = File(manifestImagePath);
@@ -440,7 +443,8 @@ Future<String?> _manifestImagePath(
   EmmcBackupManifest manifest,
   File manifestFile,
 ) async {
-  if (manifest.imagePath.isNotEmpty && await File(manifest.imagePath).exists()) {
+  if (manifest.imagePath.isNotEmpty &&
+      await File(manifest.imagePath).exists()) {
     return manifest.imagePath;
   }
   final sibling = _imagePathFromManifestPath(manifestFile.path);
@@ -683,4 +687,10 @@ Future<EmmcBackupManifest?> _readManifest(File file) async {
   } catch (_) {
     return null;
   }
+}
+
+bool _isValidIndexedManifest(EmmcBackupManifest manifest) {
+  return manifest.schemaVersion == emmcBackupManifestSchema &&
+      manifest.imageBytes > 0 &&
+      _isSha256Hex(manifest.imageSha256);
 }

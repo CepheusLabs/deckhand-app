@@ -21,7 +21,7 @@ void main() {
       profileId: 'phrozen-arco',
       imagePath: r'C:\Deckhand\phrozen-arco.img',
       imageBytes: 4096,
-      imageSha256: 'a' * 64,
+      imageSha256: 'A' * 64,
       disk: disk,
       deckhandVersion: 'dev',
     );
@@ -29,6 +29,7 @@ void main() {
     final parsed = EmmcBackupManifest.fromJson(manifest.toJson());
 
     expect(parsed.profileId, 'phrozen-arco');
+    expect(parsed.imageSha256, 'a' * 64);
     expect(parsed.disk.model, 'Generic STORAGE DEVICE');
     expect(parsed.matches(profileId: 'phrozen-arco', disk: disk), isTrue);
     expect(parsed.matches(profileId: 'other', disk: disk), isFalse);
@@ -113,6 +114,69 @@ void main() {
     expect(manifests.single.imagePath, image.path);
   });
 
+  test('scanner ignores manifests with invalid schema or hashes', () async {
+    final dir = await Directory.systemTemp.createTemp(
+      'deckhand_emmc_manifest_invalid_',
+    );
+    addTearDown(() async {
+      if (await dir.exists()) await dir.delete(recursive: true);
+    });
+
+    final badSchemaImage = File(p.join(dir.path, 'bad-schema.img'));
+    final badHashImage = File(p.join(dir.path, 'bad-hash.img'));
+    final validImage = File(p.join(dir.path, 'valid.img'));
+    await badSchemaImage.writeAsBytes(List<int>.filled(4096, 1), flush: true);
+    await badHashImage.writeAsBytes(List<int>.filled(4096, 2), flush: true);
+    await validImage.writeAsBytes(List<int>.filled(4096, 3), flush: true);
+    await File(emmcBackupManifestPath(badSchemaImage.path)).writeAsString(
+      jsonEncode({
+        ...EmmcBackupManifest.create(
+          profileId: 'phrozen-arco',
+          imagePath: badSchemaImage.path,
+          imageBytes: 4096,
+          imageSha256: 'b' * 64,
+          disk: disk,
+          deckhandVersion: 'dev',
+        ).toJson(),
+        'schema_version': 999,
+      }),
+      flush: true,
+    );
+    await File(emmcBackupManifestPath(badHashImage.path)).writeAsString(
+      jsonEncode({
+        ...EmmcBackupManifest.create(
+          profileId: 'phrozen-arco',
+          imagePath: badHashImage.path,
+          imageBytes: 4096,
+          imageSha256: 'c' * 64,
+          disk: disk,
+          deckhandVersion: 'dev',
+        ).toJson(),
+        'image_sha256': 'not-a-sha',
+      }),
+      flush: true,
+    );
+    await writeEmmcBackupManifest(
+      EmmcBackupManifest.create(
+        profileId: 'phrozen-arco',
+        imagePath: validImage.path,
+        imageBytes: 4096,
+        imageSha256: 'd' * 64,
+        disk: disk,
+        deckhandVersion: 'dev',
+      ),
+    );
+
+    final manifests = await scanEmmcBackupManifests(dir.path);
+    final candidates = await scanEmmcBackupImageCandidates(dir.path);
+
+    expect(manifests.map((m) => p.basename(m.imagePath)), ['valid.img']);
+    expect(
+      candidates.map((c) => p.basename(c.imagePath)),
+      containsAll(['bad-schema.img', 'bad-hash.img']),
+    );
+  });
+
   test('manifest writes replace stale temp files atomically', () async {
     final dir = await Directory.systemTemp.createTemp(
       'deckhand_emmc_manifest_atomic_',
@@ -172,33 +236,36 @@ void main() {
     expect(manifests.single.imagePath, image.path);
   });
 
-  test('scanner recovers moved backup folders from sibling image path', () async {
-    final dir = await Directory.systemTemp.createTemp(
-      'deckhand_emmc_manifest_moved_',
-    );
-    addTearDown(() async {
-      if (await dir.exists()) await dir.delete(recursive: true);
-    });
+  test(
+    'scanner recovers moved backup folders from sibling image path',
+    () async {
+      final dir = await Directory.systemTemp.createTemp(
+        'deckhand_emmc_manifest_moved_',
+      );
+      addTearDown(() async {
+        if (await dir.exists()) await dir.delete(recursive: true);
+      });
 
-    final image = File(p.join(dir.path, 'emmc.img'));
-    await image.writeAsBytes(List<int>.filled(4096, 7), flush: true);
-    final manifest = EmmcBackupManifest.create(
-      profileId: 'phrozen-arco',
-      imagePath: p.join(dir.path, 'old-location', 'emmc.img'),
-      imageBytes: 4096,
-      imageSha256: 'b' * 64,
-      disk: disk,
-      deckhandVersion: 'dev',
-    );
-    await File(
-      emmcBackupManifestPath(image.path),
-    ).writeAsString(jsonEncode(manifest.toJson()), flush: true);
+      final image = File(p.join(dir.path, 'emmc.img'));
+      await image.writeAsBytes(List<int>.filled(4096, 7), flush: true);
+      final manifest = EmmcBackupManifest.create(
+        profileId: 'phrozen-arco',
+        imagePath: p.join(dir.path, 'old-location', 'emmc.img'),
+        imageBytes: 4096,
+        imageSha256: 'b' * 64,
+        disk: disk,
+        deckhandVersion: 'dev',
+      );
+      await File(
+        emmcBackupManifestPath(image.path),
+      ).writeAsString(jsonEncode(manifest.toJson()), flush: true);
 
-    final manifests = await scanEmmcBackupManifests(dir.path);
+      final manifests = await scanEmmcBackupManifests(dir.path);
 
-    expect(manifests, hasLength(1));
-    expect(manifests.single.imagePath, image.path);
-  });
+      expect(manifests, hasLength(1));
+      expect(manifests.single.imagePath, image.path);
+    },
+  );
 
   test(
     'scanner returns full-size image candidates without manifests',
