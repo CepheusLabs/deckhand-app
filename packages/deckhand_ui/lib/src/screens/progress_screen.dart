@@ -235,10 +235,17 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> {
   Future<String?> _showPromptDialog(Map<String, dynamic> step) async {
     final message = step['message'] as String? ?? '';
     final rawActions = (step['actions'] as List?) ?? const [];
-    final actions = rawActions.whereType<Map>().map((m) {
-      final c = m.cast<String, dynamic>();
-      return (id: c['id'] as String? ?? '', label: c['label'] as String? ?? '');
-    }).toList();
+    final actions = rawActions
+        .map(_stringKeyMap)
+        .whereType<Map<String, dynamic>>()
+        .map(
+          (c) => (
+            id: _jsonString(c['id']) ?? '',
+            label: _jsonString(c['label']) ?? '',
+          ),
+        )
+        .where((a) => a.id.isNotEmpty && a.label.isNotEmpty)
+        .toList();
     final buttons = actions.isEmpty
         ? [(id: 'continue', label: t.progress.prompt_default_action)]
         : actions;
@@ -341,14 +348,19 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> {
   ) {
     final inline = (step['options'] as List?) ?? const [];
     if (inline.isNotEmpty) {
-      return inline.whereType<Map>().map((m) {
-        final c = m.cast<String, dynamic>();
-        return (
-          id: c['id'] as String? ?? '',
-          label: c['label'] as String? ?? c['id'] as String? ?? '',
-          subtitle: c['description'] as String?,
-        );
-      }).toList();
+      return inline
+          .map(_stringKeyMap)
+          .whereType<Map<String, dynamic>>()
+          .map((c) {
+            final id = _jsonString(c['id']) ?? '';
+            return (
+              id: id,
+              label: _jsonString(c['label']) ?? id,
+              subtitle: _jsonString(c['description']),
+            );
+          })
+          .where((o) => o.id.isNotEmpty && o.label.isNotEmpty)
+          .toList();
     }
     final from = step['options_from'] as String?;
     if (from == null || profile == null) return const [];
@@ -394,16 +406,20 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> {
             )
             .toList();
       case 'stack.webui.choices':
-        final choices = ((profile.stack.webui?['choices'] as List?) ?? const [])
-            .cast<Map>();
-        return choices.map((c) {
-          final m = c.cast<String, dynamic>();
-          return (
-            id: m['id'] as String? ?? '',
-            label: m['display_name'] as String? ?? m['id'] as String? ?? '',
-            subtitle: m['description'] as String?,
-          );
-        }).toList();
+        final choices = (profile.stack.webui?['choices'] as List?) ?? const [];
+        return choices
+            .map(_stringKeyMap)
+            .whereType<Map<String, dynamic>>()
+            .map((m) {
+              final id = _jsonString(m['id']) ?? '';
+              return (
+                id: id,
+                label: _jsonString(m['display_name']) ?? id,
+                subtitle: _jsonString(m['description']),
+              );
+            })
+            .where((o) => o.id.isNotEmpty && o.label.isNotEmpty)
+            .toList();
       default:
         // Fail loud but visibly. Previously this logged via
         // debugPrint (no-op in release), leaving the user with an
@@ -747,6 +763,20 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> {
       ],
     );
   }
+}
+
+String? _jsonString(Object? value) => value is String ? value : null;
+
+Map<String, dynamic>? _stringKeyMap(Object? value) {
+  if (value is! Map) return null;
+  final out = <String, dynamic>{};
+  for (final entry in value.entries) {
+    final key = entry.key;
+    if (key is String) {
+      out[key] = entry.value;
+    }
+  }
+  return out;
 }
 
 class _ProgressHeader extends StatelessWidget {

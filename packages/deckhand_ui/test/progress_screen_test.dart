@@ -120,6 +120,44 @@ void main() {
       await tester.pumpAndSettle();
     });
 
+    testWidgets('prompt step skips malformed action rows', (tester) async {
+      final controller = stubWizardController(
+        profileJson: testProfileJson(
+          stockKeepSteps: [
+            {
+              'id': 'continue_prompt',
+              'kind': 'prompt',
+              'message': 'Pick the safe action',
+              'actions': [
+                'bad row',
+                {'id': 42, 'label': 99},
+                {'id': 'continue', 'label': 'Continue'},
+              ],
+            },
+          ],
+        ),
+      );
+      await controller.loadProfile('test-printer');
+      controller.setFlow(WizardFlow.stockKeep);
+      await controller.connectSsh(host: '127.0.0.1');
+      await tester.pumpWidget(
+        testHarness(
+          controller: controller,
+          child: const ProgressScreen(),
+          initialLocation: '/progress',
+        ),
+      );
+
+      for (var i = 0; i < 10; i++) {
+        await tester.pump(const Duration(milliseconds: 50));
+      }
+
+      expect(find.text('Pick the safe action'), findsOneWidget);
+      expect(find.text('Continue'), findsOneWidget);
+      await tester.tap(find.text('Continue'));
+      await tester.pumpAndSettle();
+    });
+
     testWidgets('prompt step with no actions falls back to a Continue button', (
       tester,
     ) async {
