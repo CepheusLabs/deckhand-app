@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:deckhand_core/deckhand_core.dart';
 
 import '../i18n/translations.g.dart';
 import '../providers.dart';
@@ -22,22 +23,22 @@ class ScreenChoiceScreen extends ConsumerStatefulWidget {
 class _ScreenChoiceScreenState extends ConsumerState<ScreenChoiceScreen> {
   String? _choice;
 
-  bool _isSelectable(dynamic s) {
-    final status = s.status as String?;
+  bool _isSelectable(ScreenConfig s) {
+    final status = s.status;
     return status != 'alpha' && status != 'experimental';
   }
 
-  String? _defaultChoice(List<dynamic> screens, dynamic probe) {
+  String? _defaultChoice(List<ScreenConfig> screens, PrinterState probe) {
     for (final s in screens) {
       if (probe.screenInstalls[s.id]?.active == true && _isSelectable(s)) {
-        return s.id as String?;
+        return s.id;
       }
     }
     for (final s in screens) {
-      if (s.recommended == true && _isSelectable(s)) return s.id as String?;
+      if (s.recommended == true && _isSelectable(s)) return s.id;
     }
     for (final s in screens) {
-      if (_isSelectable(s)) return s.id as String?;
+      if (_isSelectable(s)) return s.id;
     }
     return null;
   }
