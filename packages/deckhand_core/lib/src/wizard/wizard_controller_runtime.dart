@@ -25,6 +25,7 @@ Future<void> _refreshPrinterStateImpl(
   try {
     final probe = PrinterStateProbe(ssh: c.ssh);
     final report = await probe.probe(session: s, profile: pf);
+    if (!identical(c._session, s) || !identical(c._profile, pf)) return;
     c._printerState = report;
     c._emit(PrinterStateRefreshed(report));
   } catch (e) {
@@ -126,6 +127,8 @@ bool _looksLikeBinaryImpl(String s) {
 Future<void> _startExecutionImpl(WizardController c) async {
   final pf = c._profile;
   if (pf == null) throw StateError('No profile loaded.');
+  c._cancelled = false;
+  c._cancelReason = null;
   final flow = c._state.flow == WizardFlow.stockKeep
       ? pf.flows.stockKeep
       : pf.flows.freshFlash;

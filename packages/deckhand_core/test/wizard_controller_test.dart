@@ -93,6 +93,42 @@ void main() {
       expect(controller.state.decisions, isEmpty);
     });
 
+    test('loading a profile resets transient runtime state', () async {
+      final ssh = FakeSsh();
+      final controller = newController(
+        profileJson: baseProfileJson(),
+        ssh: ssh,
+      );
+      await controller.loadProfile('test-printer');
+      await controller.connectSshWithPassword(
+        host: '192.168.1.50',
+        user: 'root',
+        password: 'secret',
+      );
+      controller.printerStateForTesting = PrinterState(
+        services: const {},
+        files: const {},
+        paths: const {},
+        stackInstalls: const {},
+        screenInstalls: const {},
+        python311Installed: false,
+        osCodename: 'bookworm',
+        probedAt: DateTime.now(),
+      );
+      controller.setFlow(WizardFlow.freshFlash);
+      controller.setCurrentStep('flash_confirm');
+
+      await controller.loadProfile('test-printer');
+
+      expect(controller.state.profileId, 'test-printer');
+      expect(controller.state.currentStep, 'welcome');
+      expect(controller.state.flow, WizardFlow.none);
+      expect(controller.sshSession, isNull);
+      expect(controller.redactionSessionValues()['ssh_password'], isNull);
+      expect(controller.printerState.probedAt, isNull);
+      expect(ssh.disconnectCalls, hasLength(1));
+    });
+
     test('service default rules skip malformed rows', () async {
       final controller = newController(
         profileJson: {
@@ -120,6 +156,49 @@ void main() {
 
       final service = controller.profile!.stockOs.services.single;
       expect(controller.resolveServiceDefault(service), 'remove');
+    });
+
+    test('restore reloads the profile without keeping live session', () async {
+      final ssh = FakeSsh();
+      final controller = newController(
+        profileJson: baseProfileJson(),
+        ssh: ssh,
+      );
+      await controller.loadProfile('test-printer');
+      await controller.connectSshWithPassword(
+        host: '192.168.1.50',
+        user: 'root',
+        password: 'secret',
+      );
+      controller.printerStateForTesting = PrinterState(
+        services: const {},
+        files: const {},
+        paths: const {},
+        stackInstalls: const {},
+        screenInstalls: const {},
+        python311Installed: false,
+        osCodename: 'bookworm',
+        probedAt: DateTime.now(),
+      );
+
+      final snapshot = WizardState(
+        profileId: 'test-printer',
+        decisions: const {'flash.os': 'debian-bookworm'},
+        currentStep: 'progress',
+        flow: WizardFlow.freshFlash,
+        sshHost: '192.168.1.51',
+        sshPort: 22,
+        sshUser: 'root',
+      );
+      await controller.restore(snapshot);
+
+      expect(controller.state.currentStep, 'progress');
+      expect(controller.state.flow, WizardFlow.freshFlash);
+      expect(controller.state.decisions['flash.os'], 'debian-bookworm');
+      expect(controller.sshSession, isNull);
+      expect(controller.redactionSessionValues()['ssh_password'], isNull);
+      expect(controller.printerState.probedAt, isNull);
+      expect(ssh.disconnectCalls, hasLength(1));
     });
   });
 
@@ -341,6 +420,22 @@ void main() {
           ),
         ),
       );
+    });
+
+    test('a cancelled run does not poison the next run', () async {
+      final controller = newController(
+        profileJson: baseProfileJson(
+          freshFlashSteps: [
+            {'id': 'noop', 'kind': 'unknown'},
+          ],
+        ),
+      );
+      await controller.loadProfile('test-printer');
+      controller.setFlow(WizardFlow.freshFlash);
+
+      controller.cancelExecution(reason: 'old run stopped');
+
+      await controller.startExecution();
     });
   });
 
@@ -3303,6 +3398,7 @@ class FakeSsh implements SshService {
   final runCalls = <String>[];
   final runDetails = <FakeSshRunCall>[];
   final uploadCalls = <FakeSshUpload>[];
+  final disconnectCalls = <SshSession>[];
 
   /// Legacy single-variable tracker. Kept for back-compat with tests
   /// that don't care about per-call granularity.
@@ -3403,7 +3499,9 @@ class FakeSsh implements SshService {
     List<String> paths,
   ) async => {for (final p in paths) p: 0};
   @override
-  Future<void> disconnect(SshSession session) async {}
+  Future<void> disconnect(SshSession session) async {
+    disconnectCalls.add(session);
+  }
 }
 
 /// Writes a minimal shell script to the test's temp dir and returns

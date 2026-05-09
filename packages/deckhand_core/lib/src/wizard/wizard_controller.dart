@@ -210,6 +210,7 @@ class WizardController {
   /// [WizardState.initial] threw away the user's session — that's
   /// worse than blank, so we now surface the failure loudly.
   Future<void> restore(WizardState snapshot) async {
+    await _clearTransientRuntimeState();
     _state = snapshot;
     if (snapshot.profileId.isEmpty) {
       _emit(FlowChanged(_state.flow));
@@ -251,6 +252,7 @@ class WizardController {
     bool force = false,
     bool preserveWizardState = false,
   }) async {
+    await _clearTransientRuntimeState();
     final cache = await profiles.ensureCached(
       profileId: profileId,
       ref: ref,
@@ -261,12 +263,7 @@ class WizardController {
     _profileCache = cache;
     _state = preserveWizardState
         ? _state.copyWith(profileId: profileId)
-        : WizardState(
-            profileId: profileId,
-            decisions: const {},
-            currentStep: _state.currentStep,
-            flow: _state.flow,
-          );
+        : WizardState.initial().copyWith(profileId: profileId);
     _emit(ProfileLoaded(profile));
   }
 
@@ -524,6 +521,40 @@ class WizardController {
     _cancelled = true;
     _cancelReason = reason;
     _pendingInput.clear();
+  }
+
+  /// Drop live, non-persisted state before switching profiles or
+  /// restoring a saved wizard snapshot. Persisted [WizardState]
+  /// intentionally excludes sessions and secrets, so these fields must
+  /// never survive a profile reload or a resume boundary.
+  Future<void> _clearTransientRuntimeState() async {
+    final helper = _sessionAskpass;
+    final session = _session;
+    _sessionAskpass = null;
+    _session = null;
+    _sshPassword = null;
+    _currentStepKind = null;
+    _printerState = PrinterState.empty;
+    _runState = null;
+    _pendingInput.clear();
+    _cancelled = false;
+    _cancelReason = null;
+
+    if (helper != null && session != null) {
+      try {
+        await ssh.run(
+          session,
+          'rm -rf '
+          '${_shellQuote(helper.askpassPath)} '
+          '${_shellQuote(helper.binDir)}',
+        );
+      } catch (_) {}
+    }
+    if (session != null) {
+      try {
+        await ssh.disconnect(session);
+      } catch (_) {}
+    }
   }
 
   /// Public entrypoint - walks the active flow. Body in
