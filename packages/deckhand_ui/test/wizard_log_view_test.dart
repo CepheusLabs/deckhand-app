@@ -90,16 +90,18 @@ void main() {
     expect(find.textContaining('Windows disk 3'), findsWidgets);
     expect(find.textContaining('PhysicalDrive3'), findsNothing);
     expect(find.textContaining('PHYSICALDRIVE3'), findsNothing);
+    expect(find.textContaining('StepExecutionException'), findsNothing);
+    expect(
+      find.textContaining('Windows rejected the raw disk write'),
+      findsOneWidget,
+    );
   });
 
   test('clipboard log uses visible fixed-width separators', () {
-    final text = formatWizardLogForClipboard(
-      [
-        '> starting choose_os_image',
-        '[ok] choose_os_image',
-      ],
-      WizardLogMode.user,
-    );
+    final text = formatWizardLogForClipboard([
+      '> starting choose_os_image',
+      '[ok] choose_os_image',
+    ], WizardLogMode.user);
 
     expect(text, contains('00:00.000  STEP    Choose the OS image'));
     expect(text, contains('00:01.017  OK      Finished Choose the OS image'));

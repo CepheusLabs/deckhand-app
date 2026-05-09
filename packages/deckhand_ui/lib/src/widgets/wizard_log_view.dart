@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../theming/deckhand_tokens.dart';
+import '../utils/disk_operation_errors.dart';
 
 /// Diff-style log view — the right pane on the install progress
 /// screen. Renders raw log lines as `[time] [tag] [message]` rows,
@@ -349,10 +350,7 @@ class _LogLine extends StatelessWidget {
   }
 
   static String _friendlyError(String message) {
-    return message.replaceAllMapped(
-      _windowsPhysicalDriveRe,
-      (match) => 'Windows disk ${match.group(1)!}',
-    );
+    return userFacingDiskOperationError(message);
   }
 
   static String? _friendlyPhysicalDrive(String value) {
