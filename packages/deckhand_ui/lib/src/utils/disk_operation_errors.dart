@@ -69,6 +69,8 @@ String _stripExceptionPrefixes(String message) {
       'Bad state: ',
       'StepExecutionException: ',
       'ElevatedHelperException: ',
+      'UpstreamException: ',
+      'FormatException: ',
     ]) {
       if (remaining.startsWith(prefix)) {
         remaining = remaining.substring(prefix.length).trim();

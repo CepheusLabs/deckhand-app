@@ -36,5 +36,20 @@ void main() {
         'write Windows disk 3 failed',
       );
     });
+
+    test('strips generic exception type prefixes', () {
+      expect(
+        userFacingDiskOperationError(
+          'UpstreamException: OS image downloads must use https:// URLs',
+        ),
+        'OS image downloads must use https:// URLs',
+      );
+      expect(
+        userFacingDiskOperationError(
+          'FormatException: invalid managed printer port',
+        ),
+        'invalid managed printer port',
+      );
+    });
   });
 }
