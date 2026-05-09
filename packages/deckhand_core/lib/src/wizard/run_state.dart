@@ -47,18 +47,15 @@ class RunState {
     final steps = <RunStateStep>[];
     if (stepsRaw is List) {
       for (final entry in stepsRaw) {
-        if (entry is Map) {
-          steps.add(RunStateStep.fromJson(entry.cast<String, dynamic>()));
-        }
+        final step = _stringKeyMap(entry);
+        if (step != null) steps.add(RunStateStep.fromJson(step));
       }
     }
     return RunState(
-      deckhandVersion: (json['deckhand_version'] as String?) ?? '',
-      profileId: (json['profile_id'] as String?) ?? '',
-      profileCommit: (json['profile_commit'] as String?) ?? '',
-      startedAt:
-          DateTime.tryParse(json['started_at'] as String? ?? '')?.toUtc() ??
-          DateTime.now().toUtc(),
+      deckhandVersion: _jsonString(json['deckhand_version']) ?? '',
+      profileId: _jsonString(json['profile_id']) ?? '',
+      profileCommit: _jsonString(json['profile_commit']) ?? '',
+      startedAt: _jsonDate(json['started_at']) ?? DateTime.now().toUtc(),
       steps: steps,
     );
   }
@@ -169,23 +166,19 @@ class RunStateStep {
     final output = <String, Object>{};
     if (outputRaw is Map) {
       outputRaw.forEach((k, v) {
-        if (v != null) output[k.toString()] = v as Object;
+        if (k is String && v != null) output[k] = v as Object;
       });
     }
     return RunStateStep(
-      id: (json['id'] as String?) ?? '',
-      status: runStateStatusFromString(json['status'] as String?),
-      startedAt:
-          DateTime.tryParse(json['started_at'] as String? ?? '')?.toUtc() ??
-          DateTime.now().toUtc(),
-      finishedAt: DateTime.tryParse(
-        json['finished_at'] as String? ?? '',
-      )?.toUtc(),
-      inputHash: (json['input_hash'] as String?) ?? '',
+      id: _jsonString(json['id']) ?? '',
+      status: runStateStatusFromString(_jsonString(json['status'])),
+      startedAt: _jsonDate(json['started_at']) ?? DateTime.now().toUtc(),
+      finishedAt: _jsonDate(json['finished_at']),
+      inputHash: _jsonString(json['input_hash']) ?? '',
       output: output,
-      error: json['error'] as String?,
-      exitCode: (json['exit_code'] as num?)?.toInt(),
-      skipReason: json['skip_reason'] as String?,
+      error: _jsonString(json['error']),
+      exitCode: _jsonInt(json['exit_code']),
+      skipReason: _jsonString(json['skip_reason']),
     );
   }
 
@@ -316,6 +309,27 @@ class RunStateWriteException implements Exception {
   @override
   String toString() =>
       'RunStateWriteException(exitCode=$exitCode, stderr=$stderr)';
+}
+
+Map<String, dynamic>? _stringKeyMap(Object? value) {
+  if (value is! Map) return null;
+  final out = <String, dynamic>{};
+  for (final entry in value.entries) {
+    final key = entry.key;
+    if (key is String) out[key] = entry.value;
+  }
+  return out;
+}
+
+String? _jsonString(Object? value) => value is String ? value : null;
+
+int? _jsonInt(Object? value) =>
+    value is num && value.isFinite ? value.toInt() : null;
+
+DateTime? _jsonDate(Object? value) {
+  final raw = _jsonString(value);
+  if (raw == null) return null;
+  return DateTime.tryParse(raw)?.toUtc();
 }
 
 /// Compute the canonical input hash for a step. Produces a stable

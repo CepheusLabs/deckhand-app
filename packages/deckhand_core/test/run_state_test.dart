@@ -81,6 +81,42 @@ void main() {
         throwsA(isA<FormatException>()),
       );
     });
+
+    test('drops malformed step fields instead of crashing', () {
+      final state = RunState.fromJson({
+        'schema': 'deckhand.run_state/1',
+        'deckhand_version': 42,
+        'profile_id': false,
+        'profile_commit': ['bad'],
+        'started_at': 7,
+        'steps': [
+          {
+            'id': 'install_stack',
+            'status': 99,
+            'started_at': false,
+            'finished_at': 13,
+            'input_hash': null,
+            'output': {'ok': true, 1: 'bad key'},
+            'error': ['not', 'a', 'string'],
+            'exit_code': 'bad',
+            'skip_reason': {'not': 'a string'},
+          },
+          'not a map',
+        ],
+      });
+
+      expect(state.deckhandVersion, '');
+      expect(state.profileId, '');
+      expect(state.profileCommit, '');
+      expect(state.steps, hasLength(1));
+      expect(state.steps.single.id, 'install_stack');
+      expect(state.steps.single.status, RunStateStatus.unknown);
+      expect(state.steps.single.inputHash, '');
+      expect(state.steps.single.output, {'ok': true});
+      expect(state.steps.single.error, isNull);
+      expect(state.steps.single.exitCode, isNull);
+      expect(state.steps.single.skipReason, isNull);
+    });
   });
 
   group('canonicalInputBytes', () {
@@ -142,7 +178,7 @@ void main() {
       expect(await store.load(_testSession), isNull);
     });
 
-    test('load tolerates wrong-shaped JSON by returning null', () async {
+    test('load recovers schema-valid JSON with bad optional scalars', () async {
       final ssh = _CapturingSsh(
         stdoutReplies: [
           const SshCommandResult(
@@ -154,7 +190,9 @@ void main() {
         ],
       );
       final store = RunStateStore(ssh: ssh);
-      expect(await store.load(_testSession), isNull);
+      final state = await store.load(_testSession);
+      expect(state, isNotNull);
+      expect(state!.steps, isEmpty);
     });
 
     test('load round-trips a real RunState', () async {
