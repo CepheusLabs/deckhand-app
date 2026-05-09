@@ -90,10 +90,69 @@ void main() {
     expect(config.appliedValues['rotation_distance'], '7.5000');
     expect(find.textContaining('backup at'), findsOneWidget);
   });
+
+  testWidgets('tuning tab tolerates malformed Moonraker status payloads', (
+    tester,
+  ) async {
+    final controller = stubWizardController(profileJson: testProfileJson());
+    await controller.loadProfile('test-printer');
+    controller.setSession(
+      const SshSession(id: 's', host: '192.168.1.50', port: 22, user: 'mks'),
+    );
+    final moonraker = _FakeMoonraker(
+      status: {
+        'print_stats': <Object?, Object?>{'state': ['printing']},
+        'extruder': {'temperature': '213.5'},
+        'heater_bed': {'temperature': 68},
+        'configfile': {
+          'settings': <Object?, Object?>{
+            1: 'ignored',
+            'extruder': {'rotation_distance': '7.5'},
+          },
+        },
+      },
+    );
+    final config = _FakePrinterConfigService();
+
+    await tester.pumpWidget(
+      testHarness(
+        controller: controller,
+        child: const ManageScreen(),
+        initialLocation: '/manage',
+        extraOverrides: [
+          moonrakerServiceProvider.overrideWithValue(moonraker),
+          printerConfigServiceProvider.overrideWithValue(config),
+        ],
+      ),
+    );
+
+    await tester.tap(find.text('Tune'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('LIVE PRINTER'), findsOneWidget);
+    expect(find.text('213.5 C'), findsOneWidget);
+    expect(find.text('68.0 C'), findsOneWidget);
+    expect(find.textContaining('rotation_distance: 7.5000'), findsOneWidget);
+  });
 }
 
 class _FakeMoonraker implements MoonrakerService {
+  _FakeMoonraker({Map<String, dynamic>? status})
+    : status =
+          status ??
+          const {
+            'print_stats': {'state': 'idle'},
+            'extruder': {'temperature': 213.0},
+            'heater_bed': {'temperature': 68.0},
+            'configfile': {
+              'settings': {
+                'extruder': {'rotation_distance': 7.5},
+              },
+            },
+          };
+
   final scripts = <String>[];
+  final Map<String, dynamic> status;
 
   @override
   Future<KlippyInfo> info({required String host, int port = 7125}) async =>
@@ -113,16 +172,7 @@ class _FakeMoonraker implements MoonrakerService {
     required String host,
     int port = 7125,
     required List<String> objects,
-  }) async => const {
-    'print_stats': {'state': 'idle'},
-    'extruder': {'temperature': 213.0},
-    'heater_bed': {'temperature': 68.0},
-    'configfile': {
-      'settings': {
-        'extruder': {'rotation_distance': 7.5},
-      },
-    },
-  };
+  }) async => status;
 
   @override
   Future<void> runGCode({

@@ -800,28 +800,31 @@ class _StatusChip extends StatelessWidget {
             decoration: BoxDecoration(color: color, shape: BoxShape.circle),
           ),
           const SizedBox(width: 8),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                label.toUpperCase(),
-                style: TextStyle(
-                  fontFamily: DeckhandTokens.fontMono,
-                  fontSize: 10,
-                  color: tokens.text4,
+          Flexible(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  label.toUpperCase(),
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontFamily: DeckhandTokens.fontMono,
+                    fontSize: 10,
+                    color: tokens.text4,
+                  ),
                 ),
-              ),
-              Text(
-                value.isEmpty ? '-' : value,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontFamily: DeckhandTokens.fontSans,
-                  fontSize: DeckhandTokens.tSm,
-                  color: tokens.text,
+                Text(
+                  value.isEmpty ? '-' : value,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontFamily: DeckhandTokens.fontSans,
+                    fontSize: DeckhandTokens.tSm,
+                    color: tokens.text,
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ],
       ),
@@ -864,7 +867,7 @@ class _TuningSnapshot {
     final extruder = _map(status['extruder']);
     final bed = _map(status['heater_bed']);
     final configfile = _map(status['configfile']);
-    final state = (printStats?['state'] as String?) ?? 'idle';
+    final state = _string(printStats?['state']) ?? 'idle';
     final settings = _map(configfile?['settings']);
     final extruderSettings = _map(settings?['extruder']);
     return _TuningSnapshot(
@@ -887,8 +890,21 @@ class _TuningSnapshot {
 }
 
 Map<String, dynamic>? _map(Object? value) {
-  if (value is Map) return value.cast<String, dynamic>();
+  if (value is Map) {
+    final out = <String, dynamic>{};
+    for (final entry in value.entries) {
+      final key = entry.key;
+      if (key is String) out[key] = entry.value;
+    }
+    return out;
+  }
   return null;
+}
+
+String? _string(Object? value) {
+  if (value is! String) return null;
+  final trimmed = value.trim();
+  return trimmed.isEmpty ? null : trimmed;
 }
 
 double? _number(Object? value) {
