@@ -451,14 +451,12 @@ class WizardController {
   T? decision<T>(String path) => _state.decisions[path] as T?;
 
   String resolveServiceDefault(StockService svc) {
-    final rules =
-        ((svc.raw['wizard'] as Map?)?['default_rules'] as List?) ?? const [];
+    final wizard = _stringKeyMap(svc.raw['wizard']);
+    final rules = _stringKeyMapList(wizard?['default_rules']);
     final env = _buildDslEnv();
-    for (final r in rules.whereType<Map>().map(
-      (m) => m.cast<String, dynamic>(),
-    )) {
-      final when = r['when'] as String?;
-      final thenVal = r['then'] as String?;
+    for (final r in rules) {
+      final when = _stringValue(r['when']);
+      final thenVal = _stringValue(r['then']);
       if (when == null || thenVal == null) continue;
       try {
         if (_dsl.evaluate(when, env)) return thenVal;
@@ -766,10 +764,9 @@ class WizardController {
       case 'crowsnest':
         return stack.crowsnest;
       default:
-        final choices = ((stack.webui?['choices'] as List?) ?? const [])
-            .cast<Map>();
+        final choices = _stringKeyMapList(stack.webui?['choices']);
         for (final c in choices) {
-          if ((c['id'] as String?) == name) return c.cast<String, dynamic>();
+          if (_stringValue(c['id']) == name) return c;
         }
         return null;
     }

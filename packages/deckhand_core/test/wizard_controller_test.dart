@@ -92,6 +92,35 @@ void main() {
       expect(controller.state.profileId, 'test-printer');
       expect(controller.state.decisions, isEmpty);
     });
+
+    test('service default rules skip malformed rows', () async {
+      final controller = newController(
+        profileJson: {
+          ...baseProfileJson(),
+          'stock_os': {
+            'services': [
+              {
+                'id': 'frpc',
+                'display_name': 'FRP tunnel',
+                'default_action': 'keep',
+                'wizard': {
+                  'default_rules': [
+                    'bad row',
+                    {'when': 42, 'then': 99},
+                    {'when': 'decision_made("force_remove")', 'then': 'remove'},
+                  ],
+                },
+              },
+            ],
+          },
+        },
+      );
+      await controller.loadProfile('test-printer');
+      await controller.setDecision('force_remove', true);
+
+      final service = controller.profile!.stockOs.services.single;
+      expect(controller.resolveServiceDefault(service), 'remove');
+    });
   });
 
   group('WizardController.wait_for_ssh handoff', () {
