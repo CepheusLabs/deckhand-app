@@ -68,6 +68,7 @@ void main() {
       initial: {
         'allowed_hosts': [
           ' downloads.example.com ',
+          'DOWNLOADS.EXAMPLE.COM',
           42,
           null,
           '',
@@ -88,6 +89,7 @@ void main() {
 
       s.allowedHosts = {
         ' downloads.example.com ',
+        'DOWNLOADS.EXAMPLE.COM',
         '',
         'downloads.example.com',
         ' github.com ',
@@ -102,4 +104,42 @@ void main() {
       } catch (_) {}
     },
   );
+
+  test('numeric retention settings clamp corrupted persisted values', () {
+    final s = DeckhandSettings(
+      path: '<memory>',
+      initial: {'prune_older_than_days': -10, 'cache_retention_days': -20},
+    );
+
+    expect(s.pruneOlderThanDays, 1);
+    expect(s.cacheRetentionDays, 0);
+  });
+
+  test('numeric retention settings ignore non-finite persisted values', () {
+    final s = DeckhandSettings(
+      path: '<memory>',
+      initial: {
+        'prune_older_than_days': double.nan,
+        'cache_retention_days': double.infinity,
+      },
+    );
+
+    expect(s.pruneOlderThanDays, 30);
+    expect(s.cacheRetentionDays, 30);
+  });
+
+  test('lastPreflight skips malformed map keys', () {
+    final s = DeckhandSettings(
+      path: '<memory>',
+      initial: {
+        'last_preflight': <Object?, Object?>{
+          'passed': true,
+          42: 'bad key',
+          'report': '[PASS] cached',
+        },
+      },
+    );
+
+    expect(s.lastPreflight, {'passed': true, 'report': '[PASS] cached'});
+  });
 }

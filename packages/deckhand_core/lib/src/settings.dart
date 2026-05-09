@@ -43,7 +43,7 @@ class DeckhandSettings {
     if (raw is List) {
       return raw
           .whereType<String>()
-          .map((host) => host.trim())
+          .map((host) => host.trim().toLowerCase())
           .where((host) => host.isNotEmpty)
           .toSet();
     }
@@ -52,7 +52,7 @@ class DeckhandSettings {
 
   set allowedHosts(Set<String> hosts) {
     _values['allowed_hosts'] = hosts
-        .map((host) => host.trim())
+        .map((host) => host.trim().toLowerCase())
         .where((host) => host.isNotEmpty)
         .toSet()
         .toList();
@@ -240,10 +240,7 @@ class DeckhandSettings {
   /// How many days old a `.deckhand-pre-*` backup has to be before the
   /// Verify screen's "Prune" action removes it. Default 30.
   int get pruneOlderThanDays {
-    final v = _values['prune_older_than_days'];
-    if (v is int) return v;
-    if (v is num) return v.toInt();
-    return 30;
+    return _intSetting('prune_older_than_days', fallback: 30, minimum: 1);
   }
 
   set pruneOlderThanDays(int v) =>
@@ -305,10 +302,7 @@ class DeckhandSettings {
   /// a typical reinstall fast without letting the cache grow
   /// unboundedly.
   int get cacheRetentionDays {
-    final v = _values['cache_retention_days'];
-    if (v is int) return v;
-    if (v is num) return v.toInt();
-    return 30;
+    return _intSetting('cache_retention_days', fallback: 30, minimum: 0);
   }
 
   set cacheRetentionDays(int v) =>
@@ -391,7 +385,14 @@ class DeckhandSettings {
   /// the future. Untyped Map so deckhand_core stays flutter-free.
   Map<String, dynamic>? get lastPreflight {
     final raw = _values['last_preflight'];
-    if (raw is Map) return raw.cast<String, dynamic>();
+    if (raw is Map) {
+      final out = <String, dynamic>{};
+      for (final entry in raw.entries) {
+        final key = entry.key;
+        if (key is String) out[key] = entry.value;
+      }
+      return out.isEmpty ? null : out;
+    }
     return null;
   }
 
@@ -401,6 +402,13 @@ class DeckhandSettings {
     } else {
       _values['last_preflight'] = v;
     }
+  }
+
+  int _intSetting(String key, {required int fallback, required int minimum}) {
+    final raw = _values[key];
+    if (raw is! num || !raw.isFinite) return fallback;
+    final value = raw.toInt();
+    return value < minimum ? minimum : value;
   }
 
   Future<void> save() async {
