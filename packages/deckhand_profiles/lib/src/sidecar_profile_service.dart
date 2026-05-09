@@ -91,34 +91,49 @@ class SidecarProfileService implements ProfileService {
     } else {
       yamlText = await _getPlainWithApprovedRedirects(registryUrl);
     }
-    final yaml = loadYaml(yamlText) as YamlMap;
-    final entries = (yaml['profiles'] as YamlList? ?? YamlList())
-        .map((e) => (e as YamlMap))
-        .map(
-          (e) => ProfileRegistryEntry(
-            id: e['id'] as String,
-            displayName: e['display_name'] as String,
-            manufacturer: e['manufacturer'] as String? ?? '',
-            model: e['model'] as String? ?? '',
-            status: e['status'] as String? ?? 'alpha',
-            directory: e['directory'] as String? ?? 'printers/${e['id']}',
-            latestTag: e['latest_tag'] as String?,
-            // Optional spec-card fields written by the registry
-            // generator from each profile.yaml's hardware block. May
-            // be absent on older registries — the picker tolerates
-            // null and renders "—" in the corresponding spec cell.
-            sbc: e['sbc'] as String?,
-            kinematics: e['kinematics'] as String?,
-            mcu: e['mcu'] as String?,
-            extras: e['extras'] as String?,
-          ),
-        )
-        .toList();
+    final yaml = loadYaml(yamlText);
+    final profiles = yaml is YamlMap ? yaml['profiles'] : null;
+    final entries = profiles is YamlList
+        ? profiles
+              .whereType<YamlMap>()
+              .map(_registryEntryFromYaml)
+              .whereType<ProfileRegistryEntry>()
+              .toList()
+        : <ProfileRegistryEntry>[];
     return ProfileRegistry(
       entries: await Future.wait(
         entries.map((e) => _withProfileSpecFallback(e, local)),
       ),
     );
+  }
+
+  ProfileRegistryEntry? _registryEntryFromYaml(YamlMap e) {
+    final id = _yamlText(e, 'id');
+    final displayName = _yamlText(e, 'display_name');
+    if (id == null || displayName == null) return null;
+    return ProfileRegistryEntry(
+      id: id,
+      displayName: displayName,
+      manufacturer: _yamlText(e, 'manufacturer') ?? '',
+      model: _yamlText(e, 'model') ?? '',
+      status: _yamlText(e, 'status') ?? 'alpha',
+      directory: _yamlText(e, 'directory') ?? 'printers/$id',
+      latestTag: _yamlText(e, 'latest_tag'),
+      // Optional spec-card fields written by the registry generator
+      // from each profile.yaml's hardware block. May be absent on
+      // older registries; the picker renders an em dash.
+      sbc: _yamlText(e, 'sbc'),
+      kinematics: _yamlText(e, 'kinematics'),
+      mcu: _yamlText(e, 'mcu'),
+      extras: _yamlText(e, 'extras'),
+    );
+  }
+
+  String? _yamlText(YamlMap map, String key) {
+    final value = map[key];
+    if (value is! String) return null;
+    final trimmed = value.trim();
+    return trimmed.isEmpty ? null : trimmed;
   }
 
   Future<ProfileRegistryEntry> _withProfileSpecFallback(

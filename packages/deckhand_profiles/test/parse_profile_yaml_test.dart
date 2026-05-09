@@ -309,6 +309,40 @@ profiles:
       expect(entry.extras, 'ChromaKit');
     });
 
+    test('skips malformed registry entries without hiding valid profiles', () async {
+      final tmp = await Directory.systemTemp.createTemp(
+        'deckhand-profile-registry-',
+      );
+      addTearDown(() async => tmp.delete(recursive: true));
+      await File(p.join(tmp.path, 'registry.yaml')).writeAsString('''
+schema_version: 1
+profiles:
+  - id: valid-printer
+    display_name: Valid Printer
+    manufacturer: Acme
+    model: Robo
+  - id: missing-display-name
+  - display_name: Missing ID
+  - not even a map
+''');
+
+      final svc = SidecarProfileService(
+        sidecar: _FakeSidecar(),
+        paths: DeckhandPaths(
+          cacheDir: p.join(tmp.path, 'cache'),
+          stateDir: p.join(tmp.path, 'state'),
+          logsDir: p.join(tmp.path, 'logs'),
+          settingsFile: p.join(tmp.path, 'settings.json'),
+        ),
+        security: _AllowAllSecurity(),
+        localProfilesDir: tmp.path,
+      );
+
+      final registry = await svc.fetchRegistry();
+
+      expect(registry.entries.map((entry) => entry.id), ['valid-printer']);
+    });
+
     test('derives missing card metadata from local profile.yaml', () async {
       final tmp = await Directory.systemTemp.createTemp(
         'deckhand-profile-registry-',
