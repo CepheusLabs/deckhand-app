@@ -792,7 +792,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   }
 
   // ---------------------------------------------------------------------
-  // Advanced — GitHub token + egress allow-list.
+  // Advanced — GitHub token + approved network hosts.
   // ---------------------------------------------------------------------
   Widget _advancedBody(BuildContext context, DeckhandTokens tokens) {
     return Column(
@@ -877,10 +877,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           ],
         ),
         const _SettingsDivider(),
-        const _FieldLabel('ALLOW-LISTED HOSTS'),
+        const _FieldLabel('APPROVED NETWORK HOSTS'),
         const SizedBox(height: 6),
         Text(
-          'Outbound destinations approved for egress. Revoke a host '
+          'Outbound destinations Deckhand may contact. Revoke a host '
           'to force a re-prompt on the next install.',
           style: TextStyle(
             fontFamily: DeckhandTokens.fontSans,
@@ -931,7 +931,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               child: Column(
                 children: [
                   for (final h in hosts)
-                    _AllowListRow(host: h, onRevoke: () => _revokeHost(h)),
+                    _ApprovedHostRow(host: h, onRevoke: () => _revokeHost(h)),
                 ],
               ),
             );
@@ -1388,11 +1388,10 @@ class _SecurityStoreError extends StatelessWidget {
   }
 }
 
-/// Compact row in the Advanced tab's allow-list — a host + a green
-/// check + a small Revoke button. Matches the mockup's mono
-/// allow-list row.
-class _AllowListRow extends StatelessWidget {
-  const _AllowListRow({required this.host, required this.onRevoke});
+/// Compact row in the Advanced tab's approved-host list — a host,
+/// a green check, and a small Revoke button.
+class _ApprovedHostRow extends StatelessWidget {
+  const _ApprovedHostRow({required this.host, required this.onRevoke});
   final String host;
   final VoidCallback onRevoke;
 

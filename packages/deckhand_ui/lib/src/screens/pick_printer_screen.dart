@@ -96,7 +96,7 @@ class _PickPrinterScreenState extends ConsumerState<PickPrinterScreen> {
           title: 'Which printer are you setting up?',
           helperText:
               'Pick a profile from the registry. Everything downstream — '
-              'credentials, host allow-list, services to remove — is driven '
+              'credentials, approved network hosts, services to remove — is driven '
               'by what you choose.',
           body: body,
           primaryAction: WizardAction(

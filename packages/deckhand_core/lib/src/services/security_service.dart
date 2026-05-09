@@ -219,7 +219,7 @@ Future<void> requireHostApproved(SecurityService security, String url) async {
   if (!await security.isHostAllowed(host)) {
     throw HostNotApprovedException(
       host: host,
-      reason: 'host is not on the user-approved allowlist',
+      reason: 'network access to this host has not been approved',
     );
   }
 }

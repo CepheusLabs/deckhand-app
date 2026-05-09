@@ -710,7 +710,7 @@ class _MultiHostBlockedUpstream implements UpstreamService {
     if (hostIndex < hosts.length) {
       throw HostNotApprovedException(
         host: hosts[hostIndex],
-        reason: 'host is not on the user-approved allowlist',
+        reason: 'network access to this host has not been approved',
       );
     }
     yield OsDownloadProgress(
