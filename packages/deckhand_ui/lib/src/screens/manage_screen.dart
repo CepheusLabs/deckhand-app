@@ -1926,9 +1926,13 @@ List<_RestoreImage> _restoreImagesFrom({
   required List<EmmcBackupManifest> manifests,
   required List<EmmcBackupImageCandidate> candidates,
 }) {
-  final referenceSize = manifests.isEmpty
+  final sizes = [
+    for (final manifest in manifests) manifest.imageBytes,
+    for (final candidate in candidates) candidate.imageBytes,
+  ];
+  final referenceSize = sizes.isEmpty
       ? null
-      : manifests.map((m) => m.imageBytes).reduce((a, b) => a > b ? a : b);
+      : sizes.reduce((a, b) => a > b ? a : b);
   return [
     for (final entry in buildEmmcBackupCatalog(
       manifests: manifests,

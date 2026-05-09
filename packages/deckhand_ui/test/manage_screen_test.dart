@@ -852,6 +852,71 @@ void main() {
     },
   );
 
+  testWidgets(
+    'restore defaults to largest unindexed image before newer partial image',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1400, 1000));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      const disk = DiskInfo(
+        id: 'PhysicalDrive3',
+        path: r'\\.\PHYSICALDRIVE3',
+        sizeBytes: 10 * 1024 * 1024,
+        bus: 'USB',
+        model: 'Generic STORAGE DEVICE',
+        removable: true,
+        partitions: [],
+      );
+      final full = EmmcBackupImageCandidate(
+        imagePath: r'C:\Deckhand\emmc-backups\phrozen-arco\full\emmc.img',
+        imageBytes: 8 * 1024 * 1024,
+        modifiedAt: DateTime.utc(2026, 5, 4, 12),
+        inferredProfileId: 'phrozen-arco',
+      );
+      final partial = EmmcBackupImageCandidate(
+        imagePath: r'C:\Deckhand\emmc-backups\phrozen-arco\partial\emmc.img',
+        imageBytes: 4 * 1024 * 1024,
+        modifiedAt: DateTime.utc(2026, 5, 5, 12),
+        inferredProfileId: 'phrozen-arco',
+      );
+
+      final controller = stubWizardController(profileJson: testProfileJson());
+      await controller.loadProfile('test-printer');
+
+      await tester.pumpWidget(
+        testHarness(
+          controller: controller,
+          child: const EmmcRestoreScreen(),
+          initialLocation: '/emmc-restore',
+          extraOverrides: [
+            emmcBackupManifestsProvider.overrideWith((ref) async => const []),
+            emmcBackupImageCandidatesProvider.overrideWith(
+              (ref) async => [partial, full],
+            ),
+            flashServiceProvider.overrideWithValue(
+              _RestoreFlash(
+                disks: [disk],
+                sha256Value:
+                    'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
+              ),
+            ),
+          ],
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 250));
+
+      await tester.tap(find.widgetWithText(FilledButton, 'Continue to target'));
+      await tester.pump();
+
+      expect(find.textContaining('8.0 MiB · Unindexed image'), findsOneWidget);
+      expect(
+        find.textContaining('4.0 MiB · Unindexed partial image'),
+        findsNothing,
+      );
+    },
+  );
+
   testWidgets('restore flow offers indexing for unindexed images', (
     tester,
   ) async {
