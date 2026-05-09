@@ -968,6 +968,15 @@ void main() {
     await tester.pump();
     expect(find.text('Erase and restore eMMC?'), findsOneWidget);
   });
+
+  test('restore safety warning text hides raw disk identifiers', () {
+    final message = formatRestoreSafetyWarnings(const [
+      r'\\.\PHYSICALDRIVE3 has mounted volumes',
+    ]);
+
+    expect(message, contains('Windows disk 3'));
+    expect(message, isNot(contains('PHYSICALDRIVE3')));
+  });
 }
 
 class _RestoreFlash implements FlashService {

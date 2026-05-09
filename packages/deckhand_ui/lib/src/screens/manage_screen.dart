@@ -1382,6 +1382,7 @@ class _RestoreTabState extends ConsumerState<_RestoreTab> {
 
   Future<bool?> _confirmSafetyWarnings(List<String> warnings) {
     final tokens = DeckhandTokens.of(context);
+    final visibleWarnings = formatRestoreSafetyWarnings(warnings);
     return showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
@@ -1389,7 +1390,7 @@ class _RestoreTabState extends ConsumerState<_RestoreTab> {
         title: const Text('Review disk warning'),
         content: Text(
           'Deckhand can continue, but the live disk safety check reported:\n\n'
-          '${warnings.join('\n')}\n\n'
+          '$visibleWarnings\n\n'
           'Continue only if this is the eMMC backup target.',
         ),
         actions: [
@@ -2072,6 +2073,9 @@ String _phaseLabel(FlashPhase? phase) => switch (phase) {
   FlashPhase.failed => 'RESTORE STOPPED',
   null => 'RESTORING IMAGE',
 };
+
+String formatRestoreSafetyWarnings(List<String> warnings) =>
+    warnings.map(hideRawDiskIds).join('\n');
 
 String _friendlyRestoreError(Object error) =>
     userFacingDiskOperationError(error);
