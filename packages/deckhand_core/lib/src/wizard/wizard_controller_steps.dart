@@ -10,9 +10,9 @@ Future<void> _runWriteFileImpl(
   Map<String, dynamic> step,
 ) async {
   final s = c._requireSession();
-  final target = step['target'] as String?;
-  final templatePath = step['template'] as String?;
-  final content = step['content'] as String?;
+  final target = _stringValue(step['target']);
+  final templatePath = _stringValue(step['template']);
+  final content = _stringValue(step['content']);
   if (target == null) {
     throw StepExecutionException('write_file missing target');
   }
@@ -21,7 +21,7 @@ Future<void> _runWriteFileImpl(
   // state (e.g. "only rewrite KlipperScreen's launcher if
   // KlipperScreen is actually installed"). Cheaper than wrapping
   // every caller in a conditional.
-  final requirePath = step['require_path'] as String?;
+  final requirePath = _stringValue(step['require_path']);
   if (requirePath != null) {
     final qReq = c._shellQuote(requirePath);
     final check = await c.ssh.run(s, '[ -e $qReq ] && echo y || echo n');
@@ -48,12 +48,14 @@ Future<void> _runWriteFileImpl(
   // outside the SSH user's home directory. We can't SFTP directly to
   // root-owned paths like /etc/apt/sources.list, so stage in /tmp
   // and mv into place.
-  final useSudo = step['sudo'] as bool? ?? c._looksLikeSystemPath(s, target);
+  final useSudo = step['sudo'] is bool
+      ? step['sudo'] as bool
+      : c._looksLikeSystemPath(s, target);
   final mode = _parseFileModeImpl(step['mode']);
-  final owner = step['owner'] as String?;
+  final owner = _stringValue(step['owner']);
   // Auto-snapshot the existing file before overwriting, unless the
   // step explicitly opts out (backup: false).
-  final backup = step['backup'] as bool? ?? true;
+  final backup = step['backup'] is bool ? step['backup'] as bool : true;
 
   final ts = DateTime.now().millisecondsSinceEpoch;
   final suffix = c._randomSuffix();
@@ -116,7 +118,7 @@ Future<void> _runWriteFileImpl(
       if (!snapRes.success) {
         c._emit(
           StepWarning(
-            stepId: step['id'] as String? ?? 'write_file',
+            stepId: _stringValue(step['id']) ?? 'write_file',
             message:
                 'Could not snapshot existing $target before '
                 'overwrite: ${snapRes.stderr.trim()}',
@@ -127,7 +129,7 @@ Future<void> _runWriteFileImpl(
       } else if (snapRes.stdout.contains('DECKHAND_BACKUP_RO_FS')) {
         c._emit(
           StepWarning(
-            stepId: step['id'] as String? ?? 'write_file',
+            stepId: _stringValue(step['id']) ?? 'write_file',
             message:
                 'Target filesystem is read-only; no backup taken. The '
                 'write step below may still succeed under sudo, but '

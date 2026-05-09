@@ -1216,6 +1216,35 @@ void main() {
   });
 
   group('WizardController._runWriteFile', () {
+    test('rejects malformed target with a step error', () async {
+      final controller = newController(
+        profileJson: baseProfileJson(
+          stockKeepSteps: [
+            {
+              'id': 'bad-write',
+              'kind': 'write_file',
+              'target': ['/etc/apt/sources.list'],
+              'content': 'deb http://deb.debian.org/debian trixie main',
+            },
+          ],
+        ),
+      );
+      await controller.loadProfile('test-printer');
+      controller.setFlow(WizardFlow.stockKeep);
+      await controller.connectSsh(host: '127.0.0.1');
+
+      await expectLater(
+        controller.startExecution(),
+        throwsA(
+          isA<StepExecutionException>().having(
+            (e) => e.toString(),
+            'message',
+            contains('write_file missing target'),
+          ),
+        ),
+      );
+    });
+
     test('auto-detects system path and uses sudo install', () async {
       final ssh = FakeSsh();
       final controller = newController(
