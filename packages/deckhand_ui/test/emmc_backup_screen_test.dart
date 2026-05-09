@@ -290,6 +290,42 @@ void main() {
       expect(find.textContaining('PHYSICALDRIVE3'), findsNothing);
     });
 
+    testWidgets('backup failure percentage is capped at 100%', (tester) async {
+      final controller = stubWizardController(profileJson: testProfileJson());
+      await controller.loadProfile('test-printer');
+      await controller.setDecision('flash.disk', 'disk-1');
+      final helper = _StreamingElevatedHelper();
+      final backupRoot = _createTempBackupRoot();
+
+      await tester.pumpWidget(
+        testHarness(
+          controller: controller,
+          child: const EmmcBackupScreen(),
+          initialLocation: '/snapshot',
+          extraOverrides: [
+            flashServiceProvider.overrideWithValue(_OneDiskFlash()),
+            elevatedHelperServiceProvider.overrideWithValue(helper),
+            emmcBackupsDirProvider.overrideWithValue(backupRoot),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await _tapStartBackup(tester);
+      helper.add(
+        const FlashProgress(
+          bytesDone: 8192,
+          bytesTotal: 4096,
+          phase: FlashPhase.failed,
+          message: 'read past reported disk size',
+        ),
+      );
+      await tester.pump();
+
+      expect(find.text('Backup failed at 100%.'), findsOneWidget);
+      expect(find.textContaining('200%'), findsNothing);
+    });
+
     testWidgets('successful backup writes an eMMC manifest', (tester) async {
       final controller = stubWizardController(profileJson: testProfileJson());
       await controller.loadProfile('test-printer');

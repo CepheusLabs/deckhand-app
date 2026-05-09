@@ -709,7 +709,7 @@ class _EmmcBackupScreenState extends ConsumerState<EmmcBackupScreen> {
     if (p.bytesTotal <= 0) return null;
     final pct = (p.bytesDone / p.bytesTotal) * 100;
     if (pct.isNaN || pct < 0) return null;
-    return pct.toStringAsFixed(0);
+    return pct.clamp(0, 100).toStringAsFixed(0);
   }
 
   bool _isSha256Hex(String? value) {
