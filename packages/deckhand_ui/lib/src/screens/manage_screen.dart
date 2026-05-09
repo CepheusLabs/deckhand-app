@@ -601,6 +601,8 @@ class _RestoreImage {
   EmmcBackupDiskIdentity? get diskIdentity => entry.diskIdentity;
 
   int get duplicateCount => entry.duplicateCount;
+
+  List<String> get duplicatePaths => entry.duplicatePaths;
 }
 
 class _RestoreTabState extends ConsumerState<_RestoreTab> {
@@ -880,6 +882,9 @@ class _RestoreTabState extends ConsumerState<_RestoreTab> {
                   icon: Icons.image_outlined,
                   title: _restoreImageTitle(restoreImage),
                   subtitle: _restoreImageSubtitle(restoreImage),
+                  detail: identical(restoreImage, selected)
+                      ? _restoreImageDuplicateDetail(restoreImage)
+                      : null,
                   danger: false,
                   onTap: _busy
                       ? null
@@ -1536,6 +1541,7 @@ class _RestoreChoiceTile extends StatelessWidget {
     required this.icon,
     required this.title,
     required this.subtitle,
+    this.detail,
     required this.danger,
     required this.onTap,
   });
@@ -1544,6 +1550,7 @@ class _RestoreChoiceTile extends StatelessWidget {
   final IconData icon;
   final String title;
   final String subtitle;
+  final String? detail;
   final bool danger;
   final VoidCallback? onTap;
 
@@ -1594,13 +1601,25 @@ class _RestoreChoiceTile extends StatelessWidget {
                       const SizedBox(height: 2),
                       Text(
                         subtitle,
-                        overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           fontFamily: DeckhandTokens.fontMono,
                           fontSize: DeckhandTokens.tXs,
                           color: tokens.text3,
+                          height: 1.35,
                         ),
                       ),
+                      if (detail != null) ...[
+                        const SizedBox(height: 6),
+                        Text(
+                          detail!,
+                          style: TextStyle(
+                            fontFamily: DeckhandTokens.fontMono,
+                            fontSize: DeckhandTokens.tXs,
+                            color: tokens.text3,
+                            height: 1.35,
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -1913,6 +1932,17 @@ String _restoreImageSubtitle(_RestoreImage image) {
     return '$profile · sha256 $sha… · ${image.imagePath}';
   }
   return '$profile · unindexed image · ${image.imagePath}';
+}
+
+String? _restoreImageDuplicateDetail(_RestoreImage image) {
+  if (image.duplicatePaths.isEmpty) return null;
+  final shown = image.duplicatePaths.take(3).join('\n');
+  final hiddenCount = image.duplicatePaths.length - 3;
+  final suffix = hiddenCount <= 0
+      ? ''
+      : '\n...and $hiddenCount more duplicate copy'
+            '${hiddenCount == 1 ? '' : 'ies'}';
+  return 'Duplicate copies kept on disk:\n$shown$suffix';
 }
 
 class _RestoreImageGroup {

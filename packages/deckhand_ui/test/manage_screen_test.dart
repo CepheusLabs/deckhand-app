@@ -719,6 +719,8 @@ void main() {
 
     expect(find.text('PHROZEN-ARCO'), findsOneWidget);
     expect(find.textContaining('1 duplicate hidden'), findsOneWidget);
+    expect(find.textContaining('Duplicate copies kept on disk:'), findsOneWidget);
+    expect(find.textContaining(r'phrozen-arco\old\emmc.img'), findsOneWidget);
     expect(find.textContaining('Indexed full-disk backup'), findsOneWidget);
     expect(find.textContaining('Unindexed partial image'), findsOneWidget);
   });
