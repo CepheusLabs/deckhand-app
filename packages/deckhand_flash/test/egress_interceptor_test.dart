@@ -20,8 +20,7 @@ void main() {
         ..httpClientAdapter = adapter;
     });
 
-    test('emits start + completion events for a successful GET',
-        () async {
+    test('emits start + completion events for a successful GET', () async {
       adapter.respondWithBody('OK');
       await dio.get<String>('https://example.com/foo');
       expect(sec.events, hasLength(2));
@@ -42,9 +41,11 @@ void main() {
       adapter.respondWithBody('OK');
       await dio.get<String>(
         'https://example.com/profiles.yaml',
-        options: Options(extra: const {
-          EgressLogInterceptor.operationLabelKey: 'Profile fetch',
-        }),
+        options: Options(
+          extra: const {
+            EgressLogInterceptor.operationLabelKey: 'Profile fetch',
+          },
+        ),
       );
       expect(sec.events.last.operationLabel, 'Profile fetch');
     });
@@ -53,7 +54,9 @@ void main() {
       adapter.failWith('connection refused');
       try {
         await dio.get<String>('https://example.com/x');
-      } on DioException {/* expected */}
+      } on DioException {
+        /* expected */
+      }
       expect(sec.events, hasLength(2));
       expect(sec.events.last.error, contains('connection refused'));
       expect(sec.events.last.completedAt, isNotNull);
@@ -65,17 +68,48 @@ void main() {
       expect(sec.events.last.operationLabel, 'Background');
     });
 
-    test('approx-bytes still populated when Dio parsed the body to a Map',
-        () async {
-      // Dio's default responseType is JSON: it eats the bytes and
-      // returns a Map. The previous _approxBytes returned null in
-      // this case; the fix re-encodes the parsed object so the
-      // S900 Network panel's "size" column has something to show.
-      adapter.respondWithJson({'name': 'klipper', 'version': 'v0.12.0'});
-      final res = await dio.get<dynamic>('https://example.com/registry.json');
-      expect(res.data, isA<Map>());
-      expect(sec.events.last.bytes, greaterThan(0),
-          reason: 'parsed JSON body should still report a byte count');
+    test(
+      'approx-bytes still populated when Dio parsed the body to a Map',
+      () async {
+        // Dio's default responseType is JSON: it eats the bytes and
+        // returns a Map. The previous _approxBytes returned null in
+        // this case; the fix re-encodes the parsed object so the
+        // S900 Network panel's "size" column has something to show.
+        adapter.respondWithJson({'name': 'klipper', 'version': 'v0.12.0'});
+        final res = await dio.get<dynamic>('https://example.com/registry.json');
+        expect(res.data, isA<Map>());
+        expect(
+          sec.events.last.bytes,
+          greaterThan(0),
+          reason: 'parsed JSON body should still report a byte count',
+        );
+      },
+    );
+
+    test('tolerates malformed request extras on completion', () async {
+      adapter.respondWithBody('OK');
+      adapter.corruptEgressExtras = true;
+
+      await dio.get<String>('https://example.com/corrupt-extras');
+
+      expect(sec.events, hasLength(2));
+      expect(sec.events.last.requestId, isEmpty);
+      expect(sec.events.last.completedAt, isNotNull);
+    });
+
+    test('tolerates malformed request extras on error', () async {
+      adapter.failWith('connection refused');
+      adapter.corruptEgressExtras = true;
+
+      try {
+        await dio.get<String>('https://example.com/corrupt-error');
+      } on DioException {
+        /* expected */
+      }
+
+      expect(sec.events, hasLength(2));
+      expect(sec.events.last.requestId, isEmpty);
+      expect(sec.events.last.error, contains('connection refused'));
     });
   });
 }
@@ -84,6 +118,7 @@ class _FakeAdapter implements HttpClientAdapter {
   String? _body;
   String? _failure;
   Map<String, List<String>>? _headersOverride;
+  bool corruptEgressExtras = false;
 
   void respondWithBody(String body) {
     _body = body;
@@ -113,6 +148,10 @@ class _FakeAdapter implements HttpClientAdapter {
     Stream<Uint8List>? requestStream,
     Future<dynamic>? cancelFuture,
   ) async {
+    if (corruptEgressExtras) {
+      options.extra['deckhand.request_id'] = 42;
+      options.extra['deckhand.started_at'] = 'bad date';
+    }
     if (_failure != null) {
       throw DioException(
         requestOptions: options,
@@ -122,7 +161,8 @@ class _FakeAdapter implements HttpClientAdapter {
     }
     final body = _body ?? '';
     final bytes = Uint8List.fromList(body.codeUnits);
-    final headers = _headersOverride ??
+    final headers =
+        _headersOverride ??
         {
           'content-length': ['${bytes.length}'],
         };
@@ -146,4 +186,3 @@ class _CapturingSecurity implements SecurityService {
   noSuchMethod(Invocation invocation) =>
       throw UnimplementedError('${invocation.memberName} not used');
 }
-

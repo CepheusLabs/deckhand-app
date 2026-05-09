@@ -21,7 +21,7 @@ import 'package:uuid/uuid.dart';
 /// `'Background'` so the panel still shows them.
 class EgressLogInterceptor extends Interceptor {
   EgressLogInterceptor(this.security, {Uuid? uuid})
-      : _uuid = uuid ?? const Uuid();
+    : _uuid = uuid ?? const Uuid();
 
   final SecurityService security;
   final Uuid _uuid;
@@ -36,24 +36,23 @@ class EgressLogInterceptor extends Interceptor {
   static const String _startedAtKey = 'deckhand.started_at';
 
   @override
-  void onRequest(
-    RequestOptions options,
-    RequestInterceptorHandler handler,
-  ) {
+  void onRequest(RequestOptions options, RequestInterceptorHandler handler) {
     final id = _uuid.v4();
     final startedAt = DateTime.now().toUtc();
     options.extra[_requestIdKey] = id;
     options.extra[_startedAtKey] = startedAt;
     final host = Uri.tryParse(options.uri.toString())?.host ?? '';
-    security.recordEgress(EgressEvent(
-      requestId: id,
-      host: host,
-      url: options.uri.toString(),
-      method: options.method,
-      operationLabel:
-          options.extra[operationLabelKey]?.toString() ?? 'Background',
-      startedAt: startedAt,
-    ));
+    security.recordEgress(
+      EgressEvent(
+        requestId: id,
+        host: host,
+        url: options.uri.toString(),
+        method: options.method,
+        operationLabel:
+            options.extra[operationLabelKey]?.toString() ?? 'Background',
+        startedAt: startedAt,
+      ),
+    );
     handler.next(options);
   }
 
@@ -63,46 +62,47 @@ class EgressLogInterceptor extends Interceptor {
     ResponseInterceptorHandler handler,
   ) {
     final extras = response.requestOptions.extra;
-    final id = extras[_requestIdKey] as String? ?? '';
-    final started = extras[_startedAtKey] as DateTime? ?? DateTime.now().toUtc();
+    final id = _stringExtra(extras, _requestIdKey) ?? '';
+    final started =
+        _dateTimeExtra(extras, _startedAtKey) ?? DateTime.now().toUtc();
     final host = response.requestOptions.uri.host;
     final bytes = _approxBytes(response);
-    security.recordEgress(EgressEvent(
-      requestId: id,
-      host: host,
-      url: response.requestOptions.uri.toString(),
-      method: response.requestOptions.method,
-      operationLabel:
-          extras[operationLabelKey]?.toString() ?? 'Background',
-      startedAt: started,
-      completedAt: DateTime.now().toUtc(),
-      bytes: bytes,
-      status: response.statusCode,
-    ));
+    security.recordEgress(
+      EgressEvent(
+        requestId: id,
+        host: host,
+        url: response.requestOptions.uri.toString(),
+        method: response.requestOptions.method,
+        operationLabel: extras[operationLabelKey]?.toString() ?? 'Background',
+        startedAt: started,
+        completedAt: DateTime.now().toUtc(),
+        bytes: bytes,
+        status: response.statusCode,
+      ),
+    );
     handler.next(response);
   }
 
   @override
-  void onError(
-    DioException err,
-    ErrorInterceptorHandler handler,
-  ) {
+  void onError(DioException err, ErrorInterceptorHandler handler) {
     final extras = err.requestOptions.extra;
-    final id = extras[_requestIdKey] as String? ?? '';
-    final started = extras[_startedAtKey] as DateTime? ?? DateTime.now().toUtc();
+    final id = _stringExtra(extras, _requestIdKey) ?? '';
+    final started =
+        _dateTimeExtra(extras, _startedAtKey) ?? DateTime.now().toUtc();
     final host = err.requestOptions.uri.host;
-    security.recordEgress(EgressEvent(
-      requestId: id,
-      host: host,
-      url: err.requestOptions.uri.toString(),
-      method: err.requestOptions.method,
-      operationLabel:
-          extras[operationLabelKey]?.toString() ?? 'Background',
-      startedAt: started,
-      completedAt: DateTime.now().toUtc(),
-      status: err.response?.statusCode,
-      error: err.message ?? err.type.name,
-    ));
+    security.recordEgress(
+      EgressEvent(
+        requestId: id,
+        host: host,
+        url: err.requestOptions.uri.toString(),
+        method: err.requestOptions.method,
+        operationLabel: extras[operationLabelKey]?.toString() ?? 'Background',
+        startedAt: started,
+        completedAt: DateTime.now().toUtc(),
+        status: err.response?.statusCode,
+        error: err.message ?? err.type.name,
+      ),
+    );
     handler.next(err);
   }
 
@@ -132,6 +132,16 @@ class EgressLogInterceptor extends Interceptor {
       }
     }
     return null;
+  }
+
+  String? _stringExtra(Map<String, dynamic> extras, String key) {
+    final value = extras[key];
+    return value is String ? value : null;
+  }
+
+  DateTime? _dateTimeExtra(Map<String, dynamic> extras, String key) {
+    final value = extras[key];
+    return value is DateTime ? value : null;
   }
 }
 
