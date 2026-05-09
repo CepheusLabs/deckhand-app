@@ -194,6 +194,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       setState(() => _cacheRetentionError = 'Enter 0 or a positive integer.');
       return;
     }
+    final previousVerifyAfterWrite = settings.verifyAfterWrite;
+    final previousCacheRetentionDays = settings.cacheRetentionDays;
     settings.verifyAfterWrite = _verifyAfterWrite;
     settings.cacheRetentionDays = parsed;
     try {
@@ -201,6 +203,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       setState(() => _cacheRetentionError = null);
       _toast('Flash settings saved.');
     } catch (e) {
+      settings.verifyAfterWrite = previousVerifyAfterWrite;
+      settings.cacheRetentionDays = previousCacheRetentionDays;
       setState(() => _cacheRetentionError = userFacingError(e));
     }
   }

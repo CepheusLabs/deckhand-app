@@ -241,6 +241,47 @@ void main() {
     expect(find.textContaining('Windows disk 3'), findsOne);
     expect(find.textContaining('PHYSICALDRIVE3'), findsNothing);
   });
+
+  testWidgets('General settings roll back when saving fails', (tester) async {
+    final settings =
+        _MemorySettings(
+            saveError: StateError(
+              r'write settings failed on \\.\PHYSICALDRIVE3',
+            ),
+          )
+          ..verifyAfterWrite = true
+          ..cacheRetentionDays = 30;
+    final controller = stubWizardController(profileJson: testProfileJson());
+    await controller.loadProfile('test-printer');
+
+    await tester.pumpWidget(
+      testHarness(
+        controller: controller,
+        child: const SettingsScreen(),
+        initialLocation: '/settings',
+        extraOverrides: [deckhandSettingsProvider.overrideWithValue(settings)],
+      ),
+    );
+    await tester.pump();
+
+    await tester.ensureVisible(find.text('Verify after flash'));
+    await tester.ensureVisible(find.byType(Switch));
+    await tester.tap(find.byType(Switch));
+    await tester.enterText(find.byType(TextField).first, '7');
+    await tester.ensureVisible(
+      find.widgetWithText(FilledButton, 'Save general settings'),
+    );
+    await tester.tap(
+      find.widgetWithText(FilledButton, 'Save general settings'),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+
+    expect(settings.verifyAfterWrite, isTrue);
+    expect(settings.cacheRetentionDays, 30);
+    expect(find.textContaining('Windows disk 3'), findsOne);
+    expect(find.textContaining('PHYSICALDRIVE3'), findsNothing);
+  });
 }
 
 class _MemorySettings extends DeckhandSettings {
