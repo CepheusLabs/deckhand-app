@@ -2079,7 +2079,7 @@ String _phaseLabel(FlashPhase? phase) => switch (phase) {
 };
 
 String formatRestoreSafetyWarnings(List<String> warnings) =>
-    warnings.map(hideRawDiskIds).join('\n');
+    warnings.map(userFacingDiskOperationError).join('\n');
 
 String _friendlyRestoreError(Object error) =>
     userFacingDiskOperationError(error);

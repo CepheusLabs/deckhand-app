@@ -1037,10 +1037,13 @@ void main() {
   test('restore safety warning text hides raw disk identifiers', () {
     final message = formatRestoreSafetyWarnings(const [
       r'\\.\PHYSICALDRIVE3 has mounted volumes',
+      r'lock volume \\?\Volume{81442efe-49a7-11f1-bd05-4c23380248b8}\: Access is denied.',
     ]);
 
     expect(message, contains('Windows disk 3'));
     expect(message, isNot(contains('PHYSICALDRIVE3')));
+    expect(message, contains('Windows would not release the selected disk'));
+    expect(message, isNot(contains(r'\\?\Volume')));
   });
 }
 
