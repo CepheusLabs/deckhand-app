@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 
 import '../providers.dart';
 import '../theming/deckhand_tokens.dart';
+import '../utils/user_facing_errors.dart';
 import '../widgets/deckhand_loading.dart';
 import '../widgets/id_tag.dart';
 import '../widgets/preflight_strip.dart';
@@ -185,7 +186,7 @@ class _ResumePanelState extends ConsumerState<_ResumePanel> {
           content: Text(
             'Deckhand saved your progress on '
             '"${e.snapshot.profileId}", but the profile could not '
-            'be reloaded:\n\n${e.cause}\n\n'
+            'be reloaded:\n\n${userFacingError(e.cause)}\n\n'
             'You can retry from the Pick Printer screen, or start '
             'fresh; the snapshot is kept on disk so a later launch '
             'can try again.',
@@ -346,7 +347,8 @@ class _ManagedPrintersPanelState extends ConsumerState<_ManagedPrintersPanel> {
           title: const Text("Couldn't open this printer"),
           content: Text(
             'Deckhand found "${printer.displayName}", but the profile '
-            '"${printer.profileId}" could not be loaded:\n\n${e.cause}',
+            '"${printer.profileId}" could not be loaded:\n\n'
+            '${userFacingError(e.cause)}',
           ),
           actions: [
             FilledButton(
