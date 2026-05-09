@@ -238,6 +238,44 @@ void main() {
       expect(registry.listManagedPrinters(), isEmpty);
       expect(find.text('Provider Printer'), findsNothing);
     });
+
+    testWidgets('known printers panel links to overflow printers', (
+      tester,
+    ) async {
+      await tester.binding.setSurfaceSize(const Size(1200, 1000));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      final controller = stubWizardController(profileJson: testProfileJson());
+      await controller.loadProfile('test-printer');
+      final registry = _MemoryManagedPrinterRegistry([
+        for (var i = 0; i < 5; i++)
+          ManagedPrinter.fromConnection(
+            profileId: 'test-printer',
+            displayName: 'Printer $i',
+            host: '192.168.1.${50 + i}',
+            port: 22,
+            user: 'mks',
+            lastSeen: DateTime.utc(2026, 5, 4, 14, i),
+          ),
+      ]);
+
+      await tester.pumpWidget(
+        testHarness(
+          controller: controller,
+          child: const WelcomeScreen(),
+          initialLocation: '/',
+          extraOverrides: [
+            managedPrinterRegistryProvider.overrideWithValue(registry),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Printer 0'), findsOneWidget);
+      expect(find.text('Printer 3'), findsOneWidget);
+      expect(find.text('Printer 4'), findsNothing);
+      expect(find.text('1 more printer in manager'), findsOneWidget);
+    });
   });
 }
 

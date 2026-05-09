@@ -380,6 +380,8 @@ class _ManagedPrintersPanelState extends ConsumerState<_ManagedPrintersPanel> {
     final printers = ref
         .watch(managedPrinterRegistryProvider)
         .listManagedPrinters();
+    final visiblePrinters = printers.take(4).toList();
+    final hiddenCount = printers.length - visiblePrinters.length;
     return _PanelShell(
       tokens: tokens,
       eyebrow: 'PRINTERS',
@@ -394,12 +396,17 @@ class _ManagedPrintersPanelState extends ConsumerState<_ManagedPrintersPanel> {
           ? null
           : Column(
               children: [
-                for (var i = 0; i < printers.length && i < 4; i++)
+                for (final printer in visiblePrinters)
                   _ManagedPrinterRow(
-                    printer: printers[i],
-                    busy: _busyId == printers[i].id,
-                    onManage: () => _manage(printers[i]),
-                    onForget: () => _forget(printers[i]),
+                    printer: printer,
+                    busy: _busyId == printer.id,
+                    onManage: () => _manage(printer),
+                    onForget: () => _forget(printer),
+                  ),
+                if (hiddenCount > 0)
+                  _ManagedPrinterOverflowRow(
+                    count: hiddenCount,
+                    onOpen: () => context.go('/printers'),
                   ),
               ],
             ),
@@ -414,6 +421,52 @@ class _ManagedPrintersPanelState extends ConsumerState<_ManagedPrintersPanel> {
               icon: const Icon(Icons.list_alt, size: 14),
               label: const Text('Open printer manager'),
             ),
+    );
+  }
+}
+
+class _ManagedPrinterOverflowRow extends StatelessWidget {
+  const _ManagedPrinterOverflowRow({required this.count, required this.onOpen});
+
+  final int count;
+  final VoidCallback onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = DeckhandTokens.of(context);
+    final label = count == 1
+        ? '1 more printer in manager'
+        : '$count more printers in manager';
+    return InkWell(
+      onTap: onOpen,
+      borderRadius: BorderRadius.circular(DeckhandTokens.r2),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: tokens.ink2,
+          border: Border.all(color: tokens.line),
+          borderRadius: BorderRadius.circular(DeckhandTokens.r2),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.more_horiz, size: 16, color: tokens.text3),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                label,
+                style: TextStyle(
+                  fontFamily: DeckhandTokens.fontSans,
+                  fontSize: DeckhandTokens.tSm,
+                  fontWeight: FontWeight.w600,
+                  color: tokens.text,
+                ),
+              ),
+            ),
+            Icon(Icons.arrow_forward, size: 14, color: tokens.text3),
+          ],
+        ),
+      ),
     );
   }
 }

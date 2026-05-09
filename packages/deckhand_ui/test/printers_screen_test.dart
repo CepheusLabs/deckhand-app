@@ -54,7 +54,7 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('Printers.'), findsOneWidget);
+      expect(find.text('Printers'), findsOneWidget);
       expect(find.text('Test Printer'), findsOneWidget);
       expect(find.text('Second Printer'), findsOneWidget);
       expect(find.textContaining('root@192.168.1.50'), findsOneWidget);
@@ -150,6 +150,62 @@ void main() {
       expect(registry.saved, isTrue);
       expect(registry.listManagedPrinters(), isEmpty);
       expect(find.text('Provider Printer'), findsNothing);
+    });
+
+    testWidgets('filters saved printers by name, host, profile, or user', (
+      tester,
+    ) async {
+      await tester.binding.setSurfaceSize(const Size(1200, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      final controller = stubWizardController(profileJson: testProfileJson());
+      await controller.loadProfile('test-printer');
+      final registry = _MemoryManagedPrinterRegistry([
+        ManagedPrinter.fromConnection(
+          profileId: 'test-printer',
+          displayName: 'Arco Bench',
+          host: '192.168.1.50',
+          port: 22,
+          user: 'mks',
+          lastSeen: DateTime.utc(2026, 5, 4, 14),
+        ),
+        ManagedPrinter.fromConnection(
+          profileId: 'test-printer',
+          displayName: 'Shop Printer',
+          host: '192.168.1.72',
+          port: 22,
+          user: 'root',
+          lastSeen: DateTime.utc(2026, 5, 4, 15),
+        ),
+      ]);
+
+      await tester.pumpWidget(
+        testHarness(
+          controller: controller,
+          child: const PrintersScreen(),
+          initialLocation: '/printers',
+          extraOverrides: [
+            managedPrinterRegistryProvider.overrideWithValue(registry),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Arco Bench'), findsOneWidget);
+      expect(find.text('Shop Printer'), findsOneWidget);
+
+      await tester.enterText(find.byType(TextField), '72');
+      await tester.pump();
+
+      expect(find.text('Arco Bench'), findsNothing);
+      expect(find.text('Shop Printer'), findsOneWidget);
+      expect(find.text('1 of 2 shown'), findsOneWidget);
+
+      await tester.enterText(find.byType(TextField), 'missing');
+      await tester.pump();
+
+      expect(find.text('Shop Printer'), findsNothing);
+      expect(find.text('No saved printers match "missing".'), findsOneWidget);
     });
   });
 }

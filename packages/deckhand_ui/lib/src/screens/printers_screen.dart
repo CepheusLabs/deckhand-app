@@ -18,6 +18,13 @@ class PrintersScreen extends ConsumerStatefulWidget {
 
 class _PrintersScreenState extends ConsumerState<PrintersScreen> {
   String? _busyId;
+  final TextEditingController _searchController = TextEditingController();
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
 
   Future<void> _manage(ManagedPrinter printer) async {
     if (_busyId != null) return;
@@ -80,12 +87,22 @@ class _PrintersScreenState extends ConsumerState<PrintersScreen> {
     final printers = ref
         .watch(managedPrinterRegistryProvider)
         .listManagedPrinters();
+    final searchQuery = _searchController.text.trim();
+    final visiblePrinters = searchQuery.isEmpty
+        ? printers
+        : printers.where((p) => _matchesPrinterSearch(p, searchQuery)).toList();
     return WizardScaffold(
       screenId: 'MGR-printers',
-      title: 'Printers.',
-      helperText: 'Known printers Deckhand has connected to on this computer.',
+      title: 'Printers',
+      helperText:
+          'Saved printers Deckhand can reopen for manage, backup, restore, and maintenance work.',
       body: _PrintersPanel(
+        allCount: printers.length,
+        searchController: _searchController,
+        searchQuery: searchQuery,
+        onSearchChanged: (_) => setState(() {}),
         printers: printers,
+        visiblePrinters: visiblePrinters,
         busyId: _busyId,
         onManage: _manage,
         onForget: _forget,
@@ -107,13 +124,23 @@ class _PrintersScreenState extends ConsumerState<PrintersScreen> {
 
 class _PrintersPanel extends StatelessWidget {
   const _PrintersPanel({
+    required this.allCount,
+    required this.searchController,
+    required this.searchQuery,
+    required this.onSearchChanged,
     required this.printers,
+    required this.visiblePrinters,
     required this.busyId,
     required this.onManage,
     required this.onForget,
   });
 
+  final int allCount;
+  final TextEditingController searchController;
+  final String searchQuery;
+  final ValueChanged<String> onSearchChanged;
   final List<ManagedPrinter> printers;
+  final List<ManagedPrinter> visiblePrinters;
   final String? busyId;
   final Future<void> Function(ManagedPrinter printer) onManage;
   final Future<void> Function(ManagedPrinter printer) onForget;
@@ -136,16 +163,33 @@ class _PrintersPanel extends StatelessWidget {
             children: [
               _Eyebrow('KNOWN PRINTERS', color: tokens.text3),
               const Spacer(),
-              IdTag('${printers.length} saved'),
+              IdTag(
+                searchQuery.isEmpty
+                    ? '$allCount saved'
+                    : '${visiblePrinters.length} of $allCount shown',
+              ),
             ],
           ),
           const SizedBox(height: 16),
+          if (printers.isNotEmpty) ...[
+            TextField(
+              controller: searchController,
+              onChanged: onSearchChanged,
+              decoration: const InputDecoration(
+                prefixIcon: Icon(Icons.search, size: 18),
+                hintText: 'Search printers',
+              ),
+            ),
+            const SizedBox(height: 16),
+          ],
           if (printers.isEmpty)
             _EmptyPrinters(tokens: tokens)
+          else if (visiblePrinters.isEmpty)
+            _NoMatchingPrinters(tokens: tokens, query: searchQuery)
           else
             Column(
               children: [
-                for (final printer in printers)
+                for (final printer in visiblePrinters)
                   _PrinterRegistryRow(
                     printer: printer,
                     busy: busyId == printer.id,
@@ -154,6 +198,41 @@ class _PrintersPanel extends StatelessWidget {
                   ),
               ],
             ),
+        ],
+      ),
+    );
+  }
+}
+
+class _NoMatchingPrinters extends StatelessWidget {
+  const _NoMatchingPrinters({required this.tokens, required this.query});
+
+  final DeckhandTokens tokens;
+  final String query;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
+      decoration: BoxDecoration(
+        color: tokens.ink2,
+        border: Border.all(color: tokens.line),
+        borderRadius: BorderRadius.circular(DeckhandTokens.r2),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.search_off, size: 18, color: tokens.text3),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              'No saved printers match "$query".',
+              style: TextStyle(
+                fontSize: DeckhandTokens.tSm,
+                color: tokens.text3,
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -335,4 +414,12 @@ String _shortDate(DateTime value) {
   final hour = local.hour.toString().padLeft(2, '0');
   final minute = local.minute.toString().padLeft(2, '0');
   return '$month-$day $hour:$minute';
+}
+
+bool _matchesPrinterSearch(ManagedPrinter printer, String query) {
+  final needle = query.toLowerCase();
+  return printer.displayName.toLowerCase().contains(needle) ||
+      printer.host.toLowerCase().contains(needle) ||
+      printer.profileId.toLowerCase().contains(needle) ||
+      printer.user.toLowerCase().contains(needle);
 }
