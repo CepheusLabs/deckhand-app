@@ -763,10 +763,16 @@ Future<void> _runVerifyImpl(
 ) async {
   final s = c._requireSession();
   for (final v in c._profile!.verifiers) {
-    final kind = v.raw['kind'] as String? ?? '';
+    final kind = _stringValue(v.raw['kind']) ?? '';
+    final optional = _boolValue(v.raw['optional']);
     switch (kind) {
       case 'ssh_command':
-        final cmd = v.raw['command'] as String;
+        final cmd = _stringValue(v.raw['command']);
+        if (cmd == null || cmd.trim().isEmpty) {
+          throw StepExecutionException(
+            'verifier ${v.id} command must be a string',
+          );
+        }
         // Verifiers are supposed to be read-only checks. If a
         // profile author writes `sudo foo` inside a verify step,
         // that is either a mistake or a privilege-escalation
@@ -776,8 +782,11 @@ Future<void> _runVerifyImpl(
         // and fails fast, rather than silently picking up the
         // cached session password.
         final res = await c.ssh.run(s, cmd);
-        final contains = v.raw['expect_stdout_contains'] as String?;
-        final equals = v.raw['expect_stdout_equals'] as String?;
+        final contains = _optionalVerifierString(
+          v,
+          'expect_stdout_contains',
+        );
+        final equals = _optionalVerifierString(v, 'expect_stdout_equals');
         var passed = res.success;
         if (contains != null) {
           passed = passed && res.stdout.contains(contains);
@@ -786,7 +795,7 @@ Future<void> _runVerifyImpl(
           passed = passed && res.stdout.trim() == equals.trim();
         }
         c._log(step, '[verify] ${v.id}: ${passed ? "PASS" : "FAIL"}');
-        if (!passed && !(v.raw['optional'] as bool? ?? false)) {
+        if (!passed && !optional) {
           throw StepExecutionException('verifier ${v.id} failed');
         }
       case 'http_get':
@@ -795,7 +804,7 @@ Future<void> _runVerifyImpl(
           c._log(step, '[verify] ${v.id}: no host - skipping');
           continue;
         }
-        final url = (v.raw['url'] as String? ?? '').replaceAll(
+        final url = (_stringValue(v.raw['url']) ?? '').replaceAll(
           '{{host}}',
           host,
         );
@@ -807,7 +816,7 @@ Future<void> _runVerifyImpl(
           );
         } catch (e) {
           c._log(step, '[verify] ${v.id}: $e');
-          if (!(v.raw['optional'] as bool? ?? false)) {
+          if (!optional) {
             throw StepExecutionException('verifier ${v.id} failed: $e');
           }
         }
@@ -817,6 +826,13 @@ Future<void> _runVerifyImpl(
         c._log(step, '[verify] ${v.id}: unknown kind $kind');
     }
   }
+}
+
+String? _optionalVerifierString(VerifierConfig verifier, String key) {
+  final value = verifier.raw[key];
+  if (value == null) return null;
+  if (value is String) return value;
+  throw StepExecutionException('verifier ${verifier.id} $key must be a string');
 }
 
 Future<void> _runConditionalImpl(
@@ -874,3 +890,5 @@ List<String> _stringList(Object? value) {
 }
 
 String? _stringValue(Object? value) => value is String ? value : null;
+
+bool _boolValue(Object? value) => value is bool ? value : false;

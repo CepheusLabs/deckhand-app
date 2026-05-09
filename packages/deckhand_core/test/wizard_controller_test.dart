@@ -25,6 +25,7 @@ void main() {
   Map<String, dynamic> baseProfileJson({
     List<Map<String, dynamic>>? stockKeepSteps,
     List<Map<String, dynamic>>? freshFlashSteps,
+    List<Map<String, dynamic>>? verifiers,
   }) => {
     'profile_id': 'test-printer',
     'profile_version': '0.1.0',
@@ -54,6 +55,7 @@ void main() {
       'stock_keep': {'enabled': true, 'steps': stockKeepSteps ?? const []},
       'fresh_flash': {'enabled': true, 'steps': freshFlashSteps ?? const []},
     },
+    if (verifiers != null) 'verifiers': verifiers,
   };
 
   WizardController newController({
@@ -1126,6 +1128,39 @@ void main() {
         expect(call.sudoPassword, 'root');
       },
     );
+  });
+
+  group('WizardController verify step kind', () {
+    test('rejects malformed ssh verifier command with a step error', () async {
+      final controller = newController(
+        profileJson: baseProfileJson(
+          stockKeepSteps: [
+            {'id': 'verify', 'kind': 'verify'},
+          ],
+          verifiers: [
+            {
+              'id': 'klipper-ready',
+              'kind': 'ssh_command',
+              'command': ['systemctl', 'is-active', 'klipper'],
+            },
+          ],
+        ),
+      );
+      await controller.loadProfile('test-printer');
+      controller.setFlow(WizardFlow.stockKeep);
+      await controller.connectSsh(host: '127.0.0.1');
+
+      await expectLater(
+        controller.startExecution(),
+        throwsA(
+          isA<StepExecutionException>().having(
+            (e) => e.toString(),
+            'message',
+            contains('verifier klipper-ready command must be a string'),
+          ),
+        ),
+      );
+    });
   });
 
   group('WizardController._runSsh', () {
