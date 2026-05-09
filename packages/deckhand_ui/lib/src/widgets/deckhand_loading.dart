@@ -86,18 +86,19 @@ class _DeckhandSpinnerPainter extends CustomPainter {
       ..strokeWidth = strokeWidth
       ..strokeCap = StrokeCap.round
       ..style = PaintingStyle.stroke;
-    final sweep = Paint()
+    final arc = Paint()
       ..color = color
-      ..style = PaintingStyle.fill;
+      ..strokeWidth = strokeWidth
+      ..strokeCap = StrokeCap.round
+      ..style = PaintingStyle.stroke;
     canvas.drawCircle(center, radius, track);
-    final theta = progress * math.pi * 2 - math.pi / 2;
-    canvas.drawCircle(
-      Offset(
-        center.dx + math.cos(theta) * radius,
-        center.dy + math.sin(theta) * radius,
-      ),
-      math.max(1.5, strokeWidth * 1.1),
-      sweep,
+    final rect = Rect.fromCircle(center: center, radius: radius);
+    canvas.drawArc(
+      rect,
+      progress * math.pi * 2 - math.pi / 2,
+      math.pi * 1.35,
+      false,
+      arc,
     );
   }
 
