@@ -334,14 +334,40 @@ void main() {
     });
   });
 
+  group('windowsCommandLineQuoteArg', () {
+    test('leaves simple arguments unquoted', () {
+      expect(windowsCommandLineQuoteArg('write-image'), 'write-image');
+      expect(windowsCommandLineQuoteArg('PhysicalDrive3'), 'PhysicalDrive3');
+    });
+
+    test('quotes paths with spaces', () {
+      expect(
+        windowsCommandLineQuoteArg(r'C:\Deckhand Builds\image.img'),
+        r'"C:\Deckhand Builds\image.img"',
+      );
+    });
+
+    test('escapes embedded quotes and trailing backslashes', () {
+      expect(windowsCommandLineQuoteArg(r'a"b'), r'"a\"b"');
+      expect(
+        windowsCommandLineQuoteArg(r'C:\path with spaces\'),
+        r'"C:\path with spaces\\"',
+      );
+    });
+  });
+
   group('Windows helper launcher', () {
     test('launches helper and lets the events file own completion', () {
       final command = buildWindowsLaunchPowerShellCommandForTesting(
         helperPath: r'C:\Deckhand\deckhand-elevated-helper.exe',
-        argList: '"write-image","--target","PhysicalDrive3"',
+        helperArgs: ['write-image', '--target', 'PhysicalDrive3'],
       );
 
+      expect(command, contains('[System.Diagnostics.ProcessStartInfo]::new'));
+      expect(command, contains('\$psi.UseShellExecute = \$false'));
+      expect(command, contains('\$psi.CreateNoWindow = \$true'));
       expect(command, contains('Start-Process'));
+      expect(command, contains('-Verb RunAs'));
       expect(command, contains('-PassThru'));
       expect(command, contains('helper-pid='));
       expect(command, isNot(contains('-Wait')));

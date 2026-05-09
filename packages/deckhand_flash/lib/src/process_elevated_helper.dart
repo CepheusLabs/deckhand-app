@@ -23,9 +23,11 @@ final _helperTempRandom = Random.secure();
 /// network access.
 ///
 /// Elevation per platform:
-///   - Windows: `powershell.exe Start-Process -Verb RunAs` starts the
-///     helper, then the UI treats the helper-owned events file as the
-///     source of truth for JSON progress events.
+///   - Windows: if Deckhand is already elevated, PowerShell starts the
+///     helper directly through .NET Process APIs; otherwise
+///     `Start-Process -Verb RunAs` triggers UAC. In both cases the UI
+///     treats the helper-owned events file as the source of truth for
+///     JSON progress events.
 ///   - macOS: `osascript -e 'do shell script ... with administrator
 ///     privileges'` - triggers the Authorization Services dialog.
 ///   - Linux: `pkexec` - the helper inherits stdio directly so
@@ -283,13 +285,12 @@ class ProcessElevatedHelperService implements ElevatedHelperService {
   }
 
   // -----------------------------------------------------------------
-  // Windows: PowerShell Start-Process -Verb RunAs. PowerShell is only
-  // the launch mechanism; the helper-owned events file is the
-  // completion contract. Treating PowerShell's lifetime as helper
-  // lifetime is wrong on UAC-disabled and some ShellExecute paths.
-  // We keep a byte-offset tailer plus an explicit event state machine
-  // so "started" cannot be lost when a long progress file scrolls it
-  // out of a diagnostic tail.
+  // Windows: PowerShell is only the launch mechanism; the helper-owned
+  // events file is the completion contract. Treating PowerShell's
+  // lifetime as helper lifetime is wrong on UAC-disabled and some
+  // ShellExecute paths. We keep a byte-offset tailer plus an explicit
+  // event state machine so "started" cannot be lost when a long
+  // progress file scrolls it out of a diagnostic tail.
 
   Stream<FlashProgress> _runWindows(List<String> helperArgs) async* {
     // PowerShell's `Start-Process -Verb RunAs` does NOT honor
@@ -321,7 +322,6 @@ class ProcessElevatedHelperService implements ElevatedHelperService {
       helperArgs,
       stdoutFile.path,
     );
-    final argList = argsWithEventsFile.map(powerShellQuoteArg).join(',');
 
     // Two launch paths depending on whether we already have admin:
     //
@@ -346,7 +346,7 @@ class ProcessElevatedHelperService implements ElevatedHelperService {
     // processes.
     final psCommand = _buildWindowsLaunchPowerShellCommand(
       helperPath: helperPath,
-      argList: argList,
+      helperArgs: argsWithEventsFile,
     );
 
     final ps = await Process.start('powershell.exe', [
@@ -895,10 +895,10 @@ Future<FlashProgress?> recoverCompletedReadImageForTesting(
 @visibleForTesting
 String buildWindowsLaunchPowerShellCommandForTesting({
   required String helperPath,
-  required String argList,
+  required List<String> helperArgs,
 }) => _buildWindowsLaunchPowerShellCommand(
   helperPath: helperPath,
-  argList: argList,
+  helperArgs: helperArgs,
 );
 
 List<String> _injectHelperEventsFile(
@@ -913,34 +913,47 @@ List<String> _injectHelperEventsFile(
 
 String _buildWindowsLaunchPowerShellCommand({
   required String helperPath,
-  required String argList,
-}) => [
-  '\$ErrorActionPreference = "Stop"; ',
-  'try { ',
-  '  \$isAdmin = ([Security.Principal.WindowsPrincipal] ',
-  '    [Security.Principal.WindowsIdentity]::GetCurrent()).',
-  '    IsInRole([Security.Principal.WindowsBuiltinRole]::Administrator); ',
-  '  if (\$isAdmin) { ',
-  '    \$p = Start-Process -FilePath "$helperPath" ',
-  '      -ArgumentList $argList ',
-  '      -PassThru -WindowStyle Hidden; ',
-  '  } else { ',
-  '    \$p = Start-Process -FilePath "$helperPath" ',
-  '      -ArgumentList $argList ',
-  '      -Verb RunAs -PassThru; ',
-  '  } ',
-  '  if (\$null -eq \$p) { throw "Start-Process returned no process" } ',
-  '  [Console]::Out.WriteLine("helper-pid=\$(\$p.Id)"); ',
-  '  exit 0 ',
-  '} catch { ',
-  // Write the failure to PowerShell's stderr so the Dart parent
-  // can show the user something actionable: UAC denial reads
-  // "The operation was canceled by the user.", missing exe reads
-  // "This file does not have an app associated with it...", etc.
-  '  [Console]::Error.WriteLine(\$_.Exception.Message); ',
-  '  exit 1 ',
-  '}',
-].join();
+  required List<String> helperArgs,
+}) {
+  final helperPathLiteral = powerShellSingleQuoteLiteral(helperPath);
+  final argList = helperArgs.map(powerShellQuoteArg).join(',');
+  final commandLineArgsLiteral = powerShellSingleQuoteLiteral(
+    helperArgs.map(windowsCommandLineQuoteArg).join(' '),
+  );
+  return [
+    '\$ErrorActionPreference = "Stop"; ',
+    '\$helperPath = $helperPathLiteral; ',
+    '\$argv = @($argList); ',
+    '\$directArgs = $commandLineArgsLiteral; ',
+    'try { ',
+    '  \$isAdmin = ([Security.Principal.WindowsPrincipal] ',
+    '    [Security.Principal.WindowsIdentity]::GetCurrent()).',
+    '    IsInRole([Security.Principal.WindowsBuiltinRole]::Administrator); ',
+    '  if (\$isAdmin) { ',
+    '    \$psi = [System.Diagnostics.ProcessStartInfo]::new(); ',
+    '    \$psi.FileName = \$helperPath; ',
+    '    \$psi.Arguments = \$directArgs; ',
+    '    \$psi.UseShellExecute = \$false; ',
+    '    \$psi.CreateNoWindow = \$true; ',
+    '    \$p = [System.Diagnostics.Process]::Start(\$psi); ',
+    '  } else { ',
+    '    \$p = Start-Process -FilePath \$helperPath ',
+    '      -ArgumentList \$argv ',
+    '      -Verb RunAs -PassThru; ',
+    '  } ',
+    '  if (\$null -eq \$p) { throw "helper launch returned no process" } ',
+    '  [Console]::Out.WriteLine("helper-pid=\$(\$p.Id)"); ',
+    '  exit 0 ',
+    '} catch { ',
+    // Write the failure to PowerShell's stderr so the Dart parent
+    // can show the user something actionable: UAC denial reads
+    // "The operation was canceled by the user.", missing exe reads
+    // "This file does not have an app associated with it...", etc.
+    '  [Console]::Error.WriteLine(\$_.Exception.Message); ',
+    '  exit 1 ',
+    '}',
+  ].join();
+}
 
 FlashProgress? _parseHelperLine(String line) {
   if (line.trim().isEmpty) return null;
@@ -1113,6 +1126,50 @@ String _shellQuote(String s) => shellSingleQuote(s);
 /// could silently misquote a disk path with a space and flash the
 /// wrong device.
 String powerShellQuoteArg(String arg) => '"${arg.replaceAll('"', '""')}"';
+
+String powerShellSingleQuoteLiteral(String value) =>
+    "'${value.replaceAll("'", "''")}'";
+
+/// Quote [arg] for Windows' `CommandLineToArgvW` parsing rules.
+///
+/// This is used only for the already-elevated direct launch path,
+/// where .NET Framework's ProcessStartInfo does not reliably expose
+/// ArgumentList under Windows PowerShell 5.1.
+String windowsCommandLineQuoteArg(String arg) {
+  if (arg.isEmpty) return '""';
+  final needsQuotes = arg.contains(RegExp(r'[\s"]'));
+  if (!needsQuotes) return arg;
+
+  final out = StringBuffer('"');
+  var backslashes = 0;
+
+  void writeBackslashes(int count) {
+    for (var i = 0; i < count; i++) {
+      out.write(r'\');
+    }
+  }
+
+  for (final codeUnit in arg.codeUnits) {
+    final char = String.fromCharCode(codeUnit);
+    if (char == r'\') {
+      backslashes++;
+      continue;
+    }
+    if (char == '"') {
+      writeBackslashes(backslashes * 2 + 1);
+      out.write('"');
+      backslashes = 0;
+      continue;
+    }
+    writeBackslashes(backslashes);
+    backslashes = 0;
+    out.write(char);
+  }
+
+  writeBackslashes(backslashes * 2);
+  out.write('"');
+  return out.toString();
+}
 
 class ElevatedHelperException implements Exception {
   ElevatedHelperException(this.message);
