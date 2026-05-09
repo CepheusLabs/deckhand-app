@@ -35,11 +35,17 @@ class _ManageTuningPanelState extends ConsumerState<ManageTuningPanel> {
   @override
   void initState() {
     super.initState();
+    for (final controller in _inputControllers) {
+      controller.addListener(_onTuningInputChanged);
+    }
     _refresh();
   }
 
   @override
   void dispose() {
+    for (final controller in _inputControllers) {
+      controller.removeListener(_onTuningInputChanged);
+    }
     _hotendTarget.dispose();
     _bedTarget.dispose();
     _pressureAdvance.dispose();
@@ -47,6 +53,23 @@ class _ManageTuningPanelState extends ConsumerState<ManageTuningPanel> {
     _rotationRequested.dispose();
     _rotationMeasured.dispose();
     super.dispose();
+  }
+
+  List<TextEditingController> get _inputControllers => [
+    _hotendTarget,
+    _bedTarget,
+    _pressureAdvance,
+    _rotationCurrent,
+    _rotationRequested,
+    _rotationMeasured,
+  ];
+
+  void _onTuningInputChanged() {
+    if (!mounted) return;
+    setState(() {
+      _managedPreview = null;
+      _managedError = null;
+    });
   }
 
   void _refresh() {

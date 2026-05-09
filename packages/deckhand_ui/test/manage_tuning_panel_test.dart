@@ -91,6 +91,45 @@ void main() {
     expect(find.textContaining('backup at'), findsOneWidget);
   });
 
+  testWidgets('rotation-distance command updates while typing', (tester) async {
+    final controller = stubWizardController(profileJson: testProfileJson());
+    await controller.loadProfile('test-printer');
+    controller.setSession(
+      const SshSession(id: 's', host: '192.168.1.50', port: 22, user: 'mks'),
+    );
+    final moonraker = _FakeMoonraker();
+
+    await tester.pumpWidget(
+      testHarness(
+        controller: controller,
+        child: const ManageScreen(),
+        initialLocation: '/manage',
+        extraOverrides: [moonrakerServiceProvider.overrideWithValue(moonraker)],
+      ),
+    );
+
+    await tester.tap(find.text('Tune'));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.widgetWithText(TextField, 'Measured'), '95');
+    await tester.pump();
+
+    expect(find.text('Apply 7.1250'), findsOneWidget);
+
+    final applyButton = find.widgetWithText(OutlinedButton, 'Apply 7.1250');
+    await tester.ensureVisible(applyButton);
+    await tester.pumpAndSettle();
+    await tester.tap(applyButton);
+    await tester.pump();
+
+    expect(
+      moonraker.scripts,
+      contains(
+        'SET_EXTRUDER_ROTATION_DISTANCE EXTRUDER=extruder DISTANCE=7.125000',
+      ),
+    );
+  });
+
   testWidgets('tuning tab tolerates malformed Moonraker status payloads', (
     tester,
   ) async {
@@ -101,7 +140,9 @@ void main() {
     );
     final moonraker = _FakeMoonraker(
       status: {
-        'print_stats': <Object?, Object?>{'state': ['printing']},
+        'print_stats': <Object?, Object?>{
+          'state': ['printing'],
+        },
         'extruder': {'temperature': '213.5'},
         'heater_bed': {'temperature': 68},
         'configfile': {
