@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:deckhand_flash/src/sidecar_client.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -13,6 +14,23 @@ import 'package:flutter_test/flutter_test.dart';
 /// production stdout stream uses, without touching Process or IOSink.
 void main() {
   group('SidecarClient response routing', () {
+    test(
+      'start failure leaves the client reusable and not half-started',
+      () async {
+        final client = SidecarClient(
+          binaryPath: 'definitely_missing_deckhand_sidecar_for_test',
+        );
+
+        await expectLater(client.start(), throwsA(isA<ProcessException>()));
+        await expectLater(client.start(), throwsA(isA<ProcessException>()));
+        expect(client.pendingRequestCountForTesting, 0);
+        await expectLater(
+          client.call('ping', const {}),
+          throwsA(isA<StateError>()),
+        );
+      },
+    );
+
     test('callStreaming before start throws a controlled StateError', () {
       final client = SidecarClient(binaryPath: '/does/not/exist');
 

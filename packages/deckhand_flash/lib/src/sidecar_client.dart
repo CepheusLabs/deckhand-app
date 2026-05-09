@@ -49,6 +49,7 @@ class SidecarClient implements SidecarConnection {
   final _operationSubscribers =
       <String, StreamController<SidecarNotification>>{};
   StreamSubscription<String>? _stdoutSub;
+  StreamSubscription<String>? _stderrSub;
   bool _started = false;
   void Function(String line)? _writeLineOverride;
   Future<void> Function()? _flushOverride;
@@ -64,54 +65,60 @@ class SidecarClient implements SidecarConnection {
     if (_started) return;
     _started = true;
 
-    _process = await Process.start(
-      binaryPath,
-      const [],
-      mode: ProcessStartMode.normal,
-      runInShell: false,
-    );
+    try {
+      _process = await Process.start(
+        binaryPath,
+        const [],
+        mode: ProcessStartMode.normal,
+        runInShell: false,
+      );
 
-    _stdoutSub = _process!.stdout
-        .transform(utf8.decoder)
-        .transform(const LineSplitter())
-        .listen(
-          _handleLine,
-          onError: (Object e, StackTrace st) {
-            _failAll(e.toString());
-          },
-          onDone: _onProcessDone,
-        );
+      _stdoutSub = _process!.stdout
+          .transform(utf8.decoder)
+          .transform(const LineSplitter())
+          .listen(
+            _handleLine,
+            onError: (Object e, StackTrace st) {
+              _failAll(e.toString());
+            },
+            onDone: _onProcessDone,
+          );
 
-    // stderr -> route through DeckhandLogger so bug reports and
-    // crash dumps can capture sidecar diagnostics without those
-    // lines leaking to stdout (which would interfere with an
-    // app-launched-from-terminal case) or to print() (flagged by
-    // avoid_print).
-    _process!.stderr
-        .transform(utf8.decoder)
-        .transform(const LineSplitter())
-        .listen((line) {
-          final logger = _logger;
-          if (logger != null) {
-            logger.warn('[sidecar] $line');
-          } else {
-            // Use stderr (not print/stdout) so the line does not
-            // interfere with JSON-RPC framing on stdout and stays
-            // out of user-visible UI surfaces.
-            stderr.writeln('[sidecar] $line');
-          }
-        });
+      // stderr -> route through DeckhandLogger so bug reports and
+      // crash dumps can capture sidecar diagnostics without those
+      // lines leaking to stdout (which would interfere with an
+      // app-launched-from-terminal case) or to print() (flagged by
+      // avoid_print).
+      _stderrSub = _process!.stderr
+          .transform(utf8.decoder)
+          .transform(const LineSplitter())
+          .listen((line) {
+            final logger = _logger;
+            if (logger != null) {
+              logger.warn('[sidecar] $line');
+            } else {
+              // Use stderr (not print/stdout) so the line does not
+              // interfere with JSON-RPC framing on stdout and stays
+              // out of user-visible UI surfaces.
+              stderr.writeln('[sidecar] $line');
+            }
+          });
 
-    // Smoke test that the process responded. Timeout after 5s.
-    await call('ping', const {}).timeout(
-      const Duration(seconds: 5),
-      onTimeout: () {
-        throw const SidecarError(
-          code: -1,
-          message: 'Sidecar did not respond to ping within 5s',
-        );
-      },
-    );
+      // Smoke test that the process responded. Timeout after 5s.
+      await call('ping', const {}).timeout(
+        const Duration(seconds: 5),
+        onTimeout: () {
+          throw const SidecarError(
+            code: -1,
+            message: 'Sidecar did not respond to ping within 5s',
+          );
+        },
+      );
+    } on Object catch (e, st) {
+      await _resetProcessState();
+      _logger?.warn('sidecar startup failed: $e\n$st');
+      rethrow;
+    }
   }
 
   /// Make a JSON-RPC call and await the response.
@@ -253,7 +260,31 @@ class SidecarClient implements SidecarConnection {
       _logger?.warn('sidecar kill() failed: $e\n$st');
     }
     await _stdoutSub?.cancel();
+    _stdoutSub = null;
+    await _stderrSub?.cancel();
+    _stderrSub = null;
     await _notificationsController.close();
+    for (final c in _operationSubscribers.values) {
+      await c.close();
+    }
+    _operationSubscribers.clear();
+    _process = null;
+    _started = false;
+    _writeLineOverride = null;
+    _flushOverride = null;
+  }
+
+  Future<void> _resetProcessState() async {
+    _failAll('sidecar startup failed');
+    try {
+      _process?.kill();
+    } on Object catch (e, st) {
+      _logger?.warn('sidecar kill() after startup failure failed: $e\n$st');
+    }
+    await _stdoutSub?.cancel();
+    _stdoutSub = null;
+    await _stderrSub?.cancel();
+    _stderrSub = null;
     for (final c in _operationSubscribers.values) {
       await c.close();
     }
