@@ -108,11 +108,13 @@ class DeckhandSettings {
   }
 
   void forgetSavedHost({required String host, required String user}) {
+    final cleanHost = host.trim().toLowerCase();
+    final cleanUser = user.trim().toLowerCase();
     final list = savedHosts.toList()
       ..removeWhere(
         (e) =>
-            e.host.toLowerCase() == host.toLowerCase() &&
-            e.user.toLowerCase() == user.toLowerCase(),
+            e.host.toLowerCase() == cleanHost &&
+            e.user.toLowerCase() == cleanUser,
       );
     savedHosts = list;
   }
@@ -155,6 +157,7 @@ class DeckhandSettings {
   }
 
   void recordManagedPrinter(ManagedPrinter printer) {
+    if (printer.id.trim().isEmpty) return;
     final list = managedPrinters.toList()
       ..removeWhere((p) => p.id.toLowerCase() == printer.id.toLowerCase());
     list.insert(0, printer);
@@ -165,8 +168,9 @@ class DeckhandSettings {
   }
 
   void forgetManagedPrinter(String id) {
+    final cleanId = id.trim().toLowerCase();
     final list = managedPrinters.toList()
-      ..removeWhere((p) => p.id.toLowerCase() == id.toLowerCase());
+      ..removeWhere((p) => p.id.toLowerCase() == cleanId);
     managedPrinters = list;
   }
 

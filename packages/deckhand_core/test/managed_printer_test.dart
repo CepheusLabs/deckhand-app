@@ -27,6 +27,22 @@ void main() {
 
       expect(settings.savedHosts, isEmpty);
     });
+
+    test('forgets saved hosts with normalized input', () {
+      final settings = DeckhandSettings(path: '<memory>');
+      settings.recordSavedHost(
+        SavedHost(
+          host: '192.168.1.50',
+          port: 22,
+          user: 'mks',
+          lastUsed: DateTime.utc(2026, 5, 4, 12),
+        ),
+      );
+
+      settings.forgetSavedHost(host: ' 192.168.1.50 ', user: ' MKS ');
+
+      expect(settings.savedHosts, isEmpty);
+    });
   });
 
   group('ManagedPrinter', () {
@@ -222,6 +238,40 @@ void main() {
       registry.forgetManagedPrinter(printer.id);
 
       expect(registry.listManagedPrinters(), isEmpty);
+    });
+
+    test('does not record impossible managed printer rows', () {
+      final settings = DeckhandSettings(path: '<memory>');
+
+      settings.recordManagedPrinter(
+        const ManagedPrinter(
+          id: ' ',
+          profileId: 'phrozen-arco',
+          displayName: 'Phrozen Arco',
+          host: '192.168.1.50',
+          port: 22,
+          user: 'mks',
+        ),
+      );
+
+      expect(settings.managedPrinters, isEmpty);
+    });
+
+    test('forgets managed printers with normalized id', () {
+      final settings = DeckhandSettings(path: '<memory>');
+      final printer = ManagedPrinter.fromConnection(
+        profileId: 'phrozen-arco',
+        displayName: 'Phrozen Arco',
+        host: '192.168.1.50',
+        port: 22,
+        user: 'mks',
+        lastSeen: DateTime.utc(2026, 5, 4, 12),
+      );
+      settings.recordManagedPrinter(printer);
+
+      settings.forgetManagedPrinter(' ${printer.id.toUpperCase()} ');
+
+      expect(settings.managedPrinters, isEmpty);
     });
   });
 }
