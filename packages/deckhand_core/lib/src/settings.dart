@@ -530,7 +530,7 @@ class ManagedPrinter {
       port: port,
       user: cleanUser,
       lastSeen: lastSeen ?? DateTime.now(),
-      labels: labels,
+      labels: _normalizeLabels(labels),
     );
   }
 
@@ -572,7 +572,7 @@ class ManagedPrinter {
           ? (json['connection_mode'] as String).trim()
           : 'ssh_moonraker',
       lastSeen: lastSeen,
-      labels: labels,
+      labels: _normalizeLabels(labels),
     );
   }
 
@@ -646,4 +646,16 @@ double? _finiteNumber(Object? value) {
   if (value is! num) return null;
   final number = value.toDouble();
   return number.isFinite ? number : null;
+}
+
+Map<String, String> _normalizeLabels(Map<String, String> labels) {
+  final out = <String, String>{};
+  labels.forEach((key, value) {
+    final cleanKey = key.trim();
+    final cleanValue = value.trim();
+    if (cleanKey.isNotEmpty && cleanValue.isNotEmpty) {
+      out[cleanKey] = cleanValue;
+    }
+  });
+  return Map.unmodifiable(out);
 }

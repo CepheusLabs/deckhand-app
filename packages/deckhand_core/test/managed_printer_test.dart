@@ -92,6 +92,42 @@ void main() {
       );
     });
 
+    test('normalizes connection labels', () {
+      final printer = ManagedPrinter.fromConnection(
+        profileId: 'phrozen-arco',
+        displayName: 'Phrozen Arco',
+        host: '192.168.1.50',
+        port: 22,
+        user: 'mks',
+        labels: const {
+          ' source ': ' deckhand ',
+          'blank-value': ' ',
+          ' ': 'ignored',
+        },
+      );
+
+      expect(printer.labels, {'source': 'deckhand'});
+    });
+
+    test('normalizes persisted labels', () {
+      final printer = ManagedPrinter.fromJson({
+        'id': 'local:phrozen-arco:mks@192.168.1.50:22',
+        'profile_id': 'phrozen-arco',
+        'display_name': 'Phrozen Arco',
+        'host': '192.168.1.50',
+        'port': 22,
+        'user': 'mks',
+        'labels': {
+          ' source ': ' deckhand ',
+          'blank-value': ' ',
+          'number-value': 42,
+          ' ': 'ignored',
+        },
+      });
+
+      expect(printer.labels, {'source': 'deckhand'});
+    });
+
     test('round trips through settings json', () {
       final settings = DeckhandSettings(path: '<memory>');
       settings.recordManagedPrinter(
