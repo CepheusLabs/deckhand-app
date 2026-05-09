@@ -19,8 +19,13 @@ class SidecarFlashService implements FlashService {
   @override
   Future<List<DiskInfo>> listDisks() async {
     final res = await _client.call('disks.list', const {});
-    final disks = (res['disks'] as List? ?? const []).cast<Map>();
-    return disks.map(_diskFromJson).toList();
+    final rawDisks = _jsonList(res['disks']);
+    final disks = <DiskInfo>[];
+    for (final raw in rawDisks) {
+      final disk = _diskFromJson(_stringKeyMap(raw));
+      if (disk != null) disks.add(disk);
+    }
+    return disks;
   }
 
   @override
@@ -89,7 +94,7 @@ class SidecarFlashService implements FlashService {
       return 'dryrun' * 10 + 'dddd';
     }
     final res = await _client.call('disks.hash', {'path': path});
-    return res['sha256'] as String;
+    return _jsonString(res['sha256']) ?? '';
   }
 }
 
@@ -136,50 +141,66 @@ Map<String, dynamic> _partToJson(PartitionInfo part) => {
   if (part.mountpoint != null) 'mountpoint': part.mountpoint,
 };
 
-FlashSafetyVerdict _safetyVerdictFromJson(Map raw) => FlashSafetyVerdict(
-  diskId: raw['disk_id'] as String? ?? '',
-  allowed: raw['allowed'] as bool? ?? false,
-  blockingReasons: ((raw['blocking_reasons'] as List?) ?? const [])
-      .map((e) => e.toString())
-      .toList(),
-  warnings: ((raw['warnings'] as List?) ?? const [])
-      .map((e) => e.toString())
-      .toList(),
-);
+FlashSafetyVerdict _safetyVerdictFromJson(Map raw) {
+  final json = _stringKeyMap(raw) ?? const <String, dynamic>{};
+  return FlashSafetyVerdict(
+    diskId: _jsonString(json['disk_id']) ?? '',
+    allowed: json['allowed'] == true,
+    blockingReasons: _jsonList(
+      json['blocking_reasons'],
+    ).map((e) => e.toString()).toList(),
+    warnings: _jsonList(json['warnings']).map((e) => e.toString()).toList(),
+  );
+}
 
-DiskInfo _diskFromJson(Map raw) {
-  final parts = ((raw['partitions'] as List?) ?? const []).cast<Map>();
+DiskInfo? _diskFromJson(Map<String, dynamic>? raw) {
+  if (raw == null) return null;
+  final id = _jsonString(raw['id']);
+  final path = _jsonString(raw['path']);
+  final sizeBytes = _jsonInt(raw['size_bytes']);
+  if (id == null || path == null || sizeBytes == null) return null;
+  final parts = <PartitionInfo>[];
+  for (final rawPart in _jsonList(raw['partitions'])) {
+    final part = _partFromJson(_stringKeyMap(rawPart));
+    if (part != null) parts.add(part);
+  }
   return DiskInfo(
-    id: raw['id'] as String,
-    path: raw['path'] as String,
-    sizeBytes: (raw['size_bytes'] as num).toInt(),
-    bus: raw['bus'] as String? ?? 'Unknown',
-    model: raw['model'] as String? ?? 'Unknown disk',
-    removable: raw['removable'] as bool? ?? false,
-    partitions: parts.map(_partFromJson).toList(),
+    id: id,
+    path: path,
+    sizeBytes: sizeBytes,
+    bus: _jsonString(raw['bus']) ?? 'Unknown',
+    model: _jsonString(raw['model']) ?? 'Unknown disk',
+    removable: raw['removable'] == true,
+    partitions: parts,
     interruptedFlash: _interruptedFlashFromJson(raw['interrupted_flash']),
   );
 }
 
-PartitionInfo _partFromJson(Map raw) => PartitionInfo(
-  index: (raw['index'] as num).toInt(),
-  filesystem: raw['filesystem'] as String? ?? '',
-  sizeBytes: (raw['size_bytes'] as num?)?.toInt() ?? 0,
-  mountpoint: raw['mountpoint'] as String?,
-);
+PartitionInfo? _partFromJson(Map<String, dynamic>? raw) {
+  if (raw == null) return null;
+  final index = _jsonInt(raw['index']);
+  if (index == null) return null;
+  return PartitionInfo(
+    index: index,
+    filesystem: _jsonString(raw['filesystem']) ?? '',
+    sizeBytes: _jsonInt(raw['size_bytes']) ?? 0,
+    mountpoint: _jsonString(raw['mountpoint']),
+  );
+}
 
 InterruptedFlashInfo? _interruptedFlashFromJson(Object? raw) {
-  if (raw is! Map) return null;
-  final startedRaw = raw['started_at'];
-  final imageRaw = raw['image_path'];
-  if (startedRaw is! String || imageRaw is! String) return null;
+  final map = _stringKeyMap(raw);
+  if (map == null) return null;
+  final startedRaw = _jsonString(map['started_at']);
+  final imageRaw = _jsonString(map['image_path']);
+  if (startedRaw == null || imageRaw == null) return null;
   final startedAt = DateTime.tryParse(startedRaw)?.toUtc();
   if (startedAt == null) return null;
-  final shaRaw = raw['image_sha256'];
+  final shaRaw = _jsonString(map['image_sha256']);
   return InterruptedFlashInfo(
     startedAt: startedAt,
     imagePath: imageRaw,
-    imageSha256: shaRaw is String && shaRaw.isNotEmpty ? shaRaw : null,
+    imageSha256: shaRaw != null && shaRaw.isNotEmpty ? shaRaw : null,
   );
 }
 
@@ -189,25 +210,25 @@ final _flashEventTransformer =
         switch (event) {
           case SidecarProgress(:final notification):
             final p = notification.params;
-            final done = (p['bytes_done'] as num?)?.toInt() ?? 0;
-            final total = (p['bytes_total'] as num?)?.toInt() ?? 0;
-            final phase = _phaseFromString(p['phase'] as String?);
+            final done = _jsonInt(p['bytes_done']) ?? 0;
+            final total = _jsonInt(p['bytes_total']) ?? 0;
+            final phase = _phaseFromString(_jsonString(p['phase']));
             sink.add(
               FlashProgress(
                 bytesDone: done,
                 bytesTotal: total,
                 phase: phase,
-                message: p['message'] as String?,
+                message: _jsonString(p['message']),
               ),
             );
           case SidecarResult(:final result):
-            final done = (result['bytes'] as num?)?.toInt() ?? 0;
+            final done = _jsonInt(result['bytes']) ?? 0;
             sink.add(
               FlashProgress(
                 bytesDone: done,
                 bytesTotal: done,
                 phase: FlashPhase.done,
-                message: result['sha256'] as String?,
+                message: _jsonString(result['sha256']),
               ),
             );
         }
@@ -221,3 +242,22 @@ FlashPhase _phaseFromString(String? s) => switch (s) {
   'failed' => FlashPhase.failed,
   _ => FlashPhase.preparing,
 };
+
+String? _jsonString(Object? value) => value is String ? value : null;
+
+int? _jsonInt(Object? value) {
+  if (value is! num || !value.isFinite) return null;
+  return value.toInt();
+}
+
+List<Object?> _jsonList(Object? value) => value is List ? value : const [];
+
+Map<String, dynamic>? _stringKeyMap(Object? value) {
+  if (value is! Map) return null;
+  final out = <String, dynamic>{};
+  for (final entry in value.entries) {
+    final key = entry.key;
+    if (key is String) out[key] = entry.value;
+  }
+  return out;
+}
