@@ -210,8 +210,13 @@ WizardController stubWizardController({
 SshService stubSsh({Object? connectError}) =>
     _StubSsh(connectError: connectError);
 
-SecurityService stubSecurity({String? pinnedFingerprint}) =>
-    _StubSecurity(pinnedFingerprint: pinnedFingerprint);
+SecurityService stubSecurity({
+  String? pinnedFingerprint,
+  Object? forgetFingerprintError,
+}) => _StubSecurity(
+  pinnedFingerprint: pinnedFingerprint,
+  forgetFingerprintError: forgetFingerprintError,
+);
 
 /// Standard provider overrides for widget tests so anything that reads
 /// from [wizardControllerProvider] or a service provider gets a stub.
@@ -451,9 +456,10 @@ class _StubUpstream implements UpstreamService {
 }
 
 class _StubSecurity implements SecurityService {
-  _StubSecurity({this.pinnedFingerprint});
+  _StubSecurity({this.pinnedFingerprint, this.forgetFingerprintError});
 
   final String? pinnedFingerprint;
+  final Object? forgetFingerprintError;
 
   @override
   Future<ConfirmationToken> issueConfirmationToken({
@@ -485,7 +491,11 @@ class _StubSecurity implements SecurityService {
   @override
   Future<String?> pinnedHostFingerprint(String host) async => pinnedFingerprint;
   @override
-  Future<void> forgetHostFingerprint(String host) async {}
+  Future<void> forgetHostFingerprint(String host) async {
+    final error = forgetFingerprintError;
+    if (error != null) throw error;
+  }
+
   @override
   Future<Map<String, String>> listPinnedFingerprints() async {
     final fingerprint = pinnedFingerprint;

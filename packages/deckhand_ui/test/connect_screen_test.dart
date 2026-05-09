@@ -117,6 +117,53 @@ void main() {
       expect(find.textContaining('SHA256:received'), findsWidgets);
     });
 
+    testWidgets('host-key mismatch clear failure is surfaced', (tester) async {
+      final controller = stubWizardController(
+        profileJson: testProfileJson(),
+        ssh: stubSsh(
+          connectError: const HostKeyMismatchException(
+            host: '192.168.1.50',
+            fingerprint: 'SHA256:received',
+          ),
+        ),
+        security: stubSecurity(
+          pinnedFingerprint: 'SHA256:expected',
+          forgetFingerprintError: StateError(
+            r'keychain write failed on \\.\PHYSICALDRIVE3',
+          ),
+        ),
+      );
+      await controller.loadProfile('test-printer');
+
+      await tester.pumpWidget(
+        testHarness(
+          controller: controller,
+          child: const ConnectScreen(),
+          initialLocation: '/connect',
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+
+      await tester.tap(find.text('Manual host'));
+      await tester.pump();
+      await tester.enterText(find.byType(TextField), '192.168.1.50');
+      await tester.pump();
+      await tester.tap(find.text('Connect'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.tap(find.text('Clear stored fingerprint & retry'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 250));
+
+      expect(
+        find.textContaining('Could not clear stored fingerprint'),
+        findsOne,
+      );
+      expect(find.textContaining('Windows disk 3'), findsOne);
+      expect(find.textContaining('PHYSICALDRIVE3'), findsNothing);
+    });
+
     testWidgets('successful connect records through managed printer registry', (
       tester,
     ) async {

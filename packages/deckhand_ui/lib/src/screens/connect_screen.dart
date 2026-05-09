@@ -351,10 +351,15 @@ class _ConnectScreenState extends ConsumerState<ConnectScreen> {
       if (retry == true && mounted) {
         try {
           await security.forgetHostFingerprint(e.host);
-        } catch (_) {
-          // Best-effort; if the keystore write fails we still let the
-          // retry proceed — worst case the user sees the unpinned
-          // dialog instead of an immediate connect.
+        } catch (clearError) {
+          if (mounted) {
+            setState(
+              () => _error =
+                  'Could not clear stored fingerprint: '
+                  '${userFacingError(clearError)}',
+            );
+          }
+          return;
         }
         if (mounted) {
           await _connect(host, port: port, preferredUser: preferredUser);
