@@ -304,6 +304,45 @@ void main() {
     expect(find.widgetWithText(FilledButton, 'Create eMMC backup'), findsOne);
     expect(find.text('Open backup flow'), findsNothing);
     expect(find.textContaining(r'C:\Deckhand\emmc-backups'), findsOneWidget);
+    expect(find.widgetWithText(OutlinedButton, 'Refresh backups'), findsOne);
+  });
+
+  testWidgets('direct eMMC restore sanitizes disk scan failures', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1400, 1000));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    final candidate = EmmcBackupImageCandidate(
+      imagePath: r'C:\Deckhand\emmc-backups\restore.img',
+      imageBytes: 8 * 1024 * 1024,
+      modifiedAt: DateTime.utc(2026, 5, 4, 12),
+      inferredProfileId: 'phrozen-arco',
+    );
+    final controller = stubWizardController(profileJson: testProfileJson());
+    await controller.loadProfile('test-printer');
+
+    await tester.pumpWidget(
+      testHarness(
+        controller: controller,
+        child: const EmmcRestoreScreen(),
+        initialLocation: '/emmc-restore',
+        extraOverrides: [
+          emmcBackupManifestsProvider.overrideWith((ref) async => const []),
+          emmcBackupImageCandidatesProvider.overrideWith(
+            (ref) async => [candidate],
+          ),
+          flashServiceProvider.overrideWithValue(const _FailingRestoreFlash()),
+        ],
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+
+    expect(find.textContaining('Windows disk 3'), findsOneWidget);
+    expect(find.textContaining('PHYSICALDRIVE3'), findsNothing);
+    expect(find.textContaining('StateError'), findsNothing);
+    expect(find.widgetWithText(OutlinedButton, 'Refresh'), findsOneWidget);
   });
 
   testWidgets('restore backup shortcut returns to restore after cancel', (
@@ -952,6 +991,35 @@ class _RestoreFlash implements FlashService {
 
   @override
   Future<String> sha256(String path) async => sha256Value;
+
+  @override
+  Stream<FlashProgress> writeImage({
+    required String imagePath,
+    required String diskId,
+    required String confirmationToken,
+    bool verifyAfterWrite = true,
+  }) => const Stream.empty();
+}
+
+class _FailingRestoreFlash implements FlashService {
+  const _FailingRestoreFlash();
+
+  @override
+  Future<List<DiskInfo>> listDisks() async =>
+      throw StateError(r'Get-Disk failed for \\.\PHYSICALDRIVE3');
+
+  @override
+  Future<FlashSafetyVerdict> safetyCheck({required String diskId}) async =>
+      FlashSafetyVerdict(diskId: diskId, allowed: true);
+
+  @override
+  Stream<FlashProgress> readImage({
+    required String diskId,
+    required String outputPath,
+  }) => const Stream.empty();
+
+  @override
+  Future<String> sha256(String path) async => '';
 
   @override
   Stream<FlashProgress> writeImage({

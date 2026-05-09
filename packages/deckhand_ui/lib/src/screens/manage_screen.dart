@@ -633,6 +633,12 @@ class _RestoreTabState extends ConsumerState<_RestoreTab> {
 
   bool get _usesFooterActions => widget.footerAction != null;
 
+  void _refreshRestoreSources() {
+    ref.invalidate(emmcBackupManifestsProvider);
+    ref.invalidate(emmcBackupImageCandidatesProvider);
+    ref.invalidate(disksProvider);
+  }
+
   void _publishFooterAction(_RestoreFooterAction action) {
     final notifier = widget.footerAction;
     if (notifier == null || notifier.value.signature == action.signature) {
@@ -712,11 +718,17 @@ class _RestoreTabState extends ConsumerState<_RestoreTab> {
     }
     if (manifestsAsync.hasError) {
       _publishFooterAction(const _RestoreFooterAction.none());
-      return _RestoreProblem(message: '${manifestsAsync.error}');
+      return _RestoreProblem(
+        message: userFacingError(manifestsAsync.error),
+        onRetry: _refreshRestoreSources,
+      );
     }
     if (candidatesAsync.hasError) {
       _publishFooterAction(const _RestoreFooterAction.none());
-      return _RestoreProblem(message: '${candidatesAsync.error}');
+      return _RestoreProblem(
+        message: userFacingError(candidatesAsync.error),
+        onRetry: _refreshRestoreSources,
+      );
     }
 
     final manifests =
@@ -736,7 +748,10 @@ class _RestoreTabState extends ConsumerState<_RestoreTab> {
     }
     if (disksAsync.hasError) {
       _publishFooterAction(const _RestoreFooterAction.none());
-      return _RestoreProblem(message: '${disksAsync.error}');
+      return _RestoreProblem(
+        message: userFacingError(disksAsync.error),
+        onRetry: _refreshRestoreSources,
+      );
     }
 
     final disks = disksAsync.valueOrNull ?? const <DiskInfo>[];
@@ -785,6 +800,12 @@ class _RestoreTabState extends ConsumerState<_RestoreTab> {
               onPressed: () => context.go('/recovery-emmc-backup'),
               icon: const Icon(Icons.inventory_2_outlined, size: 16),
               label: const Text('Create eMMC backup'),
+            ),
+            const SizedBox(height: 8),
+            OutlinedButton.icon(
+              onPressed: _refreshRestoreSources,
+              icon: const Icon(Icons.refresh, size: 14),
+              label: const Text('Refresh backups'),
             ),
           ],
         ),
@@ -847,13 +868,7 @@ class _RestoreTabState extends ConsumerState<_RestoreTab> {
               const _MonoLabel('BACKUP IMAGE'),
               const Spacer(),
               TextButton.icon(
-                onPressed: _busy
-                    ? null
-                    : () {
-                        ref.invalidate(emmcBackupManifestsProvider);
-                        ref.invalidate(emmcBackupImageCandidatesProvider);
-                        ref.invalidate(disksProvider);
-                      },
+                onPressed: _busy ? null : _refreshRestoreSources,
                 icon: const Icon(Icons.refresh, size: 14),
                 label: const Text('Refresh'),
               ),
@@ -1404,29 +1419,47 @@ class _RestoreTabState extends ConsumerState<_RestoreTab> {
 }
 
 class _RestoreProblem extends StatelessWidget {
-  const _RestoreProblem({required this.message});
+  const _RestoreProblem({required this.message, this.onRetry});
+
   final String message;
+  final VoidCallback? onRetry;
 
   @override
   Widget build(BuildContext context) {
     final tokens = DeckhandTokens.of(context);
     return _Panel(
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Icon(Icons.error_outline, size: 18, color: tokens.bad),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              message,
-              style: TextStyle(
-                fontFamily: DeckhandTokens.fontSans,
-                fontSize: DeckhandTokens.tSm,
-                color: tokens.bad,
-                height: 1.45,
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(Icons.error_outline, size: 18, color: tokens.bad),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  message,
+                  style: TextStyle(
+                    fontFamily: DeckhandTokens.fontSans,
+                    fontSize: DeckhandTokens.tSm,
+                    color: tokens.bad,
+                    height: 1.45,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          if (onRetry != null) ...[
+            const SizedBox(height: 12),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: OutlinedButton.icon(
+                onPressed: onRetry,
+                icon: const Icon(Icons.refresh, size: 14),
+                label: const Text('Refresh'),
               ),
             ),
-          ),
+          ],
         ],
       ),
     );
