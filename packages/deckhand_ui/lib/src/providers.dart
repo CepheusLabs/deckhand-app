@@ -162,20 +162,22 @@ DoctorReport _decodeCachedReport(Map<String, dynamic> raw) {
         }
         results.add(
           DoctorResult(
-            name: m['name'] as String? ?? '',
-            status: doctorStatusFromString(m['status'] as String? ?? 'unknown'),
-            detail: m['detail'] as String? ?? '',
+            name: _jsonString(m['name']) ?? '',
+            status: doctorStatusFromString(_jsonString(m['status']) ?? ''),
+            detail: _jsonString(m['detail']) ?? '',
           ),
         );
       }
     }
   }
   return DoctorReport(
-    passed: raw['passed'] as bool? ?? false,
+    passed: raw['passed'] == true,
     results: results,
-    report: raw['report'] as String? ?? '',
+    report: _jsonString(raw['report']) ?? '',
   );
 }
+
+String? _jsonString(Object? value) => value is String ? value : null;
 
 /// Root providers for the Deckhand UI. Each service is intentionally
 /// created via `throwUnimplementedProvider` so the app must override

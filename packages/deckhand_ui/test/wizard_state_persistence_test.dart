@@ -97,6 +97,42 @@ void main() {
       expect(report.results.single.status, DoctorStatus.pass);
       expect(report.results.single.detail, 'ok');
     });
+
+    test('drops malformed cached preflight result fields', () async {
+      final settings = DeckhandSettings(
+        path: '<memory>',
+        initial: {
+          'last_preflight': {
+            'passed': 'yes',
+            'report': 42,
+            'results': [
+              {'name': 99, 'status': 17, 'detail': false},
+              {'name': 'powershell', 'status': 'WARN', 'detail': 'slow'},
+            ],
+          },
+        },
+      );
+      final container = ProviderContainer(
+        overrides: [
+          deckhandSettingsProvider.overrideWithValue(settings),
+          doctorServiceProvider.overrideWithValue(
+            _StaticDoctor(
+              const DoctorReport(passed: true, results: [], report: ''),
+            ),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      final report = await container.read(preflightReportProvider.future);
+
+      expect(report.passed, isFalse);
+      expect(report.report, '');
+      expect(report.results.map((r) => r.name), ['', 'powershell']);
+      expect(report.results.first.status, DoctorStatus.unknown);
+      expect(report.results.first.detail, '');
+      expect(report.results.last.status, DoctorStatus.warn);
+    });
   });
 
   group('isPersistableWizardState', () {
