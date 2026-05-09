@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:deckhand_core/deckhand_core.dart';
+import 'package:deckhand_ui/src/i18n/translations.g.dart';
 import 'package:deckhand_ui/src/providers.dart';
 import 'package:deckhand_ui/src/screens/settings_screen.dart';
 import 'package:flutter/material.dart';
@@ -364,6 +365,41 @@ void main() {
     await tester.pump(const Duration(milliseconds: 250));
 
     expect(settings.localProfilesDir, 'C:\\deckhand\\old-profiles');
+    expect(find.textContaining('Windows disk 3'), findsOne);
+    expect(find.textContaining('PHYSICALDRIVE3'), findsNothing);
+  });
+
+  testWidgets('Language picker rolls back when saving fails', (tester) async {
+    await LocaleSettings.setLocale(AppLocale.en);
+    addTearDown(() async => LocaleSettings.setLocale(AppLocale.en));
+    final settings = _MemorySettings(
+      saveError: StateError(r'write settings failed on \\.\PHYSICALDRIVE3'),
+    )..preferredLocale = 'en';
+    final controller = stubWizardController(profileJson: testProfileJson());
+    await controller.loadProfile('test-printer');
+
+    await tester.pumpWidget(
+      testHarness(
+        controller: controller,
+        child: const SettingsScreen(),
+        initialLocation: '/settings',
+        extraOverrides: [deckhandSettingsProvider.overrideWithValue(settings)],
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(find.text('Appearance'));
+    await tester.pump();
+    await tester.ensureVisible(find.byType(DropdownButton<AppLocale>));
+    await tester.tap(find.byType(DropdownButton<AppLocale>));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('ES').last);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+
+    expect(settings.preferredLocale, 'en');
+    expect(LocaleSettings.currentLocale, AppLocale.en);
+    expect(find.textContaining('Could not save language'), findsOne);
     expect(find.textContaining('Windows disk 3'), findsOne);
     expect(find.textContaining('PHYSICALDRIVE3'), findsNothing);
   });

@@ -877,7 +877,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         const _SettingsDivider(),
         const _FieldLabel('LANGUAGE'),
         const SizedBox(height: 6),
-        _LocalePickerTile(settings: settings, onChanged: () => setState(() {})),
+        _LocalePickerTile(
+          settings: settings,
+          onChanged: () => setState(() {}),
+          onError: (message) => _toast(message),
+        ),
       ],
     );
   }
@@ -1669,9 +1673,14 @@ class _ThemeRadio extends StatelessWidget {
 /// persists the choice to `DeckhandSettings.preferredLocale` so the
 /// next launch picks up the same locale before the first frame.
 class _LocalePickerTile extends StatelessWidget {
-  const _LocalePickerTile({required this.settings, required this.onChanged});
+  const _LocalePickerTile({
+    required this.settings,
+    required this.onChanged,
+    required this.onError,
+  });
   final DeckhandSettings settings;
   final VoidCallback onChanged;
+  final ValueChanged<String> onError;
 
   @override
   Widget build(BuildContext context) {
@@ -1687,10 +1696,19 @@ class _LocalePickerTile extends StatelessWidget {
         value: current,
         onChanged: (locale) async {
           if (locale == null) return;
-          LocaleSettings.setLocale(locale);
+          final previousLocale = LocaleSettings.currentLocale;
+          final previousPreferredLocale = settings.preferredLocale;
+          await LocaleSettings.setLocale(locale);
           settings.preferredLocale = locale.languageCode;
-          await settings.save();
-          onChanged();
+          try {
+            await settings.save();
+            onChanged();
+          } catch (e) {
+            await LocaleSettings.setLocale(previousLocale);
+            settings.preferredLocale = previousPreferredLocale;
+            onChanged();
+            onError('Could not save language: ${userFacingError(e)}');
+          }
         },
         items: [
           for (final l in AppLocale.values)
