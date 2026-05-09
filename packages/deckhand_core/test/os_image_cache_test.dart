@@ -83,4 +83,39 @@ void main() {
       );
     },
   );
+
+  test('clearOsImageCache removes images, manifests, and partials', () async {
+    final root = await Directory.systemTemp.createTemp('deckhand-cache-test-');
+    addTearDown(() => root.delete(recursive: true));
+
+    for (final name in const [
+      'arco.img',
+      'arco.img.part',
+      'arco.img.download.part',
+      'arco.img.deckhand-download.json',
+    ]) {
+      await File(p.join(root.path, name)).writeAsBytes([1]);
+    }
+
+    final deleted = await clearOsImageCache(root.path);
+
+    expect(deleted, 4);
+    expect(await root.list().isEmpty, isTrue);
+  });
+
+  test('clearOsImageCache rejects symlinks', () async {
+    final root = await Directory.systemTemp.createTemp('deckhand-cache-test-');
+    final target = File(p.join(root.path, 'target.img'));
+    final link = Link(p.join(root.path, 'linked.img'));
+    addTearDown(() => root.delete(recursive: true));
+    await target.writeAsBytes([1]);
+    try {
+      await link.create(target.path);
+    } on FileSystemException {
+      return;
+    }
+
+    expect(clearOsImageCache(root.path), throwsA(isA<FileSystemException>()));
+    expect(await target.exists(), isTrue);
+  });
 }

@@ -410,11 +410,29 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         Row(
           children: [
             const _FieldLabel('OS IMAGE CACHE'),
-            const Spacer(),
-            TextButton.icon(
-              onPressed: () => ref.invalidate(osImageCacheProvider),
-              icon: const Icon(Icons.refresh, size: 14),
-              label: const Text('Refresh'),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Wrap(
+                alignment: WrapAlignment.end,
+                spacing: 4,
+                runSpacing: 4,
+                children: [
+                  if (cacheRoot?.trim().isNotEmpty == true)
+                    TextButton.icon(
+                      onPressed: _clearOsImageCache,
+                      icon: const Icon(
+                        Icons.cleaning_services_outlined,
+                        size: 14,
+                      ),
+                      label: const Text('Clear cache'),
+                    ),
+                  TextButton.icon(
+                    onPressed: () => ref.invalidate(osImageCacheProvider),
+                    icon: const Icon(Icons.refresh, size: 14),
+                    label: const Text('Refresh'),
+                  ),
+                ],
+              ),
             ),
           ],
         ),
@@ -501,6 +519,42 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         ),
       ],
     );
+  }
+
+  Future<void> _clearOsImageCache() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        icon: const Icon(Icons.cleaning_services_outlined),
+        title: const Text('Clear OS image cache?'),
+        content: const Text(
+          'Deckhand will remove all cached OS images, manifests, and '
+          'partial downloads from the managed cache folder. Future installs '
+          'will download and verify the image again.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Clear cache'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    try {
+      final deleted = await ref.read(osImageCacheClearProvider).call();
+      _toast(
+        deleted == 0
+            ? 'OS image cache was already empty.'
+            : 'Cleared $deleted OS image cache file${deleted == 1 ? '' : 's'}.',
+      );
+    } catch (e) {
+      _toast('Could not clear OS image cache: ${userFacingError(e)}');
+    }
   }
 
   Future<void> _deleteOsImageCacheEntry(OsImageCacheEntry entry) async {

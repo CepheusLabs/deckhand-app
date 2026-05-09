@@ -244,6 +244,7 @@ final osImageCacheProvider = FutureProvider<List<OsImageCacheEntry>>((
 });
 
 typedef OsImageCacheDelete = Future<void> Function({required String imagePath});
+typedef OsImageCacheClear = Future<int> Function();
 
 final osImageCacheDeleteProvider = Provider<OsImageCacheDelete>((ref) {
   return ({required String imagePath}) async {
@@ -253,6 +254,18 @@ final osImageCacheDeleteProvider = Provider<OsImageCacheDelete>((ref) {
     }
     await deleteOsImageCacheEntry(root: dir, imagePath: imagePath);
     ref.invalidate(osImageCacheProvider);
+  };
+});
+
+final osImageCacheClearProvider = Provider<OsImageCacheClear>((ref) {
+  return () async {
+    final dir = ref.read(osImagesDirProvider);
+    if (dir == null || dir.trim().isEmpty) {
+      throw StateError('OS image cache is not configured.');
+    }
+    final deleted = await clearOsImageCache(dir);
+    ref.invalidate(osImageCacheProvider);
+    return deleted;
   };
 });
 

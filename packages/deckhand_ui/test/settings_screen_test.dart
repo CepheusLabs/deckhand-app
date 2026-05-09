@@ -130,6 +130,59 @@ void main() {
     expect(File('${image.path}.part').existsSync(), isFalse);
   });
 
+  testWidgets('SettingsScreen clears stale OS image cache files', (
+    tester,
+  ) async {
+    final root = Directory.systemTemp.createTempSync('deckhand-os-cache-ui-');
+    addTearDown(() => root.deleteSync(recursive: true));
+    final files = [
+      File(p.join(root.path, 'arco.img')),
+      File(p.join(root.path, 'arco.img.part')),
+      File(p.join(root.path, 'arco.img.download.part')),
+      File(p.join(root.path, 'arco.img.deckhand-download.json')),
+    ];
+    for (final file in files) {
+      file.writeAsBytesSync([1]);
+    }
+    final controller = stubWizardController(profileJson: testProfileJson());
+    await controller.loadProfile('test-printer');
+
+    await tester.pumpWidget(
+      testHarness(
+        controller: controller,
+        child: const SettingsScreen(),
+        initialLocation: '/settings',
+        extraOverrides: [
+          osImagesDirProvider.overrideWithValue(root.path),
+          osImageCacheClearProvider.overrideWithValue(() async {
+            for (final file in files) {
+              if (file.existsSync()) file.deleteSync();
+            }
+            return files.length;
+          }),
+        ],
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+
+    await tester.ensureVisible(find.widgetWithText(TextButton, 'Clear cache'));
+    await tester.tap(find.widgetWithText(TextButton, 'Clear cache'));
+    await tester.pump();
+    expect(find.text('Clear OS image cache?'), findsOneWidget);
+    await tester.tap(find.widgetWithText(FilledButton, 'Clear cache'));
+    await tester.pump();
+    await tester.runAsync(() async {
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+    });
+    await tester.pump(const Duration(milliseconds: 250));
+
+    for (final file in files) {
+      expect(file.existsSync(), isFalse);
+    }
+    expect(find.textContaining('Cleared 4 OS image cache files'), findsOne);
+  });
+
   testWidgets('SettingsScreen sanitizes OS image cache errors', (tester) async {
     final controller = stubWizardController(profileJson: testProfileJson());
     await controller.loadProfile('test-printer');

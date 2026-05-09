@@ -120,6 +120,29 @@ Future<void> deleteOsImageCacheEntry({
   }
 }
 
+Future<int> clearOsImageCache(String root) async {
+  final safeRoot = p.normalize(p.absolute(root));
+  final rootType = await FileSystemEntity.type(safeRoot, followLinks: false);
+  if (rootType == FileSystemEntityType.notFound) return 0;
+  if (rootType != FileSystemEntityType.directory) {
+    throw FileSystemException('OS image cache must be a directory', root);
+  }
+  var deleted = 0;
+  await for (final entity in Directory(safeRoot).list(followLinks: false)) {
+    final type = await FileSystemEntity.type(entity.path, followLinks: false);
+    if (type == FileSystemEntityType.notFound) continue;
+    if (type != FileSystemEntityType.file) {
+      throw FileSystemException(
+        'OS image cache entries must be regular files',
+        entity.path,
+      );
+    }
+    await File(entity.path).delete();
+    deleted++;
+  }
+  return deleted;
+}
+
 Future<_OsImageManifest?> _readOsImageManifest(String imagePath) async {
   final manifestPath = '$imagePath$osImageDownloadManifestSuffix';
   final type = await FileSystemEntity.type(manifestPath, followLinks: false);
