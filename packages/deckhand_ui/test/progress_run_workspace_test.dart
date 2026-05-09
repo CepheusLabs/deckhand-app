@@ -294,10 +294,14 @@ void main() {
     await tester.tap(find.byTooltip('Copy log'));
     await tester.pumpAndSettle();
 
-    expect(clipboardText, contains('00:00.000\tSTEP\tCheck the selected disk'));
     expect(
       clipboardText,
-      contains('\n00:01.017\tOK\tFinished Check the selected disk'),
+      contains('00:00.000  STEP    Check the selected disk'),
     );
+    expect(
+      clipboardText,
+      contains('\n00:01.017  OK      Finished Check the selected disk'),
+    );
+    expect(clipboardText, isNot(contains('\t')));
   });
 }
