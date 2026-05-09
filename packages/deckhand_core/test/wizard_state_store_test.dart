@@ -65,6 +65,26 @@ void main() {
       });
       expect(decoded.flow, WizardFlow.none);
     });
+
+    test('malformed optional fields degrade to safe defaults', () {
+      final decoded = WizardState.fromJson({
+        'schema': 'deckhand.wizard_state/1',
+        'profileId': 42,
+        'decisions': <String, dynamic>{},
+        'currentStep': false,
+        'flow': 'stockKeep',
+        'sshHost': ['192.168.1.50'],
+        'sshPort': '22',
+        'sshUser': 7,
+      });
+
+      expect(decoded.profileId, '');
+      expect(decoded.currentStep, 'welcome');
+      expect(decoded.flow, WizardFlow.stockKeep);
+      expect(decoded.sshHost, isNull);
+      expect(decoded.sshPort, isNull);
+      expect(decoded.sshUser, isNull);
+    });
   });
 
   group('WizardStateStore', () {

@@ -50,11 +50,11 @@ class WizardState {
       orElse: () => WizardFlow.none,
     );
     return WizardState(
-      profileId: (json['profileId'] as String?) ?? '',
+      profileId: _decodeRequiredString(json['profileId'], ''),
       decisions: decisions,
-      currentStep: (json['currentStep'] as String?) ?? 'welcome',
+      currentStep: _decodeRequiredString(json['currentStep'], 'welcome'),
       flow: flow,
-      sshHost: json['sshHost'] as String?,
+      sshHost: _decodeOptionalString(json['sshHost']),
       sshPort: _decodePort(json['sshPort']),
       sshUser: _decodeOptionalString(json['sshUser']),
     );
@@ -102,6 +102,11 @@ int? _decodePort(Object? raw) {
   final port = raw is num ? raw.toInt() : null;
   if (port == null || port < 1 || port > 65535) return null;
   return port;
+}
+
+String _decodeRequiredString(Object? raw, String fallback) {
+  if (raw is! String) return fallback;
+  return raw.trim().isEmpty ? fallback : raw;
 }
 
 String? _decodeOptionalString(Object? raw) {
