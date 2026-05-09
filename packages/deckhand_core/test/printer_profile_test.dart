@@ -141,6 +141,24 @@ void main() {
       },
     );
 
+    test('throws ProfileFormatException for non-map profile list entries', () {
+      expect(
+        () => PrinterProfile.fromJson(<String, dynamic>{
+          'profile_id': 'broken',
+          'wizard': {
+            'extra_steps': ['not a step map'],
+          },
+        }),
+        throwsA(
+          isA<ProfileFormatException>().having(
+            (e) => e.message,
+            'message',
+            contains('wizard.extra_steps[0]'),
+          ),
+        ),
+      );
+    });
+
     test('parses identification hints', () {
       final p = PrinterProfile.fromJson({
         'profile_id': 'x',
