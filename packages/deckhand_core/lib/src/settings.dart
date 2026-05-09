@@ -40,7 +40,13 @@ class DeckhandSettings {
 
   Set<String> get allowedHosts {
     final raw = _values['allowed_hosts'];
-    if (raw is List) return raw.cast<String>().toSet();
+    if (raw is List) {
+      return raw
+          .whereType<String>()
+          .map((host) => host.trim())
+          .where((host) => host.isNotEmpty)
+          .toSet();
+    }
     return <String>{};
   }
 

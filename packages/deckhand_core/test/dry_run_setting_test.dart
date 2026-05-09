@@ -60,4 +60,21 @@ void main() {
       } catch (_) {}
     }
   });
+
+  test('allowedHosts ignores malformed persisted entries', () {
+    final s = DeckhandSettings(
+      path: '<memory>',
+      initial: {
+        'allowed_hosts': [
+          ' downloads.example.com ',
+          42,
+          null,
+          '',
+          'github.com',
+        ],
+      },
+    );
+
+    expect(s.allowedHosts, {'downloads.example.com', 'github.com'});
+  });
 }
