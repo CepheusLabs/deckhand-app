@@ -554,9 +554,9 @@ Future<void> _runInstallMarkerImpl(
   c._requireSession();
   final pf = c._profile;
   if (pf == null) throw StepExecutionException('no profile loaded');
-  final filename = step['filename'] as String? ?? 'deckhand.json';
+  final filename = _stringValue(step['filename']) ?? 'deckhand.json';
   final targetDir =
-      step['target_dir'] as String? ??
+      _stringValue(step['target_dir']) ??
       '/home/${c._session!.user}/printer_data/config';
   final extra = _stringKeyMap(step['extra']) ?? const {};
 
@@ -591,12 +591,12 @@ Future<void> _runInstallMarkerImpl(
   // notes, pin a specific deckhand_schema, etc.) get a byte-exact
   // rollback.
   final syntheticStep = <String, dynamic>{
-    'id': step['id'] as String? ?? 'install_marker',
+    'id': _stringValue(step['id']) ?? 'install_marker',
     'kind': 'write_file',
     'target': target,
     'content': json,
     'mode': '0644',
-    'backup': step['backup'] as bool? ?? true,
+    'backup': step['backup'] is bool ? step['backup'] : true,
   };
   await c._runWriteFile(syntheticStep);
   c._log(step, '[marker] wrote $target (${json.length} bytes)');
@@ -782,10 +782,7 @@ Future<void> _runVerifyImpl(
         // and fails fast, rather than silently picking up the
         // cached session password.
         final res = await c.ssh.run(s, cmd);
-        final contains = _optionalVerifierString(
-          v,
-          'expect_stdout_contains',
-        );
+        final contains = _optionalVerifierString(v, 'expect_stdout_contains');
         final equals = _optionalVerifierString(v, 'expect_stdout_equals');
         var passed = res.success;
         if (contains != null) {
@@ -839,7 +836,7 @@ Future<void> _runConditionalImpl(
   WizardController c,
   Map<String, dynamic> step,
 ) async {
-  final when = step['when'] as String?;
+  final when = _stringValue(step['when']);
   if (when == null) return;
   final env = c._buildDslEnv();
   final matches = c._dsl.evaluate(when, env);

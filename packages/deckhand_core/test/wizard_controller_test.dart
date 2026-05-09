@@ -1862,6 +1862,47 @@ void main() {
       expect(markerUpload.content, contains('"profile_id": "test-printer"'));
       expect(markerUpload.content, contains('"deckhand_schema": 1'));
     });
+
+    test('falls back when install marker metadata is malformed', () async {
+      final ssh = FakeSsh();
+      final controller = newController(
+        profileJson: baseProfileJson(
+          stockKeepSteps: [
+            {
+              'id': 'mark',
+              'kind': 'install_marker',
+              'filename': ['deckhand.json'],
+              'target_dir': 42,
+              'backup': 'yes',
+            },
+          ],
+        ),
+        ssh: ssh,
+      );
+      await controller.loadProfile('test-printer');
+      controller.setFlow(WizardFlow.stockKeep);
+      await controller.connectSsh(host: '127.0.0.1');
+
+      await controller.startExecution();
+
+      final relevant = ssh.runCalls
+          .where((c) => !c.startsWith('#!/bin/sh'))
+          .toList();
+      expect(
+        relevant.any(
+          (c) =>
+              c.startsWith('mkdir -p ') &&
+              c.contains('/home/root/printer_data/config'),
+        ),
+        isTrue,
+      );
+      expect(
+        relevant.any(
+          (c) => c.startsWith('mv ') && c.contains('/deckhand.json'),
+        ),
+        isTrue,
+      );
+    });
   });
 
   group('install_stack regression', () {
@@ -2735,6 +2776,18 @@ void main() {
                 },
               ],
             },
+            {
+              'id': 'bad_gate',
+              'kind': 'conditional',
+              'when': ['not', 'a', 'condition'],
+              'then': [
+                {
+                  'id': 'bad_nested',
+                  'kind': 'ssh_commands',
+                  'commands': ['touch /tmp/should-not-run'],
+                },
+              ],
+            },
           ],
         ),
         ssh: ssh,
@@ -2750,6 +2803,10 @@ void main() {
 
       expect(ssh.runCalls.any((c) => c.contains('/tmp/direct')), isTrue);
       expect(ssh.runCalls.any((c) => c.contains('/tmp/nested')), isTrue);
+      expect(
+        ssh.runCalls.any((c) => c.contains('/tmp/should-not-run')),
+        isFalse,
+      );
       expect(ssh.runCalls.any((c) => c.contains('bad nested row')), isFalse);
       expect(ssh.runCalls.any((c) => c.trim() == '42'), isFalse);
     });
