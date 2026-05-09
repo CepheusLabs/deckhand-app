@@ -15,6 +15,20 @@ void main() {
       expect(saved.port, 22);
     });
 
+    test('tolerates malformed persisted scalar fields', () {
+      final saved = SavedHost.fromJson({
+        'host': 42,
+        'user': ['mks'],
+        'port': '22',
+        'last_used': 42,
+      });
+
+      expect(saved.host, isEmpty);
+      expect(saved.user, isEmpty);
+      expect(saved.port, 22);
+      expect(saved.lastUsed, isNull);
+    });
+
     test('does not record incomplete saved hosts', () {
       final settings = DeckhandSettings(path: '<memory>');
 
@@ -159,6 +173,22 @@ void main() {
 
       expect(printer.profileId, 'phrozen-arco');
       expect(printer.lastSeen, isNull);
+    });
+
+    test('defaults malformed optional persisted scalar fields', () {
+      final printer = ManagedPrinter.fromJson({
+        'id': 'local:phrozen-arco:mks@192.168.1.50:22',
+        'profile_id': 'phrozen-arco',
+        'display_name': 'Phrozen Arco',
+        'host': '192.168.1.50',
+        'port': 22,
+        'user': 'mks',
+        'machine_kind': 42,
+        'connection_mode': ['ssh_moonraker'],
+      });
+
+      expect(printer.machineKind, 'fdm_printer');
+      expect(printer.connectionMode, 'ssh_moonraker');
     });
 
     test('round trips through settings json', () {

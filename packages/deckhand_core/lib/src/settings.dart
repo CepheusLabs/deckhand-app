@@ -480,9 +480,9 @@ class SavedHost {
     final rawPort = (j['port'] is num) ? (j['port'] as num).toInt() : 22;
     final port = rawPort >= 1 && rawPort <= 65535 ? rawPort : 22;
     return SavedHost(
-      host: ((j['host'] as String?) ?? '').trim(),
+      host: (_optionalString(j, 'host') ?? '').trim(),
       port: port,
-      user: ((j['user'] as String?) ?? '').trim(),
+      user: (_optionalString(j, 'user') ?? '').trim(),
       lastUsed: lastUsed,
     );
   }
@@ -578,13 +578,10 @@ class ManagedPrinter {
       host: host,
       port: port,
       user: user,
-      machineKind: (json['machine_kind'] as String?)?.trim().isNotEmpty == true
-          ? (json['machine_kind'] as String).trim()
-          : 'fdm_printer',
+      machineKind:
+          _optionalNonEmptyString(json, 'machine_kind') ?? 'fdm_printer',
       connectionMode:
-          (json['connection_mode'] as String?)?.trim().isNotEmpty == true
-          ? (json['connection_mode'] as String).trim()
-          : 'ssh_moonraker',
+          _optionalNonEmptyString(json, 'connection_mode') ?? 'ssh_moonraker',
       lastSeen: lastSeen,
       labels: _normalizeLabels(labels),
     );
@@ -654,6 +651,16 @@ String _requiredString(Map<String, dynamic> json, String key) {
   final value = json[key];
   if (value is String && value.trim().isNotEmpty) return value.trim();
   throw FormatException('missing managed printer field "$key"');
+}
+
+String? _optionalString(Map<String, dynamic> json, String key) {
+  final value = json[key];
+  return value is String ? value : null;
+}
+
+String? _optionalNonEmptyString(Map<String, dynamic> json, String key) {
+  final value = _optionalString(json, key)?.trim();
+  return value == null || value.isEmpty ? null : value;
 }
 
 double? _finiteNumber(Object? value) {
