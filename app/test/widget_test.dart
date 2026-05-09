@@ -56,6 +56,14 @@ void main() {
     );
   });
 
+  test('startup locale parsing ignores invalid persisted values', () {
+    expect(app.parsePreferredLocaleOverride(null), isNull);
+    expect(app.parsePreferredLocaleOverride('  '), isNull);
+    expect(app.parsePreferredLocaleOverride('not-a-locale'), isNull);
+    expect(app.parsePreferredLocaleOverride('en'), isNotNull);
+    expect(app.parsePreferredLocaleOverride('es-MX'), isNotNull);
+  });
+
   test('startup failures are written to the startup crash log', () async {
     final tempDir = await Directory.systemTemp.createTemp(
       'deckhand_startup_test_',

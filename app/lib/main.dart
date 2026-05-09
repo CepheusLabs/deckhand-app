@@ -56,10 +56,11 @@ Future<void> main() async {
     // wins. Slang's `fallback_strategy: base_locale` means a missing
     // string in es/etc. falls back to en at runtime, so a partial
     // translation is safe.
-    if (settings.preferredLocale != null) {
-      final code = settings.preferredLocale!;
-      final parsed = AppLocaleUtils.parse(code);
-      LocaleSettings.setLocale(parsed);
+    final preferredLocale = parsePreferredLocaleOverride(
+      settings.preferredLocale,
+    );
+    if (preferredLocale != null) {
+      LocaleSettings.setLocale(preferredLocale);
     } else {
       LocaleSettings.useDeviceLocale();
     }
@@ -415,6 +416,19 @@ Map<String, String> startupDiagnosticMetadata({
   'elevated_helper_path': _resolveElevatedHelperPath(),
   'os': '${Platform.operatingSystem} ${Platform.operatingSystemVersion}',
 };
+
+AppLocale? parsePreferredLocaleOverride(String? raw) {
+  final code = raw?.trim();
+  if (code == null || code.isEmpty) return null;
+  final normalized = code.replaceAll('_', '-').toLowerCase();
+  for (final locale in AppLocale.values) {
+    final language = locale.languageCode.toLowerCase();
+    if (normalized == language || normalized.startsWith('$language-')) {
+      return locale;
+    }
+  }
+  return null;
+}
 
 bool isProductionTrustEnforcedBuild({
   required bool isReleaseBuild,
