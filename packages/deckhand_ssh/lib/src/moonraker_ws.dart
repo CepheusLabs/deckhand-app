@@ -22,13 +22,12 @@ class MoonrakerHttpService implements MoonrakerService {
     final res = await _dio.getUri<Map<String, dynamic>>(
       _moonrakerUri(host, port, const ['printer', 'info']),
     );
-    final r =
-        (res.data?['result'] as Map?)?.cast<String, dynamic>() ?? const {};
+    final r = _stringKeyMap(_stringKeyMap(res.data)?['result']) ?? const {};
     return KlippyInfo(
-      state: r['state'] as String? ?? 'unknown',
-      hostname: r['hostname'] as String? ?? host,
-      softwareVersion: r['software_version'] as String? ?? '',
-      klippyState: r['state'] as String? ?? 'unknown',
+      state: _jsonString(r['state']) ?? 'unknown',
+      hostname: _jsonString(r['hostname']) ?? host,
+      softwareVersion: _jsonString(r['software_version']) ?? '',
+      klippyState: _jsonString(r['state']) ?? 'unknown',
     );
   }
 
@@ -39,8 +38,8 @@ class MoonrakerHttpService implements MoonrakerService {
       port: port,
       objects: const ['print_stats'],
     );
-    final stats = status['print_stats'] as Map?;
-    final state = stats?['state'] as String?;
+    final stats = _stringKeyMap(status['print_stats']);
+    final state = _jsonString(stats?['state']);
     return state == 'printing' || state == 'paused';
   }
 
@@ -58,8 +57,8 @@ class MoonrakerHttpService implements MoonrakerService {
         queryParameters: {for (final object in objects) object: ''},
       ),
     );
-    final status = (res.data?['result'] as Map?)?['status'] as Map? ?? const {};
-    return status.cast<String, dynamic>();
+    final result = _stringKeyMap(_stringKeyMap(res.data)?['result']);
+    return _stringKeyMap(result?['status']) ?? const {};
   }
 
   @override
@@ -82,8 +81,9 @@ class MoonrakerHttpService implements MoonrakerService {
     final res = await _dio.getUri<Map<String, dynamic>>(
       _moonrakerUri(host, port, const ['printer', 'objects', 'list']),
     );
-    final objects =
-        (res.data?['result'] as Map?)?['objects'] as List? ?? const [];
+    final result = _stringKeyMap(_stringKeyMap(res.data)?['result']);
+    final rawObjects = result?['objects'];
+    final objects = rawObjects is List ? rawObjects : const [];
     return objects.whereType<String>().toList();
   }
 
@@ -139,6 +139,18 @@ class MoonrakerHttpService implements MoonrakerService {
     }
     return parts;
   }
+}
+
+String? _jsonString(Object? value) => value is String ? value : null;
+
+Map<String, dynamic>? _stringKeyMap(Object? value) {
+  if (value is! Map) return null;
+  final out = <String, dynamic>{};
+  for (final entry in value.entries) {
+    final key = entry.key;
+    if (key is String) out[key] = entry.value;
+  }
+  return out;
 }
 
 /// Backwards-compat alias - same service, HTTP-backed today.
