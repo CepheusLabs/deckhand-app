@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import '../i18n/translations.g.dart';
 import '../providers.dart';
 import '../theming/deckhand_tokens.dart';
+import '../utils/json_safety.dart';
 import '../widgets/wizard_scaffold.dart';
 
 /// Pre-run preview + final confirm. Lists every decision the user
@@ -200,10 +201,9 @@ Map<String, dynamic>? _lookupStackCfg(PrinterProfile profile, String name) {
     case 'crowsnest':
       return stack.crowsnest;
     default:
-      final choices = ((stack.webui?['choices'] as List?) ?? const [])
-          .cast<Map>();
+      final choices = jsonStringKeyMapList(stack.webui?['choices']);
       for (final c in choices) {
-        if ((c['id'] as String?) == name) return c.cast<String, dynamic>();
+        if (jsonString(c['id']) == name) return c;
       }
       return null;
   }
@@ -276,20 +276,20 @@ _MutationPlan _buildMutationPlan({
   void walk(List<dynamic> steps, {bool conditional = false}) {
     final tag = conditional ? ' (maybe, conditional)' : '';
     for (final raw in steps) {
-      if (raw is! Map) continue;
-      final step = raw.cast<String, dynamic>();
+      final step = jsonStringKeyMap(raw);
+      if (step == null) continue;
       switch (step['kind']) {
         case 'write_file':
-          final target = step['target'] as String?;
+          final target = jsonString(step['target']);
           if (target != null) {
             writes.add(_PlanItem(label: resolve(target) + tag));
           }
         case 'install_marker':
-          final dir = step['target_dir'] as String? ?? '~/printer_data/config';
-          final filename = step['filename'] as String? ?? 'deckhand.json';
+          final dir = jsonString(step['target_dir']) ?? '~/printer_data/config';
+          final filename = jsonString(step['filename']) ?? 'deckhand.json';
           writes.add(_PlanItem(label: resolve('$dir/$filename') + tag));
         case 'snapshot_paths':
-          final ids = ((step['paths'] as List?) ?? const []).cast<String>();
+          final ids = jsonStringList(step['paths']);
           for (final id in ids) {
             final p = profile.stockOs.paths.firstWhere(
               (x) => x.id == id,
@@ -330,34 +330,33 @@ _MutationPlan _buildMutationPlan({
             ),
           );
         case 'install_stack':
-          final comps = ((step['components'] as List?) ?? const [])
-              .cast<String>();
+          final comps = jsonStringList(step['components']);
           for (final c in comps) {
             final resolved = resolve(c);
             final cfg = _lookupStackCfg(profile, resolved);
             if (cfg == null) {
               clones.add(_PlanItem(label: 'stack: $resolved$tag'));
             } else {
-              final path = cfg['install_path'] as String? ?? '?';
-              final repo = cfg['repo'] as String? ?? '?';
+              final path = jsonString(cfg['install_path']) ?? '?';
+              final repo = jsonString(cfg['repo']) ?? '?';
               clones.add(
                 _PlanItem(label: 'stack: $resolved ($repo) -> $path$tag'),
               );
             }
           }
         case 'link_extras':
-          final srcs = ((step['sources'] as List?) ?? const []).cast<String>();
+          final srcs = jsonStringList(step['sources']);
           for (final s in srcs) {
             clones.add(_PlanItem(label: 'klippy extras <- $s$tag'));
           }
         case 'script':
-          final path = step['path'] as String?;
+          final path = jsonString(step['path']);
           if (path != null) scripts.add(_PlanItem(label: path + tag));
         case 'flash_disk':
           final disk = decisions['flash.disk']?.toString() ?? '(unchosen)';
           diskWrites.add(_PlanItem(label: 'raw image write to $disk$tag'));
         case 'conditional':
-          final when = step['when'] as String?;
+          final when = jsonString(step['when']);
           final then = (step['then'] as List?) ?? const [];
           // Label the gate itself so users see there's branching.
           scripts.add(

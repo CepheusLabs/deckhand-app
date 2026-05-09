@@ -165,6 +165,70 @@ void main() {
       expect(find.textContaining('[gate: when os_codename_is'), findsOneWidget);
     });
 
+    testWidgets('skips malformed nested step lists', (tester) async {
+      final controller = await buildController(
+        extraProfile: {
+          'stock_os': {
+            'paths': [
+              {'id': 'config', 'path': '~/printer_data/config'},
+            ],
+          },
+          'stack': {
+            'moonraker': {
+              'repo': 'https://example.com/moonraker.git',
+              'install_path': '~/moonraker',
+            },
+          },
+        },
+        steps: [
+          {
+            'id': 'snapshot',
+            'kind': 'snapshot_paths',
+            'paths': ['config', 42],
+          },
+          {
+            'id': 'stack',
+            'kind': 'install_stack',
+            'components': [42, 'moonraker'],
+          },
+          {
+            'id': 'extras',
+            'kind': 'link_extras',
+            'sources': [42, '~/klippy/extras'],
+          },
+          {
+            'id': 'gate',
+            'kind': 'conditional',
+            'then': [
+              'bad nested row',
+              {'kind': 'script', 'path': '/tmp/deckhand.sh'},
+            ],
+          },
+        ],
+      );
+
+      await tester.pumpWidget(
+        testHarness(
+          controller: controller,
+          child: const ReviewScreen(),
+          initialLocation: '/review',
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('~/printer_data/config'), findsOneWidget);
+      expect(
+        find.textContaining('https://example.com/moonraker.git'),
+        findsOneWidget,
+      );
+      expect(find.textContaining('~/klippy/extras'), findsOneWidget);
+      await tester.ensureVisible(find.textContaining('Scripts to run'));
+      await tester.tap(find.textContaining('Scripts to run'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('/tmp/deckhand.sh'), findsOneWidget);
+      expect(find.textContaining('bad nested row'), findsNothing);
+    });
+
     testWidgets(
       'start install action is exposed as destructive after confirmation',
       (tester) async {
