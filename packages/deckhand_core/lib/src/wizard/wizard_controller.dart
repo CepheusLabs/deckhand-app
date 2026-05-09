@@ -575,8 +575,8 @@ class WizardController {
       _canonicalStepInputsImpl(this, step);
 
   Future<void> _runStep(Map<String, dynamic> step) async {
-    final kind = step['kind'] as String? ?? '';
-    final id = step['id'] as String? ?? '';
+    final kind = _stringValue(step['kind']) ?? '';
+    final id = _stringValue(step['id']) ?? '';
     switch (kind) {
       case 'ssh_commands':
         await _runSshCommands(step);
@@ -778,7 +778,7 @@ class WizardController {
   }
 
   FirmwareChoice? _selectedFirmware() {
-    final id = _state.decisions['firmware'] as String?;
+    final id = _stringValue(_state.decisions['firmware']);
     if (id == null) return null;
     for (final c in _profile?.firmware.choices ?? const <FirmwareChoice>[]) {
       if (c.id == id) return c;
@@ -821,7 +821,7 @@ class WizardController {
       _renderImpl(this, template, shellSafe: shellSafe);
 
   void _log(Map<String, dynamic> step, String line) {
-    _emit(StepLog(stepId: step['id'] as String? ?? '', line: line));
+    _emit(StepLog(stepId: _stringValue(step['id']) ?? '', line: line));
   }
 
   void _emit(WizardEvent e) => _eventsController.add(e);

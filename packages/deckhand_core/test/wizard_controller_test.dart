@@ -2973,6 +2973,52 @@ void main() {
       expect(ssh.runCalls.any((c) => c.trim() == '42'), isFalse);
     });
 
+    test('runtime falls back on malformed step identifiers', () async {
+      final ssh = FakeSsh();
+      final controller = newController(
+        profileJson: baseProfileJson(
+          stockKeepSteps: [
+            {
+              'id': ['cmd'],
+              'kind': 'ssh_commands',
+              'commands': ['touch /tmp/no-id'],
+            },
+            {
+              'id': 'bad-kind',
+              'kind': ['ssh_commands'],
+              'commands': ['touch /tmp/should-not-run'],
+            },
+          ],
+        ),
+        ssh: ssh,
+      );
+      await controller.loadProfile('test-printer');
+      controller.setFlow(WizardFlow.stockKeep);
+      controller.setSession(
+        const SshSession(id: 'fake', host: 'h', port: 22, user: 'root'),
+      );
+
+      final warnings = <StepWarning>[];
+      final completed = <StepCompleted>[];
+      final sub = controller.events.listen((event) {
+        if (event is StepWarning) warnings.add(event);
+        if (event is StepCompleted) completed.add(event);
+      });
+      await controller.startExecution();
+      await sub.cancel();
+
+      expect(ssh.runCalls.any((c) => c.contains('/tmp/no-id')), isTrue);
+      expect(
+        ssh.runCalls.any((c) => c.contains('/tmp/should-not-run')),
+        isFalse,
+      );
+      expect(completed.map((e) => e.stepId), contains('unnamed'));
+      expect(
+        warnings.map((e) => e.message),
+        contains('Unknown step kind "" - skipping'),
+      );
+    });
+
     test(
       'completed run-state with matching pre-check skips step execution',
       () async {

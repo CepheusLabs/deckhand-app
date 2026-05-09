@@ -149,8 +149,8 @@ Future<void> _startExecutionImpl(WizardController c) async {
     if (c._cancelled) {
       throw WizardCancelledException(c._cancelReason ?? 'cancelled');
     }
-    final id = step['id'] as String? ?? 'unnamed';
-    final kind = step['kind'] as String? ?? '';
+    final id = _stringValue(step['id']) ?? 'unnamed';
+    final kind = _stringValue(step['kind']) ?? '';
     c._currentStepKind = kind;
     final hash = canonicalInputHash(c._canonicalStepInputs(step));
     final prior = c._runState?.lastFor(id);
@@ -220,7 +220,7 @@ Future<void> _prepareInterruptedStepForRestart(
   WizardController c,
   Map<String, dynamic> step,
 ) async {
-  final id = step['id'] as String? ?? 'unnamed';
+  final id = _stringValue(step['id']) ?? 'unnamed';
   final idempotency = _idempotencyBlock(step);
   final resume = idempotency?['resume']?.toString();
   if (resume == 'cleanup_then_restart') {
@@ -278,8 +278,8 @@ Future<bool> _runStateCanSkipCompletedStep(
   WizardController c,
   Map<String, dynamic> step,
 ) async {
-  final id = step['id'] as String? ?? 'unnamed';
-  final kind = step['kind'] as String? ?? '';
+  final id = _stringValue(step['id']) ?? 'unnamed';
+  final kind = _stringValue(step['kind']) ?? '';
   final idempotency = _idempotencyBlock(step);
   final preCheck = idempotency?['pre_check'];
   if (preCheck is String && preCheck.trim().isNotEmpty) {
@@ -295,7 +295,7 @@ Future<bool> _runStateCanSkipCompletedStep(
   }
   if (_kindsWithBuiltInRunStateSkip.contains(kind) ||
       _interactiveRunStateStepKinds.contains(kind) ||
-      step['safe_to_rerun'] == true) {
+      _boolValue(step['safe_to_rerun'])) {
     return true;
   }
   c._emit(
@@ -391,7 +391,7 @@ Future<void> _runSshCommandsImpl(
 ) async {
   c._requireSession();
   final commands = _stringList(step['commands']);
-  final ignore = step['ignore_errors'] as bool? ?? false;
+  final ignore = _boolValue(step['ignore_errors']);
   for (final cmd in commands) {
     // Substituted values (decisions, firmware fields, profile values)
     // are untrusted input reaching a shell. Render in shell-safe mode
@@ -462,7 +462,7 @@ Future<void> _runSnapshotArchiveImpl(
   if (svc == null || dir == null) {
     c._emit(
       StepWarning(
-        stepId: step['id'] as String? ?? 'snapshot_archive',
+        stepId: _stringValue(step['id']) ?? 'snapshot_archive',
         message:
             'archive service not wired; skipping snapshot capture '
             '(install will proceed but config backup is your problem)',
@@ -472,17 +472,11 @@ Future<void> _runSnapshotArchiveImpl(
   }
   final pf = c._profile;
   if (pf == null) throw StateError('no profile loaded');
-  final selectedRaw = c._state.decisions['snapshot.paths'];
-  final selectedIds = <String>[];
-  if (selectedRaw is List) {
-    for (final v in selectedRaw) {
-      selectedIds.add(v.toString());
-    }
-  }
+  final selectedIds = _stringList(c._state.decisions['snapshot.paths']);
   if (selectedIds.isEmpty) {
     c._emit(
       StepWarning(
-        stepId: step['id'] as String? ?? 'snapshot_archive',
+        stepId: _stringValue(step['id']) ?? 'snapshot_archive',
         message: 'no snapshot paths selected; nothing to archive',
       ),
     );
@@ -495,7 +489,7 @@ Future<void> _runSnapshotArchiveImpl(
     if (pp == null) {
       c._emit(
         StepWarning(
-          stepId: step['id'] as String? ?? 'snapshot_archive',
+          stepId: _stringValue(step['id']) ?? 'snapshot_archive',
           message: 'snapshot id "$id" not in profile; ignoring',
         ),
       );
@@ -523,7 +517,7 @@ Future<void> _runSnapshotArchiveImpl(
     totalBytes = progress.bytesCaptured;
     c._emit(
       StepProgress(
-        stepId: step['id'] as String? ?? 'snapshot_archive',
+        stepId: _stringValue(step['id']) ?? 'snapshot_archive',
         percent: 0,
         message:
             '${(progress.bytesCaptured / 1024).toStringAsFixed(0)} KiB captured',
@@ -625,7 +619,7 @@ Future<String> _displayExistingDecisionImpl(
   Map<String, dynamic> step,
   Object existing,
 ) async {
-  final kind = step['kind'] as String? ?? '';
+  final kind = _stringValue(step['kind']) ?? '';
   if (kind == 'disk_picker' && existing is String) {
     return _userFacingDiskNameForIdImpl(c, existing);
   }
@@ -640,9 +634,9 @@ Object? _lookupExistingDecisionImpl(
   WizardController c,
   Map<String, dynamic> step,
 ) {
-  final kind = step['kind'] as String? ?? '';
-  final optionsFrom = step['options_from'] as String?;
-  final id = step['id'] as String? ?? '';
+  final kind = _stringValue(step['kind']) ?? '';
+  final optionsFrom = _stringValue(step['options_from']);
+  final id = _stringValue(step['id']) ?? '';
 
   // Most specific first: step id.
   final byId = c._state.decisions[id];

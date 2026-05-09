@@ -95,6 +95,28 @@ void main() {
       expect(archive.captureCalls.single.paths, ['~/printer_data/config']);
     });
 
+    test('ignores malformed selected path ids', () async {
+      final archive = _FakeArchive();
+      final controller = _build(
+        profile: _profileWithSnapshot,
+        ssh: _FakeSsh(),
+        archive: archive,
+        snapshotsDir: tmp.path,
+      );
+      await controller.loadProfile('p1');
+      await controller.connectSsh(host: '127.0.0.1');
+      controller.setFlow(WizardFlow.stockKeep);
+      await controller.setDecision('snapshot.paths', [
+        'cfg',
+        {'id': 'extras'},
+      ]);
+
+      await controller.startExecution();
+
+      expect(archive.captureCalls, hasLength(1));
+      expect(archive.captureCalls.single.paths, ['~/printer_data/config']);
+    });
+
     test('records archive_path + archive_sha256 into wizard state', () async {
       final archive = _FakeArchive(
         progress: const [
