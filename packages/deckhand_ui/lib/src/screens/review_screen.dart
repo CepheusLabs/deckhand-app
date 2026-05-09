@@ -303,7 +303,7 @@ _MutationPlan _buildMutationPlan({
           // user hasn't overridden). Everything else stays.
           for (final f in profile.stockOs.files) {
             final decided =
-                decisions['file.${f.id}'] as String? ?? f.defaultAction;
+                jsonString(decisions['file.${f.id}']) ?? f.defaultAction;
             if (decided != 'delete') continue;
             for (final p in f.paths) {
               deletes.add(_PlanItem(label: '${f.id}: $p$tag'));
@@ -357,7 +357,7 @@ _MutationPlan _buildMutationPlan({
           diskWrites.add(_PlanItem(label: 'raw image write to $disk$tag'));
         case 'conditional':
           final when = jsonString(step['when']);
-          final then = (step['then'] as List?) ?? const [];
+          final then = jsonStringKeyMapList(step['then']);
           // Label the gate itself so users see there's branching.
           scripts.add(
             _PlanItem(label: '[gate: when $when] then...', subtle: true),

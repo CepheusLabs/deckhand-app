@@ -196,8 +196,9 @@ void main() {
             'kind': 'link_extras',
             'sources': [42, '~/klippy/extras'],
           },
+          {'id': 'gate', 'kind': 'conditional', 'then': 'not a list'},
           {
-            'id': 'gate',
+            'id': 'good_gate',
             'kind': 'conditional',
             'then': [
               'bad nested row',
@@ -227,6 +228,41 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.textContaining('/tmp/deckhand.sh'), findsOneWidget);
       expect(find.textContaining('bad nested row'), findsNothing);
+    });
+
+    testWidgets('ignores malformed file decisions without crashing', (
+      tester,
+    ) async {
+      final controller = await buildController(
+        extraProfile: {
+          'stock_os': {
+            'files': [
+              {
+                'id': 'delete_this',
+                'paths': ['/delete/me'],
+                'default_action': 'delete',
+              },
+            ],
+          },
+        },
+        steps: [
+          {'id': 'apply_files', 'kind': 'apply_files'},
+        ],
+        decisions: {
+          'file.delete_this': ['not', 'a', 'string'],
+        },
+      );
+
+      await tester.pumpWidget(
+        testHarness(
+          controller: controller,
+          child: const ReviewScreen(),
+          initialLocation: '/review',
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('/delete/me'), findsOneWidget);
     });
 
     testWidgets(
