@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import '../i18n/translations.g.dart';
 import '../providers.dart';
 import '../theming/deckhand_tokens.dart';
+import '../utils/json_safety.dart';
 import '../widgets/deckhand_loading.dart';
 import '../widgets/wizard_scaffold.dart';
 
@@ -247,7 +248,7 @@ class _FileRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final tokens = DeckhandTokens.of(context);
     final helper =
-        (file.raw['wizard'] as Map?)?['helper_text'] as String? ?? '';
+        jsonString(jsonStringKeyMap(file.raw['wizard'])?['helper_text']) ?? '';
     final paths = file.paths.join(', ');
     return InkWell(
       onTap: disabled ? null : onToggle,

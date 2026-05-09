@@ -8,78 +8,103 @@ import 'helpers.dart';
 
 void main() {
   group('VerifyScreen backup UI', () {
-    testWidgets(
-      'renders a restore offer + metadata per discovered backup',
-      (tester) async {
-        final controller = stubWizardController(
-          profileJson: testProfileJson(),
-        );
-        await controller.loadProfile('test-printer');
-        controller.setFlow(WizardFlow.stockKeep);
-        controller.printerStateForTesting = PrinterState(
-          services: const {},
-          files: const {},
-          paths: const {},
-          stackInstalls: const {},
-          screenInstalls: const {},
-          python311Installed: false,
-          deckhandBackups: [
-            DeckhandBackup(
-              originalPath: '/etc/apt/sources.list',
-              backupPath:
-                  '/etc/apt/sources.list.deckhand-pre-test-printer-1776910000000',
-              profileId: 'test-printer',
-              profileVersion: '0.1.0',
-              stepId: 'fix_apt_sources',
-              createdAt: DateTime(2026, 4, 22, 10, 30),
-            ),
-          ],
-          probedAt: DateTime.now(),
-        );
-        await tester.pumpWidget(
-          testHarness(
-            controller: controller,
-            child: const VerifyScreen(),
-            initialLocation: '/verify',
-          ),
-        );
-        await tester.pumpAndSettle();
+    testWidgets('malformed optional detection metadata is ignored', (
+      tester,
+    ) async {
+      final controller = stubWizardController(
+        profileJson: {
+          ...testProfileJson(),
+          'stock_os': {
+            'detections': [
+              {
+                'kind': 'file_contains',
+                'path': 42,
+                'pattern': ['not text'],
+                'label': 99,
+                'note': {'bad': true},
+              },
+              {'kind': 'process_running', 'name': false},
+              {'kind': 'moonraker_object', 'object': 123},
+            ],
+          },
+        },
+      );
+      await controller.loadProfile('test-printer');
+      controller.setFlow(WizardFlow.stockKeep);
 
-        expect(find.text('/etc/apt/sources.list'), findsOneWidget);
-        // profile-id + step-id moved to a Tooltip on the tile so
-        // they're no longer user-visible by default. What the user
-        // sees is the timestamp. Find any Tooltip whose message
-        // includes the internal profile-id marker.
-        final tooltips = tester.widgetList<Tooltip>(find.byType(Tooltip));
-        expect(
-          tooltips.any((t) =>
-              (t.message ?? '').contains('profile test-printer')),
-          isTrue,
-          reason: 'Tooltip on backup tile should surface profile-id',
-        );
-        expect(find.text('Restore'), findsOneWidget);
-        expect(find.text('Preview'), findsOneWidget);
-        expect(find.text('Delete'), findsOneWidget);
-        // New configurable prune control: dropdown + keep-latest
-        // checkbox + "Prune now" trigger.
-        expect(
-          find.textContaining('Prune backups older than'),
-          findsOneWidget,
-        );
-        expect(find.text('Prune now'), findsOneWidget);
-        expect(
-          find.textContaining('Keep the newest snapshot'),
-          findsOneWidget,
-        );
-      },
-    );
+      await tester.pumpWidget(
+        testHarness(
+          controller: controller,
+          child: const VerifyScreen(),
+          initialLocation: '/verify',
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byType(VerifyScreen), findsOneWidget);
+      expect(find.textContaining('not text'), findsNothing);
+    });
+
+    testWidgets('renders a restore offer + metadata per discovered backup', (
+      tester,
+    ) async {
+      final controller = stubWizardController(profileJson: testProfileJson());
+      await controller.loadProfile('test-printer');
+      controller.setFlow(WizardFlow.stockKeep);
+      controller.printerStateForTesting = PrinterState(
+        services: const {},
+        files: const {},
+        paths: const {},
+        stackInstalls: const {},
+        screenInstalls: const {},
+        python311Installed: false,
+        deckhandBackups: [
+          DeckhandBackup(
+            originalPath: '/etc/apt/sources.list',
+            backupPath:
+                '/etc/apt/sources.list.deckhand-pre-test-printer-1776910000000',
+            profileId: 'test-printer',
+            profileVersion: '0.1.0',
+            stepId: 'fix_apt_sources',
+            createdAt: DateTime(2026, 4, 22, 10, 30),
+          ),
+        ],
+        probedAt: DateTime.now(),
+      );
+      await tester.pumpWidget(
+        testHarness(
+          controller: controller,
+          child: const VerifyScreen(),
+          initialLocation: '/verify',
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('/etc/apt/sources.list'), findsOneWidget);
+      // profile-id + step-id moved to a Tooltip on the tile so
+      // they're no longer user-visible by default. What the user
+      // sees is the timestamp. Find any Tooltip whose message
+      // includes the internal profile-id marker.
+      final tooltips = tester.widgetList<Tooltip>(find.byType(Tooltip));
+      expect(
+        tooltips.any((t) => (t.message ?? '').contains('profile test-printer')),
+        isTrue,
+        reason: 'Tooltip on backup tile should surface profile-id',
+      );
+      expect(find.text('Restore'), findsOneWidget);
+      expect(find.text('Preview'), findsOneWidget);
+      expect(find.text('Delete'), findsOneWidget);
+      // New configurable prune control: dropdown + keep-latest
+      // checkbox + "Prune now" trigger.
+      expect(find.textContaining('Prune backups older than'), findsOneWidget);
+      expect(find.text('Prune now'), findsOneWidget);
+      expect(find.textContaining('Keep the newest snapshot'), findsOneWidget);
+    });
 
     testWidgets(
       'legacy backups (no sidecar metadata) render in their own section',
       (tester) async {
-        final controller = stubWizardController(
-          profileJson: testProfileJson(),
-        );
+        final controller = stubWizardController(profileJson: testProfileJson());
         await controller.loadProfile('test-printer');
         controller.setFlow(WizardFlow.stockKeep);
         controller.printerStateForTesting = const PrinterState(
@@ -114,11 +139,13 @@ void main() {
           ],
           probedAt: null,
         );
-        await tester.pumpWidget(testHarness(
-          controller: controller,
-          child: const VerifyScreen(),
-          initialLocation: '/verify',
-        ));
+        await tester.pumpWidget(
+          testHarness(
+            controller: controller,
+            child: const VerifyScreen(),
+            initialLocation: '/verify',
+          ),
+        );
         await tester.pumpAndSettle();
         expect(
           find.textContaining('Older backups without metadata'),
@@ -131,9 +158,7 @@ void main() {
     testWidgets(
       'Delete button opens a confirm dialog and does nothing if cancelled',
       (tester) async {
-        final controller = stubWizardController(
-          profileJson: testProfileJson(),
-        );
+        final controller = stubWizardController(profileJson: testProfileJson());
         await controller.loadProfile('test-printer');
         controller.setFlow(WizardFlow.stockKeep);
         controller.printerStateForTesting = PrinterState(
@@ -153,20 +178,19 @@ void main() {
           ],
           probedAt: DateTime.now(),
         );
-        await tester.pumpWidget(testHarness(
-          controller: controller,
-          child: const VerifyScreen(),
-          initialLocation: '/verify',
-        ));
+        await tester.pumpWidget(
+          testHarness(
+            controller: controller,
+            child: const VerifyScreen(),
+            initialLocation: '/verify',
+          ),
+        );
         await tester.pumpAndSettle();
 
         // Click Delete: confirm dialog pops up.
         await tester.tap(find.text('Delete').first);
         await tester.pumpAndSettle();
-        expect(
-          find.textContaining('Delete this backup?'),
-          findsOneWidget,
-        );
+        expect(find.textContaining('Delete this backup?'), findsOneWidget);
         // Cancel.
         await tester.tap(find.text('Cancel'));
         await tester.pumpAndSettle();
@@ -181,9 +205,7 @@ void main() {
     testWidgets(
       'Prune dropdown + keep-newest checkbox fire onChanged callbacks',
       (tester) async {
-        final controller = stubWizardController(
-          profileJson: testProfileJson(),
-        );
+        final controller = stubWizardController(profileJson: testProfileJson());
         await controller.loadProfile('test-printer');
         controller.setFlow(WizardFlow.stockKeep);
         // Seed one old backup so the prune controls render.
@@ -197,19 +219,20 @@ void main() {
           deckhandBackups: [
             DeckhandBackup(
               originalPath: '/etc/apt/sources.list',
-              backupPath:
-                  '/etc/apt/sources.list.deckhand-pre-test-printer-1',
+              backupPath: '/etc/apt/sources.list.deckhand-pre-test-printer-1',
               profileId: 'test-printer',
               createdAt: DateTime.now().subtract(const Duration(days: 60)),
             ),
           ],
           probedAt: DateTime.now(),
         );
-        await tester.pumpWidget(testHarness(
-          controller: controller,
-          child: const VerifyScreen(),
-          initialLocation: '/verify',
-        ));
+        await tester.pumpWidget(
+          testHarness(
+            controller: controller,
+            child: const VerifyScreen(),
+            initialLocation: '/verify',
+          ),
+        );
         await tester.pumpAndSettle();
 
         // Dropdown: verify it renders with the default 30-day value
@@ -231,38 +254,39 @@ void main() {
         cb.onChanged!.call(false);
         await tester.pumpAndSettle();
         final cbAfter = tester.widget<Checkbox>(find.byType(Checkbox));
-        expect(cbAfter.value, isFalse,
-            reason: 'Checkbox onChanged must flip state to false');
+        expect(
+          cbAfter.value,
+          isFalse,
+          reason: 'Checkbox onChanged must flip state to false',
+        );
       },
     );
 
-    testWidgets(
-      'Prune dropdown reads initial value from DeckhandSettings',
-      (tester) async {
-        final controller = stubWizardController(
-          profileJson: testProfileJson(),
-        );
-        await controller.loadProfile('test-printer');
-        controller.setFlow(WizardFlow.stockKeep);
-        controller.printerStateForTesting = PrinterState(
-          services: const {},
-          files: const {},
-          paths: const {},
-          stackInstalls: const {},
-          screenInstalls: const {},
-          python311Installed: false,
-          deckhandBackups: [
-            DeckhandBackup(
-              originalPath: '/etc/apt/sources.list',
-              backupPath:
-                  '/etc/apt/sources.list.deckhand-pre-test-printer-1',
-              profileId: 'test-printer',
-              createdAt: DateTime.now().subtract(const Duration(days: 100)),
-            ),
-          ],
-          probedAt: DateTime.now(),
-        );
-        await tester.pumpWidget(testHarnessWithSettings(
+    testWidgets('Prune dropdown reads initial value from DeckhandSettings', (
+      tester,
+    ) async {
+      final controller = stubWizardController(profileJson: testProfileJson());
+      await controller.loadProfile('test-printer');
+      controller.setFlow(WizardFlow.stockKeep);
+      controller.printerStateForTesting = PrinterState(
+        services: const {},
+        files: const {},
+        paths: const {},
+        stackInstalls: const {},
+        screenInstalls: const {},
+        python311Installed: false,
+        deckhandBackups: [
+          DeckhandBackup(
+            originalPath: '/etc/apt/sources.list',
+            backupPath: '/etc/apt/sources.list.deckhand-pre-test-printer-1',
+            profileId: 'test-printer',
+            createdAt: DateTime.now().subtract(const Duration(days: 100)),
+          ),
+        ],
+        probedAt: DateTime.now(),
+      );
+      await tester.pumpWidget(
+        testHarnessWithSettings(
           controller: controller,
           child: const VerifyScreen(),
           initialLocation: '/verify',
@@ -270,125 +294,120 @@ void main() {
             s.pruneOlderThanDays = 14;
             s.pruneKeepNewestPerTarget = false;
           },
-        ));
-        await tester.pumpAndSettle();
+        ),
+      );
+      await tester.pumpAndSettle();
 
-        expect(find.text('14 days'), findsOneWidget);
-        final chk = tester.widget<Checkbox>(find.byType(Checkbox));
-        expect(chk.value, isFalse);
-      },
-    );
+      expect(find.text('14 days'), findsOneWidget);
+      final chk = tester.widget<Checkbox>(find.byType(Checkbox));
+      expect(chk.value, isFalse);
+    });
 
-    testWidgets(
-      'failed prune preference saves roll back settings',
-      (tester) async {
-        final controller = stubWizardController(
-          profileJson: testProfileJson(),
-        );
-        await controller.loadProfile('test-printer');
-        controller.setFlow(WizardFlow.stockKeep);
-        controller.printerStateForTesting = PrinterState(
-          services: const {},
-          files: const {},
-          paths: const {},
-          stackInstalls: const {},
-          screenInstalls: const {},
-          python311Installed: false,
-          deckhandBackups: [
-            DeckhandBackup(
-              originalPath: '/etc/apt/sources.list',
-              backupPath:
-                  '/etc/apt/sources.list.deckhand-pre-test-printer-1',
-              profileId: 'test-printer',
-              createdAt: DateTime.now().subtract(const Duration(days: 100)),
-            ),
-          ],
-          probedAt: DateTime.now(),
-        );
-        final settings = _FailingSaveSettings()
-          ..pruneOlderThanDays = 30
-          ..pruneKeepNewestPerTarget = true;
-        await tester.pumpWidget(testHarness(
+    testWidgets('failed prune preference saves roll back settings', (
+      tester,
+    ) async {
+      final controller = stubWizardController(profileJson: testProfileJson());
+      await controller.loadProfile('test-printer');
+      controller.setFlow(WizardFlow.stockKeep);
+      controller.printerStateForTesting = PrinterState(
+        services: const {},
+        files: const {},
+        paths: const {},
+        stackInstalls: const {},
+        screenInstalls: const {},
+        python311Installed: false,
+        deckhandBackups: [
+          DeckhandBackup(
+            originalPath: '/etc/apt/sources.list',
+            backupPath: '/etc/apt/sources.list.deckhand-pre-test-printer-1',
+            profileId: 'test-printer',
+            createdAt: DateTime.now().subtract(const Duration(days: 100)),
+          ),
+        ],
+        probedAt: DateTime.now(),
+      );
+      final settings = _FailingSaveSettings()
+        ..pruneOlderThanDays = 30
+        ..pruneKeepNewestPerTarget = true;
+      await tester.pumpWidget(
+        testHarness(
           controller: controller,
           child: const VerifyScreen(),
           initialLocation: '/verify',
           extraOverrides: [
             deckhandSettingsProvider.overrideWithValue(settings),
           ],
-        ));
-        await tester.pumpAndSettle();
+        ),
+      );
+      await tester.pumpAndSettle();
 
-        final dropdown = tester.widget<DropdownButton<int>>(
-          find.byType(DropdownButton<int>),
-        );
-        dropdown.onChanged!.call(7);
-        final checkbox = tester.widget<Checkbox>(find.byType(Checkbox));
-        checkbox.onChanged!.call(false);
-        await tester.pumpAndSettle();
-        await tester.ensureVisible(
-          find.widgetWithText(FilledButton, 'Prune now'),
-        );
-        await tester.tap(find.widgetWithText(FilledButton, 'Prune now'));
-        await tester.pump();
-        await tester.pump(const Duration(milliseconds: 250));
+      final dropdown = tester.widget<DropdownButton<int>>(
+        find.byType(DropdownButton<int>),
+      );
+      dropdown.onChanged!.call(7);
+      final checkbox = tester.widget<Checkbox>(find.byType(Checkbox));
+      checkbox.onChanged!.call(false);
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(
+        find.widgetWithText(FilledButton, 'Prune now'),
+      );
+      await tester.tap(find.widgetWithText(FilledButton, 'Prune now'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 250));
 
-        expect(settings.pruneOlderThanDays, 30);
-        expect(settings.pruneKeepNewestPerTarget, isTrue);
-        expect(find.textContaining('Windows disk 3'), findsOneWidget);
-        expect(find.textContaining('PHYSICALDRIVE3'), findsNothing);
-      },
-    );
+      expect(settings.pruneOlderThanDays, 30);
+      expect(settings.pruneKeepNewestPerTarget, isTrue);
+      expect(find.textContaining('Windows disk 3'), findsOneWidget);
+      expect(find.textContaining('PHYSICALDRIVE3'), findsNothing);
+    });
 
-    testWidgets(
-      'foreign-profile backups render without a Restore button',
-      (tester) async {
-        final controller = stubWizardController(
-          profileJson: testProfileJson(),
-        );
-        await controller.loadProfile('test-printer');
-        controller.setFlow(WizardFlow.stockKeep);
-        controller.printerStateForTesting = PrinterState(
-          services: const {},
-          files: const {},
-          paths: const {},
-          stackInstalls: const {},
-          screenInstalls: const {},
-          python311Installed: false,
-          deckhandBackups: [
-            DeckhandBackup(
-              originalPath: '/etc/apt/sources.list',
-              backupPath:
-                  '/etc/apt/sources.list.deckhand-pre-other-printer-1776910000000',
-              profileId: 'other-printer', // different from current
-              profileVersion: '1.0.0',
-              stepId: 'fix_apt_sources',
-              createdAt: DateTime(2026, 4, 22, 10, 30),
-            ),
-          ],
-          probedAt: DateTime.now(),
-        );
-        await tester.pumpWidget(
-          testHarness(
-            controller: controller,
-            child: const VerifyScreen(),
-            initialLocation: '/verify',
+    testWidgets('foreign-profile backups render without a Restore button', (
+      tester,
+    ) async {
+      final controller = stubWizardController(profileJson: testProfileJson());
+      await controller.loadProfile('test-printer');
+      controller.setFlow(WizardFlow.stockKeep);
+      controller.printerStateForTesting = PrinterState(
+        services: const {},
+        files: const {},
+        paths: const {},
+        stackInstalls: const {},
+        screenInstalls: const {},
+        python311Installed: false,
+        deckhandBackups: [
+          DeckhandBackup(
+            originalPath: '/etc/apt/sources.list',
+            backupPath:
+                '/etc/apt/sources.list.deckhand-pre-other-printer-1776910000000',
+            profileId: 'other-printer', // different from current
+            profileVersion: '1.0.0',
+            stepId: 'fix_apt_sources',
+            createdAt: DateTime(2026, 4, 22, 10, 30),
           ),
-        );
-        await tester.pumpAndSettle();
+        ],
+        probedAt: DateTime.now(),
+      );
+      await tester.pumpWidget(
+        testHarness(
+          controller: controller,
+          child: const VerifyScreen(),
+          initialLocation: '/verify',
+        ),
+      );
+      await tester.pumpAndSettle();
 
-        // The foreign section renders the header and the path...
-        expect(
-          find.textContaining('Backups from other profiles'),
-          findsOneWidget,
-        );
-        expect(find.text('/etc/apt/sources.list'), findsOneWidget);
-        // ...but no Restore button (disabled via null callback).
-        expect(find.text('Restore'), findsNothing);
-        // Preview + Delete still available (inspection always OK).
-        expect(find.text('Preview'), findsOneWidget);
-        expect(find.text('Delete'), findsOneWidget);
-      },
-    );
+      // The foreign section renders the header and the path...
+      expect(
+        find.textContaining('Backups from other profiles'),
+        findsOneWidget,
+      );
+      expect(find.text('/etc/apt/sources.list'), findsOneWidget);
+      // ...but no Restore button (disabled via null callback).
+      expect(find.text('Restore'), findsNothing);
+      // Preview + Delete still available (inspection always OK).
+      expect(find.text('Preview'), findsOneWidget);
+      expect(find.text('Delete'), findsOneWidget);
+    });
   });
 }
 

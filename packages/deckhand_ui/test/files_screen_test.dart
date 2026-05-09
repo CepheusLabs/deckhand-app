@@ -22,7 +22,10 @@ void main() {
               ],
             },
             'flows': {
-              'stock_keep': {'enabled': true, 'steps': <Map<String, Object?>>[]},
+              'stock_keep': {
+                'enabled': true,
+                'steps': <Map<String, Object?>>[],
+              },
             },
             'stock_os': {
               'files': [
@@ -68,15 +71,13 @@ void main() {
 
         expect(find.textContaining('frpc binary'), findsOneWidget);
         expect(find.textContaining('Dated txt notes'), findsOneWidget);
-        expect(
-          find.textContaining('Already clean'),
-          findsOneWidget,
-        );
+        expect(find.textContaining('Already clean'), findsOneWidget);
       },
     );
 
-    testWidgets('probe-loading banner visible until the probe reports',
-        (tester) async {
+    testWidgets('probe-loading banner visible until the probe reports', (
+      tester,
+    ) async {
       final controller = stubWizardController(
         profileJson: {
           'profile_id': 'test-printer',
@@ -93,7 +94,11 @@ void main() {
           },
           'stock_os': {
             'files': [
-              {'id': 'x', 'display_name': 'X', 'paths': ['/x']},
+              {
+                'id': 'x',
+                'display_name': 'X',
+                'paths': ['/x'],
+              },
             ],
           },
         },
@@ -112,10 +117,58 @@ void main() {
       // settles; pump a few frames instead of pumpAndSettle.
       await tester.pump();
       // probedAt == null -> banner visible.
-      expect(
-        find.textContaining('Probing this printer'),
-        findsOneWidget,
+      expect(find.textContaining('Probing this printer'), findsOneWidget);
+    });
+
+    testWidgets('malformed wizard helper metadata is ignored', (tester) async {
+      final controller = stubWizardController(
+        profileJson: {
+          'profile_id': 'test-printer',
+          'profile_version': '0.1.0',
+          'display_name': 'Test',
+          'status': 'alpha',
+          'ssh': {
+            'default_credentials': [
+              {'user': 'root', 'password': 'root'},
+            ],
+          },
+          'flows': {
+            'stock_keep': {'enabled': true, 'steps': <Map<String, Object?>>[]},
+          },
+          'stock_os': {
+            'files': [
+              {
+                'id': 'stock_notes',
+                'display_name': 'Dated txt notes',
+                'paths': ['/home/mks/notes.txt'],
+                'wizard': ['not a map'],
+              },
+            ],
+          },
+        },
       );
+      await controller.loadProfile('test-printer');
+      controller.setFlow(WizardFlow.stockKeep);
+      controller.printerStateForTesting = PrinterState(
+        services: const {},
+        files: const {'stock_notes': true},
+        paths: const {},
+        stackInstalls: const {},
+        screenInstalls: const {},
+        python311Installed: false,
+        probedAt: DateTime.now(),
+      );
+
+      await tester.pumpWidget(
+        testHarness(
+          controller: controller,
+          child: const FilesScreen(),
+          initialLocation: '/files',
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('Dated txt notes'), findsOneWidget);
     });
   });
 }

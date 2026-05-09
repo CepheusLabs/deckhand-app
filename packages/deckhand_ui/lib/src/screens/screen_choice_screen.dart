@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../i18n/translations.g.dart';
 import '../providers.dart';
 import '../theming/deckhand_tokens.dart';
+import '../utils/json_safety.dart';
 import '../widgets/equal_height_grid.dart';
 import '../widgets/profile_text.dart';
 import '../widgets/selection_card.dart';
@@ -74,7 +75,7 @@ class _ScreenChoiceScreenState extends ConsumerState<ScreenChoiceScreen> {
                 _ScreenCard(
                   name: s.displayName ?? s.id,
                   status: s.status ?? 'stub',
-                  notes: flattenProfileText(s.raw['notes'] as String?),
+                  notes: flattenProfileText(jsonString(s.raw['notes'])),
                   selectable: _isSelectable(s),
                   selected: _choice == s.id,
                   installState: _installSummary(probe, s.id),

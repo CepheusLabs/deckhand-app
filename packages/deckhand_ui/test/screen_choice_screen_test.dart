@@ -130,5 +130,35 @@ void main() {
       );
       expect(continueButton.onPressed, isNull);
     });
+
+    testWidgets('malformed notes metadata does not crash', (tester) async {
+      final controller = stubWizardController(
+        profileJson: {
+          ...testProfileJson(),
+          'screens': [
+            {
+              'id': 'klipperscreen',
+              'display_name': 'KlipperScreen',
+              'status': 'stable',
+              'notes': ['not text'],
+            },
+          ],
+        },
+      );
+      await controller.loadProfile('test-printer');
+      controller.setFlow(WizardFlow.stockKeep);
+
+      await tester.pumpWidget(
+        testHarness(
+          controller: controller,
+          child: const ScreenChoiceScreen(),
+          initialLocation: '/screen-choice',
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('KlipperScreen'), findsOneWidget);
+      expect(find.textContaining('not text'), findsNothing);
+    });
   });
 }

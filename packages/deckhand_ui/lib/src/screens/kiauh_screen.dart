@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../i18n/translations.g.dart';
 import '../providers.dart';
 import '../theming/deckhand_tokens.dart';
+import '../utils/json_safety.dart';
 import '../widgets/selection_card.dart';
 import '../widgets/wizard_scaffold.dart';
 
@@ -24,19 +25,20 @@ class _KiauhScreenState extends ConsumerState<KiauhScreen> {
     final controller = ref.watch(wizardControllerProvider);
     final profile = controller.profile;
     final kiauh = profile?.stack.kiauh ?? const <String, dynamic>{};
-    final wizard = (kiauh['wizard'] as Map?) ?? const {};
-    final explainer = (wizard['explainer'] as String?)?.trim() ??
+    final wizard = jsonStringKeyMap(kiauh['wizard']) ?? const {};
+    final explainer =
+        jsonString(wizard['explainer'])?.trim() ??
         'The Klipper Installation And Update Helper is an interactive '
             'SSH menu for maintaining your stack after Deckhand finishes — '
             'install another instance, swap branches, repair a service.';
-    final examples =
-        (wizard['examples'] as List?)?.cast<String>() ?? const [];
+    final examples = jsonStringList(wizard['examples']);
     final probe = controller.printerState;
-    final alreadyInstalled =
-        probe.stackInstalls['kiauh']?.installed ?? false;
-    _install ??= alreadyInstalled
-        ? false
-        : (kiauh['default_install'] as bool? ?? true);
+    final alreadyInstalled = probe.stackInstalls['kiauh']?.installed ?? false;
+    final defaultInstall = kiauh['default_install'] is bool
+        ? kiauh['default_install'] as bool
+        : true;
+    final repo = jsonString(kiauh['repo'])?.trim();
+    _install ??= alreadyInstalled ? false : defaultInstall;
 
     return WizardScaffold(
       screenId: 'S107-kiauh',
@@ -59,7 +61,8 @@ class _KiauhScreenState extends ConsumerState<KiauhScreen> {
                     ? 'Re-install (clean clone)'
                     : 'Install KIAUH',
                 recommended: !alreadyInstalled,
-                body: 'Adds ~/kiauh/ on the printer. Run ./kiauh.sh '
+                body:
+                    'Adds ~/kiauh/ on the printer. Run ./kiauh.sh '
                     'over SSH for an interactive menu.',
                 selected: _install == true,
                 onTap: () => setState(() => _install = true),
@@ -69,9 +72,10 @@ class _KiauhScreenState extends ConsumerState<KiauhScreen> {
                 title: alreadyInstalled ? 'Skip (keep existing)' : 'Skip',
                 body: alreadyInstalled
                     ? 'Leave the existing checkout alone. Re-run from '
-                        'Settings later if you need a clean copy.'
-                    : 'You can install later: '
-                        'git clone https://github.com/dw-0/kiauh',
+                          'Settings later if you need a clean copy.'
+                    : repo == null || repo.isEmpty
+                    ? 'You can install it later over SSH.'
+                    : 'You can install it later from $repo.',
                 selected: _install == false,
                 onTap: () => setState(() => _install = false),
               );
@@ -88,11 +92,7 @@ class _KiauhScreenState extends ConsumerState<KiauhScreen> {
                 );
               }
               return Column(
-                children: [
-                  installCard,
-                  const SizedBox(height: 12),
-                  skipCard,
-                ],
+                children: [installCard, const SizedBox(height: 12), skipCard],
               );
             },
           ),
@@ -154,9 +154,7 @@ class _AlreadyInstalledNotice extends StatelessWidget {
                   const TextSpan(text: 'KIAUH already installed at '),
                   TextSpan(
                     text: path,
-                    style: const TextStyle(
-                      fontFamily: DeckhandTokens.fontMono,
-                    ),
+                    style: const TextStyle(fontFamily: DeckhandTokens.fontMono),
                   ),
                   const TextSpan(text: '. Default is to skip.'),
                 ],

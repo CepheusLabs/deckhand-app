@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import '../i18n/translations.g.dart';
 import '../providers.dart';
 import '../theming/deckhand_tokens.dart';
+import '../utils/json_safety.dart';
 import '../utils/user_facing_errors.dart';
 import '../widgets/deckhand_loading.dart';
 import '../widgets/profile_text.dart';
@@ -372,19 +373,19 @@ class _VerifyScreenState extends ConsumerState<VerifyScreen> {
   /// custom `label` field if present, otherwise falls back to a generic
   /// sentence keyed by detection `kind`.
   String _title(String kind, Map<String, dynamic> raw, String? vendor) {
-    final custom = raw['label'] as String?;
+    final custom = jsonString(raw['label']);
     if (custom != null && custom.trim().isNotEmpty) return custom.trim();
 
     switch (kind) {
       case 'file_exists':
         return t.verify.check_title_file_exists;
       case 'file_contains':
-        final pattern = raw['pattern'] as String? ?? '';
+        final pattern = jsonString(raw['pattern']) ?? '';
         return pattern.isEmpty
             ? t.verify.check_title_file_contains
             : t.verify.check_title_file_mentions(pattern: pattern);
       case 'process_running':
-        final name = raw['name'] as String? ?? '';
+        final name = jsonString(raw['name']) ?? '';
         return name.isEmpty
             ? t.verify.check_title_service_running(
                 vendor: vendor ?? t.verify.check_title_vendor_fallback,
@@ -402,7 +403,7 @@ class _VerifyScreenState extends ConsumerState<VerifyScreen> {
   /// path / pattern is kept out of the user-visible subtitle; it's
   /// available via a tooltip on the card for users who need it.
   String _explain(String kind, Map<String, dynamic> raw, bool required) {
-    final note = flattenProfileText(raw['note'] as String?);
+    final note = flattenProfileText(jsonString(raw['note']));
     final label = required ? t.verify.check_required : t.verify.check_optional;
     final kindLabel = switch (kind) {
       'file_exists' => t.verify.check_kind_file_exists,
@@ -757,21 +758,21 @@ class _ProbesPanel extends StatelessWidget {
         v == null ? null : "'${v.toString().replaceAll("'", r"'\''")}'";
     switch (kind) {
       case 'file_exists':
-        final path = raw['path'] as String?;
+        final path = jsonString(raw['path']);
         return path == null ? 'test -e' : 'test -e ${quoted(path)}';
       case 'file_contains':
-        final path = raw['path'] as String?;
-        final pattern = raw['pattern'] as String?;
+        final path = jsonString(raw['path']);
+        final pattern = jsonString(raw['pattern']);
         if (path == null || pattern == null) return 'grep -q';
         return 'grep -q ${quoted(pattern)} ${quoted(path)}';
       case 'process_running':
-        final name = raw['name'] as String?;
+        final name = jsonString(raw['name']);
         return name == null ? 'pgrep' : 'pgrep -x ${quoted(name)}';
       case 'process_pattern':
-        final pattern = raw['pattern'] as String?;
+        final pattern = jsonString(raw['pattern']);
         return pattern == null ? 'pgrep -af' : 'pgrep -af ${quoted(pattern)}';
       case 'moonraker_object':
-        final obj = raw['object'] as String?;
+        final obj = jsonString(raw['object']);
         return obj == null
             ? 'moonraker.list_objects'
             : 'moonraker.list_objects → ${quoted(obj)}';
