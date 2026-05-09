@@ -120,6 +120,68 @@ void main() {
     expect(find.textContaining('1.0 KiB'), findsOneWidget);
   });
 
+  testWidgets('network tab stays hidden until it has events', (tester) async {
+    final controller = stubWizardController(profileJson: testProfileJson());
+    await controller.loadProfile('test-printer');
+
+    await tester.pumpWidget(
+      testHarness(
+        controller: controller,
+        child: Scaffold(
+          body: Center(
+            child: SizedBox(
+              width: 1200,
+              height: 520,
+              child: ProgressRunWorkspace(
+                steps: const [RunStep(id: 'download_os', kind: 'os_download')],
+                statusFor: (_) => RunStepStatus.done,
+                log: const ['[os] ready'],
+                networkEvents: const [],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Log'), findsOneWidget);
+    expect(find.text('Network'), findsNothing);
+    expect(find.textContaining('No host-side outbound HTTP'), findsNothing);
+  });
+
+  testWidgets('developer mode keeps the empty network tab available', (
+    tester,
+  ) async {
+    final controller = stubWizardController(profileJson: testProfileJson());
+    await controller.loadProfile('test-printer');
+
+    await tester.pumpWidget(
+      testHarnessWithSettings(
+        controller: controller,
+        settingsSeed: (settings) => settings.developerMode = true,
+        child: Scaffold(
+          body: Center(
+            child: SizedBox(
+              width: 1200,
+              height: 520,
+              child: ProgressRunWorkspace(
+                steps: const [RunStep(id: 'download_os', kind: 'os_download')],
+                statusFor: (_) => RunStepStatus.done,
+                log: const ['[os] ready'],
+                networkEvents: const [],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Network'), findsOneWidget);
+    await tester.tap(find.text('Network'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('No host-side outbound HTTP'), findsOneWidget);
+  });
+
   testWidgets('log pane defaults to readable text', (tester) async {
     final controller = stubWizardController(profileJson: testProfileJson());
     await controller.loadProfile('test-printer');

@@ -305,8 +305,25 @@ class _LogNetworkPane extends ConsumerWidget {
     final logMode = developerMode
         ? WizardLogMode.developer
         : WizardLogMode.user;
+    final showNetworkTab = developerMode || networkEvents.isNotEmpty;
+    final tabs = [
+      _PaneTab(label: 'Log', icon: Icons.terminal, countLabel: 'live'),
+      if (showNetworkTab)
+        _PaneTab(
+          label: 'Network',
+          icon: Icons.wifi,
+          countLabel: '${networkEvents.length}',
+        ),
+    ];
+    final views = [
+      Semantics(
+        label: t.progress.semantics_log_label,
+        child: WizardLogView(lines: log, mode: logMode),
+      ),
+      if (showNetworkTab) NetworkPanel(events: networkEvents),
+    ];
     return DefaultTabController(
-      length: 2,
+      length: tabs.length,
       child: DeckhandPanel.flush(
         child: Column(
           children: [
@@ -316,30 +333,9 @@ class _LogNetworkPane extends ConsumerWidget {
               onCopyLog: log.isEmpty
                   ? null
                   : () => _copyLog(context, log, logMode),
-              tabs: [
-                _PaneTab(
-                  label: 'Log',
-                  icon: Icons.terminal,
-                  countLabel: 'live',
-                ),
-                _PaneTab(
-                  label: 'Network',
-                  icon: Icons.wifi,
-                  countLabel: '${networkEvents.length}',
-                ),
-              ],
+              tabs: tabs,
             ),
-            Expanded(
-              child: TabBarView(
-                children: [
-                  Semantics(
-                    label: t.progress.semantics_log_label,
-                    child: WizardLogView(lines: log, mode: logMode),
-                  ),
-                  NetworkPanel(events: networkEvents),
-                ],
-              ),
-            ),
+            Expanded(child: TabBarView(children: views)),
           ],
         ),
       ),
