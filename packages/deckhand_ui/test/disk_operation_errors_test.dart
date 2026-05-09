@@ -27,5 +27,14 @@ void main() {
         'Deckhand could not download the OS image because the configured URL was not found. Refresh profiles or choose another OS image.',
       );
     });
+
+    test('hides raw disk ids behind StateError messages', () {
+      expect(
+        userFacingDiskOperationError(
+          StateError(r'write \\.\PHYSICALDRIVE3 failed'),
+        ),
+        'write Windows disk 3 failed',
+      );
+    });
   });
 }

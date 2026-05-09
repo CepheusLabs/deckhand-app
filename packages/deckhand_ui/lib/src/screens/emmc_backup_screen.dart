@@ -357,8 +357,8 @@ class _EmmcBackupScreenState extends ConsumerState<EmmcBackupScreen> {
           if (!mounted) return;
           setState(() {
             _error =
-                'Backup completed, but Deckhand could not write the '
-                'verification manifest: $e';
+                'Could not write the backup verification manifest: '
+                '${userFacingError(e)}';
             _done = false;
           });
           return;

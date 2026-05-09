@@ -66,6 +66,7 @@ String _stripExceptionPrefixes(String message) {
     for (final prefix in const [
       'Exception: ',
       'StateError: ',
+      'Bad state: ',
       'StepExecutionException: ',
       'ElevatedHelperException: ',
     ]) {

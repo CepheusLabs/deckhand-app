@@ -335,6 +335,39 @@ void main() {
       expect(manifest.disk.model, 'Test eMMC');
     });
 
+    testWidgets('manifest write failures hide raw disk ids', (tester) async {
+      final controller = stubWizardController(profileJson: testProfileJson());
+      await controller.loadProfile('test-printer');
+      await controller.setDecision('flash.disk', 'disk-1');
+      final helper = _RecordingElevatedHelper();
+      final backupRoot = _createTempBackupRoot();
+
+      await tester.pumpWidget(
+        testHarness(
+          controller: controller,
+          child: const EmmcBackupScreen(),
+          initialLocation: '/snapshot',
+          extraOverrides: [
+            flashServiceProvider.overrideWithValue(_OneDiskFlash()),
+            elevatedHelperServiceProvider.overrideWithValue(helper),
+            emmcBackupsDirProvider.overrideWithValue(backupRoot),
+            emmcBackupManifestWriterProvider.overrideWithValue((_) async {
+              throw StateError(r'write \\.\PHYSICALDRIVE3 failed');
+            }),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await _tapStartBackup(tester);
+      await tester.pump(const Duration(milliseconds: 50));
+      await tester.tap(find.text('Continue'));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('Windows disk 3'), findsOneWidget);
+      expect(find.textContaining('PHYSICALDRIVE3'), findsNothing);
+    });
+
     testWidgets('does not launch helper when token consumption fails', (
       tester,
     ) async {
