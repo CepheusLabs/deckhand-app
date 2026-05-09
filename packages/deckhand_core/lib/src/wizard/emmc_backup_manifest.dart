@@ -407,7 +407,8 @@ Future<List<EmmcBackupManifest>> scanEmmcBackupManifests(String dir) async {
   if (!await root.exists()) return const [];
   final manifests = <EmmcBackupManifest>[];
   await for (final entity in root.list(recursive: true, followLinks: false)) {
-    if (entity is! File || !entity.path.endsWith('.manifest.json')) {
+    if (entity is! File ||
+        !entity.path.toLowerCase().endsWith('.manifest.json')) {
       continue;
     }
     final manifest = await _readManifest(entity);

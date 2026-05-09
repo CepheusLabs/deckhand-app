@@ -113,6 +113,34 @@ void main() {
     expect(manifests.single.imagePath, image.path);
   });
 
+  test('scanner accepts case-insensitive manifest file names', () async {
+    final dir = await Directory.systemTemp.createTemp(
+      'deckhand_emmc_manifest_case_',
+    );
+    addTearDown(() async {
+      if (await dir.exists()) await dir.delete(recursive: true);
+    });
+
+    final image = File(p.join(dir.path, 'backup.img'));
+    await image.writeAsBytes(List<int>.filled(4096, 7), flush: true);
+    final manifest = EmmcBackupManifest.create(
+      profileId: 'phrozen-arco',
+      imagePath: image.path,
+      imageBytes: 4096,
+      imageSha256: 'b' * 64,
+      disk: disk,
+      deckhandVersion: 'dev',
+    );
+    await File(
+      p.join(dir.path, 'backup.img.MANIFEST.JSON'),
+    ).writeAsString(jsonEncode(manifest.toJson()), flush: true);
+
+    final manifests = await scanEmmcBackupManifests(dir.path);
+
+    expect(manifests, hasLength(1));
+    expect(manifests.single.imagePath, image.path);
+  });
+
   test(
     'scanner returns full-size image candidates without manifests',
     () async {
