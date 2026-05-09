@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:deckhand_core/deckhand_core.dart';
@@ -77,4 +78,28 @@ void main() {
 
     expect(s.allowedHosts, {'downloads.example.com', 'github.com'});
   });
+
+  test(
+    'allowedHosts setter normalizes persisted blank and duplicate hosts',
+    () async {
+      final tmp = Directory.systemTemp.createTempSync('deckhand-hosts-');
+      final path = p.join(tmp.path, 'settings.json');
+      final s = DeckhandSettings(path: path);
+
+      s.allowedHosts = {
+        ' downloads.example.com ',
+        '',
+        'downloads.example.com',
+        ' github.com ',
+      };
+      await s.save();
+      final raw =
+          jsonDecode(await File(path).readAsString()) as Map<String, dynamic>;
+
+      expect(raw['allowed_hosts'], ['downloads.example.com', 'github.com']);
+      try {
+        tmp.deleteSync(recursive: true);
+      } catch (_) {}
+    },
+  );
 }

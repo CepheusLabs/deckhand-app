@@ -51,7 +51,11 @@ class DeckhandSettings {
   }
 
   set allowedHosts(Set<String> hosts) {
-    _values['allowed_hosts'] = hosts.toList();
+    _values['allowed_hosts'] = hosts
+        .map((host) => host.trim())
+        .where((host) => host.isNotEmpty)
+        .toSet()
+        .toList();
   }
 
   /// Recently-used SSH connection targets, surfaced on the Connect
