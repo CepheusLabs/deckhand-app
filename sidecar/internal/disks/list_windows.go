@@ -47,6 +47,9 @@ func List(ctx context.Context) ([]DiskInfo, error) {
 
 	results := make([]DiskInfo, 0, len(disks))
 	for _, d := range disks {
+		if d.Number < 0 || d.Size <= 0 {
+			continue
+		}
 		parts, perr := listPartitions(ctx, d.Number)
 		if perr != nil {
 			// Partition enumeration can fail for dynamic disks or
@@ -66,6 +69,9 @@ func List(ctx context.Context) ([]DiskInfo, error) {
 			Removable:  isRemovableBus(busName),
 			Partitions: parts,
 		})
+	}
+	if len(results) == 0 {
+		return listDisksViaCIM(ctx, fmt.Errorf("Get-Disk returned no usable disks"))
 	}
 	return results, nil
 }
