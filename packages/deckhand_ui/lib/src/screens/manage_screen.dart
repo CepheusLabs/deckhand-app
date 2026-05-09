@@ -446,7 +446,7 @@ class _StatusTabState extends ConsumerState<_StatusTab> {
 
 String _webUiUrl({required String host, required PrinterProfile? profile}) {
   final webui = profile?.stack.webui ?? const <String, dynamic>{};
-  final scheme = (webui['scheme'] as String?)?.trim().toLowerCase();
+  final scheme = _optionalString(webui['scheme'])?.toLowerCase();
   final port = _webUiPort(profile);
   final normalizedScheme = scheme == 'https' ? 'https' : 'http';
   final portSuffix =
@@ -455,6 +455,12 @@ String _webUiUrl({required String host, required PrinterProfile? profile}) {
       ? ''
       : ':$port';
   return '$normalizedScheme://$host$portSuffix';
+}
+
+String? _optionalString(Object? value) {
+  if (value is! String) return null;
+  final trimmed = value.trim();
+  return trimmed.isEmpty ? null : trimmed;
 }
 
 int _webUiPort(PrinterProfile? profile) {
