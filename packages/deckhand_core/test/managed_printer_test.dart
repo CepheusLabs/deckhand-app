@@ -30,6 +30,19 @@ void main() {
   });
 
   group('ManagedPrinter', () {
+    test('rejects invalid connection ports', () {
+      expect(
+        () => ManagedPrinter.fromConnection(
+          profileId: 'phrozen-arco',
+          displayName: 'Phrozen Arco',
+          host: '192.168.1.50',
+          port: 0,
+          user: 'mks',
+        ),
+        throwsFormatException,
+      );
+    });
+
     test('round trips through settings json', () {
       final settings = DeckhandSettings(path: '<memory>');
       settings.recordManagedPrinter(

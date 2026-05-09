@@ -506,6 +506,9 @@ class ManagedPrinter {
     final cleanProfile = profileId.trim();
     final cleanHost = host.trim();
     final cleanUser = user.trim();
+    if (port < 1 || port > 65535) {
+      throw const FormatException('invalid managed printer port');
+    }
     return ManagedPrinter(
       id:
           'local:${cleanProfile.toLowerCase()}:'
