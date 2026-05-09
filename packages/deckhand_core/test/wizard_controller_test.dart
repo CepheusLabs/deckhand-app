@@ -2326,6 +2326,41 @@ void main() {
       expect(ssh.runCalls.any((c) => c.contains('moonraker')), isTrue);
       expect(ssh.runCalls.any((c) => c.trim() == '42'), isFalse);
     });
+
+    test('rejects stack components without install source metadata', () async {
+      final ssh = FakeSsh();
+      final controller = newController(
+        profileJson: {
+          ...baseProfileJson(
+            stockKeepSteps: [
+              {
+                'id': 'install_stack',
+                'kind': 'install_stack',
+                'components': ['moonraker'],
+              },
+            ],
+          ),
+          'stack': {
+            'moonraker': {
+              'repo': ['https://github.com/Arksine/moonraker'],
+              'install_path': '~/moonraker',
+            },
+          },
+        },
+        ssh: ssh,
+      );
+      await controller.loadProfile('test-printer');
+      controller.setFlow(WizardFlow.stockKeep);
+      controller.setSession(
+        const SshSession(id: 'fake', host: 'h', port: 22, user: 'root'),
+      );
+
+      await expectLater(
+        controller.startExecution(),
+        throwsA(isA<StepExecutionException>()),
+      );
+      expect(ssh.runCalls.any((c) => c.contains('git clone')), isFalse);
+    });
   });
 
   group('install_klipper_extras regression', () {
@@ -2785,6 +2820,53 @@ void main() {
         expect(ssh.steps.any((c) => c.contains('rm -rf')), isFalse);
       },
     );
+
+    test('apply steps ignore malformed service and file metadata', () async {
+      final ssh = FakeSsh();
+      final controller = newController(
+        profileJson: {
+          ...baseProfileJson(
+            stockKeepSteps: [
+              {'id': 'services', 'kind': 'apply_services'},
+              {'id': 'files', 'kind': 'apply_files'},
+            ],
+          ),
+          'stock_os': {
+            'services': [
+              {
+                'id': 'frpc',
+                'display_name': 'FRP tunnel',
+                'default_action': 'remove',
+                'systemd_unit': ['frpc.service'],
+                'process_pattern': ['frpc'],
+              },
+            ],
+            'files': [
+              {
+                'id': 'cache',
+                'display_name': 'Cache',
+                'default_action': 'delete',
+                'paths': ['/safe/cache'],
+              },
+            ],
+          },
+        },
+        ssh: ssh,
+      );
+      await controller.loadProfile('test-printer');
+      controller.setFlow(WizardFlow.stockKeep);
+      await controller.setDecision('service.frpc', ['remove']);
+      await controller.setDecision('file.cache', ['delete']);
+      controller.setSession(
+        const SshSession(id: 'fake', host: 'h', port: 22, user: 'root'),
+      );
+
+      await controller.startExecution();
+
+      expect(ssh.runCalls.any((c) => c.contains('systemctl')), isFalse);
+      expect(ssh.runCalls.any((c) => c.contains('pkill')), isFalse);
+      expect(ssh.runCalls.any((c) => c.contains('/safe/cache')), isTrue);
+    });
 
     test('install_firmware rejects unsafe refs before cloning', () async {
       final ssh = FakeSsh();

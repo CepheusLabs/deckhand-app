@@ -32,7 +32,7 @@ Future<void> _runInstallFirmwareImpl(
       'if [ -d $qInstall/.git ]; then cd $qInstall && git fetch --progress origin && git checkout $qRef && git pull --ff-only; '
       'else rm -rf -- $qInstall && git clone --progress --depth 1 -b $qRef -- $qRepo $qInstall; fi';
   final cloneStderr = StringBuffer();
-  final stepId = step['id'] as String? ?? '';
+  final stepId = _stringValue(step['id']) ?? '';
   // Kick off an immediate progress event so the bar stops sitting at
   // "starting install_firmware …" before git's first chunk arrives.
   // Some git versions buffer their first progress line for a couple
@@ -194,7 +194,7 @@ Future<void> _runTargetDirLinkExtras(
   }
   final targetDir = c._render(rawTargetDir.trim());
   c._validateRemoteInstallPath(targetDir, 'link_extras target_dir');
-  final method = (step['method'] as String?) ?? 'copy';
+  final method = _stringValue(step['method']) ?? 'copy';
   if (!const {
     'copy',
     'copy_with_backup',
@@ -329,10 +329,8 @@ String _backupPathForRemote(WizardController c, String remote) {
 
 int? _linkExtrasMode(Map<String, dynamic> step, String method) {
   final raw = step['mode'];
-  if (raw is int) return raw;
-  if (raw is String && raw.trim().isNotEmpty) {
-    return int.parse(raw.trim(), radix: 8);
-  }
+  final parsed = _parseFileModeImpl(raw);
+  if (parsed != null) return parsed;
   if (method == 'copy_with_mode_0755') return int.parse('0755', radix: 8);
   return null;
 }
@@ -380,14 +378,14 @@ Future<void> _runInstallStackImpl(
       c._log(step, '[stack] kiauh skipped by user');
       continue;
     }
-    final repo = cfg['repo'] as String?;
-    final ref = cfg['ref'] as String? ?? 'master';
-    final install = cfg['install_path'] as String?;
-    final releaseRepo = cfg['release_repo'] as String?;
-    final assetPattern = cfg['asset_pattern'] as String?;
-    final assetSha256 = cfg['sha256'] as String?;
+    final repo = _stringValue(cfg['repo']);
+    final ref = _stringValue(cfg['ref']) ?? 'master';
+    final install = _stringValue(cfg['install_path']);
+    final releaseRepo = _stringValue(cfg['release_repo']);
+    final assetPattern = _stringValue(cfg['asset_pattern']);
+    final assetSha256 = _stringValue(cfg['sha256']);
     final rawReleaseTag =
-        cfg['tag'] as String? ?? cfg['release_tag'] as String?;
+        _stringValue(cfg['tag']) ?? _stringValue(cfg['release_tag']);
     final releaseTag = rawReleaseTag?.trim();
     final releaseTagOrNull = releaseTag == null || releaseTag.isEmpty
         ? null
@@ -457,6 +455,10 @@ Future<void> _runInstallStackImpl(
           stderr: res.stderr,
         );
       }
+    } else {
+      throw StepExecutionException(
+        '$name stack component missing install source metadata',
+      );
     }
     c._log(step, '[stack] $name installed');
   }
@@ -469,9 +471,10 @@ Future<void> _runApplyServicesImpl(
   c._requireSession();
   for (final svc in c._profile!.stockOs.services) {
     final action =
-        c._state.decisions['service.${svc.id}'] as String? ?? svc.defaultAction;
-    final unit = svc.raw['systemd_unit'] as String?;
-    final proc = svc.raw['process_pattern'] as String?;
+        _stringValue(c._state.decisions['service.${svc.id}']) ??
+        svc.defaultAction;
+    final unit = _stringValue(svc.raw['systemd_unit']);
+    final proc = _stringValue(svc.raw['process_pattern']);
     switch (action) {
       case 'remove':
       case 'disable':
@@ -506,7 +509,7 @@ Future<void> _runApplyFilesImpl(
   c._requireSession();
   for (final f in c._profile!.stockOs.files) {
     final decision =
-        c._state.decisions['file.${f.id}'] as String? ?? f.defaultAction;
+        _stringValue(c._state.decisions['file.${f.id}']) ?? f.defaultAction;
     if (decision != 'delete') continue;
     for (final path in f.paths) {
       if (c._isDangerousPath(path)) {
