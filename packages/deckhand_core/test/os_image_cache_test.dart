@@ -50,6 +50,40 @@ void main() {
     expect(entries.single.hasManifest, isFalse);
   });
 
+  test(
+    'scanOsImageCache keeps valid manifest fields when others are bad',
+    () async {
+      final root = await Directory.systemTemp.createTemp(
+        'deckhand-cache-test-',
+      );
+      addTearDown(() => root.delete(recursive: true));
+
+      final image = File(p.join(root.path, 'partial.img'));
+      await image.writeAsBytes([1, 2, 3]);
+      await File('${image.path}$osImageDownloadManifestSuffix').writeAsString(
+        jsonEncode({
+          'schema_version': 1,
+          'url': 'https://example.com/partial.img.xz',
+          'path': image.path,
+          'expected_sha256': 42,
+          'actual_sha256': 'b' * 64,
+          'downloaded_at': false,
+          'reused_at': '2026-05-04T00:00:00Z',
+        }),
+      );
+
+      final entries = await scanOsImageCache(root.path);
+
+      expect(entries, hasLength(1));
+      expect(entries.single.hasManifest, isTrue);
+      expect(entries.single.url, 'https://example.com/partial.img.xz');
+      expect(entries.single.expectedSha256, isNull);
+      expect(entries.single.actualSha256, 'b' * 64);
+      expect(entries.single.downloadedAt, isNull);
+      expect(entries.single.reusedAt, DateTime.utc(2026, 5, 4));
+    },
+  );
+
   test('scanOsImageCache ignores empty image files', () async {
     final root = await Directory.systemTemp.createTemp('deckhand-cache-test-');
     addTearDown(() => root.delete(recursive: true));

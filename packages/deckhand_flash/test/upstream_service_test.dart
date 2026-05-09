@@ -212,6 +212,41 @@ void main() {
       expect(sidecar.hashPaths, isEmpty);
       expect(File(p.join(tmp.path, '..', 'escape.zip')).existsSync(), isFalse);
     });
+
+    test('skips malformed release asset rows while matching assets', () async {
+      final tmp = await Directory.systemTemp.createTemp('deckhand-upstream-');
+      addTearDown(() async => tmp.delete(recursive: true));
+
+      final expected =
+          'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+      final sidecar = _FakeSidecar(hash: expected);
+      final dio = Dio()
+        ..httpClientAdapter = _FakeGitHubAdapter(
+          assets: const [
+            'not an object',
+            {'name': 42, 'browser_download_url': 'https://bad.example/a.zip'},
+            {
+              'name': 'fluidd.zip',
+              'browser_download_url': 'https://downloads.example/fluidd.zip',
+            },
+          ],
+        );
+      final svc = SidecarUpstreamService(
+        sidecar: sidecar,
+        security: _AllowAllSecurity(),
+        dio: dio,
+      );
+
+      final res = await svc.releaseFetch(
+        repoSlug: 'fluidd-core/fluidd',
+        assetPattern: '*.zip',
+        destPath: tmp.path,
+        expectedSha256: expected,
+      );
+
+      expect(res.assetName, 'fluidd.zip');
+      expect(await File(res.localPath).readAsString(), 'asset-bytes');
+    });
   });
 
   group('SidecarUpstreamService.osDownload', () {
@@ -568,6 +603,50 @@ void main() {
       expect(security.checkedHosts, isEmpty);
     });
 
+    test('clears malformed xz image manifests instead of crashing', () async {
+      final dest = _managedOsImageDest('malformed-xz-manifest.img');
+      addTearDown(() async {
+        await _deleteIfExists(dest);
+        await _deleteIfExists('$dest.deckhand-download.json');
+      });
+      await Directory(p.dirname(dest)).create(recursive: true);
+      await File(dest).writeAsString('raw image bytes');
+      await File('$dest.deckhand-download.json').writeAsString(
+        jsonEncode({
+          'schema_version': 1,
+          'url': 'https://example.com/image.img.xz',
+          'path': dest,
+          'expected_sha256':
+              'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+          'actual_sha256': 42,
+        }),
+      );
+      final imageSha =
+          'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+      final sidecar = _FakeSidecar(
+        hash: imageSha,
+        streamEvents: [
+          SidecarResult({'sha256': imageSha, 'path': dest, 'reused': false}),
+        ],
+      );
+      final security = _AllowAllSecurity();
+      final svc = SidecarUpstreamService(sidecar: sidecar, security: security);
+
+      final events = await svc
+          .osDownload(
+            url: 'https://example.com/image.img.xz',
+            destPath: dest,
+            expectedSha256:
+                'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+          )
+          .toList();
+
+      expect(events.single.sha256, imageSha);
+      expect(events.single.reused, isFalse);
+      expect(sidecar.streamingCalls, hasLength(1));
+      expect(security.checkedHosts, ['example.com']);
+    });
+
     test('records completed downloads in the image manifest', () async {
       final dest = _managedOsImageDest('downloaded-image.img');
       addTearDown(() async {
@@ -756,10 +835,15 @@ Future<void> _deleteIfExists(String path) async {
 }
 
 class _FakeGitHubAdapter implements HttpClientAdapter {
-  _FakeGitHubAdapter({this.assetName = 'fluidd.zip', this.redirectAssetTo});
+  _FakeGitHubAdapter({
+    this.assetName = 'fluidd.zip',
+    this.redirectAssetTo,
+    this.assets,
+  });
 
   final String assetName;
   final String? redirectAssetTo;
+  final List<Object?>? assets;
   var assetDownloadCount = 0;
 
   @override
@@ -773,12 +857,15 @@ class _FakeGitHubAdapter implements HttpClientAdapter {
       return ResponseBody.fromString(
         jsonEncode({
           'tag_name': 'v1.0.0',
-          'assets': [
-            {
-              'name': assetName,
-              'browser_download_url': 'https://downloads.example/fluidd.zip',
-            },
-          ],
+          'assets':
+              assets ??
+              [
+                {
+                  'name': assetName,
+                  'browser_download_url':
+                      'https://downloads.example/fluidd.zip',
+                },
+              ],
         }),
         200,
         headers: {

@@ -87,9 +87,9 @@ class SidecarUpstreamService implements UpstreamService {
 
     final rel = await _getReleaseJson(url);
     final tagName = rel['tag_name'] as String? ?? tag ?? 'unknown';
-    final assets = ((rel['assets'] as List?) ?? const []).cast<Map>();
+    final assets = _releaseAssets(rel['assets']);
     final match = assets.firstWhere(
-      (a) => _matches((a['name'] as String?) ?? '', assetPattern),
+      (a) => _matches(_jsonString(a['name']) ?? '', assetPattern),
       orElse: () => const <String, dynamic>{},
     );
     if (match.isEmpty) {
@@ -97,8 +97,13 @@ class SidecarUpstreamService implements UpstreamService {
         'no asset in $repoSlug@$tagName matches "$assetPattern"',
       );
     }
-    final dlUrl = match['browser_download_url'] as String;
-    final assetName = match['name'] as String;
+    final dlUrl = _jsonString(match['browser_download_url']);
+    final assetName = _jsonString(match['name']);
+    if (dlUrl == null || assetName == null) {
+      throw UpstreamException(
+        'release asset metadata is missing a name or download URL',
+      );
+    }
     _validateReleaseAssetName(assetName);
 
     final outPath = p.join(destPath, assetName);
@@ -466,14 +471,14 @@ class SidecarUpstreamService implements UpstreamService {
       );
     }
     final body = jsonDecode(await manifest.readAsString());
-    if (body is! Map) return null;
-    final decoded = body.cast<String, dynamic>();
+    final decoded = _stringKeyMap(body);
+    if (decoded == null) return null;
     if (decoded['url'] != url ||
         decoded['path'] != destPath ||
         decoded['expected_sha256'] != expectedSha256) {
       return null;
     }
-    final actualSha = decoded['actual_sha256'] as String?;
+    final actualSha = _jsonString(decoded['actual_sha256']);
     if (actualSha == null || !RegExp(r'^[0-9a-f]{64}$').hasMatch(actualSha)) {
       return null;
     }
@@ -497,6 +502,28 @@ class SidecarUpstreamService implements UpstreamService {
       pos = idx + part.length;
     }
     return true;
+  }
+
+  List<Map<String, dynamic>> _releaseAssets(Object? value) {
+    if (value is! List) return const [];
+    final out = <Map<String, dynamic>>[];
+    for (final item in value) {
+      final map = _stringKeyMap(item);
+      if (map != null) out.add(map);
+    }
+    return out;
+  }
+
+  String? _jsonString(Object? value) => value is String ? value : null;
+
+  Map<String, dynamic>? _stringKeyMap(Object? value) {
+    if (value is! Map) return null;
+    final out = <String, dynamic>{};
+    for (final entry in value.entries) {
+      final key = entry.key;
+      if (key is String) out[key] = entry.value;
+    }
+    return out;
   }
 
   void _validateReleaseRepoSlug(String repoSlug) {

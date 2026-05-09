@@ -165,11 +165,11 @@ Future<_OsImageManifest?> _readOsImageManifest(String imagePath) async {
   if (type != FileSystemEntityType.file) return null;
   try {
     final raw = jsonDecode(await File(manifestPath).readAsString());
-    if (raw is! Map) return null;
-    final map = raw.cast<String, dynamic>();
+    final map = _stringKeyMap(raw);
+    if (map == null) return null;
     return _OsImageManifest(
       path: manifestPath,
-      url: map['url'] as String?,
+      url: _jsonString(map['url']),
       expectedSha256: _normalizedSha(map['expected_sha256']),
       actualSha256: _normalizedSha(map['actual_sha256']),
       downloadedAt: _parseDate(map['downloaded_at']),
@@ -212,4 +212,16 @@ bool _isSha256(String? value) {
 DateTime? _parseDate(Object? value) {
   if (value is! String) return null;
   return DateTime.tryParse(value);
+}
+
+String? _jsonString(Object? value) => value is String ? value : null;
+
+Map<String, dynamic>? _stringKeyMap(Object? value) {
+  if (value is! Map) return null;
+  final out = <String, dynamic>{};
+  for (final entry in value.entries) {
+    final key = entry.key;
+    if (key is String) out[key] = entry.value;
+  }
+  return out;
 }
