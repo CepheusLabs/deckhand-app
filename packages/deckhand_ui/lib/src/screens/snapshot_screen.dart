@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 
 import '../providers.dart';
 import '../theming/deckhand_tokens.dart';
+import '../utils/user_facing_errors.dart';
 import '../widgets/deckhand_loading.dart';
 import '../widgets/wizard_scaffold.dart';
 
@@ -303,12 +304,12 @@ class _SnapshotScreenState extends ConsumerState<SnapshotScreen> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _hashError = 'Could not hash backup image: $e';
+        _hashError = 'Could not hash backup image: ${userFacingError(e)}';
         _hashProgress = FlashProgress(
           bytesDone: 0,
           bytesTotal: candidate.imageBytes,
           phase: FlashPhase.failed,
-          message: '$e',
+          message: userFacingError(e),
         );
         _verifiedEmmcBackup = null;
       });
@@ -382,7 +383,9 @@ class _SnapshotScreenState extends ConsumerState<SnapshotScreen> {
                 );
                 _hashProgress = merged;
                 if (event.phase == FlashPhase.failed) {
-                  _hashError = event.message ?? 'Live eMMC hash failed.';
+                  _hashError = event.message == null
+                      ? 'Live eMMC hash failed.'
+                      : userFacingError(event.message);
                   _hashSub = null;
                 } else if (event.phase == FlashPhase.done) {
                   final gotSha = event.message?.toLowerCase();
@@ -426,13 +429,14 @@ class _SnapshotScreenState extends ConsumerState<SnapshotScreen> {
             },
             onError: (Object e) {
               if (!mounted) return;
+              final message = userFacingError(e);
               setState(() {
-                _hashError = '$e';
+                _hashError = message;
                 _hashProgress = FlashProgress(
                   bytesDone: _hashProgress?.bytesDone ?? 0,
                   bytesTotal: _hashProgress?.bytesTotal ?? 0,
                   phase: FlashPhase.failed,
-                  message: '$e',
+                  message: message,
                 );
                 _verifiedEmmcBackup = null;
                 _hashSub = null;
@@ -451,13 +455,14 @@ class _SnapshotScreenState extends ConsumerState<SnapshotScreen> {
           );
     } catch (e) {
       if (!mounted) return;
+      final message = userFacingError(e);
       setState(() {
-        _hashError = '$e';
+        _hashError = message;
         _hashProgress = FlashProgress(
           bytesDone: 0,
           bytesTotal: disk.sizeBytes,
           phase: FlashPhase.failed,
-          message: '$e',
+          message: message,
         );
         _verifiedEmmcBackup = null;
       });
@@ -499,9 +504,9 @@ class _ProbeErrorCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  '$error',
+                  userFacingError(error),
                   style: TextStyle(
-                    fontFamily: DeckhandTokens.fontMono,
+                    fontFamily: DeckhandTokens.fontSans,
                     fontSize: DeckhandTokens.tSm,
                     color: tokens.bad,
                     height: 1.5,

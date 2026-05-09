@@ -9,6 +9,7 @@ import 'package:go_router/go_router.dart';
 import '../i18n/translations.g.dart';
 import '../providers.dart';
 import '../theming/deckhand_tokens.dart';
+import '../utils/user_facing_errors.dart';
 import '../widgets/deckhand_loading.dart';
 import '../widgets/profile_text.dart';
 import '../widgets/wizard_scaffold.dart';
@@ -109,7 +110,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       if (!mounted) return;
       setState(() {
         _githubTokenLoaded = true;
-        _githubTokenStatus = 'Secure storage error: $e';
+        _githubTokenStatus = 'Secure storage error: ${userFacingError(e)}';
       });
     }
   }
@@ -137,9 +138,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     }
     final settings = ref.read(deckhandSettingsProvider);
     settings.localProfilesDir = raw.isEmpty ? null : raw;
-    await settings.save();
-    setState(() => _localDirError = null);
-    _toast('Saved. Restart Deckhand for the profile source to take effect.');
+    try {
+      await settings.save();
+      setState(() => _localDirError = null);
+      _toast('Saved. Restart Deckhand for the profile source to take effect.');
+    } catch (e) {
+      setState(() => _localDirError = userFacingError(e));
+    }
   }
 
   Future<void> _saveGithubToken() async {
@@ -158,7 +163,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             : 'GitHub token saved to secure storage.',
       );
     } catch (e) {
-      setState(() => _githubTokenStatus = 'Secure storage error: $e');
+      setState(
+        () =>
+            _githubTokenStatus = 'Secure storage error: ${userFacingError(e)}',
+      );
     }
   }
 
@@ -169,7 +177,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     try {
       await settings.save();
     } catch (e) {
-      _toast('Could not save developer mode: $e');
+      _toast('Could not save developer mode: ${userFacingError(e)}');
     }
   }
 
@@ -183,9 +191,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     }
     settings.verifyAfterWrite = _verifyAfterWrite;
     settings.cacheRetentionDays = parsed;
-    await settings.save();
-    setState(() => _cacheRetentionError = null);
-    _toast('Flash settings saved.');
+    try {
+      await settings.save();
+      setState(() => _cacheRetentionError = null);
+      _toast('Flash settings saved.');
+    } catch (e) {
+      setState(() => _cacheRetentionError = userFacingError(e));
+    }
   }
 
   Future<void> _runPreflightNow() async {
@@ -209,7 +221,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       if (!mounted) return;
       setState(() {
         _preflightRunning = false;
-        _preflightError = '$e';
+        _preflightError = userFacingError(e);
       });
     }
   }
@@ -245,15 +257,23 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   }
 
   Future<void> _forgetFingerprint(String host) async {
-    await ref.read(securityServiceProvider).forgetHostFingerprint(host);
-    _refreshHostLists();
-    _toast('Forgot fingerprint for $host. Next connect will re-prompt.');
+    try {
+      await ref.read(securityServiceProvider).forgetHostFingerprint(host);
+      _refreshHostLists();
+      _toast('Forgot fingerprint for $host. Next connect will re-prompt.');
+    } catch (e) {
+      _toast('Could not forget $host: ${userFacingError(e)}');
+    }
   }
 
   Future<void> _revokeHost(String host) async {
-    await ref.read(securityServiceProvider).revokeHost(host);
-    _refreshHostLists();
-    _toast('Revoked egress approval for $host.');
+    try {
+      await ref.read(securityServiceProvider).revokeHost(host);
+      _refreshHostLists();
+      _toast('Revoked network approval for $host.');
+    } catch (e) {
+      _toast('Could not revoke $host: ${userFacingError(e)}');
+    }
   }
 
   void _toast(String message) {
@@ -424,7 +444,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             child: DeckhandSpinner(size: 18, strokeWidth: 2),
           ),
           error: (error, _) => Text(
-            'Could not read OS image cache: $error',
+            'Could not read OS image cache: ${userFacingError(error)}',
             style: TextStyle(
               fontFamily: DeckhandTokens.fontSans,
               fontSize: DeckhandTokens.tSm,
@@ -512,7 +532,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           .call(imagePath: entry.imagePath);
       _toast('Deleted ${entry.fileName}.');
     } catch (e) {
-      _toast('Could not delete ${entry.fileName}: $e');
+      _toast('Could not delete ${entry.fileName}: ${userFacingError(e)}');
     }
   }
 
@@ -620,7 +640,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           );
         }
         if (snap.hasError) {
-          return _SecurityStoreError(message: '${snap.error}');
+          return _SecurityStoreError(message: userFacingError(snap.error));
         }
         final pins = snap.data ?? const <String, String>{};
         return Column(
@@ -904,7 +924,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               );
             }
             if (snap.hasError) {
-              return _SecurityStoreError(message: '${snap.error}');
+              return _SecurityStoreError(message: userFacingError(snap.error));
             }
             final hosts = snap.data ?? const <String>[];
             if (hosts.isEmpty) {

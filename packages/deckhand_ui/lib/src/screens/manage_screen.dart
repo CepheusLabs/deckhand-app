@@ -1332,7 +1332,9 @@ class _RestoreTabState extends ConsumerState<_RestoreTab> {
                   ref.invalidate(disksProvider);
                 }
                 if (event.phase == FlashPhase.failed) {
-                  _error = event.message ?? 'Restore failed.';
+                  _error = _friendlyRestoreError(
+                    event.message ?? 'Restore failed.',
+                  );
                 }
               });
             },
@@ -1849,7 +1851,7 @@ class _RestoreProgressPanel extends StatelessWidget {
           ),
           const SizedBox(height: 10),
           WizardProgressBar(
-            fraction: failed || done ? 1.0 : fraction,
+            fraction: done ? 1.0 : fraction,
             animateStripes: !failed && !done,
           ),
           const SizedBox(height: 8),

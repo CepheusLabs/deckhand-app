@@ -73,6 +73,48 @@ void main() {
       expect(find.textContaining('~/printer_data/config'), findsOneWidget);
     });
 
+    testWidgets('renders probe errors without raw exception prefixes', (
+      tester,
+    ) async {
+      final controller = stubWizardController(
+        profileJson: {
+          ...testProfileJson(),
+          'stock_os': {
+            'snapshot_paths': [
+              {
+                'id': 'config',
+                'display_name': 'Printer config',
+                'path': '~/printer_data/config',
+                'default_selected': true,
+              },
+            ],
+          },
+        },
+      );
+      await controller.loadProfile('test-printer');
+
+      await tester.pumpWidget(
+        testHarness(
+          controller: controller,
+          child: const SnapshotScreen(),
+          initialLocation: '/snapshot',
+          extraOverrides: [
+            snapshotProbeProvider.overrideWith(
+              (ref) async =>
+                  throw StateError(r'du failed for \\.\PHYSICALDRIVE3'),
+            ),
+          ],
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+
+      expect(find.text('Could not probe sizes'), findsOneWidget);
+      expect(find.textContaining('Windows disk 3'), findsOneWidget);
+      expect(find.textContaining('PHYSICALDRIVE3'), findsNothing);
+      expect(find.textContaining('StateError'), findsNothing);
+    });
+
     testWidgets('requires live disk hash before trusting a matching backup', (
       tester,
     ) async {

@@ -129,6 +129,32 @@ void main() {
     );
     expect(File('${image.path}.part').existsSync(), isFalse);
   });
+
+  testWidgets('SettingsScreen sanitizes OS image cache errors', (tester) async {
+    final controller = stubWizardController(profileJson: testProfileJson());
+    await controller.loadProfile('test-printer');
+
+    await tester.pumpWidget(
+      testHarness(
+        controller: controller,
+        child: const SettingsScreen(),
+        initialLocation: '/settings',
+        extraOverrides: [
+          osImageCacheProvider.overrideWith(
+            (ref) async =>
+                throw StateError(r'read \\.\PHYSICALDRIVE3: Access is denied.'),
+          ),
+        ],
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(find.textContaining('Could not read OS image cache'), findsOne);
+    expect(find.textContaining('Windows disk 3'), findsOne);
+    expect(find.textContaining('PHYSICALDRIVE3'), findsNothing);
+    expect(find.textContaining('StateError'), findsNothing);
+  });
 }
 
 class _MemorySettings extends DeckhandSettings {
