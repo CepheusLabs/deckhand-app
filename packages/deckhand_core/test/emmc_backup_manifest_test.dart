@@ -76,6 +76,24 @@ void main() {
     );
   });
 
+  test('fromJson tolerates malformed optional disk identity fields', () {
+    final parsed = EmmcBackupManifest.fromJson({
+      'schema_version': emmcBackupManifestSchema,
+      'created_at': '2026-05-05T03:23:00.000Z',
+      'profile_id': 'phrozen-arco',
+      'image_path': r'C:\Deckhand\phrozen-arco.img',
+      'image_bytes': 4096,
+      'image_sha256': 'A' * 64,
+      'disk': ['not a map'],
+      'deckhand_version': 'dev',
+    });
+
+    expect(parsed.profileId, 'phrozen-arco');
+    expect(parsed.imageSha256, 'a' * 64);
+    expect(parsed.disk.id, isEmpty);
+    expect(parsed.disk.sizeBytes, 0);
+  });
+
   test('scanner returns only manifests with existing images', () async {
     final dir = await Directory.systemTemp.createTemp(
       'deckhand_emmc_manifest_',

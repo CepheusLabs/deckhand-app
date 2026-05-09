@@ -64,17 +64,17 @@ class EmmcBackupManifest {
   factory EmmcBackupManifest.fromJson(Map<String, dynamic> json) {
     return EmmcBackupManifest(
       schemaVersion: (json['schema_version'] as num?)?.toInt() ?? 0,
-      createdAt: DateTime.parse(json['created_at'] as String),
-      profileId: json['profile_id'] as String? ?? '',
-      imagePath: json['image_path'] as String? ?? '',
+      createdAt: DateTime.parse(_jsonString(json['created_at']) ?? ''),
+      profileId: _jsonString(json['profile_id']) ?? '',
+      imagePath: _jsonString(json['image_path']) ?? '',
       imageBytes: (json['image_bytes'] as num?)?.toInt() ?? 0,
-      imageSha256: ((json['image_sha256'] as String?) ?? '')
+      imageSha256: (_jsonString(json['image_sha256']) ?? '')
           .trim()
           .toLowerCase(),
       disk: EmmcBackupDiskIdentity.fromJson(
-        (json['disk'] as Map).cast<String, dynamic>(),
+        _stringKeyMap(json['disk']) ?? const {},
       ),
-      deckhandVersion: json['deckhand_version'] as String? ?? '',
+      deckhandVersion: _jsonString(json['deckhand_version']) ?? '',
     );
   }
 
@@ -129,11 +129,11 @@ class EmmcBackupDiskIdentity {
 
   factory EmmcBackupDiskIdentity.fromJson(Map<String, dynamic> json) {
     return EmmcBackupDiskIdentity(
-      id: json['id'] as String? ?? '',
-      path: json['path'] as String? ?? '',
+      id: _jsonString(json['id']) ?? '',
+      path: _jsonString(json['path']) ?? '',
       sizeBytes: (json['size_bytes'] as num?)?.toInt() ?? 0,
-      bus: json['bus'] as String? ?? '',
-      model: json['model'] as String? ?? '',
+      bus: _jsonString(json['bus']) ?? '',
+      model: _jsonString(json['model']) ?? '',
       removable: json['removable'] as bool? ?? false,
     );
   }
@@ -682,8 +682,9 @@ p.Context _pathContextForRoot(String rootDir) {
 Future<EmmcBackupManifest?> _readManifest(File file) async {
   try {
     final decoded = jsonDecode(await file.readAsString());
-    if (decoded is! Map) return null;
-    return EmmcBackupManifest.fromJson(decoded.cast<String, dynamic>());
+    final parsed = _stringKeyMap(decoded);
+    if (parsed == null) return null;
+    return EmmcBackupManifest.fromJson(parsed);
   } catch (_) {
     return null;
   }
@@ -693,4 +694,16 @@ bool _isValidIndexedManifest(EmmcBackupManifest manifest) {
   return manifest.schemaVersion == emmcBackupManifestSchema &&
       manifest.imageBytes > 0 &&
       _isSha256Hex(manifest.imageSha256);
+}
+
+String? _jsonString(Object? value) => value is String ? value : null;
+
+Map<String, dynamic>? _stringKeyMap(Object? value) {
+  if (value is! Map) return null;
+  final out = <String, dynamic>{};
+  for (final entry in value.entries) {
+    final key = entry.key;
+    if (key is String) out[key] = entry.value;
+  }
+  return out;
 }
