@@ -86,6 +86,23 @@ void main() {
       expect(decoded.sshUser, isNull);
     });
 
+    test('malformed decision keys and flow degrade to safe defaults', () {
+      final decoded = WizardState.fromJson({
+        'schema': 'deckhand.wizard_state/1',
+        'profileId': 'phrozen-arco',
+        'decisions': {
+          1: 'bad key',
+          'flash.disk': 'PhysicalDrive3',
+          'ignored': null,
+        },
+        'currentStep': 's220-confirm',
+        'flow': 99,
+      });
+
+      expect(decoded.decisions, {'flash.disk': 'PhysicalDrive3'});
+      expect(decoded.flow, WizardFlow.none);
+    });
+
     test('copyWith can clear optional SSH fields', () {
       const state = WizardState(
         profileId: 'phrozen-arco',

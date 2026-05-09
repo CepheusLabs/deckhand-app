@@ -43,10 +43,10 @@ class WizardState {
     final decisions = <String, Object>{};
     if (decisionsRaw is Map) {
       decisionsRaw.forEach((k, v) {
-        if (v != null) decisions[k.toString()] = v as Object;
+        if (k is String && v != null) decisions[k] = v as Object;
       });
     }
-    final flowRaw = json['flow'] as String? ?? 'none';
+    final flowRaw = _decodeOptionalString(json['flow']) ?? 'none';
     final flow = WizardFlow.values.firstWhere(
       (f) => f.name == flowRaw,
       orElse: () => WizardFlow.none,
