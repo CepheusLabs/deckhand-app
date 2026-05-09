@@ -70,4 +70,15 @@ void main() {
     final s = await DeckhandSettings.load(settingsPath);
     expect(s.windowGeometry, isNull);
   });
+
+  test('corrupted geometry values return null (no exception)', () {
+    final s = DeckhandSettings(
+      path: '<memory>',
+      initial: {
+        'window_geometry': {'width': 'wide', 'height': 800},
+      },
+    );
+
+    expect(s.windowGeometry, isNull);
+  });
 }

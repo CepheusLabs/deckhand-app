@@ -351,11 +351,13 @@ class DeckhandSettings {
   WindowGeometry? get windowGeometry {
     final raw = _values['window_geometry'];
     if (raw is! Map) return null;
-    final width = (raw['width'] as num?)?.toDouble();
-    final height = (raw['height'] as num?)?.toDouble();
-    final x = (raw['x'] as num?)?.toDouble();
-    final y = (raw['y'] as num?)?.toDouble();
-    if (width == null || height == null) return null;
+    final width = _finiteNumber(raw['width']);
+    final height = _finiteNumber(raw['height']);
+    final x = _finiteNumber(raw['x']);
+    final y = _finiteNumber(raw['y']);
+    if (width == null || height == null || width <= 0 || height <= 0) {
+      return null;
+    }
     return WindowGeometry(width: width, height: height, x: x, y: y);
   }
 
@@ -634,4 +636,10 @@ String _requiredString(Map<String, dynamic> json, String key) {
   final value = json[key];
   if (value is String && value.trim().isNotEmpty) return value.trim();
   throw FormatException('missing managed printer field "$key"');
+}
+
+double? _finiteNumber(Object? value) {
+  if (value is! num) return null;
+  final number = value.toDouble();
+  return number.isFinite ? number : null;
 }
