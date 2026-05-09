@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import '../i18n/translations.g.dart';
 import '../providers.dart';
 import '../theming/deckhand_tokens.dart';
+import '../utils/json_safety.dart';
 import '../widgets/wizard_scaffold.dart';
 
 class DoneScreen extends ConsumerWidget {
@@ -75,33 +76,36 @@ class DoneScreen extends ConsumerWidget {
     if (profile == null) return null;
     final webui = profile.stack.webui;
     if (webui == null) return null;
-    final choices = (webui['choices'] as List?)?.cast<Map>() ?? const [];
+    final choices = _webuiChoices(webui);
     final selected = _selectedWebuiIds(webui, state);
     if (selected.isEmpty) return null;
     final names = <String>[];
     int? firstPort;
     for (final c in choices) {
-      final id = c['id'] as String?;
+      final id = jsonString(c['id']);
       if (id == null || !selected.contains(id)) continue;
-      names.add((c['display_name'] as String?) ?? id);
-      firstPort ??= c['default_port'] as int?;
+      names.add(jsonString(c['display_name']) ?? id);
+      firstPort ??= jsonInt(c['default_port']);
     }
     if (names.isEmpty) return null;
     if (names.length == 1) {
-      return firstPort == null ? names.single : '${names.single} · port $firstPort';
+      return firstPort == null
+          ? names.single
+          : '${names.single} · port $firstPort';
     }
     return names.join(' + ');
   }
 
-  Set<String> _selectedWebuiIds(Map<dynamic, dynamic> webui, WizardState state) {
+  Set<String> _selectedWebuiIds(
+    Map<dynamic, dynamic> webui,
+    WizardState state,
+  ) {
     final raw = state.decisions['webui'];
     final selected = <String>{};
     if (raw is String) selected.add(raw);
     if (raw is List) selected.addAll(raw.whereType<String>());
     if (selected.isEmpty) {
-      final defaults =
-          (webui['default_choices'] as List?)?.cast<String>() ?? const [];
-      selected.addAll(defaults);
+      selected.addAll(jsonStringList(webui['default_choices']));
     }
     return selected;
   }
@@ -129,21 +133,26 @@ class DoneScreen extends ConsumerWidget {
     if (profile == null) return const [];
     final webui = profile.stack.webui;
     if (webui == null) return const [];
-    final choices = (webui['choices'] as List?)?.cast<Map>() ?? const [];
+    final choices = _webuiChoices(webui);
     if (choices.isEmpty) return const [];
     final selected = _selectedWebuiIds(webui, state);
     final host = state.sshHost ?? '<printer>';
     final tips = <String>[];
     for (final choice in choices) {
-      final id = choice['id'] as String?;
+      final id = jsonString(choice['id']);
       if (id == null || !selected.contains(id)) continue;
-      final displayName = (choice['display_name'] as String?) ?? id;
-      final port = (choice['default_port'] as int?) ?? 80;
+      final displayName = jsonString(choice['display_name']) ?? id;
+      final port = jsonInt(choice['default_port']) ?? 80;
       tips.add(t.done.tip_webui(name: displayName, host: host, port: '$port'));
     }
     return tips;
   }
 }
+
+List<Map<String, dynamic>> _webuiChoices(Map<dynamic, dynamic> webui) =>
+    jsonStringKeyMapList(
+      webui['choices'],
+    ).where((choice) => jsonString(choice['id'])?.isNotEmpty == true).toList();
 
 class _DoneBody extends StatelessWidget {
   const _DoneBody({
@@ -324,38 +333,35 @@ class _StatGrid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(builder: (context, constraints) {
-      // Four equal columns when there's room (≥720px); two columns at
-      // typical wizard widths; single column on the narrow end. Wrap
-      // doesn't give us equal columns out of the box, so we hand-size.
-      final w = constraints.maxWidth;
-      final cols = w >= 720 ? 4 : (w >= 420 ? 2 : 1);
-      const gap = 12.0;
-      final tileWidth = (w - gap * (cols - 1)) / cols;
-      final tiles = <Widget>[
-        _Stat(label: 'Hostname', value: host, mono: true),
-        _Stat(label: 'Firmware', value: firmware, mono: false),
-        _Stat(label: 'Web UI', value: webui, mono: false),
-        _Stat(label: 'Snapshot', value: snapshot, mono: false),
-      ];
-      return Wrap(
-        spacing: gap,
-        runSpacing: gap,
-        children: [
-          for (final t in tiles)
-            SizedBox(width: tileWidth, child: t),
-        ],
-      );
-    });
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Four equal columns when there's room (≥720px); two columns at
+        // typical wizard widths; single column on the narrow end. Wrap
+        // doesn't give us equal columns out of the box, so we hand-size.
+        final w = constraints.maxWidth;
+        final cols = w >= 720 ? 4 : (w >= 420 ? 2 : 1);
+        const gap = 12.0;
+        final tileWidth = (w - gap * (cols - 1)) / cols;
+        final tiles = <Widget>[
+          _Stat(label: 'Hostname', value: host, mono: true),
+          _Stat(label: 'Firmware', value: firmware, mono: false),
+          _Stat(label: 'Web UI', value: webui, mono: false),
+          _Stat(label: 'Snapshot', value: snapshot, mono: false),
+        ];
+        return Wrap(
+          spacing: gap,
+          runSpacing: gap,
+          children: [
+            for (final t in tiles) SizedBox(width: tileWidth, child: t),
+          ],
+        );
+      },
+    );
   }
 }
 
 class _Stat extends StatelessWidget {
-  const _Stat({
-    required this.label,
-    required this.value,
-    required this.mono,
-  });
+  const _Stat({required this.label, required this.value, required this.mono});
   final String label;
   final String value;
   final bool mono;
@@ -387,7 +393,9 @@ class _Stat extends StatelessWidget {
             value,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
-              fontFamily: mono ? DeckhandTokens.fontMono : DeckhandTokens.fontSans,
+              fontFamily: mono
+                  ? DeckhandTokens.fontMono
+                  : DeckhandTokens.fontSans,
               fontSize: mono ? DeckhandTokens.tMd : DeckhandTokens.tLg,
               fontWeight: FontWeight.w500,
               color: tokens.text,
@@ -424,11 +432,8 @@ class _HeroActions extends StatelessWidget {
             // clipboard-copy pattern so we follow it here for
             // consistency. The URL goes to the user's clipboard with a
             // snackbar receipt — one paste away from the browser.
-            onPressed: () => _copyToClipboard(
-              context,
-              mainsailUrl!,
-              'Mainsail URL copied',
-            ),
+            onPressed: () =>
+                _copyToClipboard(context, mainsailUrl!, 'Mainsail URL copied'),
           ),
         if (sshHost != null)
           OutlinedButton.icon(
@@ -479,18 +484,19 @@ class _FooterPanels extends StatelessWidget {
               : 'Snapshot archived',
           body: snapshotSummary == 'eMMC image'
               ? 'A full eMMC image was written to your backup folder. '
-                  'Use it to roll back if anything goes sideways.'
+                    'Use it to roll back if anything goes sideways.'
               : snapshotSummary == 'side-by-side'
-                  ? 'Your stock files were archived side-by-side under '
-                      'printer_data.stock-*/. Merge anything you want to keep.'
-                  : 'Your stock files were archived and auto-merged into the '
-                      'new install. Conflicts went side-by-side.',
+              ? 'Your stock files were archived side-by-side under '
+                    'printer_data.stock-*/. Merge anything you want to keep.'
+              : 'Your stock files were archived and auto-merged into the '
+                    'new install. Conflicts went side-by-side.',
         ),
       if (hasKiauh)
         const _FooterPanel(
           icon: Icons.terminal,
           title: 'KIAUH ready',
-          body: 'SSH in and run ./kiauh/kiauh.sh for ongoing updates and '
+          body:
+              'SSH in and run ./kiauh/kiauh.sh for ongoing updates and '
               'reinstalls. Multi-MCU configs and Klipper-extras live here.',
         ),
       _FooterPanel(
@@ -499,21 +505,21 @@ class _FooterPanels extends StatelessWidget {
         body: webuiTips.isNotEmpty ? webuiTips.first : t.done.tip_updates,
       ),
     ];
-    return LayoutBuilder(builder: (context, constraints) {
-      final w = constraints.maxWidth;
-      final cols = w >= 720
-          ? panels.length.clamp(1, 3)
-          : (w >= 420 ? 2 : 1);
-      const gap = 12.0;
-      final tileWidth = (w - gap * (cols - 1)) / cols;
-      return Wrap(
-        spacing: gap,
-        runSpacing: gap,
-        children: [
-          for (final p in panels) SizedBox(width: tileWidth, child: p),
-        ],
-      );
-    });
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final w = constraints.maxWidth;
+        final cols = w >= 720 ? panels.length.clamp(1, 3) : (w >= 420 ? 2 : 1);
+        const gap = 12.0;
+        final tileWidth = (w - gap * (cols - 1)) / cols;
+        return Wrap(
+          spacing: gap,
+          runSpacing: gap,
+          children: [
+            for (final p in panels) SizedBox(width: tileWidth, child: p),
+          ],
+        );
+      },
+    );
   }
 }
 

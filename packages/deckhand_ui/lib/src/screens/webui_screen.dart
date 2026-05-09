@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import '../i18n/translations.g.dart';
 import '../providers.dart';
 import '../theming/deckhand_tokens.dart';
+import '../utils/json_safety.dart';
 import '../widgets/dashed_divider.dart';
 import '../widgets/equal_height_grid.dart';
 import '../widgets/selection_card.dart';
@@ -38,21 +39,17 @@ class _WebuiScreenState extends ConsumerState<WebuiScreen> {
     final controller = ref.watch(wizardControllerProvider);
     final profile = controller.profile;
     final webui = profile?.stack.webui ?? const {};
-    final choices = ((webui['choices'] as List?) ?? const []).cast<Map>();
-    final defaultChoices = ((webui['default_choices'] as List?) ?? const [])
-        .cast<String>();
+    final choices = _webuiChoices(webui);
+    final defaultChoices = jsonStringList(webui['default_choices']);
     final allowNone = webui['allow_none'] == true;
     final probe = controller.printerState;
 
     final saved = controller.state.decisions['webui'];
-    final choiceIds = choices
-        .map((c) => c['id'] as String?)
-        .whereType<String>()
-        .toSet();
+    final choiceIds = choices.map((c) => jsonString(c['id'])!).toSet();
     final installed = [
       for (final raw in choices)
-        if (probe.stackInstalls[raw['id']]?.installed == true)
-          raw['id'] as String,
+        if (probe.stackInstalls[jsonString(raw['id'])]?.installed == true)
+          jsonString(raw['id'])!,
     ];
     final autoIds = installed.isNotEmpty ? installed : defaultChoices;
     final autoSeedSignature = '${choiceIds.join('|')}::${autoIds.join('|')}';
@@ -121,11 +118,13 @@ class _WebuiScreenState extends ConsumerState<WebuiScreen> {
                       // visually mark the discrete cards as
                       // selected too — they're functionally part
                       // of the same set.
-                      selected: !_neither && _selected.contains(raw['id']),
-                      installed: probe.stackInstalls[raw['id']],
+                      selected:
+                          !_neither &&
+                          _selected.contains(jsonString(raw['id'])),
+                      installed: probe.stackInstalls[jsonString(raw['id'])],
                       descriptionBuilder: _userFacingBlurb,
                       onTap: () => setState(() {
-                        final id = raw['id'] as String;
+                        final id = jsonString(raw['id'])!;
                         _userChanged = true;
                         _neither = false;
                         if (_selected.contains(id)) {
@@ -199,13 +198,18 @@ class _WebuiScreenState extends ConsumerState<WebuiScreen> {
   /// which service we're installing. Per-id prose belongs in the
   /// profile YAML, not in this widget.
   String _userFacingBlurb(Map raw) {
-    final desc = raw['description'] as String?;
+    final desc = jsonString(raw['description']);
     if (desc != null && desc.trim().isNotEmpty) return desc.trim();
     final port = raw['default_port'];
-    final name = raw['display_name'] as String? ?? raw['id'] as String;
+    final name = jsonString(raw['display_name']) ?? jsonString(raw['id'])!;
     return port == null ? name : '$name on port $port';
   }
 }
+
+List<Map<String, dynamic>> _webuiChoices(Map<dynamic, dynamic> webui) =>
+    jsonStringKeyMapList(
+      webui['choices'],
+    ).where((choice) => jsonString(choice['id'])?.isNotEmpty == true).toList();
 
 /// Bordered banner above the grid that calls out the picking
 /// requirement. Doubles as a green "you're good to continue"
@@ -261,17 +265,17 @@ class _WebuiCard extends StatelessWidget {
     required this.onTap,
   });
 
-  final Map raw;
+  final Map<String, dynamic> raw;
   final bool selected;
   final InstallState? installed;
-  final String Function(Map) descriptionBuilder;
+  final String Function(Map<String, dynamic>) descriptionBuilder;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final tokens = DeckhandTokens.of(context);
-    final id = raw['id'] as String? ?? '';
-    final name = raw['display_name'] as String? ?? id;
+    final id = jsonString(raw['id']) ?? '';
+    final name = jsonString(raw['display_name']) ?? id;
     final port = raw['default_port'];
     final isInstalled = installed?.installed ?? false;
     final isActive = installed?.active ?? false;

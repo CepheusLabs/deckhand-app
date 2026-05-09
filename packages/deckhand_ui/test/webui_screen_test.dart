@@ -9,18 +9,20 @@ void main() {
   group('WebuiScreen', () {
     Future<void> pump(
       WidgetTester tester, {
-      required List<Map<String, dynamic>> choices,
-      List<String> defaults = const [],
+      required List<Object?> choices,
+      List<Object?> defaults = const [],
     }) async {
       final controller = stubWizardController(
-        profileJson: testProfileJson(stack: {
-          'webui': {
-            'choices': choices,
-            'default_choices': defaults,
-            'allow_multiple': true,
-            'allow_none': false,
+        profileJson: testProfileJson(
+          stack: {
+            'webui': {
+              'choices': choices,
+              'default_choices': defaults,
+              'allow_multiple': true,
+              'allow_none': false,
+            },
           },
-        }),
+        ),
       );
       await controller.loadProfile('test-printer');
       controller.setFlow(WizardFlow.stockKeep);
@@ -34,8 +36,9 @@ void main() {
       await tester.pumpAndSettle();
     }
 
-    testWidgets('Continue is disabled when nothing is selected',
-        (tester) async {
+    testWidgets('Continue is disabled when nothing is selected', (
+      tester,
+    ) async {
       await pump(
         tester,
         choices: [
@@ -49,8 +52,10 @@ void main() {
       final btn = tester.widget<FilledButton>(continueBtn);
       expect(btn.onPressed, isNull);
       // Error banner present when empty.
-      expect(find.textContaining('Pick at least one to continue'),
-          findsOneWidget);
+      expect(
+        find.textContaining('Pick at least one to continue'),
+        findsOneWidget,
+      );
     });
 
     testWidgets('seeded default enables Continue', (tester) async {
@@ -67,8 +72,9 @@ void main() {
       expect(btn.onPressed, isNotNull);
     });
 
-    testWidgets('profile description renders, not release_repo',
-        (tester) async {
+    testWidgets('profile description renders, not release_repo', (
+      tester,
+    ) async {
       await pump(
         tester,
         choices: [
@@ -90,20 +96,34 @@ void main() {
       expect(find.textContaining('fluidd-core/fluidd'), findsNothing);
     });
 
-    testWidgets('missing description falls back to "<name> on port <n>"',
-        (tester) async {
+    testWidgets('missing description falls back to "<name> on port <n>"', (
+      tester,
+    ) async {
       await pump(
         tester,
         choices: [
-          {
-            'id': 'custom',
-            'display_name': 'Custom UI',
-            'default_port': 9000,
-          },
+          {'id': 'custom', 'display_name': 'Custom UI', 'default_port': 9000},
         ],
         defaults: const ['custom'],
       );
       expect(find.text('Custom UI on port 9000'), findsOneWidget);
+    });
+
+    testWidgets('malformed choice rows are skipped', (tester) async {
+      await pump(
+        tester,
+        choices: [
+          'bad row',
+          {'id': 42, 'display_name': 99},
+          {'id': 'fluidd', 'display_name': 'Fluidd', 'default_port': 8808},
+        ],
+        defaults: const [42, 'fluidd'],
+      );
+
+      expect(find.text('Fluidd'), findsOneWidget);
+      final continueBtn = find.widgetWithText(FilledButton, 'Continue');
+      final btn = tester.widget<FilledButton>(continueBtn);
+      expect(btn.onPressed, isNotNull);
     });
   });
 }

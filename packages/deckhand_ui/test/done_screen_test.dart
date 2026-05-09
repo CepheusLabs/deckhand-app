@@ -5,8 +5,9 @@ import 'helpers.dart';
 
 void main() {
   group('DoneScreen', () {
-    testWidgets('shows printer display_name, not the internal profile_id',
-        (tester) async {
+    testWidgets('shows printer display_name, not the internal profile_id', (
+      tester,
+    ) async {
       final controller = stubWizardController(profileJson: testProfileJson());
       await controller.loadProfile('test-printer');
       await tester.pumpWidget(
@@ -24,9 +25,9 @@ void main() {
       expect(find.text('test-printer'), findsNothing);
     });
 
-    testWidgets(
-        'webui tip only lists choices the user actually selected',
-        (tester) async {
+    testWidgets('webui tip only lists choices the user actually selected', (
+      tester,
+    ) async {
       final controller = stubWizardController(
         profileJson: {
           ...testProfileJson(),
@@ -70,8 +71,45 @@ void main() {
       expect(find.textContaining('Mainsail'), findsNothing);
     });
 
-    testWidgets('no kiauh.sh command leaks into user-facing copy',
-        (tester) async {
+    testWidgets('malformed webui choices do not crash done screen', (
+      tester,
+    ) async {
+      final controller = stubWizardController(
+        profileJson: {
+          ...testProfileJson(),
+          'stack': {
+            'webui': {
+              'choices': [
+                'bad row',
+                {'id': 12, 'display_name': 99},
+                {
+                  'id': 'fluidd',
+                  'display_name': 'Fluidd',
+                  'default_port': 8808,
+                },
+              ],
+              'default_choices': [12, 'fluidd'],
+            },
+          },
+        },
+      );
+      await controller.loadProfile('test-printer');
+
+      await tester.pumpWidget(
+        testHarness(
+          controller: controller,
+          child: const DoneScreen(),
+          initialLocation: '/done',
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('Fluidd'), findsAtLeastNWidgets(1));
+    });
+
+    testWidgets('no kiauh.sh command leaks into user-facing copy', (
+      tester,
+    ) async {
       final controller = stubWizardController(profileJson: testProfileJson());
       await controller.loadProfile('test-printer');
       await tester.pumpWidget(
