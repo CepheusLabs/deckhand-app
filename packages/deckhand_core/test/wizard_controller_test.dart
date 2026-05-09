@@ -80,6 +80,20 @@ void main() {
     );
   }
 
+  group('WizardController profile loading', () {
+    test('loading a profile starts with clean decisions', () async {
+      final controller = newController(profileJson: baseProfileJson());
+      await controller.loadProfile('test-printer');
+      await controller.setDecision('flash.disk', 'PhysicalDrive3');
+      await controller.setDecision('flash.os', 'debian-bookworm');
+
+      await controller.loadProfile('test-printer');
+
+      expect(controller.state.profileId, 'test-printer');
+      expect(controller.state.decisions, isEmpty);
+    });
+  });
+
   group('WizardController.wait_for_ssh handoff', () {
     test(
       'pauses fresh flash instead of failing when no SSH host is set',

@@ -216,7 +216,7 @@ class WizardController {
       return;
     }
     try {
-      await loadProfile(snapshot.profileId);
+      await loadProfile(snapshot.profileId, preserveWizardState: true);
       // loadProfile resets currentStep to whatever copyWith default
       // it picks. Re-apply the snapshot so the saved currentStep
       // wins — the user lands where they left off.
@@ -249,6 +249,7 @@ class WizardController {
     String profileId, {
     String? ref,
     bool force = false,
+    bool preserveWizardState = false,
   }) async {
     final cache = await profiles.ensureCached(
       profileId: profileId,
@@ -258,7 +259,14 @@ class WizardController {
     final profile = await profiles.load(cache);
     _profile = profile;
     _profileCache = cache;
-    _state = _state.copyWith(profileId: profileId);
+    _state = preserveWizardState
+        ? _state.copyWith(profileId: profileId)
+        : WizardState(
+            profileId: profileId,
+            decisions: const {},
+            currentStep: _state.currentStep,
+            flow: _state.flow,
+          );
     _emit(ProfileLoaded(profile));
   }
 
