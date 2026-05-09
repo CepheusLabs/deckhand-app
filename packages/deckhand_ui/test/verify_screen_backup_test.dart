@@ -1,4 +1,5 @@
 import 'package:deckhand_core/deckhand_core.dart';
+import 'package:deckhand_ui/src/providers.dart';
 import 'package:deckhand_ui/src/screens/verify_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -279,6 +280,66 @@ void main() {
     );
 
     testWidgets(
+      'failed prune preference saves roll back settings',
+      (tester) async {
+        final controller = stubWizardController(
+          profileJson: testProfileJson(),
+        );
+        await controller.loadProfile('test-printer');
+        controller.setFlow(WizardFlow.stockKeep);
+        controller.printerStateForTesting = PrinterState(
+          services: const {},
+          files: const {},
+          paths: const {},
+          stackInstalls: const {},
+          screenInstalls: const {},
+          python311Installed: false,
+          deckhandBackups: [
+            DeckhandBackup(
+              originalPath: '/etc/apt/sources.list',
+              backupPath:
+                  '/etc/apt/sources.list.deckhand-pre-test-printer-1',
+              profileId: 'test-printer',
+              createdAt: DateTime.now().subtract(const Duration(days: 100)),
+            ),
+          ],
+          probedAt: DateTime.now(),
+        );
+        final settings = _FailingSaveSettings()
+          ..pruneOlderThanDays = 30
+          ..pruneKeepNewestPerTarget = true;
+        await tester.pumpWidget(testHarness(
+          controller: controller,
+          child: const VerifyScreen(),
+          initialLocation: '/verify',
+          extraOverrides: [
+            deckhandSettingsProvider.overrideWithValue(settings),
+          ],
+        ));
+        await tester.pumpAndSettle();
+
+        final dropdown = tester.widget<DropdownButton<int>>(
+          find.byType(DropdownButton<int>),
+        );
+        dropdown.onChanged!.call(7);
+        final checkbox = tester.widget<Checkbox>(find.byType(Checkbox));
+        checkbox.onChanged!.call(false);
+        await tester.pumpAndSettle();
+        await tester.ensureVisible(
+          find.widgetWithText(FilledButton, 'Prune now'),
+        );
+        await tester.tap(find.widgetWithText(FilledButton, 'Prune now'));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 250));
+
+        expect(settings.pruneOlderThanDays, 30);
+        expect(settings.pruneKeepNewestPerTarget, isTrue);
+        expect(find.textContaining('Windows disk 3'), findsOneWidget);
+        expect(find.textContaining('PHYSICALDRIVE3'), findsNothing);
+      },
+    );
+
+    testWidgets(
       'foreign-profile backups render without a Restore button',
       (tester) async {
         final controller = stubWizardController(
@@ -329,4 +390,13 @@ void main() {
       },
     );
   });
+}
+
+class _FailingSaveSettings extends DeckhandSettings {
+  _FailingSaveSettings() : super(path: '<memory>');
+
+  @override
+  Future<void> save() async {
+    throw StateError(r'write settings failed on \\.\PHYSICALDRIVE3');
+  }
 }

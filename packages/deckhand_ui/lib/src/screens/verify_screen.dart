@@ -123,28 +123,42 @@ class _VerifyScreenState extends ConsumerState<VerifyScreen> {
 
   Future<void> _pruneOld() async {
     final settings = ref.read(deckhandSettingsProvider);
+    final previousDays = settings.pruneOlderThanDays;
+    final previousKeepLatest = settings.pruneKeepNewestPerTarget;
+    var preferencesSaved = false;
+    setState(() => _restoreError = null);
     // Persist the current choice so the next session defaults to it.
     settings.pruneOlderThanDays = _pruneDays;
     settings.pruneKeepNewestPerTarget = _keepLatestPerTarget;
-    await settings.save();
+    try {
+      await settings.save();
+      preferencesSaved = true;
 
-    final n = await ref
-        .read(wizardControllerProvider)
-        .pruneBackups(
-          olderThan: Duration(days: _pruneDays),
-          keepLatestPerTarget: _keepLatestPerTarget,
-        );
-    if (!mounted) return;
-    final keepSuffix = _keepLatestPerTarget
-        ? ' (kept the newest snapshot for each target)'
-        : '';
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          'Pruned $n backup(s) older than $_pruneDays days$keepSuffix.',
+      final n = await ref
+          .read(wizardControllerProvider)
+          .pruneBackups(
+            olderThan: Duration(days: _pruneDays),
+            keepLatestPerTarget: _keepLatestPerTarget,
+          );
+      if (!mounted) return;
+      final keepSuffix = _keepLatestPerTarget
+          ? ' (kept the newest snapshot for each target)'
+          : '';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Pruned $n backup(s) older than $_pruneDays days$keepSuffix.',
+          ),
         ),
-      ),
-    );
+      );
+    } catch (e) {
+      if (!preferencesSaved) {
+        settings.pruneOlderThanDays = previousDays;
+        settings.pruneKeepNewestPerTarget = previousKeepLatest;
+      }
+      if (!mounted) return;
+      setState(() => _restoreError = userFacingError(e));
+    }
   }
 
   @override
