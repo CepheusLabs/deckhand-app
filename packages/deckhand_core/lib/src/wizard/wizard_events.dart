@@ -50,7 +50,7 @@ class WizardHandoffRequiredException implements Exception {
 
 /// Thrown by [WizardController.restore] when the saved profile id
 /// can't be reloaded — most often because the user is offline, the
-/// profiles repo moved, or the host hasn't been allow-listed yet.
+/// profiles repo moved, or the host has not been approved yet.
 /// Carries the original snapshot so the caller can keep it around
 /// for a retry instead of silently falling back to
 /// [WizardState.initial] (which threw away the user's session).

@@ -15,7 +15,7 @@ import 'sidecar_client.dart';
 /// HTTPS using Dio + GitHub's Releases API.
 ///
 /// Every method that issues an outbound network call gates on the
-/// user's host allowlist via [requireHostApproved]. A
+/// user's approved-host gate via [requireHostApproved]. A
 /// [HostNotApprovedException] is the typed signal the UI uses to
 /// surface a "Allow this host?" prompt and retry.
 ///

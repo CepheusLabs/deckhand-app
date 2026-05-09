@@ -3,7 +3,7 @@ import 'dart:collection';
 import '../services/security_service.dart';
 import 'printer_profile.dart';
 
-/// Normalize a profile-declared host or URL into the allow-list key.
+/// Normalize a profile-declared host or URL into the network-approval key.
 ///
 /// Returns null for blank values, path-shaped strings, malformed host
 /// labels, and non-HTTP URL syntax.
@@ -28,7 +28,7 @@ String? normalizeHostCandidate(String value) {
 /// Non-printer network hosts a profile can cause Deckhand to contact.
 ///
 /// This powers a single profile-level approval prompt. The lower-level
-/// egress checks still enforce the same allow-list at request time, so
+/// egress checks still enforce the same approval gate at request time, so
 /// redirects and newly-added hosts cannot bypass approval.
 List<String> profileNetworkHosts(PrinterProfile profile) {
   final hosts = SplayTreeSet<String>();

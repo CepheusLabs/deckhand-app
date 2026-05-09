@@ -5,8 +5,8 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:uuid/uuid.dart';
 
 /// Default [SecurityService] - in-memory single-use confirmation tokens
-/// backed by flutter_secure_storage for persistent fingerprints + host
-/// allow-list state.
+/// backed by flutter_secure_storage for persistent fingerprints + approved
+/// network host state.
 class DefaultSecurityService implements SecurityService {
   DefaultSecurityService({FlutterSecureStorage? storage})
     : _storage = storage ?? const FlutterSecureStorage();
@@ -77,7 +77,7 @@ class DefaultSecurityService implements SecurityService {
     return current;
   }
 
-  /// Persistently allow-list [host]. Called by the UI after the user
+  /// Persistently approve [host]. Called by the UI after the user
   /// approves a network-egress prompt.
   @override
   Future<void> approveHost(String host) async {
@@ -157,6 +157,7 @@ class DefaultSecurityService implements SecurityService {
     await _storage.write(key: _githubTokenKey, value: token.trim());
   }
 
+  // Keep the legacy storage prefix so existing approvals survive upgrades.
   static const _hostAllowPrefix = 'deckhand.net.allowlist.';
   static const _hostFpPrefix = 'deckhand.ssh.fp.';
   static const _githubTokenKey = 'deckhand.github.pat';

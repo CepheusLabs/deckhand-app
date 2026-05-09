@@ -210,7 +210,7 @@ class _EmmcBackupScreenState extends ConsumerState<EmmcBackupScreen> {
         final flash = ref.read(flashServiceProvider);
         stream = flash.readImage(diskId: id, outputPath: outputPath);
       }
-    } catch (e, s) {
+    } catch (e) {
       if (mounted) {
         setState(() {
           _error = 'Could not start backup: $e';
@@ -221,9 +221,6 @@ class _EmmcBackupScreenState extends ConsumerState<EmmcBackupScreen> {
           );
         });
       }
-      // Print to console so devs running attached can see the trace.
-      // ignore: avoid_print
-      print('emmc_backup_screen _startBackup setup failed: $e\n$s');
       return;
     }
 

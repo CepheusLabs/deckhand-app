@@ -11,7 +11,7 @@ import 'package:meta/meta.dart';
 /// `DefaultSecurityService` (in deckhand_flash) uses
 /// flutter_secure_storage, which requires WidgetsFlutterBinding to
 /// initialise platform plugins — no good for a CLI binary. This
-/// implementation persists the host allow-list and SSH fingerprint
+/// implementation persists approved network hosts and SSH fingerprint
 /// pins to a JSON file under [stateDir] so reruns within the same
 /// rig are stable, but never tries to talk to a keychain.
 ///

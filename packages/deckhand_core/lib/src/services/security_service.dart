@@ -1,4 +1,4 @@
-/// Confirmation tokens for destructive operations, host allow-list
+/// Confirmation tokens for destructive operations, network approval
 /// management, and known-host fingerprints.
 abstract class SecurityService {
   /// Issue a single-use token for [operation] targeting [target].
@@ -24,25 +24,25 @@ abstract class SecurityService {
   /// false as a security signal and refuse to launch privileged work.
   bool consumeToken(String value, String operation, {required String target});
 
-  /// Batch-prompt the user to allow-list [hosts] before any network
+  /// Batch-prompt the user to approve [hosts] before any network
   /// traffic reaches them.
   Future<Map<String, bool>> requestHostApprovals(List<String> hosts);
 
-  /// Returns true if [host] is already in the allow-list.
+  /// Returns true if [host] is already approved.
   Future<bool> isHostAllowed(String host);
 
-  /// Persistently allow-list [host]. The UI calls this after the user
+  /// Persistently approve [host]. The UI calls this after the user
   /// confirms an "Allow this host?" prompt; subsequent
   /// [requireHostApproved] checks for the same host succeed without
   /// re-prompting. Idempotent.
   Future<void> approveHost(String host);
 
-  /// Remove [host] from the allow-list. Surfaced in the Settings
+  /// Remove [host] from approved network hosts. Surfaced in the Settings
   /// screen so users can revoke a previously-approved host.
   Future<void> revokeHost(String host);
 
-  /// Enumerate every host currently on the allow-list. Used by the
-  /// Settings screen to render the "Network allow-list" section so
+  /// Enumerate every currently-approved host. Used by the
+  /// Settings screen to render the approved-hosts section so
   /// users can audit + revoke approvals after the fact.
   Future<List<String>> listApprovedHosts();
 
@@ -80,7 +80,7 @@ abstract class SecurityService {
   Future<void> setGitHubToken(String? token);
 
   /// Stream of every outbound network request Deckhand makes during
-  /// the session, after allow-list approval has passed. The S900
+  /// the session, after network approval has passed. The S900
   /// progress screen subscribes to this and renders a "what just got
   /// fetched" panel beside the log so users can see, in real time,
   /// which hosts the install is reaching and how much data has
@@ -124,7 +124,7 @@ class EgressEvent {
   /// so the UI can collapse them into one row.
   final String requestId;
 
-  /// Lowercased hostname the request hit. Matches the allow-list
+  /// Lowercased hostname the request hit. Matches the approved-host
   /// representation used by [SecurityService.isHostAllowed].
   final String host;
 
@@ -179,7 +179,7 @@ class ConfirmationToken {
 /// "Allow this host?" prompt, call `approveHost`, and retry.
 ///
 /// We throw a typed exception (rather than silently dropping the
-/// call or auto-approving) because the network-allowlist gate is the
+/// call or auto-approving) because the network-approval gate is the
 /// single concrete user-visible surface of the trust model — making
 /// it loud is the whole point.
 class HostNotApprovedException implements Exception {
@@ -191,7 +191,7 @@ class HostNotApprovedException implements Exception {
 }
 
 /// Helper that turns an arbitrary URL into a host suitable for
-/// allowlist comparison. Strips the scheme, port, and path; lowercases.
+/// network-approval comparison. Strips the scheme, port, and path; lowercases.
 /// Returns null when the URL is unparseable — callers treat that as
 /// "deny" rather than letting an opaque value through.
 String? hostFromUrl(String url) {
@@ -205,7 +205,7 @@ String? hostFromUrl(String url) {
 }
 
 /// Convenience wrapper around [SecurityService.isHostAllowed] that
-/// throws when the host is not on the user's allowlist. Use this
+/// throws when the host has not been approved. Use this
 /// from any code path that issues an outbound network call to a
 /// non-printer host (GitHub, Armbian mirrors, OS image hosts).
 Future<void> requireHostApproved(SecurityService security, String url) async {

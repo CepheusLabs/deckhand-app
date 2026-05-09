@@ -28,7 +28,7 @@ enum _SettingsTab { general, connections, profiles, appearance, advanced }
 ///    Persists to [DeckhandSettings.localProfilesDir].
 ///  * Appearance — system / light / dark theme picker + UI locale.
 ///  * Advanced — developer mode, GitHub access token (lifts the
-///    GitHub rate-limit ceiling) + network allow-list of approved
+///    GitHub rate-limit ceiling) + approved outbound network
 ///    egress hosts.
 ///
 /// The tabbed layout mirrors the design language: a 200px left
