@@ -294,6 +294,8 @@ void main() {
     await tester.tap(find.byTooltip('Copy log'));
     await tester.pumpAndSettle();
 
+    expect(clipboardText, startsWith('Deckhand session log (standard)'));
+    expect(clipboardText, contains('TIME       TAG     MESSAGE'));
     expect(
       clipboardText,
       contains('00:00.000  STEP    Check the selected disk'),

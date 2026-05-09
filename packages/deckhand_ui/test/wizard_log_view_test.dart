@@ -103,6 +103,11 @@ void main() {
       '[ok] choose_os_image',
     ], WizardLogMode.user);
 
+    expect(text, startsWith('Deckhand session log (standard)'));
+    expect(
+      text,
+      contains('---------  ------  ----------------------------------------'),
+    );
     expect(text, contains('00:00.000  STEP    Choose the OS image'));
     expect(text, contains('00:01.017  OK      Finished Choose the OS image'));
     expect(text, isNot(contains('\t')));

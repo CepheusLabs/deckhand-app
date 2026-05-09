@@ -184,6 +184,9 @@ class _LogLine extends StatelessWidget {
 
   static String formatForClipboard(List<String> lines, WizardLogMode mode) {
     return [
+      'Deckhand session log (${mode == WizardLogMode.developer ? 'developer' : 'standard'})',
+      'TIME       TAG     MESSAGE',
+      '---------  ------  ----------------------------------------',
       for (var i = 0; i < lines.length; i++)
         _formatClipboardLine(i, _parse(lines[i], mode)),
     ].join('\n');
