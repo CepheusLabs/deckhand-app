@@ -67,8 +67,17 @@ Iterable<Map<String, dynamic>> _stackComponents(StackConfig stack) sync* {
   }
   final webuiChoices = (stack.webui?['choices'] as List?) ?? const [];
   for (final choice in webuiChoices.whereType<Map>()) {
-    yield choice.cast<String, dynamic>();
+    yield _stringKeyMap(choice);
   }
+}
+
+Map<String, dynamic> _stringKeyMap(Map value) {
+  final out = <String, dynamic>{};
+  for (final entry in value.entries) {
+    final key = entry.key;
+    if (key is String) out[key] = entry.value;
+  }
+  return out;
 }
 
 bool _isGithubReleaseDownloadUrl(String value) {

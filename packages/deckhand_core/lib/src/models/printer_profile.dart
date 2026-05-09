@@ -91,8 +91,7 @@ class PrinterProfile {
       verifiers: _listOfMap(
         json['verifiers'],
       ).map(VerifierConfig.fromJson).toList(),
-      requiredHosts: ((json['required_hosts'] as List?) ?? const [])
-          .cast<String>(),
+      requiredHosts: _stringList(json['required_hosts']),
       identification: ProfileIdentification.fromJson(
         _mapOr(json['identification']),
       ),
@@ -144,10 +143,8 @@ class ProfileIdentification {
   factory ProfileIdentification.fromJson(Map<String, dynamic> j) =>
       ProfileIdentification(
         markerFile: j['marker_file'] as String?,
-        moonrakerObjects: ((j['moonraker_objects'] as List?) ?? const [])
-            .cast<String>(),
-        hostnamePatterns: ((j['hostname_patterns'] as List?) ?? const [])
-            .cast<String>(),
+        moonrakerObjects: _stringList(j['moonraker_objects']),
+        hostnamePatterns: _stringList(j['hostname_patterns']),
         probeTimeoutSeconds: (j['probe_timeout_seconds'] as num?)?.toInt() ?? 3,
       );
 }
@@ -303,14 +300,12 @@ class HardwareSpec {
 
   factory HardwareSpec.fromJson(Map<String, dynamic> j) => HardwareSpec(
     architecture: j['architecture'] as String?,
-    sbc: j['sbc'] is Map ? SbcSpec.fromJson((j['sbc'] as Map).cast()) : null,
+    sbc: _fromMapOrNull(j['sbc'], SbcSpec.fromJson),
     kinematics: j['kinematics'] as String?,
-    buildVolumeMm: j['build_volume_mm'] is Map
-        ? BuildVolume.fromJson((j['build_volume_mm'] as Map).cast())
-        : null,
+    buildVolumeMm: _fromMapOrNull(j['build_volume_mm'], BuildVolume.fromJson),
     steppers: _listOfMap(j['steppers']),
     sensors: _listOfMap(j['sensors']),
-    features: ((j['features'] as List?) ?? const []).cast<String>(),
+    features: _stringList(j['features']),
   );
 }
 
@@ -349,9 +344,7 @@ class OsSpec {
   final String? bootMode;
 
   factory OsSpec.fromJson(Map<String, dynamic> j) => OsSpec(
-    stock: j['stock'] is Map
-        ? OsStockSpec.fromJson((j['stock'] as Map).cast())
-        : null,
+    stock: _fromMapOrNull(j['stock'], OsStockSpec.fromJson),
     freshInstallOptions: _listOfMap(
       j['fresh_install_options'],
     ).map(OsImageOption.fromJson).toList(),
@@ -679,7 +672,7 @@ class StockFile {
     displayName:
         j['display_name'] as String? ??
         _requiredString(j, 'id', 'stock_os.files[]'),
-    paths: ((j['paths'] as List?) ?? const []).cast<String>(),
+    paths: _stringList(j['paths']),
     defaultAction: j['default_action'] as String? ?? 'keep',
     raw: j,
   );
@@ -728,12 +721,8 @@ class FlowConfig {
   final FlowSpec? stockKeep;
   final FlowSpec? freshFlash;
   factory FlowConfig.fromJson(Map<String, dynamic> j) => FlowConfig(
-    stockKeep: j['stock_keep'] is Map
-        ? FlowSpec.fromJson((j['stock_keep'] as Map).cast())
-        : null,
-    freshFlash: j['fresh_flash'] is Map
-        ? FlowSpec.fromJson((j['fresh_flash'] as Map).cast())
-        : null,
+    stockKeep: _fromMapOrNull(j['stock_keep'], FlowSpec.fromJson),
+    freshFlash: _fromMapOrNull(j['fresh_flash'], FlowSpec.fromJson),
   );
 }
 
@@ -764,15 +753,39 @@ class VerifierConfig {
 // -----------------------------------------------------------------
 // small helpers
 
-Map<String, dynamic> _mapOr(Object? v) =>
-    (v is Map) ? v.cast<String, dynamic>() : <String, dynamic>{};
+Map<String, dynamic> _mapOr(Object? v) => _mapOrNull(v) ?? <String, dynamic>{};
 
-Map<String, dynamic>? _mapOrNull(Object? v) =>
-    v is Map ? v.cast<String, dynamic>() : null;
+Map<String, dynamic>? _mapOrNull(Object? v) {
+  if (v is! Map) return null;
+  final out = <String, dynamic>{};
+  for (final entry in v.entries) {
+    final key = entry.key;
+    if (key is String) out[key] = entry.value;
+  }
+  return out;
+}
+
+T? _fromMapOrNull<T>(Object? value, T Function(Map<String, dynamic>) build) {
+  final map = _mapOrNull(value);
+  return map == null ? null : build(map);
+}
 
 List<Map<String, dynamic>> _listOfMap(Object? v) {
   if (v is! List) return const [];
-  return v.whereType<Map>().map((m) => m.cast<String, dynamic>()).toList();
+  final out = <Map<String, dynamic>>[];
+  for (final entry in v) {
+    final map = _mapOrNull(entry);
+    if (map != null) out.add(map);
+  }
+  return out;
+}
+
+List<String> _stringList(Object? v) {
+  if (v is! List) return const [];
+  return [
+    for (final entry in v)
+      if (entry is String) entry,
+  ];
 }
 
 String _requiredString(Map<String, dynamic> j, String key, String context) {

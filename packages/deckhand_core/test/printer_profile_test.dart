@@ -167,6 +167,60 @@ void main() {
       });
       expect(p.identification.markerFile, 'deckhand.json');
     });
+
+    test('drops malformed optional list entries instead of crashing', () {
+      final p = PrinterProfile.fromJson({
+        'profile_id': 'x',
+        'required_hosts': ['github.com', 7, null, 'api.github.com'],
+        'identification': {
+          'moonraker_objects': ['phrozen_dev', false],
+          'hostname_patterns': [
+            r'^mkspi$',
+            {'bad': 'entry'},
+          ],
+        },
+        'hardware': {
+          'features': ['enclosed', 42],
+        },
+        'stock_os': {
+          'files': [
+            {
+              'id': 'config',
+              'paths': ['/home/mks/printer_data/config', 10],
+            },
+          ],
+        },
+      });
+
+      expect(p.requiredHosts, ['github.com', 'api.github.com']);
+      expect(p.identification.moonrakerObjects, ['phrozen_dev']);
+      expect(p.identification.hostnamePatterns, [r'^mkspi$']);
+      expect(p.hardware.features, ['enclosed']);
+      expect(p.stockOs.files.single.paths, ['/home/mks/printer_data/config']);
+    });
+
+    test('drops malformed optional maps instead of crashing', () {
+      final p = PrinterProfile.fromJson({
+        'profile_id': 'x',
+        'hardware': {
+          'sbc': {1: 'bad key', 'board': 'MKS Pi'},
+          'steppers': [
+            {'id': 'x'},
+            {1: 'bad key', 'id': 'y'},
+          ],
+        },
+        'stack': {
+          'moonraker': {1: 'bad key', 'repo': 'https://github.com/a/b'},
+        },
+      });
+
+      expect(p.hardware.sbc?.board, 'MKS Pi');
+      expect(p.hardware.steppers, [
+        {'id': 'x'},
+        {'id': 'y'},
+      ]);
+      expect(p.stack.moonraker, {'repo': 'https://github.com/a/b'});
+    });
   });
 
   group('PrinterMatch.score', () {

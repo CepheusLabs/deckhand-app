@@ -88,5 +88,21 @@ void main() {
         'release-assets.githubusercontent.com',
       ]);
     });
+
+    test('ignores malformed webui choice maps without dropping good hosts', () {
+      final profile = PrinterProfile.fromJson({
+        'profile_id': 'test-printer',
+        'stack': {
+          'webui': {
+            'choices': [
+              {1: 'bad key', 'repo': 'https://example.com/webui.git'},
+              'not a map',
+            ],
+          },
+        },
+      });
+
+      expect(profileNetworkHosts(profile), ['example.com']);
+    });
   });
 }
