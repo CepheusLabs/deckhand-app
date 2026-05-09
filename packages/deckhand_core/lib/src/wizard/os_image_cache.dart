@@ -147,12 +147,7 @@ Future<_OsImageManifest?> _readOsImageManifest(String imagePath) async {
   final manifestPath = '$imagePath$osImageDownloadManifestSuffix';
   final type = await FileSystemEntity.type(manifestPath, followLinks: false);
   if (type == FileSystemEntityType.notFound) return null;
-  if (type != FileSystemEntityType.file) {
-    throw FileSystemException(
-      'OS image download manifest must be a regular file',
-      manifestPath,
-    );
-  }
+  if (type != FileSystemEntityType.file) return null;
   try {
     final raw = jsonDecode(await File(manifestPath).readAsString());
     if (raw is! Map) return null;

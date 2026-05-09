@@ -35,6 +35,21 @@ void main() {
     expect(entries.single.hashMatchesManifest, isTrue);
   });
 
+  test('scanOsImageCache ignores malformed manifest paths', () async {
+    final root = await Directory.systemTemp.createTemp('deckhand-cache-test-');
+    addTearDown(() => root.delete(recursive: true));
+
+    final image = File(p.join(root.path, 'arco.img'));
+    await image.writeAsBytes(List<int>.filled(1024, 1));
+    await Directory('${image.path}$osImageDownloadManifestSuffix').create();
+
+    final entries = await scanOsImageCache(root.path);
+
+    expect(entries, hasLength(1));
+    expect(entries.single.fileName, 'arco.img');
+    expect(entries.single.hasManifest, isFalse);
+  });
+
   test(
     'deleteOsImageCacheEntry removes image, manifest, and partial',
     () async {
