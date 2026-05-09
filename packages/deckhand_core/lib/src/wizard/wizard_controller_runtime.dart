@@ -46,7 +46,7 @@ Map<String, Object?> _canonicalStepInputsImpl(
 ) {
   final declared = step['idempotency'];
   if (declared is Map && declared['inputs'] is Map) {
-    return (declared['inputs'] as Map).cast<String, Object?>();
+    return _objectMap(declared['inputs']);
   }
   final base = <String, Object?>{'kind': step['kind'], 'id': step['id']};
   if (step['decision_keys'] is List) {
@@ -268,7 +268,7 @@ const _interactiveRunStateStepKinds = <String>{
 
 Map<String, dynamic>? _idempotencyBlock(Map<String, dynamic> step) {
   final raw = step['idempotency'];
-  return raw is Map ? raw.cast<String, dynamic>() : null;
+  return _stringKeyMap(raw);
 }
 
 Future<bool> _runStateCanSkipCompletedStep(
@@ -387,7 +387,7 @@ Future<void> _runSshCommandsImpl(
   Map<String, dynamic> step,
 ) async {
   c._requireSession();
-  final commands = ((step['commands'] as List?) ?? const []).cast<String>();
+  final commands = _stringList(step['commands']);
   final ignore = step['ignore_errors'] as bool? ?? false;
   for (final cmd in commands) {
     // Substituted values (decisions, firmware fields, profile values)
@@ -410,7 +410,7 @@ Future<void> _runSnapshotPathsImpl(
   Map<String, dynamic> step,
 ) async {
   c._requireSession();
-  final pathIds = ((step['paths'] as List?) ?? const []).cast<String>();
+  final pathIds = _stringList(step['paths']);
   final ts = DateTime.now().toUtc().toIso8601String().replaceAll(':', '-');
   for (final id in pathIds) {
     final path = c._profile!.stockOs.paths.firstWhere(
@@ -555,7 +555,7 @@ Future<void> _runInstallMarkerImpl(
   final targetDir =
       step['target_dir'] as String? ??
       '/home/${c._session!.user}/printer_data/config';
-  final extra = (step['extra'] as Map?)?.cast<String, dynamic>() ?? const {};
+  final extra = _stringKeyMap(step['extra']) ?? const {};
 
   final payload = <String, dynamic>{
     'profile_id': pf.id,
@@ -828,9 +828,7 @@ Future<void> _runConditionalImpl(
     c._log(step, '[conditional] skipping - condition false');
     return;
   }
-  final thenSteps = ((step['then'] as List?) ?? const [])
-      .whereType<Map>()
-      .toList();
+  final thenSteps = _stringKeyMapList(step['then']);
   for (final sub in thenSteps) {
     // Honor user-cancellation between sub-steps. Without this, a
     // conditional block of N slow steps swallows a cancel until the
@@ -838,6 +836,36 @@ Future<void> _runConditionalImpl(
     if (c._cancelled) {
       throw WizardCancelledException(c._cancelReason ?? 'cancelled');
     }
-    await c._runStep(sub.cast<String, dynamic>());
+    await c._runStep(sub);
   }
+}
+
+Map<String, Object?> _objectMap(Object? value) {
+  if (value is! Map) return const {};
+  final out = <String, Object?>{};
+  for (final entry in value.entries) {
+    final key = entry.key;
+    if (key is String) out[key] = entry.value as Object?;
+  }
+  return out;
+}
+
+Map<String, dynamic>? _stringKeyMap(Object? value) {
+  if (value is! Map) return null;
+  final out = <String, dynamic>{};
+  for (final entry in value.entries) {
+    final key = entry.key;
+    if (key is String) out[key] = entry.value;
+  }
+  return out;
+}
+
+List<Map<String, dynamic>> _stringKeyMapList(Object? value) {
+  if (value is! Iterable) return const [];
+  return value.map(_stringKeyMap).whereType<Map<String, dynamic>>().toList();
+}
+
+List<String> _stringList(Object? value) {
+  if (value is! Iterable) return const [];
+  return value.whereType<String>().where((s) => s.isNotEmpty).toList();
 }

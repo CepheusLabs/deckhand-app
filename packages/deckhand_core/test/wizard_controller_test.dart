@@ -2489,6 +2489,48 @@ void main() {
       },
     );
 
+    test('runtime skips malformed command and conditional rows', () async {
+      final ssh = FakeSsh();
+      final controller = newController(
+        profileJson: baseProfileJson(
+          stockKeepSteps: [
+            {
+              'id': 'cmd',
+              'kind': 'ssh_commands',
+              'commands': ['touch /tmp/direct', 42],
+            },
+            {
+              'id': 'gate',
+              'kind': 'conditional',
+              'when': 'os_codename_is("buster")',
+              'then': [
+                'bad nested row',
+                {
+                  'id': 'nested',
+                  'kind': 'ssh_commands',
+                  'commands': [42, 'touch /tmp/nested'],
+                },
+              ],
+            },
+          ],
+        ),
+        ssh: ssh,
+      );
+      await controller.loadProfile('test-printer');
+      controller.setFlow(WizardFlow.stockKeep);
+      await controller.setDecision('probe.os_codename', 'buster');
+      controller.setSession(
+        const SshSession(id: 'fake', host: 'h', port: 22, user: 'root'),
+      );
+
+      await controller.startExecution();
+
+      expect(ssh.runCalls.any((c) => c.contains('/tmp/direct')), isTrue);
+      expect(ssh.runCalls.any((c) => c.contains('/tmp/nested')), isTrue);
+      expect(ssh.runCalls.any((c) => c.contains('bad nested row')), isFalse);
+      expect(ssh.runCalls.any((c) => c.trim() == '42'), isFalse);
+    });
+
     test(
       'completed run-state with matching pre-check skips step execution',
       () async {
