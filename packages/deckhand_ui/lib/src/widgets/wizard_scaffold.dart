@@ -96,6 +96,7 @@ class WizardScaffold extends StatelessWidget {
     for (final a in secondaryActions) {
       if (a.isBack) return a;
     }
+    if (primaryAction?.isBack == true) return primaryAction;
     return null;
   }
 
@@ -159,8 +160,16 @@ class WizardScaffold extends StatelessWidget {
                             ),
                           const SizedBox(width: 8),
                         ],
+                        if (primaryAction?.isBack == true) ...[
+                          OutlinedButton.icon(
+                            onPressed: primaryAction!.onPressed,
+                            icon: const Icon(Icons.arrow_back, size: 14),
+                            label: Text(primaryAction!.label),
+                          ),
+                          const SizedBox(width: 8),
+                        ],
                         const Spacer(),
-                        if (primaryAction != null)
+                        if (primaryAction != null && !primaryAction!.isBack)
                           // Destructive actions advertise themselves to
                           // assistive tech so a screen-reader user hears
                           // "flash disk, warning: destructive" before

@@ -59,11 +59,7 @@ void main() {
 
   testWidgets('Escape fires the Back action when present', (tester) async {
     var back = 0;
-    await pumpScaffold(
-      tester,
-      onPrimary: () {},
-      onBack: () => back++,
-    );
+    await pumpScaffold(tester, onPrimary: () {}, onBack: () => back++);
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     await tester.pump();
     expect(back, 1);
@@ -71,11 +67,7 @@ void main() {
 
   testWidgets('Enter does NOT fire a destructive action', (tester) async {
     var clicked = 0;
-    await pumpScaffold(
-      tester,
-      onPrimary: () => clicked++,
-      destructive: true,
-    );
+    await pumpScaffold(tester, onPrimary: () => clicked++, destructive: true);
     await tester.sendKeyEvent(LogicalKeyboardKey.enter);
     await tester.pump();
     // Destructive actions must require a real click — never a
@@ -97,7 +89,44 @@ void main() {
     await tester.pump();
   });
 
-  testWidgets('English label without isBack does NOT receive Esc', (tester) async {
+  testWidgets('primary Back action renders on the left and receives Esc', (
+    tester,
+  ) async {
+    var back = 0;
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          deckhandSettingsProvider.overrideWithValue(
+            DeckhandSettings(path: '<memory>'),
+          ),
+        ],
+        child: MaterialApp(
+          theme: DeckhandTheme.light(),
+          home: WizardScaffold(
+            title: 'Test',
+            body: const SizedBox.shrink(),
+            primaryAction: WizardAction(
+              label: 'Back',
+              onPressed: () => back++,
+              isBack: true,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.widgetWithText(OutlinedButton, 'Back'), findsOneWidget);
+    expect(find.widgetWithText(FilledButton, 'Back'), findsNothing);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pump();
+    expect(back, 1);
+  });
+
+  testWidgets('English label without isBack does NOT receive Esc', (
+    tester,
+  ) async {
     // After removing the legacy English-label heuristic, a back-action
     // that forgot `isBack: true` is correctly not bound to Esc. This
     // test pins the contract so a future revert can't quietly bring
@@ -115,10 +144,7 @@ void main() {
           home: WizardScaffold(
             title: 'Test',
             body: const SizedBox.shrink(),
-            primaryAction: WizardAction(
-              label: 'Continue',
-              onPressed: () {},
-            ),
+            primaryAction: WizardAction(label: 'Continue', onPressed: () {}),
             secondaryActions: [
               WizardAction(label: 'Cancel', onPressed: () => cancel++),
             ],
