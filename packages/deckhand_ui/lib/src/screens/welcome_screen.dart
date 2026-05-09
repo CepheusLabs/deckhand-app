@@ -238,10 +238,17 @@ class _ResumePanelState extends ConsumerState<_ResumePanel> {
     if (store != null) {
       try {
         await store.clear();
-      } catch (_) {
-        // best-effort; falls through to invalidate so the panel
-        // disappears even if the file delete failed (next launch
-        // tries again).
+      } catch (error) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              "Deckhand couldn't discard the saved session: "
+              '${userFacingError(error)}',
+            ),
+          ),
+        );
+        return;
       }
     }
     if (!mounted) return;

@@ -103,6 +103,49 @@ void main() {
       expect(find.widgetWithText(TextButton, 'Discard'), findsOneWidget);
     });
 
+    testWidgets('discard keeps resume card visible when store clear fails', (
+      tester,
+    ) async {
+      await tester.binding.setSurfaceSize(const Size(1200, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      final store = _FailingClearWizardStateStore();
+      await store.save(
+        const WizardState(
+          profileId: 'phrozen-arco',
+          decisions: {},
+          currentStep: 'choose-path',
+          flow: WizardFlow.stockKeep,
+        ),
+      );
+
+      final controller = stubWizardController(profileJson: testProfileJson());
+      await controller.loadProfile('test-printer');
+      await tester.pumpWidget(
+        testHarness(
+          controller: controller,
+          child: const WelcomeScreen(),
+          initialLocation: '/',
+          extraOverrides: [wizardStateStoreProvider.overrideWithValue(store)],
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+
+      final discardButton = find.widgetWithText(TextButton, 'Discard');
+      await tester.ensureVisible(discardButton);
+      await tester.tap(discardButton);
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(FilledButton, 'Discard'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 250));
+
+      expect(find.text('RESUME'), findsOneWidget);
+      expect(find.text('You have one in-progress install.'), findsOneWidget);
+      expect(find.textContaining("Deckhand couldn't discard"), findsOneWidget);
+    });
+
     testWidgets('known printers can open manage without a resume session', (
       tester,
     ) async {
@@ -353,5 +396,12 @@ class _MemoryManagedPrinterRegistry implements ManagedPrinterRegistry {
     if (failSave) {
       throw StateError('write settings failed on \\\\.\\PHYSICALDRIVE3');
     }
+  }
+}
+
+class _FailingClearWizardStateStore extends InMemoryWizardStateStore {
+  @override
+  Future<void> clear() async {
+    throw StateError('delete snapshot failed on \\\\.\\PHYSICALDRIVE3');
   }
 }
