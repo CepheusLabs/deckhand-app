@@ -266,7 +266,7 @@ extension ProfileStatusX on ProfileStatus {
     'beta' => ProfileStatus.beta,
     'stable' => ProfileStatus.stable,
     'deprecated' => ProfileStatus.deprecated,
-    _ => ProfileStatus.alpha,
+    _ => throw ProfileFormatException('unknown profile status "$s"'),
   };
 }
 
@@ -416,15 +416,23 @@ class SshConfig {
   final int defaultPort;
   final List<SshDefaultCredential> defaultCredentials;
   final String? recommendedUserAfterInstall;
-  factory SshConfig.fromJson(Map<String, dynamic> j) => SshConfig(
-    defaultPort: _optionalInt(j['default_port']) ?? 22,
-    defaultCredentials: _listOfMap(
-      j['default_credentials'],
-    ).map(SshDefaultCredential.fromJson).toList(),
-    recommendedUserAfterInstall: _optionalString(
-      j['recommended_user_after_install'],
-    ),
-  );
+  factory SshConfig.fromJson(Map<String, dynamic> j) {
+    final defaultPort = _optionalInt(j['default_port']) ?? 22;
+    if (defaultPort < 1 || defaultPort > 65535) {
+      throw ProfileFormatException(
+        'ssh.default_port must be between 1 and 65535, got $defaultPort',
+      );
+    }
+    return SshConfig(
+      defaultPort: defaultPort,
+      defaultCredentials: _listOfMap(
+        j['default_credentials'],
+      ).map(SshDefaultCredential.fromJson).toList(),
+      recommendedUserAfterInstall: _optionalString(
+        j['recommended_user_after_install'],
+      ),
+    );
+  }
 }
 
 class SshDefaultCredential {

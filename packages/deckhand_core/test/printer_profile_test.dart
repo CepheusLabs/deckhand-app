@@ -377,6 +377,43 @@ void main() {
       expect(p.flows.stockKeep?.enabled, isFalse);
     });
 
+    test(
+      'throws ProfileFormatException for unknown profile status strings',
+      () {
+        expect(
+          () => PrinterProfile.fromJson({
+            'profile_id': 'x',
+            'status': 'production-ready',
+          }),
+          throwsA(
+            isA<ProfileFormatException>().having(
+              (e) => e.message,
+              'message',
+              contains('unknown profile status'),
+            ),
+          ),
+        );
+      },
+    );
+
+    test('throws ProfileFormatException for out-of-range SSH ports', () {
+      for (final port in const [0, 65536]) {
+        expect(
+          () => PrinterProfile.fromJson({
+            'profile_id': 'x',
+            'ssh': {'default_port': port},
+          }),
+          throwsA(
+            isA<ProfileFormatException>().having(
+              (e) => e.message,
+              'message',
+              contains('ssh.default_port'),
+            ),
+          ),
+        );
+      }
+    });
+
     test('throws ProfileFormatException for malformed build volume', () {
       expect(
         () => PrinterProfile.fromJson({
