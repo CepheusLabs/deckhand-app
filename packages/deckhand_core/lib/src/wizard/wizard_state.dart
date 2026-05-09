@@ -152,8 +152,9 @@ class WizardStateStore {
   // saves racing to `rename()` could end up with the older state
   // winning, because completion order of unawaited Futures is not
   // well-defined across platforms' FS implementations.
-  WizardState? _pending;
+  ({int revision, WizardState state})? _pending;
   Future<void>? _inFlight;
+  int _revision = 0;
 
   Future<WizardState?> load() async {
     final file = File(path);
@@ -176,7 +177,8 @@ class WizardStateStore {
   /// routed to [errorSink] rather than thrown back at the caller, so
   /// the wizard never blocks on a flaky disk.
   Future<void> save(WizardState state) {
-    _pending = state;
+    final revision = ++_revision;
+    _pending = (revision: revision, state: state);
     return _inFlight ??= _drain();
   }
 
@@ -185,8 +187,9 @@ class WizardStateStore {
       while (_pending != null) {
         final snap = _pending!;
         _pending = null;
+        if (snap.revision != _revision) continue;
         try {
-          await _writeAtomically(snap);
+          await _writeAtomically(snap.state);
         } catch (e, st) {
           errorSink?.call(e, st);
         }
@@ -214,8 +217,15 @@ class WizardStateStore {
   }
 
   Future<void> clear() async {
+    final clearRevision = ++_revision;
+    _pending = null;
+    final inFlight = _inFlight;
+    if (inFlight != null) await inFlight;
+    if (_revision != clearRevision) return;
     final file = File(path);
     if (await file.exists()) await file.delete();
+    final tmp = File('$path.tmp');
+    if (await tmp.exists()) await tmp.delete();
   }
 }
 

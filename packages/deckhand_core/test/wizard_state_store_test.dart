@@ -200,6 +200,24 @@ void main() {
       expect(await File(sessionPath).exists(), isFalse);
     });
 
+    test('clear suppresses an unawaited pending save', () async {
+      final store = WizardStateStore(path: sessionPath);
+      final save = store.save(
+        const WizardState(
+          profileId: 'phrozen-arco',
+          decisions: {'flash.os': 'armbian-trixie-minimal'},
+          currentStep: 'progress',
+          flow: WizardFlow.freshFlash,
+        ),
+      );
+
+      await store.clear();
+      await save;
+
+      expect(await File(sessionPath).exists(), isFalse);
+      expect(await File('$sessionPath.tmp').exists(), isFalse);
+    });
+
     test('save failures route through errorSink, not throw', () async {
       // Pointing the store at a path whose parent is itself a regular
       // file forces _writeAtomically to fail. The save() future must
