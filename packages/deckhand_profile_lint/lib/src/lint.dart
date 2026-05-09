@@ -592,7 +592,8 @@ void _walkUnsupportedRuntimeFeatures(
           LintSeverity.error,
           'screens[$i].source_kind',
           'screen source_kind "${sourceKind ?? '<missing>'}" is not '
-              'supported by Deckhand yet; supported value: bundled',
+              'supported by Deckhand yet; supported values: bundled, '
+              'stock_in_place, hardware_optional',
         ),
       );
     }

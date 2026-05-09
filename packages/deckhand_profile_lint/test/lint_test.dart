@@ -570,6 +570,10 @@ screens:
             .expand((r) => r.findings.map((f) => f.message))
             .join('\n');
         expect(messages, contains('restore_from_backup'));
+        expect(
+          messages,
+          contains('bundled, stock_in_place, hardware_optional'),
+        );
       },
     );
   });
