@@ -282,6 +282,38 @@ void main() {
     expect(find.textContaining('Windows disk 3'), findsOne);
     expect(find.textContaining('PHYSICALDRIVE3'), findsNothing);
   });
+
+  testWidgets('Profile source rolls back when saving fails', (tester) async {
+    final settings = _MemorySettings(
+      saveError: StateError(r'write settings failed on \\.\PHYSICALDRIVE3'),
+    )..localProfilesDir = 'C:\\deckhand\\old-profiles';
+    final controller = stubWizardController(profileJson: testProfileJson());
+    await controller.loadProfile('test-printer');
+
+    await tester.pumpWidget(
+      testHarness(
+        controller: controller,
+        child: const SettingsScreen(),
+        initialLocation: '/settings',
+        extraOverrides: [deckhandSettingsProvider.overrideWithValue(settings)],
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(find.text('Profiles'));
+    await tester.pump();
+    await tester.enterText(find.byType(TextField), '');
+    await tester.ensureVisible(
+      find.widgetWithText(FilledButton, 'Save profile source'),
+    );
+    await tester.tap(find.widgetWithText(FilledButton, 'Save profile source'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+
+    expect(settings.localProfilesDir, 'C:\\deckhand\\old-profiles');
+    expect(find.textContaining('Windows disk 3'), findsOne);
+    expect(find.textContaining('PHYSICALDRIVE3'), findsNothing);
+  });
 }
 
 class _MemorySettings extends DeckhandSettings {

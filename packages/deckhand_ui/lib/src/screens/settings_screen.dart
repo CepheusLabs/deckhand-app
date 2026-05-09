@@ -137,12 +137,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       }
     }
     final settings = ref.read(deckhandSettingsProvider);
+    final previous = settings.localProfilesDir;
     settings.localProfilesDir = raw.isEmpty ? null : raw;
     try {
       await settings.save();
       setState(() => _localDirError = null);
       _toast('Saved. Restart Deckhand for the profile source to take effect.');
     } catch (e) {
+      settings.localProfilesDir = previous;
       setState(() => _localDirError = userFacingError(e));
     }
   }
