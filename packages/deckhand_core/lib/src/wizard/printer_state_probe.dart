@@ -196,12 +196,11 @@ class PrinterStateProbe {
       'command -v python3.11 >/dev/null 2>&1 && say python311 present || say python311 absent',
     ];
     for (final svc in inv.services) {
-      final unit = _shellEscape(svc.raw['systemd_unit'] as String? ?? '');
-      final proc = _shellEscape(svc.raw['process_pattern'] as String? ?? '');
-      final launchedBy = (svc.raw['launched_by'] as Map?)
-          ?.cast<String, dynamic>();
+      final unit = _shellEscape(_jsonString(svc.raw['systemd_unit']) ?? '');
+      final proc = _shellEscape(_jsonString(svc.raw['process_pattern']) ?? '');
+      final launchedBy = _stringKeyMap(svc.raw['launched_by']);
       final scriptPath = launchedBy != null && launchedBy['kind'] == 'script'
-          ? (launchedBy['path'] as String? ?? '')
+          ? (_jsonString(launchedBy['path']) ?? '')
           : '';
       final qScript = _shellEscape(scriptPath);
       // `id` is inlined unquoted on purpose. Profile ids are already
@@ -254,11 +253,9 @@ class PrinterStateProbe {
     _addStackProbe(lines, 'moonraker', stack.moonraker);
     _addStackProbe(lines, 'kiauh', stack.kiauh);
     _addStackProbe(lines, 'crowsnest', stack.crowsnest);
-    final webuiChoices = ((stack.webui?['choices'] as List?) ?? const [])
-        .cast<Map>();
-    for (final raw in webuiChoices) {
-      final c = raw.cast<String, dynamic>();
-      final id = c['id'] as String?;
+    final webuiChoices = _stringKeyMapList(stack.webui?['choices']);
+    for (final c in webuiChoices) {
+      final id = _jsonString(c['id']);
       if (id == null) continue;
       _addStackProbe(lines, id, c);
     }
@@ -269,13 +266,13 @@ class PrinterStateProbe {
     for (final sc in profile.screens) {
       final raw = sc.raw;
       final installPath =
-          raw['install_path'] as String? ?? raw['source_path'] as String?;
+          _jsonString(raw['install_path']) ?? _jsonString(raw['source_path']);
       if (installPath == null) continue;
       final qPath = _shellPathEscape(installPath);
       lines.add(
         '[ -e $qPath ] && say screen:${sc.id}:installed 1 || say screen:${sc.id}:installed 0',
       );
-      final unit = raw['systemd_unit'] as String?;
+      final unit = _jsonString(raw['systemd_unit']);
       if (unit != null && unit.isNotEmpty) {
         final qUnit = _shellEscape(unit);
         lines.add(
@@ -341,14 +338,14 @@ class PrinterStateProbe {
     Map<String, dynamic>? cfg,
   ) {
     if (cfg == null) return;
-    final installPath = cfg['install_path'] as String?;
+    final installPath = _jsonString(cfg['install_path']);
     if (installPath == null) return;
     final qPath = _shellPathEscape(installPath);
     lines.add(
       '[ -d $qPath ] && say stack:$id:installed 1 || say stack:$id:installed 0',
     );
     lines.add('say stack:$id:path $qPath');
-    final unit = cfg['systemd_unit'] as String?;
+    final unit = _jsonString(cfg['systemd_unit']);
     if (unit != null && unit.isNotEmpty) {
       final qUnit = _shellEscape(unit);
       lines.add(
@@ -628,6 +625,14 @@ Map<String, dynamic>? _stringKeyMap(Object? value) {
     if (key is String) out[key] = entry.value;
   }
   return out;
+}
+
+List<Map<String, dynamic>> _stringKeyMapList(Object? value) {
+  if (value is! List) return const [];
+  return [
+    for (final item in value)
+      if (_stringKeyMap(item) case final mapped?) mapped,
+  ];
 }
 
 class _ServiceAcc {

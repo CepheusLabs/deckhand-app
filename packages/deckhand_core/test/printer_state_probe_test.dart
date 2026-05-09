@@ -371,6 +371,45 @@ void main() {
       expect(script, contains(r"'$(reboot)'"));
       expect(script, isNot(contains(r'"$HOME/$(reboot)"')));
     });
+
+    test('skips malformed launcher, webui, and screen rows', () async {
+      final ssh = _StubSsh();
+      final probe = PrinterStateProbe(ssh: ssh);
+      final profile = PrinterProfile.fromJson({
+        'profile_id': 'p',
+        'stock_os': {
+          'services': [
+            {
+              'id': 'bad_launcher',
+              'systemd_unit': 'bad.service',
+              'launched_by': ['not a map'],
+            },
+          ],
+        },
+        'stack': {
+          'webui': {
+            'choices': [
+              'not a map',
+              {'id': 42, 'install_path': '~/bad'},
+              {'id': 'fluidd', 'install_path': '~/fluidd'},
+            ],
+          },
+        },
+        'screens': [
+          {'id': 'bad_screen', 'install_path': 42},
+          {'id': 'arco_screen', 'install_path': '~/arco-screen'},
+        ],
+      });
+
+      await probe.probe(session: _fakeSession, profile: profile);
+
+      final script = ssh.lastCommand!;
+      expect(script, contains('say stack:fluidd:installed'));
+      expect(script, contains('say screen:arco_screen:installed'));
+      expect(script, isNot(contains('say stack:42:installed')));
+      expect(script, isNot(contains('say screen:bad_screen:installed')));
+      expect(script, isNot(contains('say svc:bad_launcher:launcher_exists')));
+    });
   });
 }
 
