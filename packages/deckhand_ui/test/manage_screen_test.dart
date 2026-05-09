@@ -339,6 +339,11 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 250));
 
+    expect(find.textContaining('restore.img'), findsOneWidget);
+    await tester.tap(find.widgetWithText(FilledButton, 'Continue to target'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+
     expect(find.textContaining('Windows disk 3'), findsOneWidget);
     expect(find.textContaining('PHYSICALDRIVE3'), findsNothing);
     expect(find.textContaining('StateError'), findsNothing);

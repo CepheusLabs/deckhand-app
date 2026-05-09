@@ -735,26 +735,6 @@ class _RestoreTabState extends ConsumerState<_RestoreTab> {
         manifestsAsync.valueOrNull ?? const <EmmcBackupManifest>[];
     final candidates =
         candidatesAsync.valueOrNull ?? const <EmmcBackupImageCandidate>[];
-    if (disksAsync.isLoading && !disksAsync.hasValue) {
-      _publishFooterAction(const _RestoreFooterAction.none());
-      return const Padding(
-        padding: EdgeInsets.only(top: 8),
-        child: DeckhandLoadingBlock(
-          kind: DeckhandLoaderKind.emmcPins,
-          title: 'Scanning disks',
-          message: 'Deckhand is enumerating removable drives before restore.',
-        ),
-      );
-    }
-    if (disksAsync.hasError) {
-      _publishFooterAction(const _RestoreFooterAction.none());
-      return _RestoreProblem(
-        message: userFacingError(disksAsync.error),
-        onRetry: _refreshRestoreSources,
-      );
-    }
-
-    final disks = disksAsync.valueOrNull ?? const <DiskInfo>[];
     final images = _restoreImagesFrom(
       manifests: manifests,
       candidates: candidates,
@@ -812,9 +792,69 @@ class _RestoreTabState extends ConsumerState<_RestoreTab> {
       );
     }
     final image = _selectedImage(images);
+    if (_step == _RestoreStep.backup) {
+      _publishFooterAction(_footerActionFor(image: image, target: null));
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _RestoreStepStrip(step: _step),
+          const SizedBox(height: 12),
+          _buildBackupStep(context: context, images: images, selected: image),
+        ],
+      );
+    }
+    if (image == null) {
+      _publishFooterAction(const _RestoreFooterAction.none());
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: const [
+          _RestoreStepStrip(step: _RestoreStep.backup),
+          SizedBox(height: 12),
+          _RestoreProblem(message: 'No backup image is selected.'),
+        ],
+      );
+    }
+    if (_step == _RestoreStep.progress) {
+      _publishFooterAction(const _RestoreFooterAction.none());
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _RestoreStepStrip(step: _step),
+          const SizedBox(height: 12),
+          _RestoreProgressPanel(
+            checking: _checking,
+            progress: _progress,
+            error: _error,
+            done: _done,
+            onCancel: _busy ? () => unawaited(_cancelRestore()) : null,
+          ),
+        ],
+      );
+    }
+
+    if (disksAsync.isLoading && !disksAsync.hasValue) {
+      _publishFooterAction(const _RestoreFooterAction.none());
+      return const Padding(
+        padding: EdgeInsets.only(top: 8),
+        child: DeckhandLoadingBlock(
+          kind: DeckhandLoaderKind.emmcPins,
+          title: 'Scanning disks',
+          message: 'Deckhand is enumerating removable drives before restore.',
+        ),
+      );
+    }
+    if (disksAsync.hasError) {
+      _publishFooterAction(const _RestoreFooterAction.none());
+      return _RestoreProblem(
+        message: userFacingError(disksAsync.error),
+        onRetry: _refreshRestoreSources,
+      );
+    }
+
+    final disks = disksAsync.valueOrNull ?? const <DiskInfo>[];
     final targetDisks = _restoreTargetDisks(disks);
     final hiddenDiskCount = disks.length - targetDisks.length;
-    final target = image == null ? null : _selectedDisk(targetDisks, image);
+    final target = _selectedDisk(targetDisks, image);
     _publishFooterAction(_footerActionFor(image: image, target: target));
 
     return Column(
@@ -840,13 +880,7 @@ class _RestoreTabState extends ConsumerState<_RestoreTab> {
             selectedImage: image,
             selectedDisk: target,
           ),
-          _RestoreStep.progress => _RestoreProgressPanel(
-            checking: _checking,
-            progress: _progress,
-            error: _error,
-            done: _done,
-            onCancel: _busy ? () => unawaited(_cancelRestore()) : null,
-          ),
+          _RestoreStep.progress => const SizedBox.shrink(),
         },
       ],
     );
