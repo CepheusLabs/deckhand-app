@@ -187,7 +187,24 @@ class SidecarClient implements SidecarConnection {
       id,
       () => StreamController<SidecarNotification>.broadcast(),
     );
-    opSub.stream.listen((n) => controller.add(SidecarProgress(n)));
+    late StreamSubscription<SidecarNotification> opForwardSub;
+    var released = false;
+    Future<void> releaseOperation() async {
+      if (released) return;
+      released = true;
+      _pending.remove(id);
+      _operationSubscribers.remove(id);
+      await opForwardSub.cancel();
+      if (!opSub.isClosed) {
+        await opSub.close();
+      }
+    }
+
+    opForwardSub = opSub.stream.listen((n) {
+      if (!controller.isClosed) {
+        controller.add(SidecarProgress(n));
+      }
+    });
 
     final completer = Completer<Map<String, dynamic>>();
     _pending[id] = completer;
@@ -197,21 +214,30 @@ class SidecarClient implements SidecarConnection {
       'method': method,
       'params': params,
     });
-    unawaited(_sendStreamingRequest(id, msg, controller, opSub));
+    unawaited(_sendStreamingRequest(id, msg, controller, releaseOperation));
 
     completer.future
-        .then((res) {
-          controller.add(SidecarResult(res));
-          controller.close();
-          opSub.close();
-          _operationSubscribers.remove(id);
+        .then((res) async {
+          if (!controller.isClosed) {
+            controller.add(SidecarResult(res));
+            await controller.close();
+          }
+          await releaseOperation();
         })
-        .catchError((Object e, StackTrace st) {
-          controller.addError(e, st);
-          controller.close();
-          opSub.close();
-          _operationSubscribers.remove(id);
+        .catchError((Object e, StackTrace st) async {
+          if (!controller.isClosed) {
+            controller.addError(e, st);
+            await controller.close();
+          }
+          await releaseOperation();
         });
+    controller.onCancel = () async {
+      final shouldCancel = _pending.containsKey(id);
+      await releaseOperation();
+      if (shouldCancel) {
+        await _sendCancelRequest(id);
+      }
+    };
     return controller.stream;
   }
 
@@ -219,21 +245,32 @@ class SidecarClient implements SidecarConnection {
     String id,
     String msg,
     StreamController<SidecarEvent> controller,
-    StreamController<SidecarNotification> opSub,
+    Future<void> Function() releaseOperation,
   ) async {
     try {
       _writeLine(msg);
       await _flush();
     } on Object catch (e, st) {
-      _pending.remove(id);
-      _operationSubscribers.remove(id);
-      if (!opSub.isClosed) {
-        await opSub.close();
-      }
+      await releaseOperation();
       if (!controller.isClosed) {
         controller.addError(e, st);
         await controller.close();
       }
+    }
+  }
+
+  Future<void> _sendCancelRequest(String operationId) async {
+    final msg = jsonEncode({
+      'jsonrpc': '2.0',
+      'id': '${operationId}_cancel',
+      'method': 'jobs.cancel',
+      'params': {'id': operationId},
+    });
+    try {
+      _writeLine(msg);
+      await _flush();
+    } on Object catch (e, st) {
+      _logger?.warn('sidecar jobs.cancel write failed: $e\n$st');
     }
   }
 

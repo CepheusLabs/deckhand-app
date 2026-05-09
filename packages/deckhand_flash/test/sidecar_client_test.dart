@@ -71,6 +71,27 @@ void main() {
       expect(client.operationSubscriberCountForTesting, 0);
     });
 
+    test('callStreaming cancel sends jobs.cancel and releases state', () async {
+      final writes = <String>[];
+      final client = SidecarClient(binaryPath: '/does/not/exist');
+      client.startForTesting(writeLine: writes.add, flush: () async {});
+
+      final sub = client.callStreaming('os.download', const {}).listen((_) {});
+      await Future<void>.delayed(Duration.zero);
+      expect(client.pendingRequestCountForTesting, 1);
+      expect(client.operationSubscriberCountForTesting, 1);
+
+      await sub.cancel();
+
+      expect(client.pendingRequestCountForTesting, 0);
+      expect(client.operationSubscriberCountForTesting, 0);
+      expect(writes, hasLength(2));
+      final request = jsonDecode(writes.first) as Map<String, dynamic>;
+      final cancel = jsonDecode(writes.last) as Map<String, dynamic>;
+      expect(cancel['method'], 'jobs.cancel');
+      expect((cancel['params'] as Map<String, dynamic>)['id'], request['id']);
+    });
+
     test(
       'successful response resolves the pending future with result',
       () async {
