@@ -50,6 +50,18 @@ void main() {
     expect(entries.single.hasManifest, isFalse);
   });
 
+  test('scanOsImageCache ignores empty image files', () async {
+    final root = await Directory.systemTemp.createTemp('deckhand-cache-test-');
+    addTearDown(() => root.delete(recursive: true));
+
+    await File(p.join(root.path, 'empty.img')).writeAsBytes(const []);
+    await File(p.join(root.path, 'real.img')).writeAsBytes([1]);
+
+    final entries = await scanOsImageCache(root.path);
+
+    expect(entries.map((entry) => entry.fileName), ['real.img']);
+  });
+
   test(
     'deleteOsImageCacheEntry removes image, manifest, and partial',
     () async {

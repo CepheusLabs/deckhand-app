@@ -60,6 +60,7 @@ Future<List<OsImageCacheEntry>> scanOsImageCache(String root) async {
     final fileType = await FileSystemEntity.type(path, followLinks: false);
     if (fileType != FileSystemEntityType.file) continue;
     final stat = await entity.stat();
+    if (stat.size <= 0) continue;
     final manifest = await _readOsImageManifest(path);
     entries.add(
       OsImageCacheEntry(
