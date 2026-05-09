@@ -209,6 +209,24 @@ void main() {
       },
     );
 
+    test('skips backup rows with blank paths', () async {
+      ssh.nextStdout = [
+        'backup\t:::/tmp/blank-original.deckhand-pre-1776910000000:::',
+        'backup\t/etc/apt/sources.list::::::',
+        'backup\t/etc/apt/sources.list:::/etc/apt/sources.list.deckhand-pre-1776910000000:::',
+      ].join('\n');
+      final state = await probe.probe(
+        session: _fakeSession,
+        profile: _minimalProfile,
+      );
+
+      expect(state.deckhandBackups, hasLength(1));
+      expect(
+        state.deckhandBackups.single.originalPath,
+        '/etc/apt/sources.list',
+      );
+    });
+
     test('malformed lines are silently skipped', () async {
       ssh.nextStdout = [
         'garbage-line-no-tab',

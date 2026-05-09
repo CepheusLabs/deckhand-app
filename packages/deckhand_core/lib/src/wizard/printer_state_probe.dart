@@ -19,6 +19,7 @@ class DeckhandBackup {
   });
   final String originalPath;
   final String backupPath;
+
   /// Sidecar metadata (when `.meta.json` was readable). Null means
   /// either the backup predates the sidecar feature, or the sidecar
   /// existed but didn't parse.
@@ -81,6 +82,7 @@ class PrinterState {
   // Screen id -> InstallState. Same idea for profile.screens.
   final Map<String, InstallState> screenInstalls;
   final bool python311Installed;
+
   /// Deckhand-created `<target>.deckhand-pre-<timestamp>` backup files
   /// discovered on the printer. Surfaced so the wizard can offer to
   /// restore them before proceeding (e.g. a prior run overwrote
@@ -89,11 +91,11 @@ class PrinterState {
   // From /etc/os-release. The profile often claims the printer is
   // still on the vendor-shipped OS, but users upgrade - we should key
   // conditional steps off what's actually there.
-  final String? osId;             // "debian", "ubuntu", "armbian"
-  final String? osCodename;       // "buster", "bookworm", "trixie"
-  final String? osVersionId;      // "10", "12", "13"
+  final String? osId; // "debian", "ubuntu", "armbian"
+  final String? osCodename; // "buster", "bookworm", "trixie"
+  final String? osVersionId; // "10", "12", "13"
   final String? pythonDefaultVersion; // "3.7.3", "3.13.0"
-  final String? kernelRelease;    // `uname -r`
+  final String? kernelRelease; // `uname -r`
   // Null iff a probe hasn't run yet.
   final DateTime? probedAt;
 
@@ -266,11 +268,13 @@ class PrinterStateProbe {
     // install_path existence in that case.
     for (final sc in profile.screens) {
       final raw = sc.raw;
-      final installPath = raw['install_path'] as String?
-          ?? raw['source_path'] as String?;
+      final installPath =
+          raw['install_path'] as String? ?? raw['source_path'] as String?;
       if (installPath == null) continue;
       final qPath = _shellPathEscape(installPath);
-      lines.add('[ -e $qPath ] && say screen:${sc.id}:installed 1 || say screen:${sc.id}:installed 0');
+      lines.add(
+        '[ -e $qPath ] && say screen:${sc.id}:installed 1 || say screen:${sc.id}:installed 0',
+      );
       final unit = raw['systemd_unit'] as String?;
       if (unit != null && unit.isNotEmpty) {
         final qUnit = _shellEscape(unit);
@@ -340,7 +344,9 @@ class PrinterStateProbe {
     final installPath = cfg['install_path'] as String?;
     if (installPath == null) return;
     final qPath = _shellPathEscape(installPath);
-    lines.add('[ -d $qPath ] && say stack:$id:installed 1 || say stack:$id:installed 0');
+    lines.add(
+      '[ -d $qPath ] && say stack:$id:installed 1 || say stack:$id:installed 0',
+    );
     lines.add('say stack:$id:path $qPath');
     final unit = cfg['systemd_unit'] as String?;
     if (unit != null && unit.isNotEmpty) {
@@ -389,11 +395,26 @@ class PrinterStateProbe {
       final unq = val.startsWith('"') && val.endsWith('"') && val.length >= 2
           ? val.substring(1, val.length - 1)
           : val;
-      if (key == 'os:id') { osId = unq; continue; }
-      if (key == 'os:codename') { osCodename = unq; continue; }
-      if (key == 'os:version_id') { osVersionId = unq; continue; }
-      if (key == 'kernel') { kernel = unq; continue; }
-      if (key == 'python:default') { pythonDefault = unq; continue; }
+      if (key == 'os:id') {
+        osId = unq;
+        continue;
+      }
+      if (key == 'os:codename') {
+        osCodename = unq;
+        continue;
+      }
+      if (key == 'os:version_id') {
+        osVersionId = unq;
+        continue;
+      }
+      if (key == 'kernel') {
+        kernel = unq;
+        continue;
+      }
+      if (key == 'python:default') {
+        pythonDefault = unq;
+        continue;
+      }
       if (key == 'python311') {
         python = val == 'present';
         continue;
@@ -442,8 +463,9 @@ class PrinterStateProbe {
         // on one line).
         final parts = val.split(':::');
         if (parts.length < 2) continue;
-        final original = parts[0];
-        final backupPath = parts[1];
+        final original = parts[0].trim();
+        final backupPath = parts[1].trim();
+        if (original.isEmpty || backupPath.isEmpty) continue;
         final metaRaw = parts.length >= 3 ? parts[2] : '';
         String? profileId;
         String? profileVersion;
@@ -477,14 +499,16 @@ class PrinterStateProbe {
         // Fall back to extracting timestamp from the filename when the
         // sidecar is missing (older Deckhand runs).
         createdAt ??= _backupTimestampAsDate(backupPath);
-        backups.add(DeckhandBackup(
-          originalPath: original,
-          backupPath: backupPath,
-          profileId: profileId,
-          profileVersion: profileVersion,
-          stepId: stepId,
-          createdAt: createdAt,
-        ));
+        backups.add(
+          DeckhandBackup(
+            originalPath: original,
+            backupPath: backupPath,
+            profileId: profileId,
+            profileVersion: profileVersion,
+            stepId: stepId,
+            createdAt: createdAt,
+          ),
+        );
         continue;
       }
     }
@@ -526,10 +550,12 @@ class PrinterStateProbe {
       // extracted from the filename.
       deckhandBackups: [...backups]
         ..sort((a, b) {
-          final at = a.createdAt?.millisecondsSinceEpoch ??
+          final at =
+              a.createdAt?.millisecondsSinceEpoch ??
               _parseBackupTimestamp(a.backupPath) ??
               0;
-          final bt = b.createdAt?.millisecondsSinceEpoch ??
+          final bt =
+              b.createdAt?.millisecondsSinceEpoch ??
               _parseBackupTimestamp(b.backupPath) ??
               0;
           return bt.compareTo(at);
@@ -548,11 +574,11 @@ class PrinterStateProbe {
   /// profile-tagged `.deckhand-pre-<profile-id>-<ts>` form we emit
   /// now. Returns null on mismatch.
   static int? _parseBackupTimestamp(String backupPath) {
-    final tagged = RegExp(r'\.deckhand-pre-[A-Za-z0-9_-]+-(\d+)$')
-        .firstMatch(backupPath);
+    final tagged = RegExp(
+      r'\.deckhand-pre-[A-Za-z0-9_-]+-(\d+)$',
+    ).firstMatch(backupPath);
     if (tagged != null) return int.tryParse(tagged.group(1)!);
-    final legacy =
-        RegExp(r'\.deckhand-pre-(\d+)$').firstMatch(backupPath);
+    final legacy = RegExp(r'\.deckhand-pre-(\d+)$').firstMatch(backupPath);
     return legacy == null ? null : int.tryParse(legacy.group(1)!);
   }
 
