@@ -184,9 +184,14 @@ class _LogLine extends StatelessWidget {
   static String formatForClipboard(List<String> lines, WizardLogMode mode) {
     return [
       for (var i = 0; i < lines.length; i++)
-        '${_ordinalLabel(i)}\t${_parse(lines[i], mode).tag}\t${_parse(lines[i], mode).msg}',
+        _formatClipboardLine(i, _parse(lines[i], mode)),
     ].join('\n');
   }
+
+  static String _formatClipboardLine(int ordinal, _Parsed parsed) =>
+      '${_ordinalLabel(ordinal).padRight(9)}  '
+      '${parsed.tag.padRight(6)}  '
+      '${parsed.msg}';
 
   /// Synthesize a `mm:ss.frac`-shaped marker from the line index.
   static String _ordinalLabel(int n) {
