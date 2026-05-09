@@ -26,6 +26,21 @@ class _ScreenChoiceScreenState extends ConsumerState<ScreenChoiceScreen> {
     return status != 'alpha' && status != 'experimental';
   }
 
+  String? _defaultChoice(List<dynamic> screens, dynamic probe) {
+    for (final s in screens) {
+      if (probe.screenInstalls[s.id]?.active == true && _isSelectable(s)) {
+        return s.id as String?;
+      }
+    }
+    for (final s in screens) {
+      if (s.recommended == true && _isSelectable(s)) return s.id as String?;
+    }
+    for (final s in screens) {
+      if (_isSelectable(s)) return s.id as String?;
+    }
+    return null;
+  }
+
   @override
   Widget build(BuildContext context) {
     ref.watch(wizardStateProvider);
@@ -33,20 +48,12 @@ class _ScreenChoiceScreenState extends ConsumerState<ScreenChoiceScreen> {
     final screens = controller.profile?.screens ?? const [];
     final probe = controller.printerState;
 
+    if (_choice != null) {
+      final selected = screens.where((s) => s.id == _choice).firstOrNull;
+      if (selected == null || !_isSelectable(selected)) _choice = null;
+    }
     if (_choice == null && screens.isNotEmpty) {
-      _choice = screens
-          .firstWhere(
-            (s) => probe.screenInstalls[s.id]?.active == true &&
-                _isSelectable(s),
-            orElse: () => screens.firstWhere(
-              (s) => s.recommended && _isSelectable(s),
-              orElse: () => screens.firstWhere(
-                _isSelectable,
-                orElse: () => screens.first,
-              ),
-            ),
-          )
-          .id;
+      _choice = _defaultChoice(screens, probe);
     }
 
     return WizardScaffold(
@@ -184,10 +191,7 @@ class _ScreenCard extends StatelessWidget {
             if (installState != null) ...[
               const SizedBox(height: 10),
               Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 8,
-                  vertical: 2,
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                 decoration: BoxDecoration(
                   color: (installState == 'running' ? tokens.ok : tokens.info)
                       .withValues(alpha: 0.10),
@@ -204,8 +208,7 @@ class _ScreenCard extends StatelessWidget {
                     fontSize: 9,
                     fontWeight: FontWeight.w600,
                     letterSpacing: 0.06 * 9,
-                    color:
-                        installState == 'running' ? tokens.ok : tokens.info,
+                    color: installState == 'running' ? tokens.ok : tokens.info,
                   ),
                 ),
               ),
