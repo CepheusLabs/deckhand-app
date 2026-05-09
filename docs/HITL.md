@@ -220,7 +220,7 @@ Failure modes:
   status probe. Test coverage in
   [`scenario_runner_test.dart`](../packages/deckhand_hitl/test/scenario_runner_test.dart)
   pins the security service contract (token single-use,
-  fingerprint round-trip, allow-list persistence).
+  fingerprint round-trip, approved-host persistence).
 - Rig BOM and wiring: implemented at
   [`packaging/hitl/README.md`](../packaging/hitl/README.md);
   `reset-rig.sh` and `open-broken-issue.sh` shell out to

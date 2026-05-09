@@ -133,8 +133,8 @@ steps are driven by that profile.
 - `ProfileService.ensureCached(profile_id, tag)` - shallow clone of the
   builds repo tag into the local cache.
 - `SecurityService.requestHostApprovals(profile.required_hosts)` - batch
-  prompts the user for network allow-list approval before we hit any of
-  the hosts the profile declares.
+  prompts the user for profile network approval before Deckhand contacts
+  any declared host.
 
 **Notes.**
 
@@ -804,7 +804,7 @@ and "Quit" (save state to `state/recent_activity.json` so S10 can resume).
   "use edge (main branch) for profile X" toggle.
 - **Appearance** - theme (system/light/dark), density (compact/comfy).
 - **Advanced** - GitHub API token (for unauthenticated rate-limit relief),
-  allow-listed hosts (network egress), sidecar path override.
+  approved network hosts, sidecar path override.
 
 ---
 

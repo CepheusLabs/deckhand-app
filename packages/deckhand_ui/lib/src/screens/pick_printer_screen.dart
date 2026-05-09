@@ -29,8 +29,8 @@ class _PickPrinterScreenState extends ConsumerState<PickPrinterScreen> {
   String? _loadProfileError;
 
   Future<ProfileRegistry> _fetchRegistry(BuildContext context) {
-    // The fetch goes through HostApprovalGate so the network allow-
-    // list prompt fires before the actual HTTP / git call. The gate
+    // The fetch goes through HostApprovalGate so the network approval
+    // prompt fires before the actual HTTP / git call. The gate
     // either approves + retries, or rethrows HostNotApprovedException
     // for the FutureBuilder to render via _ErrorBox.
     return HostApprovalGate.runGuarded<ProfileRegistry>(

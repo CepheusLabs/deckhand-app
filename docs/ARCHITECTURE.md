@@ -382,14 +382,13 @@ Sidecar is bundled alongside the app binary. On install:
   contract, but `ProfileScriptRuntime.loadScript` throws
   `ProfileScriptDisabledException` until a capability-scoped isolate
   sandbox, static-analysis pass, and signed-tag gating all ship together.
-- **Network allow-list (strict by default)** - Deckhand ships with an empty
-  host allow-list. Any outbound connection (GitHub, Armbian mirror, the
-  printer's IP, etc.) triggers a one-time "Allow this host?" prompt in the
-  UI showing the URL + the operation that requested it. Approvals persist
-  to `settings.json`; users can revoke them in Settings. Profiles can
-  declare their required hosts up front (`profile.yaml` field) so the
-  wizard can batch-approve them at install start with one prompt instead of
-  many per-step interruptions.
+- **Network approvals (strict by default)** - Deckhand ships with no
+  pre-approved internet hosts. Any outbound connection to a non-printer
+  host (GitHub, Armbian mirror, release asset host, etc.) must be approved
+  before the request is issued. Approvals persist to `settings.json`; users
+  can revoke them in Settings. Profiles declare their required hosts up
+  front (`profile.yaml` field), and the wizard batches those approvals at
+  install start instead of interrupting each download step.
 - **Dry-run mode** - the `dry_run` setting routes every destructive
   operation through a synthetic progress stream instead of the sidecar
   (see `SidecarFlashService.dryRun`). A persistent banner on every
@@ -491,9 +490,10 @@ discover them without needing to know to search:
 - **Egress visualization** — `SecurityService.egressEvents` (see
   [`security_service.dart`](../packages/deckhand_core/lib/src/services/security_service.dart))
   exposes a broadcast stream of every approved outbound HTTP request.
-  S900-progress's "Network" tab subscribes; the debug bundle's
+  S900-progress's "Network" tab subscribes when developer mode is on or
+  when host-side HTTP traffic exists; the debug bundle's
   `network.jsonl` captures it for support
-  ([DEBUG-BUNDLES.md](DEBUG-BUNDLES.md)). Strict allow-list
+  ([DEBUG-BUNDLES.md](DEBUG-BUNDLES.md)). Strict network approval
   ([Security model](#security-model) below) gates approval; this
   feature gives users live visibility into approvals that have
   already been granted.
@@ -530,8 +530,8 @@ discover them without needing to know to search:
 3. **SSH library** - `dartssh2`.
 4. **Elevation model** - separate `deckhand-elevated-helper` binary for
    flash ops; sidecar stays unprivileged.
-5. **Network policy** - strict allow-list, empty by default, profile-declared
-   hosts batch-approved at wizard start.
+5. **Network policy** - strict network approvals, empty by default,
+   profile-declared hosts batch-approved at wizard start.
 6. **Trust root** - bundled PGP keyring shipped as a Flutter asset;
    compromise rotation is a coordinated Deckhand + deckhand-profiles
    release. See [PROFILE-TRUST.md](PROFILE-TRUST.md).
