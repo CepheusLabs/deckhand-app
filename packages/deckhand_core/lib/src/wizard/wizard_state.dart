@@ -3,6 +3,8 @@ import 'dart:io';
 
 import 'wizard_flow.dart';
 
+const Object _copyWithUnset = Object();
+
 /// Decision key set once the user has reinstalled the flashed eMMC,
 /// powered the printer on, and selected/confirmed the printer that
 /// Deckhand should wait for over SSH.
@@ -84,17 +86,23 @@ class WizardState {
     Map<String, Object>? decisions,
     String? currentStep,
     WizardFlow? flow,
-    String? sshHost,
-    int? sshPort,
-    String? sshUser,
+    Object? sshHost = _copyWithUnset,
+    Object? sshPort = _copyWithUnset,
+    Object? sshUser = _copyWithUnset,
   }) => WizardState(
     profileId: profileId ?? this.profileId,
     decisions: decisions ?? this.decisions,
     currentStep: currentStep ?? this.currentStep,
     flow: flow ?? this.flow,
-    sshHost: sshHost ?? this.sshHost,
-    sshPort: sshPort ?? this.sshPort,
-    sshUser: sshUser ?? this.sshUser,
+    sshHost: identical(sshHost, _copyWithUnset)
+        ? this.sshHost
+        : sshHost as String?,
+    sshPort: identical(sshPort, _copyWithUnset)
+        ? this.sshPort
+        : sshPort as int?,
+    sshUser: identical(sshUser, _copyWithUnset)
+        ? this.sshUser
+        : sshUser as String?,
   );
 }
 

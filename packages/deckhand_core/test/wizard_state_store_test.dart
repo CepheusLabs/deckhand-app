@@ -85,6 +85,28 @@ void main() {
       expect(decoded.sshPort, isNull);
       expect(decoded.sshUser, isNull);
     });
+
+    test('copyWith can clear optional SSH fields', () {
+      const state = WizardState(
+        profileId: 'phrozen-arco',
+        decisions: {},
+        currentStep: 'connect',
+        flow: WizardFlow.stockKeep,
+        sshHost: '192.168.1.50',
+        sshPort: 2222,
+        sshUser: 'mks',
+      );
+
+      final cleared = state.copyWith(
+        sshHost: null,
+        sshPort: null,
+        sshUser: null,
+      );
+
+      expect(cleared.sshHost, isNull);
+      expect(cleared.sshPort, isNull);
+      expect(cleared.sshUser, isNull);
+    });
   });
 
   group('WizardStateStore', () {
