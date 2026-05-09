@@ -28,6 +28,31 @@ void main() {
       );
     });
 
+    test('callStreaming surfaces stdin flush failures and cleans up', () async {
+      final client = SidecarClient(binaryPath: '/does/not/exist');
+      client.startForTesting(
+        writeLine: (_) {},
+        flush: () async {
+          throw const SidecarError(code: -1, message: 'stdin closed');
+        },
+      );
+
+      final stream = client.callStreaming('disks.write_image', const {});
+
+      await expectLater(
+        stream,
+        emitsError(
+          isA<SidecarError>().having(
+            (e) => e.message,
+            'message',
+            'stdin closed',
+          ),
+        ),
+      );
+      expect(client.pendingRequestCountForTesting, 0);
+      expect(client.operationSubscriberCountForTesting, 0);
+    });
+
     test(
       'successful response resolves the pending future with result',
       () async {

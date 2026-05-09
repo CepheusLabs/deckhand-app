@@ -50,6 +50,8 @@ class SidecarClient implements SidecarConnection {
       <String, StreamController<SidecarNotification>>{};
   StreamSubscription<String>? _stdoutSub;
   bool _started = false;
+  void Function(String line)? _writeLineOverride;
+  Future<void> Function()? _flushOverride;
 
   /// All notifications from the sidecar. Each one carries an
   /// `operation_id` that correlates it to the request that spawned it.
@@ -130,8 +132,15 @@ class SidecarClient implements SidecarConnection {
       'method': method,
       'params': params,
     });
-    _process!.stdin.writeln(msg);
-    await _process!.stdin.flush();
+    try {
+      _writeLine(msg);
+      await _flush();
+    } on Object catch (e, st) {
+      _pending.remove(id);
+      if (!completer.isCompleted) {
+        completer.completeError(e, st);
+      }
+    }
     return completer.future;
   }
 
@@ -181,11 +190,7 @@ class SidecarClient implements SidecarConnection {
       'method': method,
       'params': params,
     });
-    _process!.stdin.writeln(msg);
-    // Await the flush so the callStreaming path has the same ordering
-    // guarantees as call() - the previous unawaited flush was a
-    // latent race between stdin delivery and the completer plumbing.
-    unawaited(_process!.stdin.flush());
+    unawaited(_sendStreamingRequest(id, msg, controller, opSub));
 
     completer.future
         .then((res) {
@@ -201,6 +206,28 @@ class SidecarClient implements SidecarConnection {
           _operationSubscribers.remove(id);
         });
     return controller.stream;
+  }
+
+  Future<void> _sendStreamingRequest(
+    String id,
+    String msg,
+    StreamController<SidecarEvent> controller,
+    StreamController<SidecarNotification> opSub,
+  ) async {
+    try {
+      _writeLine(msg);
+      await _flush();
+    } on Object catch (e, st) {
+      _pending.remove(id);
+      _operationSubscribers.remove(id);
+      if (!opSub.isClosed) {
+        await opSub.close();
+      }
+      if (!controller.isClosed) {
+        controller.addError(e, st);
+        await controller.close();
+      }
+    }
   }
 
   /// Cleanly shut the sidecar down. Best-effort: if the graceful
@@ -233,6 +260,8 @@ class SidecarClient implements SidecarConnection {
     _operationSubscribers.clear();
     _process = null;
     _started = false;
+    _writeLineOverride = null;
+    _flushOverride = null;
   }
 
   // -----------------------------------------------------------------
@@ -254,6 +283,47 @@ class SidecarClient implements SidecarConnection {
   ) {
     _pending[id] = completer;
     return id;
+  }
+
+  @visibleForTesting
+  void startForTesting({
+    required void Function(String line) writeLine,
+    required Future<void> Function() flush,
+  }) {
+    _started = true;
+    _writeLineOverride = writeLine;
+    _flushOverride = flush;
+  }
+
+  @visibleForTesting
+  int get pendingRequestCountForTesting => _pending.length;
+
+  @visibleForTesting
+  int get operationSubscriberCountForTesting => _operationSubscribers.length;
+
+  void _writeLine(String line) {
+    final override = _writeLineOverride;
+    if (override != null) {
+      override(line);
+      return;
+    }
+    final process = _process;
+    if (process == null) {
+      throw StateError('SidecarClient not started');
+    }
+    process.stdin.writeln(line);
+  }
+
+  Future<void> _flush() {
+    final override = _flushOverride;
+    if (override != null) {
+      return override();
+    }
+    final process = _process;
+    if (process == null) {
+      throw StateError('SidecarClient not started');
+    }
+    return process.stdin.flush();
   }
 
   void _handleLine(String line) {
