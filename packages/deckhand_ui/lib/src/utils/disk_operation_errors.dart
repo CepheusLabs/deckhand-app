@@ -2,6 +2,10 @@ final _physicalDriveRe = RegExp(
   r'(?:\\\\\.\\)?PHYSICALDRIVE(\d+)|PhysicalDrive(\d+)',
   caseSensitive: false,
 );
+final _volumeGuidRe = RegExp(
+  r'\\\\\?\\Volume\{[0-9a-f-]+\}\\?',
+  caseSensitive: false,
+);
 
 String userFacingDiskOperationError(Object? error) {
   final message = _stripExceptionPrefixes(
@@ -16,6 +20,9 @@ String userFacingDiskOperationError(Object? error) {
   }
   if (lower.contains('lock volume') && lower.contains('access is denied')) {
     return 'Windows would not release the selected disk. Close File Explorer, Disk Management, terminals, and any app using that USB drive, then unplug/replug the adapter and retry.';
+  }
+  if (lower.contains('query volume') && lower.contains('incorrect function')) {
+    return 'Windows could not inspect a partition on the selected disk. Replug the USB adapter and retry; if it repeats, use a different eMMC reader or clear stale drive letters in Disk Management.';
   }
   if (lower.contains('access is denied') && lower.contains('physicaldrive')) {
     final disk = _friendlyDiskName(message) ?? 'the selected disk';
@@ -33,10 +40,12 @@ String userFacingDiskOperationError(Object? error) {
 }
 
 String hideRawDiskIds(String message) {
-  return message.replaceAllMapped(_physicalDriveRe, (match) {
-    final number = match.group(1) ?? match.group(2) ?? '';
-    return 'Windows disk $number';
-  });
+  return message
+      .replaceAllMapped(_physicalDriveRe, (match) {
+        final number = match.group(1) ?? match.group(2) ?? '';
+        return 'Windows disk $number';
+      })
+      .replaceAll(_volumeGuidRe, 'the selected volume');
 }
 
 String _stripExceptionPrefixes(String message) {

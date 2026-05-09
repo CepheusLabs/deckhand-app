@@ -358,6 +358,17 @@ void main() {
       expect(message, isNot(contains('PHYSICALDRIVE3')));
     });
 
+    test('progressRunErrorMessage explains Windows volume query failures', () {
+      final message = progressRunErrorMessage(
+        r'StepExecutionException: prepare target: query volume \\?\Volume{81442efe-49a7-11f1-bd05-4c23380248b8}\ extents: Incorrect function.',
+      );
+
+      expect(message, contains('Windows could not inspect'));
+      expect(message, contains('Replug the USB adapter'));
+      expect(message, isNot(contains(r'\\?\Volume')));
+      expect(message, isNot(contains('StepExecutionException')));
+    });
+
     testWidgets('running install can be canceled from progress screen', (
       tester,
     ) async {
