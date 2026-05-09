@@ -217,9 +217,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       _preflightRunning = true;
       _preflightError = null;
     });
+    DeckhandSettings? settingsForRollback;
+    Map<String, dynamic>? previousPreflight;
     try {
       final report = await ref.read(doctorServiceProvider).run();
       final settings = ref.read(deckhandSettingsProvider);
+      settingsForRollback = settings;
+      final existing = settings.lastPreflight;
+      previousPreflight = existing == null ? null : Map.of(existing);
       settings.lastPreflight = _encodePreflightReport(report);
       await settings.save();
       ref.invalidate(preflightReportProvider);
@@ -229,6 +234,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         _preflightRunning = false;
       });
     } catch (e) {
+      settingsForRollback?.lastPreflight = previousPreflight;
       if (!mounted) return;
       setState(() {
         _preflightRunning = false;

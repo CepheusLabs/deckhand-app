@@ -53,6 +53,59 @@ void main() {
     expect(settings.lastPreflight?['passed'], isFalse);
   });
 
+  testWidgets('Preflight cache rolls back when saving fails', (tester) async {
+    final settings =
+        _MemorySettings(
+            saveError: StateError(
+              r'write settings failed on \\.\PHYSICALDRIVE3',
+            ),
+          )
+          ..lastPreflight = {
+            'passed': true,
+            'results': <Map<String, Object?>>[],
+            'report': '[PASS] cached',
+            'at': '2026-05-04T12:00:00.000Z',
+          };
+    final doctor = _CountingDoctor(
+      const DoctorReport(
+        passed: false,
+        results: [
+          DoctorResult(
+            name: 'disks_enumerate',
+            status: DoctorStatus.fail,
+            detail: 'Get-Disk failed',
+          ),
+        ],
+        report: '[FAIL] disks_enumerate — Get-Disk failed',
+      ),
+    );
+    final controller = stubWizardController(profileJson: testProfileJson());
+    await controller.loadProfile('test-printer');
+
+    await tester.pumpWidget(
+      testHarness(
+        controller: controller,
+        child: const SettingsScreen(),
+        initialLocation: '/settings',
+        doctor: doctor,
+        extraOverrides: [deckhandSettingsProvider.overrideWithValue(settings)],
+      ),
+    );
+
+    await tester.tap(find.widgetWithText(FilledButton, 'Run preflight'));
+    await tester.pump();
+    await tester.runAsync(() async {
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+    });
+    await tester.pump();
+
+    expect(doctor.calls, 1);
+    expect(settings.lastPreflight?['passed'], isTrue);
+    expect(settings.lastPreflight?['report'], '[PASS] cached');
+    expect(find.textContaining('Windows disk 3'), findsOne);
+    expect(find.textContaining('PHYSICALDRIVE3'), findsNothing);
+  });
+
   testWidgets('SettingsScreen lists and deletes cached OS images', (
     tester,
   ) async {
