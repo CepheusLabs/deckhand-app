@@ -620,6 +620,13 @@ func runWriteImage(args []string) {
 	if info, err := src.Stat(); err == nil {
 		total = info.Size()
 	}
+	if total > 0 && total%rawDiskSectorSize != 0 {
+		fatalf(
+			"image size %d is not a multiple of %d bytes; refusing raw disk write",
+			total,
+			rawDiskSectorSize,
+		)
+	}
 
 	releaseTarget, err := prepareWriteTarget(req.DevicePath)
 	if err != nil {
@@ -638,7 +645,6 @@ func runWriteImage(args []string) {
 	defer func() { _ = dst.Close() }()
 
 	hasher := sha256.New()
-	mw := io.MultiWriter(dst, hasher)
 
 	buf := make([]byte, 4<<20) // 4 MiB
 	var done int64
@@ -648,7 +654,7 @@ func runWriteImage(args []string) {
 		fatalIfCanceled(req.CancelFile, nil)
 		n, rerr := src.Read(buf)
 		if n > 0 {
-			if _, werr := mw.Write(buf[:n]); werr != nil {
+			if werr := writeRawImageChunk(dst, hasher, buf[:n]); werr != nil {
 				fatalf("write: %v", werr)
 			}
 			done += int64(n)
@@ -699,6 +705,82 @@ func runWriteImage(args []string) {
 	}
 
 	emitJSON(map[string]any{"event": "done", "sha256": srcSha, "bytes": done})
+}
+
+const rawDiskSectorSize = 512
+
+func writeRawImageChunk(dst io.Writer, checksum io.Writer, chunk []byte) error {
+	if err := writeRawDeviceBytes(dst, chunk); err != nil {
+		return err
+	}
+	if _, err := checksum.Write(chunk); err != nil {
+		return fmt.Errorf("hash written bytes: %w", err)
+	}
+	return nil
+}
+
+func writeRawDeviceBytes(dst io.Writer, chunk []byte) error {
+	return writeRawDeviceBytesWithRetry(dst, chunk, isRetryableRawWriteError)
+}
+
+func writeRawDeviceBytesWithRetry(
+	dst io.Writer,
+	chunk []byte,
+	retryable func(error) bool,
+) error {
+	if len(chunk) == 0 {
+		return nil
+	}
+	wrote, err := writeFull(dst, chunk)
+	if err == nil {
+		return nil
+	}
+	if wrote > 0 || !retryable(err) || len(chunk) <= rawDiskSectorSize {
+		return err
+	}
+
+	size := rawWriteRetryChunkSize(len(chunk))
+	for off := 0; off < len(chunk); off += size {
+		end := off + size
+		if end > len(chunk) {
+			end = len(chunk)
+		}
+		if err := writeRawDeviceBytesWithRetry(
+			dst,
+			chunk[off:end],
+			retryable,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func writeFull(dst io.Writer, chunk []byte) (int, error) {
+	var wrote int
+	for len(chunk) > 0 {
+		n, err := dst.Write(chunk)
+		if n > 0 {
+			wrote += n
+			chunk = chunk[n:]
+		}
+		if err != nil {
+			return wrote, err
+		}
+		if n == 0 {
+			return wrote, io.ErrShortWrite
+		}
+	}
+	return wrote, nil
+}
+
+func rawWriteRetryChunkSize(length int) int {
+	for _, size := range []int{1 << 20, 256 << 10, 64 << 10, 4 << 10, rawDiskSectorSize} {
+		if length > size {
+			return size
+		}
+	}
+	return rawDiskSectorSize
 }
 
 func verifyDevice(devicePath string, expectBytes int64, cancelFile string) (string, error) {

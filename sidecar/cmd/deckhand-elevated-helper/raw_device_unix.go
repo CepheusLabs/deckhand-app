@@ -28,3 +28,7 @@ func openDeviceForRead(devicePath string) (*os.File, error) {
 func openDeviceForWrite(devicePath string) (*os.File, error) {
 	return os.OpenFile(devicePath, os.O_WRONLY, 0)
 }
+
+func isRetryableRawWriteError(error) bool {
+	return false
+}

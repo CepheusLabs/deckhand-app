@@ -308,6 +308,10 @@ func isBusyVolumeError(err error) bool {
 		errors.Is(err, windows.ERROR_LOCK_VIOLATION)
 }
 
+func isRetryableRawWriteError(err error) bool {
+	return errors.Is(err, windows.ERROR_INVALID_PARAMETER)
+}
+
 func closeWindowsHandles(handles []windows.Handle) {
 	for _, handle := range handles {
 		_ = closeWindowsHandleFn(handle)

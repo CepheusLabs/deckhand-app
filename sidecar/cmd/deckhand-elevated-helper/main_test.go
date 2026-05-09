@@ -48,6 +48,59 @@ func TestValidateBackupOutputPathRejectsExistingFile(t *testing.T) {
 	}
 }
 
+func TestWriteRawDeviceBytesRetriesLargeInvalidParameterWrites(t *testing.T) {
+	retryErr := errors.New("invalid parameter")
+	writer := &flakyWriter{failures: []error{retryErr}}
+	chunk := []byte(strings.Repeat("x", 4*1024))
+
+	err := writeRawDeviceBytesWithRetry(
+		writer,
+		chunk,
+		func(err error) bool { return errors.Is(err, retryErr) },
+	)
+	if err != nil {
+		t.Fatalf("writeRawDeviceBytesWithRetry() error = %v", err)
+	}
+
+	if len(writer.writes) != 9 {
+		t.Fatalf("writes = %v, want first full write plus eight sector writes", writer.writes)
+	}
+	if writer.writes[0] != 4*1024 {
+		t.Fatalf("first write size = %d, want 4096", writer.writes[0])
+	}
+	for _, got := range writer.writes[1:] {
+		if got != rawDiskSectorSize {
+			t.Fatalf("fallback writes = %v, want sector-sized chunks", writer.writes)
+		}
+	}
+	if string(writer.data) != string(chunk) {
+		t.Fatalf("written data changed during fallback")
+	}
+}
+
+func TestWriteRawDeviceBytesDoesNotRetryAfterPartialWrite(t *testing.T) {
+	retryErr := errors.New("invalid parameter")
+	writer := &flakyWriter{
+		failures: []error{retryErr},
+		partial:  128,
+	}
+
+	err := writeRawDeviceBytesWithRetry(
+		writer,
+		[]byte(strings.Repeat("x", 4*1024)),
+		func(err error) bool { return errors.Is(err, retryErr) },
+	)
+	if !errors.Is(err, retryErr) {
+		t.Fatalf("writeRawDeviceBytesWithRetry() error = %v, want retryErr", err)
+	}
+	if len(writer.writes) != 1 || writer.writes[0] != 4*1024 {
+		t.Fatalf("writes = %v, want one full attempt", writer.writes)
+	}
+	if len(writer.data) != 128 {
+		t.Fatalf("partial data length = %d, want 128", len(writer.data))
+	}
+}
+
 func TestValidateBackupOutputPathRejectsSymlink(t *testing.T) {
 	root := makeBackupRoot(t)
 	target := filepath.Join(root, "target.img")
@@ -421,4 +474,26 @@ func makeBackupRoot(t *testing.T) string {
 		t.Fatal(err)
 	}
 	return root
+}
+
+type flakyWriter struct {
+	failures []error
+	partial  int
+	writes   []int
+	data     []byte
+}
+
+func (w *flakyWriter) Write(p []byte) (int, error) {
+	w.writes = append(w.writes, len(p))
+	if len(w.failures) > 0 {
+		err := w.failures[0]
+		w.failures = w.failures[1:]
+		if w.partial > 0 {
+			w.data = append(w.data, p[:w.partial]...)
+			return w.partial, err
+		}
+		return 0, err
+	}
+	w.data = append(w.data, p...)
+	return len(p), nil
 }
