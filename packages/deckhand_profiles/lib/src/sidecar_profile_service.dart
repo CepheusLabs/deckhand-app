@@ -221,12 +221,21 @@ class SidecarProfileService implements ProfileService {
       sbc: _firstText(entry.sbc, _deriveSbc(profile)),
       kinematics: _firstText(entry.kinematics, _deriveKinematics(profile)),
       mcu: _firstText(entry.mcu, _deriveMcu(profile)),
-      extras: _firstText(entry.extras, profile.raw['picker_extras'] as String?),
+      extras: _firstText(
+        entry.extras,
+        _optionalText(profile.raw['picker_extras']),
+      ),
     );
   }
 
   String? _firstText(String? primary, String? fallback) =>
       !_isBlank(primary) ? primary!.trim() : fallback?.trim();
+
+  String? _optionalText(Object? value) {
+    if (value is! String) return null;
+    final trimmed = value.trim();
+    return trimmed.isEmpty ? null : trimmed;
+  }
 
   String? _deriveSbc(PrinterProfile profile) {
     final soc = profile.hardware.sbc?.soc;
@@ -348,12 +357,21 @@ class SidecarProfileService implements ProfileService {
       }
     }
     final res = await sidecar.call('profiles.fetch', params);
+    final localPath = _profilesFetchText(res, 'local_path');
     return ProfileCacheEntry(
       profileId: profileId,
       ref: resolvedRef,
-      localPath: p.join(res['local_path'] as String, 'printers', profileId),
-      resolvedSha: res['resolved_sha'] as String? ?? '',
+      localPath: p.join(localPath, 'printers', profileId),
+      resolvedSha: _optionalText(res['resolved_sha']) ?? '',
     );
+  }
+
+  String _profilesFetchText(Map<String, dynamic> response, String key) {
+    final value = _optionalText(response[key]);
+    if (value == null) {
+      throw ProfileFormatException('profiles.fetch returned invalid `$key`');
+    }
+    return value;
   }
 
   /// A ref matches this pattern when it looks like a semver-y tag

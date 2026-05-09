@@ -312,6 +312,38 @@ hardware:
       expect(destA, contains('github.com-cepheuslabs-deckhand-profiles.git'));
       expect(destB, contains('github.com-example-deckhand-profiles.git'));
     });
+
+    test(
+      'malformed sidecar fetch response throws a clean format error',
+      () async {
+        final tmp = await Directory.systemTemp.createTemp(
+          'deckhand-profile-service-',
+        );
+        addTearDown(() async => tmp.delete(recursive: true));
+        final sidecar = _FakeSidecar(response: {'local_path': 42});
+        final svc = SidecarProfileService(
+          sidecar: sidecar,
+          paths: DeckhandPaths(
+            cacheDir: p.join(tmp.path, 'cache'),
+            stateDir: p.join(tmp.path, 'state'),
+            logsDir: p.join(tmp.path, 'logs'),
+            settingsFile: p.join(tmp.path, 'settings.json'),
+          ),
+          security: _AllowAllSecurity(),
+        );
+
+        await expectLater(
+          svc.ensureCached(profileId: 'test-printer', ref: 'main'),
+          throwsA(
+            isA<ProfileFormatException>().having(
+              (e) => e.message,
+              'message',
+              contains('profiles.fetch'),
+            ),
+          ),
+        );
+      },
+    );
   });
 
   group('SidecarProfileService.fetchRegistry', () {
@@ -355,6 +387,62 @@ profiles:
       expect(entry.mcu, 'STM32F407');
       expect(entry.extras, 'ChromaKit');
     });
+
+    test(
+      'ignores malformed optional picker metadata in profile fallback',
+      () async {
+        final tmp = await Directory.systemTemp.createTemp(
+          'deckhand-profile-registry-',
+        );
+        addTearDown(() async => tmp.delete(recursive: true));
+        final profileDir = Directory(
+          p.join(tmp.path, 'printers', 'test-printer'),
+        );
+        await profileDir.create(recursive: true);
+        await File(p.join(tmp.path, 'registry.yaml')).writeAsString('''
+schema_version: 1
+profiles:
+  - id: test-printer
+    display_name: Test Printer
+    manufacturer: Acme
+    model: Robo
+    status: beta
+    directory: printers/test-printer
+''');
+        await File(p.join(profileDir.path, 'profile.yaml')).writeAsString('''
+schema_version: 1
+profile_id: test-printer
+profile_version: 0.1.0
+display_name: Test Printer
+status: beta
+manufacturer: Acme
+model: Robo
+picker_extras: [bad, shape]
+hardware:
+  sbc: { soc: rockchip-rk3328 }
+  kinematics: corexy
+mcus:
+  - { id: main, chip: stm32f407xx }
+''');
+
+        final svc = SidecarProfileService(
+          sidecar: _FakeSidecar(),
+          paths: DeckhandPaths(
+            cacheDir: p.join(tmp.path, 'cache'),
+            stateDir: p.join(tmp.path, 'state'),
+            logsDir: p.join(tmp.path, 'logs'),
+            settingsFile: p.join(tmp.path, 'settings.json'),
+          ),
+          security: _AllowAllSecurity(),
+          localProfilesDir: tmp.path,
+        );
+
+        final registry = await svc.fetchRegistry();
+        final entry = registry.entries.single;
+        expect(entry.sbc, 'RK3328');
+        expect(entry.extras, isNull);
+      },
+    );
 
     test(
       'skips malformed registry entries without hiding valid profiles',
@@ -546,6 +634,9 @@ mcus:
 }
 
 class _FakeSidecar implements SidecarConnection {
+  _FakeSidecar({this.response});
+
+  final Map<String, dynamic>? response;
   final calls = <({String method, Map<String, dynamic> params})>[];
 
   @override
@@ -554,6 +645,7 @@ class _FakeSidecar implements SidecarConnection {
     Map<String, dynamic> params,
   ) async {
     calls.add((method: method, params: params));
+    if (response != null) return response!;
     return <String, dynamic>{
       'local_path': params['dest'] as String,
       'resolved_ref': params['ref'] as String? ?? 'main',
