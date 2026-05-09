@@ -91,15 +91,23 @@ class SidecarProfileService implements ProfileService {
     } else {
       yamlText = await _getPlainWithApprovedRedirects(registryUrl);
     }
-    final yaml = loadYaml(yamlText);
-    final profiles = yaml is YamlMap ? yaml['profiles'] : null;
-    final entries = profiles is YamlList
-        ? profiles
-              .whereType<YamlMap>()
-              .map(_registryEntryFromYaml)
-              .whereType<ProfileRegistryEntry>()
-              .toList()
-        : <ProfileRegistryEntry>[];
+    final yaml = _loadYaml(yamlText, 'registry.yaml');
+    if (yaml is! YamlMap) {
+      throw const ProfileFormatException(
+        'registry.yaml root must be a mapping',
+      );
+    }
+    final profiles = yaml['profiles'];
+    if (profiles is! YamlList) {
+      throw const ProfileFormatException(
+        'registry.yaml profiles must be a list',
+      );
+    }
+    final entries = profiles
+        .whereType<YamlMap>()
+        .map(_registryEntryFromYaml)
+        .whereType<ProfileRegistryEntry>()
+        .toList();
     return ProfileRegistry(
       entries: await Future.wait(
         _dedupeRegistryEntries(
@@ -477,7 +485,7 @@ class SidecarProfileService implements ProfileService {
 ///   - `status: stub` parses as [ProfileStatus.stub] so the wizard can
 ///     refuse to run it.
 PrinterProfile parseProfileYaml(String yamlText) {
-  final yaml = loadYaml(yamlText);
+  final yaml = _loadYaml(yamlText, 'profile.yaml');
   if (yaml is! YamlMap) {
     throw const ProfileFormatException('profile.yaml root must be a mapping');
   }
@@ -499,6 +507,14 @@ PrinterProfile parseProfileYaml(String yamlText) {
     rethrow;
   } catch (e) {
     throw ProfileFormatException('profile.yaml has invalid structure: $e');
+  }
+}
+
+Object? _loadYaml(String yamlText, String label) {
+  try {
+    return loadYaml(yamlText);
+  } catch (e) {
+    throw ProfileFormatException('$label is not valid YAML: $e');
   }
 }
 

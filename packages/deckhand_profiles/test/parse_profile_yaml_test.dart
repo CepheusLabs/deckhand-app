@@ -173,6 +173,27 @@ status: alpha
         );
       });
 
+      test('invalid YAML syntax throws ProfileFormatException', () {
+        const invalidYaml = '''
+schema_version: 1
+profile_id: broken
+profile_version: 0.1.0
+display_name: Broken
+status: alpha
+hardware: [unterminated
+''';
+        expect(
+          () => parseProfileYaml(invalidYaml),
+          throwsA(
+            isA<ProfileFormatException>().having(
+              (e) => e.message,
+              'message',
+              contains('profile.yaml is not valid YAML'),
+            ),
+          ),
+        );
+      });
+
       test('non-string mapping keys throw ProfileFormatException', () {
         const numericKey = '''
 schema_version: 1
@@ -219,7 +240,7 @@ hardware:
             isA<ProfileFormatException>().having(
               (e) => e.message,
               'message',
-              contains('invalid structure'),
+              contains('hardware.build_volume_mm.x'),
             ),
           ),
         );
@@ -513,6 +534,76 @@ profiles:
 
       expect(registry.entries, hasLength(1));
       expect(registry.entries.single.displayName, 'Phrozen Arco');
+    });
+
+    test('invalid registry YAML throws ProfileFormatException', () async {
+      final tmp = await Directory.systemTemp.createTemp(
+        'deckhand-profile-registry-',
+      );
+      addTearDown(() async => tmp.delete(recursive: true));
+      await File(p.join(tmp.path, 'registry.yaml')).writeAsString('''
+schema_version: 1
+profiles: [unterminated
+''');
+
+      final svc = SidecarProfileService(
+        sidecar: _FakeSidecar(),
+        paths: DeckhandPaths(
+          cacheDir: p.join(tmp.path, 'cache'),
+          stateDir: p.join(tmp.path, 'state'),
+          logsDir: p.join(tmp.path, 'logs'),
+          settingsFile: p.join(tmp.path, 'settings.json'),
+        ),
+        security: _AllowAllSecurity(),
+        localProfilesDir: tmp.path,
+      );
+
+      await expectLater(
+        svc.fetchRegistry(),
+        throwsA(
+          isA<ProfileFormatException>().having(
+            (e) => e.message,
+            'message',
+            contains('registry.yaml is not valid YAML'),
+          ),
+        ),
+      );
+    });
+
+    test('registry profiles must be a list', () async {
+      final tmp = await Directory.systemTemp.createTemp(
+        'deckhand-profile-registry-',
+      );
+      addTearDown(() async => tmp.delete(recursive: true));
+      await File(p.join(tmp.path, 'registry.yaml')).writeAsString('''
+schema_version: 1
+profiles:
+  id: phrozen-arco
+  display_name: Phrozen Arco
+''');
+
+      final svc = SidecarProfileService(
+        sidecar: _FakeSidecar(),
+        paths: DeckhandPaths(
+          cacheDir: p.join(tmp.path, 'cache'),
+          stateDir: p.join(tmp.path, 'state'),
+          logsDir: p.join(tmp.path, 'logs'),
+          settingsFile: p.join(tmp.path, 'settings.json'),
+        ),
+        security: _AllowAllSecurity(),
+        localProfilesDir: tmp.path,
+      );
+
+      await expectLater(
+        svc.fetchRegistry(),
+        throwsA(
+          isA<ProfileFormatException>().having(
+            (e) => e.message,
+            'message',
+            contains('profiles must be a list'),
+          ),
+        ),
+      );
     });
 
     test('derives missing card metadata from local profile.yaml', () async {
