@@ -67,7 +67,7 @@ const (
 	xzMinIndexSize  = 4
 	xzMaxIndexSize  = int64(1<<32) * 4
 	maxInt64        = int64(9223372036854775807)
-	xzProgressEvery = 4 << 20
+	xzProgressEvery = 1 << 20
 )
 
 var approvedDownloadHostSuffixes = []string{
@@ -371,6 +371,9 @@ func decompressXZ(sourcePath, destPath string, note rpc.Notifier) (string, int64
 	buf := make([]byte, 1<<20)
 	var done int64
 	lastNotified := int64(0)
+	if note != nil {
+		note.Notify("progress", DownloadProgress{BytesDone: 0, BytesTotal: uncompressedTotal, Phase: "extracting"})
+	}
 	for {
 		n, rerr := xr.Read(buf)
 		if n > 0 {
@@ -395,6 +398,9 @@ func decompressXZ(sourcePath, destPath string, note rpc.Notifier) (string, int64
 		if rerr != nil {
 			return "", done, fmt.Errorf("read xz stream: %w", rerr)
 		}
+	}
+	if note != nil && done != lastNotified {
+		note.Notify("progress", DownloadProgress{BytesDone: done, BytesTotal: uncompressedTotal, Phase: "extracting"})
 	}
 	if err := dst.Sync(); err != nil {
 		return "", done, fmt.Errorf("sync extracted image: %w", err)

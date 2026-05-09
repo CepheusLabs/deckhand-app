@@ -283,11 +283,21 @@ func TestDownloadReportsXZExtractionProgressWithUncompressedTotal(t *testing.T) 
 	if len(extractionEvents) == 0 {
 		t.Fatalf("expected extracting progress events, got phases %v", note.phases())
 	}
+	if extractionEvents[0].BytesDone != 0 {
+		t.Fatalf("first extracting event bytes done = %d, want 0", extractionEvents[0].BytesDone)
+	}
+	if extractionEvents[len(extractionEvents)-1].BytesDone != int64(len(raw)) {
+		t.Fatalf(
+			"last extracting event bytes done = %d, want %d",
+			extractionEvents[len(extractionEvents)-1].BytesDone,
+			len(raw),
+		)
+	}
 	for _, event := range extractionEvents {
 		if event.BytesTotal != int64(len(raw)) {
 			t.Fatalf("extracting total = %d, want %d", event.BytesTotal, len(raw))
 		}
-		if event.BytesDone <= 0 || event.BytesDone > event.BytesTotal {
+		if event.BytesDone < 0 || event.BytesDone > event.BytesTotal {
 			t.Fatalf("extracting bytes done out of range: %+v", event)
 		}
 	}
