@@ -102,7 +102,9 @@ class SidecarProfileService implements ProfileService {
         : <ProfileRegistryEntry>[];
     return ProfileRegistry(
       entries: await Future.wait(
-        entries.map((e) => _withProfileSpecFallback(e, local)),
+        _dedupeRegistryEntries(entries).map(
+          (e) => _withProfileSpecFallback(e, local),
+        ),
       ),
     );
   }
@@ -134,6 +136,17 @@ class SidecarProfileService implements ProfileService {
     if (value is! String) return null;
     final trimmed = value.trim();
     return trimmed.isEmpty ? null : trimmed;
+  }
+
+  List<ProfileRegistryEntry> _dedupeRegistryEntries(
+    List<ProfileRegistryEntry> entries,
+  ) {
+    final seen = <String>{};
+    final deduped = <ProfileRegistryEntry>[];
+    for (final entry in entries) {
+      if (seen.add(entry.id)) deduped.add(entry);
+    }
+    return deduped;
   }
 
   Future<ProfileRegistryEntry> _withProfileSpecFallback(

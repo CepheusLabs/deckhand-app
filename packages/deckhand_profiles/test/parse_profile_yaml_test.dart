@@ -369,6 +369,40 @@ profiles:
       expect(registry.entries.map((entry) => entry.id), ['valid-printer']);
     });
 
+    test('deduplicates registry entries by profile id', () async {
+      final tmp = await Directory.systemTemp.createTemp(
+        'deckhand-profile-registry-',
+      );
+      addTearDown(() async => tmp.delete(recursive: true));
+      await File(p.join(tmp.path, 'registry.yaml')).writeAsString('''
+schema_version: 1
+profiles:
+  - id: phrozen-arco
+    display_name: Phrozen Arco
+    status: beta
+  - id: phrozen-arco
+    display_name: Duplicate Arco
+    status: alpha
+''');
+
+      final svc = SidecarProfileService(
+        sidecar: _FakeSidecar(),
+        paths: DeckhandPaths(
+          cacheDir: p.join(tmp.path, 'cache'),
+          stateDir: p.join(tmp.path, 'state'),
+          logsDir: p.join(tmp.path, 'logs'),
+          settingsFile: p.join(tmp.path, 'settings.json'),
+        ),
+        security: _AllowAllSecurity(),
+        localProfilesDir: tmp.path,
+      );
+
+      final registry = await svc.fetchRegistry();
+
+      expect(registry.entries, hasLength(1));
+      expect(registry.entries.single.displayName, 'Phrozen Arco');
+    });
+
     test('derives missing card metadata from local profile.yaml', () async {
       final tmp = await Directory.systemTemp.createTemp(
         'deckhand-profile-registry-',
