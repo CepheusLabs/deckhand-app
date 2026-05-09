@@ -209,6 +209,27 @@ void main() {
       },
     );
 
+    test('malformed meta fields do not hide valid backup metadata', () async {
+      final meta =
+          '{"profile_id":42,"profile_version":"1.0.0",'
+          '"step_id":"fix_apt_sources","created_at_iso":false,'
+          '"created_at_ms":"bad"}';
+      ssh.nextStdout = [
+        'backup\t/etc/apt/sources.list:::/etc/apt/sources.list.deckhand-pre-1776910000000:::$meta',
+      ].join('\n');
+
+      final state = await probe.probe(
+        session: _fakeSession,
+        profile: _minimalProfile,
+      );
+
+      final backup = state.deckhandBackups.single;
+      expect(backup.profileId, isNull);
+      expect(backup.profileVersion, '1.0.0');
+      expect(backup.stepId, 'fix_apt_sources');
+      expect(backup.createdAt, isNotNull);
+    });
+
     test('skips backup rows with blank paths', () async {
       ssh.nextStdout = [
         'backup\t:::/tmp/blank-original.deckhand-pre-1776910000000:::',

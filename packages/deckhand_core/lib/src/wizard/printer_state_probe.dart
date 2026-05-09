@@ -473,23 +473,25 @@ class PrinterStateProbe {
         DateTime? createdAt;
         if (metaRaw.trim().isNotEmpty) {
           try {
-            final parsed = jsonDecode(metaRaw) as Map<String, dynamic>;
-            profileId = parsed['profile_id'] as String?;
-            profileVersion = parsed['profile_version'] as String?;
-            stepId = parsed['step_id'] as String?;
-            final iso = parsed['created_at_iso'] as String?;
-            if (iso != null) {
-              try {
-                createdAt = DateTime.parse(iso);
-              } catch (_) {}
-            }
-            if (createdAt == null) {
-              final ms = parsed['created_at_ms'];
-              if (ms is num) {
-                createdAt = DateTime.fromMillisecondsSinceEpoch(
-                  ms.toInt(),
-                  isUtc: true,
-                );
+            final parsed = _stringKeyMap(jsonDecode(metaRaw));
+            if (parsed != null) {
+              profileId = _jsonString(parsed['profile_id']);
+              profileVersion = _jsonString(parsed['profile_version']);
+              stepId = _jsonString(parsed['step_id']);
+              final iso = _jsonString(parsed['created_at_iso']);
+              if (iso != null) {
+                try {
+                  createdAt = DateTime.parse(iso);
+                } catch (_) {}
+              }
+              if (createdAt == null) {
+                final ms = parsed['created_at_ms'];
+                if (ms is num) {
+                  createdAt = DateTime.fromMillisecondsSinceEpoch(
+                    ms.toInt(),
+                    isUtc: true,
+                  );
+                }
               }
             }
           } catch (_) {
@@ -614,6 +616,18 @@ class PrinterStateProbe {
   }
 
   String _shellEscape(String s) => shellSingleQuote(s);
+}
+
+String? _jsonString(Object? value) => value is String ? value : null;
+
+Map<String, dynamic>? _stringKeyMap(Object? value) {
+  if (value is! Map) return null;
+  final out = <String, dynamic>{};
+  for (final entry in value.entries) {
+    final key = entry.key;
+    if (key is String) out[key] = entry.value;
+  }
+  return out;
 }
 
 class _ServiceAcc {
