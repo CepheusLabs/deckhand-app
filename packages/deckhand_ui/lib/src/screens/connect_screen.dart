@@ -386,6 +386,23 @@ class _ConnectScreenState extends ConsumerState<ConnectScreen> {
     await Future.wait([settings.save(), registry.save()]);
   }
 
+  Future<void> _forgetSavedHost(SavedHost h) async {
+    final settings = ref.read(deckhandSettingsProvider);
+    final previous = settings.savedHosts;
+    settings.forgetSavedHost(host: h.host, user: h.user);
+    try {
+      await settings.save();
+      if (!mounted) return;
+      setState(() => _error = null);
+    } catch (e) {
+      settings.savedHosts = previous;
+      if (!mounted) return;
+      setState(
+        () => _error = 'Could not forget saved host: ${userFacingError(e)}',
+      );
+    }
+  }
+
   SshDefaultCredential? _defaultCredentialForUser(
     PrinterProfile? profile,
     String user,
@@ -621,12 +638,7 @@ class _ConnectScreenState extends ConsumerState<ConnectScreen> {
                 error: _error,
                 onConnect: (h) =>
                     _connect(h.host, port: h.port, preferredUser: h.user),
-                onForget: (h) {
-                  final settings = ref.read(deckhandSettingsProvider);
-                  settings.forgetSavedHost(host: h.host, user: h.user);
-                  unawaited(settings.save());
-                  setState(() {});
-                },
+                onForget: (h) => unawaited(_forgetSavedHost(h)),
               ),
             ),
       primaryAction: WizardAction(

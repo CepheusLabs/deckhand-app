@@ -238,6 +238,54 @@ void main() {
       expect(settings.savedHosts, hasLength(1));
       expect(settings.managedPrinters, hasLength(1));
     });
+
+    testWidgets('saved host forget rolls back when saving fails', (
+      tester,
+    ) async {
+      final controller = stubWizardController(profileJson: testProfileJson());
+      await controller.loadProfile('test-printer');
+      final settings =
+          _RecordingSettings(
+              saveError: StateError(
+                r'write settings failed on \\.\PHYSICALDRIVE3',
+              ),
+            )
+            ..savedHosts = [
+              SavedHost(
+                host: '192.168.1.50',
+                port: 22,
+                user: 'root',
+                lastUsed: DateTime(2026, 5, 4, 12),
+              ),
+            ];
+
+      await tester.pumpWidget(
+        testHarness(
+          controller: controller,
+          child: const ConnectScreen(),
+          initialLocation: '/connect',
+          extraOverrides: [
+            deckhandSettingsProvider.overrideWithValue(settings),
+          ],
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+
+      expect(find.textContaining('root@192.168.1.50'), findsOneWidget);
+      await tester.tap(find.byTooltip('Forget this host'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 250));
+
+      expect(settings.savedHosts, hasLength(1));
+      expect(settings.savedHosts.single.host, '192.168.1.50');
+      expect(
+        find.textContaining('Could not forget saved host'),
+        findsOneWidget,
+      );
+      expect(find.textContaining('Windows disk 3'), findsOneWidget);
+      expect(find.textContaining('PHYSICALDRIVE3'), findsNothing);
+    });
   });
 }
 
