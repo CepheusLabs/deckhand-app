@@ -611,11 +611,15 @@ class StockSnapshotPath {
 
   factory StockSnapshotPath.fromJson(Map<String, dynamic> j) =>
       StockSnapshotPath(
-        id: j['id'] as String,
-        displayName: j['display_name'] as String? ?? j['id'] as String,
-        path: j['path'] as String,
-        defaultSelected: j['default_selected'] as bool? ?? true,
-        helperText: j['helper_text'] as String?,
+        id: _requiredString(j, 'id', 'stock_os.snapshot_paths[]'),
+        displayName:
+            _optionalString(j['display_name']) ??
+            _requiredString(j, 'id', 'stock_os.snapshot_paths[]'),
+        path: _requiredString(j, 'path', 'stock_os.snapshot_paths[]'),
+        defaultSelected: j['default_selected'] is bool
+            ? j['default_selected'] as bool
+            : true,
+        helperText: _optionalString(j['helper_text']),
       );
 }
 
@@ -793,3 +797,5 @@ String _requiredString(Map<String, dynamic> j, String key, String context) {
   if (value is String && value.trim().isNotEmpty) return value;
   throw ProfileFormatException('$context.$key is required');
 }
+
+String? _optionalString(Object? value) => value is String ? value : null;

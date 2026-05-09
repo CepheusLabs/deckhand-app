@@ -51,8 +51,8 @@ List<String> profileNetworkHosts(PrinterProfile profile) {
     addCandidate(firmware.repo);
   }
   for (final component in _stackComponents(profile.stack)) {
-    addCandidate(component['repo'] as String?);
-    addCandidate(component['url'] as String?);
+    addCandidate(_stringValue(component['repo']));
+    addCandidate(_stringValue(component['url']));
     if (component['release_repo'] is String) {
       hosts.addAll(_githubReleaseHosts);
     }
@@ -65,11 +65,14 @@ Iterable<Map<String, dynamic>> _stackComponents(StackConfig stack) sync* {
   for (final component in [stack.moonraker, stack.kiauh, stack.crowsnest]) {
     if (component != null) yield component;
   }
-  final webuiChoices = (stack.webui?['choices'] as List?) ?? const [];
+  final choices = stack.webui?['choices'];
+  final webuiChoices = choices is List ? choices : const [];
   for (final choice in webuiChoices.whereType<Map>()) {
     yield _stringKeyMap(choice);
   }
 }
+
+String? _stringValue(Object? value) => value is String ? value : null;
 
 Map<String, dynamic> _stringKeyMap(Map value) {
   final out = <String, dynamic>{};

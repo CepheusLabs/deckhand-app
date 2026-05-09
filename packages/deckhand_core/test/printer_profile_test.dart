@@ -221,6 +221,30 @@ void main() {
       ]);
       expect(p.stack.moonraker, {'repo': 'https://github.com/a/b'});
     });
+
+    test('snapshot path optional metadata is tolerant', () {
+      final p = PrinterProfile.fromJson({
+        'profile_id': 'x',
+        'stock_os': {
+          'snapshot_paths': [
+            {
+              'id': 'printer_config',
+              'path': '~/printer_data/config',
+              'display_name': 42,
+              'default_selected': 'yes',
+              'helper_text': ['not text'],
+            },
+          ],
+        },
+      });
+
+      final path = p.stockOs.snapshotPaths.single;
+      expect(path.id, 'printer_config');
+      expect(path.displayName, 'printer_config');
+      expect(path.path, '~/printer_data/config');
+      expect(path.defaultSelected, isTrue);
+      expect(path.helperText, isNull);
+    });
   });
 
   group('PrinterMatch.score', () {

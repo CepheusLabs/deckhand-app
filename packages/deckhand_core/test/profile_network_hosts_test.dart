@@ -104,5 +104,20 @@ void main() {
 
       expect(profileNetworkHosts(profile), ['example.com']);
     });
+
+    test('ignores malformed stack URLs and webui choices shape', () {
+      final profile = PrinterProfile.fromJson({
+        'profile_id': 'test-printer',
+        'stack': {
+          'moonraker': {'repo': 42, 'url': false},
+          'kiauh': {'repo': 'https://github.com/dw-0/kiauh'},
+          'webui': {
+            'choices': {'not': 'a list'},
+          },
+        },
+      });
+
+      expect(profileNetworkHosts(profile), ['github.com']);
+    });
   });
 }
