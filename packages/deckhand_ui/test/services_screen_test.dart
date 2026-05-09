@@ -70,8 +70,9 @@ void main() {
       },
     );
 
-    testWidgets('seeds default decisions on first render (initState path)',
-        (tester) async {
+    testWidgets('seeds default decisions on first render (initState path)', (
+      tester,
+    ) async {
       final controller = stubWizardController(
         profileJson: {
           ...testProfileJson(),
@@ -102,12 +103,36 @@ void main() {
       expect(controller.decision<String>('service.frpc'), 'remove');
     });
 
-    testWidgets(
-        'Back action renders via t.common.action_back (no hardcoded string)',
-        (tester) async {
-      final controller = stubWizardController(profileJson: testProfileJson());
+    testWidgets('skips malformed wizard options', (tester) async {
+      final controller = stubWizardController(
+        profileJson: {
+          ...testProfileJson(),
+          'stock_os': {
+            'services': [
+              {
+                'id': 'frpc',
+                'display_name': 'FRP tunnel',
+                'default_action': 'remove',
+                'wizard': {
+                  'question': 'What should happen to FRP?',
+                  'options': [
+                    'bad row',
+                    {'id': 42, 'label': 99},
+                    {
+                      'id': 'remove',
+                      'label': 'Remove it',
+                      'description': 'Stop the tunnel service.',
+                    },
+                  ],
+                },
+              },
+            ],
+          },
+        },
+      );
       await controller.loadProfile('test-printer');
       controller.setFlow(WizardFlow.stockKeep);
+
       await tester.pumpWidget(
         testHarness(
           controller: controller,
@@ -118,11 +143,33 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 100));
 
-      // Default english translation is "Back" — assertion checks the
-      // scaffold renders the action, not a literal child of the
-      // screen body.
-      expect(find.text('Back'), findsOneWidget);
-      expect(find.text('Continue'), findsOneWidget);
+      expect(find.text('Remove it'), findsOneWidget);
+      expect(find.text('Stop the tunnel service.'), findsOneWidget);
+      expect(find.textContaining('42'), findsNothing);
     });
+
+    testWidgets(
+      'Back action renders via t.common.action_back (no hardcoded string)',
+      (tester) async {
+        final controller = stubWizardController(profileJson: testProfileJson());
+        await controller.loadProfile('test-printer');
+        controller.setFlow(WizardFlow.stockKeep);
+        await tester.pumpWidget(
+          testHarness(
+            controller: controller,
+            child: const ServicesScreen(),
+            initialLocation: '/services',
+          ),
+        );
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+
+        // Default english translation is "Back" — assertion checks the
+        // scaffold renders the action, not a literal child of the
+        // screen body.
+        expect(find.text('Back'), findsOneWidget);
+        expect(find.text('Continue'), findsOneWidget);
+      },
+    );
   });
 }

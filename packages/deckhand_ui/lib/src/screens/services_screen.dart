@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import '../i18n/translations.g.dart';
 import '../providers.dart';
 import '../theming/deckhand_tokens.dart';
+import '../utils/json_safety.dart';
 import '../widgets/profile_text.dart';
 import '../widgets/wizard_scaffold.dart';
 
@@ -49,7 +50,7 @@ class _ServicesScreenState extends ConsumerState<ServicesScreen> {
   List<StockService> _queue() {
     final all =
         ref.read(wizardControllerProvider).profile?.stockOs.services ??
-            const [];
+        const [];
     return all
         .where((s) => s.raw['wizard'] != null && s.raw['wizard'] != 'none')
         .toList();
@@ -99,11 +100,10 @@ class _ServicesScreenState extends ConsumerState<ServicesScreen> {
 
     final clampedIdx = _index.clamp(0, queue.length - 1);
     final current = queue[clampedIdx];
-    final wiz = (current.raw['wizard'] as Map?)?.cast<String, dynamic>() ??
-        const {};
-    final options = ((wiz['options'] as List?) ?? const []).cast<Map>();
-    final question = wiz['question'] as String?;
-    final helper = wiz['helper_text'] as String?;
+    final wiz = jsonStringKeyMap(current.raw['wizard']) ?? const {};
+    final options = _serviceOptions(wiz);
+    final question = jsonString(wiz['question']);
+    final helper = jsonString(wiz['helper_text']);
     final state = probe.services[current.id];
     final decisionKey = 'service.${current.id}';
     final selected = controller.decision<String>(decisionKey);
@@ -128,10 +128,7 @@ class _ServicesScreenState extends ConsumerState<ServicesScreen> {
                   setState(() {});
                 },
               );
-              final right = _ExplainerPanel(
-                service: current,
-                state: state,
-              );
+              final right = _ExplainerPanel(service: current, state: state);
               if (twoCol) {
                 return IntrinsicHeight(
                   child: Row(
@@ -145,19 +142,12 @@ class _ServicesScreenState extends ConsumerState<ServicesScreen> {
                 );
               }
               return Column(
-                children: [
-                  left,
-                  const SizedBox(height: 12),
-                  right,
-                ],
+                children: [left, const SizedBox(height: 12), right],
               );
             },
           ),
           const SizedBox(height: 16),
-          _QuestionProgress(
-            current: clampedIdx + 1,
-            total: queue.length,
-          ),
+          _QuestionProgress(current: clampedIdx + 1, total: queue.length),
         ],
       ),
       primaryAction: WizardAction(
@@ -189,6 +179,11 @@ class _ServicesScreenState extends ConsumerState<ServicesScreen> {
   }
 }
 
+List<Map<String, dynamic>> _serviceOptions(Map<String, dynamic> wizard) =>
+    jsonStringKeyMapList(
+      wizard['options'],
+    ).where((option) => jsonString(option['id'])?.isNotEmpty == true).toList();
+
 /// Left panel: radio rows for the current question's options.
 class _OptionsPanel extends StatelessWidget {
   const _OptionsPanel({
@@ -197,7 +192,7 @@ class _OptionsPanel extends StatelessWidget {
     required this.onChoose,
   });
 
-  final List<Map> options;
+  final List<Map<String, dynamic>> options;
   final String? selected;
   final void Function(String id) onChoose;
 
@@ -217,12 +212,12 @@ class _OptionsPanel extends StatelessWidget {
         children: [
           for (final raw in options)
             _OptionRow(
-              id: raw['id'] as String,
-              label: raw['label'] as String? ?? raw['id'] as String,
-              description: raw['description'] as String?,
+              id: jsonString(raw['id'])!,
+              label: jsonString(raw['label']) ?? jsonString(raw['id'])!,
+              description: jsonString(raw['description']),
               isRecommended: raw['recommended'] == true,
-              selected: selected == raw['id'],
-              onTap: () => onChoose(raw['id'] as String),
+              selected: selected == jsonString(raw['id']),
+              onTap: () => onChoose(jsonString(raw['id'])!),
             ),
         ],
       ),
@@ -296,7 +291,9 @@ class _OptionRow extends StatelessWidget {
                         const SizedBox(width: 8),
                         Container(
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 7, vertical: 1),
+                            horizontal: 7,
+                            vertical: 1,
+                          ),
                           decoration: BoxDecoration(
                             color: tokens.ok.withValues(alpha: 0.10),
                             border: Border.all(
@@ -317,7 +314,8 @@ class _OptionRow extends StatelessWidget {
                       ],
                     ],
                   ),
-                  if (description != null && description!.trim().isNotEmpty) ...[
+                  if (description != null &&
+                      description!.trim().isNotEmpty) ...[
                     const SizedBox(height: 3),
                     Text(
                       flattenProfileText(description),
@@ -351,13 +349,12 @@ class _ExplainerPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     final tokens = DeckhandTokens.of(context);
     final raw = service.raw;
-    final wiz = (raw['wizard'] as Map?)?.cast<String, dynamic>() ?? const {};
-    final blurb = (wiz['explainer'] as String?) ??
-        (raw['description'] as String?) ??
-        '';
-    final unit = raw['systemd_unit'] as String?;
-    final binary = raw['binary'] as String?;
-    final config = raw['config_path'] as String?;
+    final wiz = jsonStringKeyMap(raw['wizard']) ?? const {};
+    final blurb =
+        jsonString(wiz['explainer']) ?? jsonString(raw['description']) ?? '';
+    final unit = jsonString(raw['systemd_unit']);
+    final binary = jsonString(raw['binary']);
+    final config = jsonString(raw['config_path']);
 
     return Container(
       padding: const EdgeInsets.all(18),
