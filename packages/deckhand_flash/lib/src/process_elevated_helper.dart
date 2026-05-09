@@ -916,7 +916,7 @@ String _buildWindowsLaunchPowerShellCommand({
   required List<String> helperArgs,
 }) {
   final helperPathLiteral = powerShellSingleQuoteLiteral(helperPath);
-  final argList = helperArgs.map(powerShellQuoteArg).join(',');
+  final argList = helperArgs.map(powerShellSingleQuoteLiteral).join(',');
   final commandLineArgsLiteral = powerShellSingleQuoteLiteral(
     helperArgs.map(windowsCommandLineQuoteArg).join(' '),
   );

@@ -133,7 +133,7 @@ func windowsHelperSmokePowerShell(helper string, args []string) string {
 	argList := make([]string, 0, len(args))
 	directArgList := make([]string, 0, len(args))
 	for _, arg := range args {
-		argList = append(argList, powerShellDoubleQuoted(arg))
+		argList = append(argList, powerShellSingleQuoted(arg))
 		directArgList = append(directArgList, windowsCommandLineQuoted(arg))
 	}
 	return strings.Join([]string{

@@ -356,16 +356,27 @@ void main() {
     });
   });
 
+  group('powerShellSingleQuoteLiteral', () {
+    test('does not expand variables or apostrophes in generated scripts', () {
+      expect(
+        powerShellSingleQuoteLiteral(r'C:\Users\name$with$vars\events.log'),
+        r"'C:\Users\name$with$vars\events.log'",
+      );
+      expect(powerShellSingleQuoteLiteral("owner's file"), "'owner''s file'");
+    });
+  });
+
   group('Windows helper launcher', () {
     test('launches helper and lets the events file own completion', () {
       final command = buildWindowsLaunchPowerShellCommandForTesting(
         helperPath: r'C:\Deckhand\deckhand-elevated-helper.exe',
-        helperArgs: ['write-image', '--target', 'PhysicalDrive3'],
+        helperArgs: ['write-image', '--target', r'PhysicalDrive$3'],
       );
 
       expect(command, contains('[System.Diagnostics.ProcessStartInfo]::new'));
       expect(command, contains('\$psi.UseShellExecute = \$false'));
       expect(command, contains('\$psi.CreateNoWindow = \$true'));
+      expect(command, contains(r"'PhysicalDrive$3'"));
       expect(command, contains('Start-Process'));
       expect(command, contains('-Verb RunAs'));
       expect(command, contains('-PassThru'));

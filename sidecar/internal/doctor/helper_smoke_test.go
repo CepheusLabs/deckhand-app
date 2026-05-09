@@ -46,13 +46,14 @@ func TestHelperSmokeLongArgsUseHelperPrivateFiles(t *testing.T) {
 func TestWindowsHelperSmokePowerShellUsesDirectLaunchWhenAlreadyAdmin(t *testing.T) {
 	ps := windowsHelperSmokePowerShell(
 		`C:\Deckhand Builds\deckhand-elevated-helper.exe`,
-		[]string{"version", "--events-file", `C:\Temp With Spaces\events.log`},
+		[]string{"version", "--events-file", `C:\Temp $With Spaces\events.log`},
 	)
 
 	if !strings.Contains(ps, `[System.Diagnostics.ProcessStartInfo]::new`) {
 		t.Fatalf("expected direct ProcessStartInfo launch in script:\n%s", ps)
 	}
 	for _, want := range []string{
+		`$argv = @('version','--events-file','C:\Temp $With Spaces\events.log');`,
 		`$psi.UseShellExecute = $false;`,
 		`$psi.CreateNoWindow = $true;`,
 		`$psi.Arguments = $directArgs;`,
