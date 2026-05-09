@@ -214,7 +214,7 @@ Future<void> _runInstallScreenImpl(
   Map<String, dynamic> step,
 ) async {
   final s = c._requireSession();
-  final screenId = c._state.decisions['screen'] as String?;
+  final screenId = _stringValue(c._state.decisions['screen']);
   if (screenId == null) {
     c._log(step, '[screen] no screen selected - skipping install');
     return;
@@ -223,9 +223,9 @@ Future<void> _runInstallScreenImpl(
     (sc) => sc.id == screenId,
     orElse: () => throw StepExecutionException('unknown screen $screenId'),
   );
-  final sourceKind = screen.raw['source_kind'] as String?;
+  final sourceKind = _stringValue(screen.raw['source_kind']);
   if (sourceKind == null || sourceKind == 'bundled') {
-    final sourcePath = screen.raw['source_path'] as String?;
+    final sourcePath = _stringValue(screen.raw['source_path']);
     if (sourcePath == null || sourcePath.trim().isEmpty) {
       throw StepExecutionException(
         'screen $screenId bundled source must declare source_path',
@@ -234,7 +234,7 @@ Future<void> _runInstallScreenImpl(
     final src = c._resolveBundledProfileAssetPath(sourcePath);
     final remote = '~/${p.basename(src)}';
     await c._uploadDir(src, remote);
-    final installScript = screen.raw['install_script'] as String?;
+    final installScript = _stringValue(screen.raw['install_script']);
     if (installScript != null && installScript.trim().isNotEmpty) {
       final srcInstall = c._resolveBundledProfileAssetPath(installScript);
       const remoteInstall = '~/deckhand-screen-install.sh';

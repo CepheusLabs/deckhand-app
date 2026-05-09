@@ -3199,6 +3199,45 @@ void main() {
     });
 
     test(
+      'install_screen rejects malformed bundled source metadata cleanly',
+      () async {
+        final controller = newController(
+          profileJson: {
+            ...baseProfileJson(
+              stockKeepSteps: [
+                {'id': 'screen', 'kind': 'install_screen'},
+              ],
+            ),
+            'screens': [
+              {
+                'id': 'lcd',
+                'source_kind': ['bundled'],
+                'source_path': ['./lcd'],
+              },
+            ],
+          },
+        );
+        await controller.loadProfile('test-printer');
+        controller.setFlow(WizardFlow.stockKeep);
+        await controller.setDecision('screen', 'lcd');
+        controller.setSession(
+          const SshSession(id: 'fake', host: 'h', port: 22, user: 'root'),
+        );
+
+        await expectLater(
+          controller.startExecution(),
+          throwsA(
+            isA<StepExecutionException>().having(
+              (e) => e.toString(),
+              'message',
+              contains('bundled source must declare source_path'),
+            ),
+          ),
+        );
+      },
+    );
+
+    test(
       'install_screen no-ops for stock and optional screen choices',
       () async {
         for (final sourceKind in <String>[
