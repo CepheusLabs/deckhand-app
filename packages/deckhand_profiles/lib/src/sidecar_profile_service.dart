@@ -462,7 +462,13 @@ PrinterProfile parseProfileYaml(String yamlText) {
       'profile.yaml is missing required field `profile_id`',
     );
   }
-  return PrinterProfile.fromJson(raw);
+  try {
+    return PrinterProfile.fromJson(raw);
+  } on ProfileFormatException {
+    rethrow;
+  } catch (e) {
+    throw ProfileFormatException('profile.yaml has invalid structure: $e');
+  }
 }
 
 // yaml's YamlMap/YamlList aren't directly serializable; convert into

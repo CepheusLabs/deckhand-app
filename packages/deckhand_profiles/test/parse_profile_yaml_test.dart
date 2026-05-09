@@ -177,6 +177,32 @@ status: alpha
         const e = ProfileFormatException('missing field `foo`');
         expect(e.toString(), contains('missing field `foo`'));
       });
+
+      test('nested type errors are wrapped as ProfileFormatException', () {
+        expect(
+          () => parseProfileYaml('''
+schema_version: 1
+profile_id: bad-volume
+profile_version: 0.1.0
+display_name: Bad Volume
+status: alpha
+manufacturer: Acme
+model: Robo
+hardware:
+  build_volume_mm:
+    x: wide
+    y: 220
+    z: 250
+'''),
+          throwsA(
+            isA<ProfileFormatException>().having(
+              (e) => e.message,
+              'message',
+              contains('invalid structure'),
+            ),
+          ),
+        );
+      });
     },
   );
 
