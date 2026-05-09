@@ -40,9 +40,9 @@ class SidecarSupervisor implements SidecarConnection {
     required SidecarClient Function() spawn,
     DeckhandLogger? logger,
     @visibleForTesting List<Duration>? backoffSchedule,
-  })  : _spawn = spawn,
-        _logger = logger,
-        _backoffSchedule = backoffSchedule ?? _defaultBackoffSchedule;
+  }) : _spawn = spawn,
+       _logger = logger,
+       _backoffSchedule = backoffSchedule ?? _defaultBackoffSchedule;
 
   final SidecarClient Function() _spawn;
   final DeckhandLogger? _logger;
@@ -110,19 +110,16 @@ class SidecarSupervisor implements SidecarConnection {
           _latched = true;
           await _client?.shutdown();
           _client = null;
-          throw SidecarCrashedDuringStatefulCall(
-            method: method,
-            latched: true,
-          );
+          throw SidecarCrashedDuringStatefulCall(method: method, latched: true);
       }
     }
   }
 
   /// Forwarder for `callStreaming`. Streams are inherently stateful —
   /// progress delivered before the crash can't be replayed cleanly,
-  /// so this method does not auto-retry. The downstream consumer is
-  /// expected to handle the in-band error; the supervisor's only job
-  /// here is to attempt a restart so the next call can succeed.
+  /// so this method does not auto-retry. The downstream consumer gets
+  /// a typed crash for stateful streams, while destructive fail-stop
+  /// streams latch the supervisor exactly like [call].
   ///
   /// Implementation note: uses a manual StreamController + listen
   /// rather than `yield*` in an async* generator. yield* forwards
@@ -144,31 +141,55 @@ class SidecarSupervisor implements SidecarConnection {
         StateError('SidecarSupervisor.callStreaming before start()'),
       );
     }
+    final kind = classifyMethod(method);
     final ctl = StreamController<SidecarEvent>();
     late StreamSubscription<SidecarEvent> sub;
-    sub = _client!.callStreaming(method, params).listen(
-      ctl.add,
-      onError: (Object e, StackTrace s) async {
-        if (e is SidecarError && _isProcessExitError(e)) {
-          try {
-            await _restartOrLatch();
-          } on Object {
-            // Swallow restart-side errors; the consumer cares about
-            // the original stream error, not whether the restart
-            // succeeded. The next call will see the latch if the
-            // supervisor latched.
-          }
-        }
-        if (!ctl.isClosed) {
-          ctl.addError(e, s);
-          await ctl.close();
-        }
-      },
-      onDone: () {
-        if (!ctl.isClosed) ctl.close();
-      },
-      cancelOnError: true,
-    );
+    sub = _client!
+        .callStreaming(method, params)
+        .listen(
+          ctl.add,
+          onError: (Object e, StackTrace s) async {
+            if (e is SidecarError && _isProcessExitError(e)) {
+              switch (kind) {
+                case SidecarMethodKind.retrySafe:
+                  try {
+                    await _restartOrLatch();
+                  } on Object {
+                    // The next call will see the latch if restart failed.
+                  }
+                  break;
+                case SidecarMethodKind.stateful:
+                  var latched = false;
+                  try {
+                    await _restartOrLatch();
+                  } on SidecarLatchedException {
+                    latched = true;
+                  }
+                  e = SidecarCrashedDuringStatefulCall(
+                    method: method,
+                    latched: latched,
+                  );
+                  break;
+                case SidecarMethodKind.failStop:
+                  _latched = true;
+                  await _client?.shutdown();
+                  _client = null;
+                  e = SidecarCrashedDuringStatefulCall(
+                    method: method,
+                    latched: true,
+                  );
+              }
+            }
+            if (!ctl.isClosed) {
+              ctl.addError(e, s);
+              await ctl.close();
+            }
+          },
+          onDone: () {
+            if (!ctl.isClosed) ctl.close();
+          },
+          cancelOnError: true,
+        );
     ctl.onCancel = () => sub.cancel();
     return ctl.stream;
   }
@@ -178,7 +199,8 @@ class SidecarSupervisor implements SidecarConnection {
   /// controller so long-lived listeners (the egress visualizer, for
   /// instance) don't go silent after the first sidecar crash.
   @override
-  Stream<SidecarNotification> get notifications => _notificationsRebroadcast.stream;
+  Stream<SidecarNotification> get notifications =>
+      _notificationsRebroadcast.stream;
 
   /// Forward per-operation streams to the underlying client. The
   /// returned stream is the live one from the *current* client; if a
@@ -190,9 +212,7 @@ class SidecarSupervisor implements SidecarConnection {
   Stream<SidecarNotification> subscribeToOperation(String operationId) {
     final c = _client;
     if (c == null) {
-      throw StateError(
-        'SidecarSupervisor.subscribeToOperation before start()',
-      );
+      throw StateError('SidecarSupervisor.subscribeToOperation before start()');
     }
     return c.subscribeToOperation(operationId);
   }

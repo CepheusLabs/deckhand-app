@@ -39,9 +39,11 @@ void main() {
 
   group('SidecarSupervisor', () {
     test('passes through a successful retrySafe call', () async {
-      final fake = _FakeClient(callBehavior: (m, p) async {
-        return {'ok': true, 'method': m};
-      });
+      final fake = _FakeClient(
+        callBehavior: (m, p) async {
+          return {'ok': true, 'method': m};
+        },
+      );
       final sup = SidecarSupervisor(spawn: () => fake);
       await sup.start();
       final got = await sup.call('disks.list', const {});
@@ -52,16 +54,18 @@ void main() {
     test('retries a retrySafe call once on a process-exit error', () async {
       var calls = 0;
       _FakeClient? current;
-      current = _FakeClient(callBehavior: (m, p) async {
-        calls++;
-        if (calls == 1) {
-          throw const SidecarError(
-            code: -1,
-            message: 'sidecar process exited',
-          );
-        }
-        return {'ok': true, 'attempt': calls};
-      });
+      current = _FakeClient(
+        callBehavior: (m, p) async {
+          calls++;
+          if (calls == 1) {
+            throw const SidecarError(
+              code: -1,
+              message: 'sidecar process exited',
+            );
+          }
+          return {'ok': true, 'attempt': calls};
+        },
+      );
 
       final spawnLog = <int>[];
       var spawnCount = 0;
@@ -78,33 +82,47 @@ void main() {
       await sup.start();
       final got = await sup.call('disks.list', const {});
       expect(got, {'ok': true, 'attempt': 2});
-      expect(spawnLog, [1, 2], reason: 'spawn called once initially + once for restart');
+      expect(spawnLog, [
+        1,
+        2,
+      ], reason: 'spawn called once initially + once for restart');
       await sup.shutdown();
     });
 
-    test('stateful method on crash throws SidecarCrashedDuringStatefulCall',
-        () async {
-      final fake = _FakeClient(callBehavior: (m, p) async {
-        throw const SidecarError(code: -1, message: 'sidecar process exited');
-      });
-      final sup = SidecarSupervisor(
-        spawn: () => fake,
-        backoffSchedule: _zeroBackoff,
-      );
-      await sup.start();
-      await expectLater(
-        sup.call('os.download', const {'url': 'x', 'dest': 'y'}),
-        throwsA(isA<SidecarCrashedDuringStatefulCall>()
-            .having((e) => e.method, 'method', 'os.download')
-            .having((e) => e.latched, 'latched', isFalse)),
-      );
-      await sup.shutdown();
-    });
+    test(
+      'stateful method on crash throws SidecarCrashedDuringStatefulCall',
+      () async {
+        final fake = _FakeClient(
+          callBehavior: (m, p) async {
+            throw const SidecarError(
+              code: -1,
+              message: 'sidecar process exited',
+            );
+          },
+        );
+        final sup = SidecarSupervisor(
+          spawn: () => fake,
+          backoffSchedule: _zeroBackoff,
+        );
+        await sup.start();
+        await expectLater(
+          sup.call('os.download', const {'url': 'x', 'dest': 'y'}),
+          throwsA(
+            isA<SidecarCrashedDuringStatefulCall>()
+                .having((e) => e.method, 'method', 'os.download')
+                .having((e) => e.latched, 'latched', isFalse),
+          ),
+        );
+        await sup.shutdown();
+      },
+    );
 
     test('failStop method on crash latches the supervisor', () async {
-      final fake = _FakeClient(callBehavior: (m, p) async {
-        throw const SidecarError(code: -1, message: 'sidecar process exited');
-      });
+      final fake = _FakeClient(
+        callBehavior: (m, p) async {
+          throw const SidecarError(code: -1, message: 'sidecar process exited');
+        },
+      );
       final sup = SidecarSupervisor(
         spawn: () => fake,
         backoffSchedule: _zeroBackoff,
@@ -116,8 +134,13 @@ void main() {
           'disk_id': 'y',
           'confirmation_token': 'z',
         }),
-        throwsA(isA<SidecarCrashedDuringStatefulCall>()
-            .having((e) => e.latched, 'latched', isTrue)),
+        throwsA(
+          isA<SidecarCrashedDuringStatefulCall>().having(
+            (e) => e.latched,
+            'latched',
+            isTrue,
+          ),
+        ),
       );
       // Subsequent calls latch immediately.
       await expectLater(
@@ -127,9 +150,11 @@ void main() {
     });
 
     test('latches after exceeding the restart cap', () async {
-      final fake = _FakeClient(callBehavior: (m, p) async {
-        throw const SidecarError(code: -1, message: 'sidecar process exited');
-      });
+      final fake = _FakeClient(
+        callBehavior: (m, p) async {
+          throw const SidecarError(code: -1, message: 'sidecar process exited');
+        },
+      );
       var spawns = 0;
       final sup = SidecarSupervisor(
         spawn: () {
@@ -146,49 +171,57 @@ void main() {
       // supervisor did NOT exceed _maxRestarts.
       try {
         await sup.call('disks.list', const {});
-      } on Object {/* expected */}
+      } on Object {
+        /* expected */
+      }
       try {
         await sup.call('disks.list', const {});
-      } on Object {/* expected */}
+      } on Object {
+        /* expected */
+      }
       try {
         await sup.call('disks.list', const {});
-      } on Object {/* expected */}
-      expect(spawns, lessThanOrEqualTo(3),
-          reason: '1 initial + at most _maxRestarts (2) = 3');
+      } on Object {
+        /* expected */
+      }
+      expect(
+        spawns,
+        lessThanOrEqualTo(3),
+        reason: '1 initial + at most _maxRestarts (2) = 3',
+      );
     });
 
-    test('non-process-exit SidecarErrors pass through unmodified',
-        () async {
-      final fake = _FakeClient(callBehavior: (m, p) async {
-        throw const SidecarError(
-          code: -34000,
-          message: 'disks.list failed: permission denied',
-        );
-      });
+    test('non-process-exit SidecarErrors pass through unmodified', () async {
+      final fake = _FakeClient(
+        callBehavior: (m, p) async {
+          throw const SidecarError(
+            code: -34000,
+            message: 'disks.list failed: permission denied',
+          );
+        },
+      );
       final sup = SidecarSupervisor(spawn: () => fake);
       await sup.start();
       await expectLater(
         sup.call('disks.list', const {}),
-        throwsA(isA<SidecarError>()
-            .having((e) => e.code, 'code', -34000)),
+        throwsA(isA<SidecarError>().having((e) => e.code, 'code', -34000)),
       );
       await sup.shutdown();
     });
 
     test('start before call is required (StateError otherwise)', () async {
       final sup = SidecarSupervisor(spawn: () => _FakeClient());
-      await expectLater(
-        sup.call('ping', const {}),
-        throwsA(isA<StateError>()),
-      );
+      await expectLater(sup.call('ping', const {}), throwsA(isA<StateError>()));
     });
 
     test('start is idempotent', () async {
       var spawns = 0;
-      final sup = SidecarSupervisor(spawn: () {
-        spawns++;
-        return _FakeClient();
-      });
+      final sup = SidecarSupervisor(
+        spawn: () {
+          spawns++;
+          return _FakeClient();
+        },
+      );
       await sup.start();
       await sup.start();
       await sup.start();
@@ -196,11 +229,11 @@ void main() {
       await sup.shutdown();
     });
 
-    test('callStreaming crash triggers a restart for the next call',
-        () async {
+    test('callStreaming crash triggers a restart for the next call', () async {
       // Streams are inherently stateful: the supervisor cannot replay
       // a partial stream, but it CAN restart so the next operation
-      // gets a healthy sidecar. Caller observes the original error.
+      // gets a healthy sidecar. Caller gets a typed crash so it can
+      // decide how to clean up any partial output.
       var spawns = 0;
       final sup = SidecarSupervisor(
         spawn: () {
@@ -209,10 +242,13 @@ void main() {
             streamBehavior: (m, p) async* {
               if (spawns == 1) {
                 throw const SidecarError(
-                  code: -1, message: 'sidecar process exited');
+                  code: -1,
+                  message: 'sidecar process exited',
+                );
               }
-              yield const SidecarProgress(SidecarNotification(
-                  method: 'progress', params: {'pct': 100}));
+              yield const SidecarProgress(
+                SidecarNotification(method: 'progress', params: {'pct': 100}),
+              );
             },
           );
         },
@@ -221,23 +257,59 @@ void main() {
       await sup.start();
       await expectLater(
         sup.callStreaming('disks.read_image', const {}).first,
-        throwsA(isA<SidecarError>()),
+        throwsA(
+          isA<SidecarCrashedDuringStatefulCall>()
+              .having((e) => e.method, 'method', 'disks.read_image')
+              .having((e) => e.latched, 'latched', isFalse),
+        ),
       );
       // Restart fired - next call (or stream) sees the new client.
-      expect(spawns, 2,
-          reason: 'one initial spawn + one restart after stream crash');
+      expect(
+        spawns,
+        2,
+        reason: 'one initial spawn + one restart after stream crash',
+      );
       await sup.shutdown();
     });
 
-    test('shutdown during pending restart backoff does not deadlock',
-        () async {
+    test('failStop streaming crash latches the supervisor', () async {
+      final sup = SidecarSupervisor(
+        spawn: () => _FakeClient(
+          streamBehavior: (m, p) async* {
+            throw const SidecarError(
+              code: -1,
+              message: 'sidecar process exited',
+            );
+          },
+        ),
+        backoffSchedule: _zeroBackoff,
+      );
+
+      await sup.start();
+      await expectLater(
+        sup.callStreaming('disks.write_image', const {}).first,
+        throwsA(
+          isA<SidecarCrashedDuringStatefulCall>()
+              .having((e) => e.method, 'method', 'disks.write_image')
+              .having((e) => e.latched, 'latched', isTrue),
+        ),
+      );
+      await expectLater(
+        sup.call('ping', const {}),
+        throwsA(isA<SidecarLatchedException>()),
+      );
+    });
+
+    test('shutdown during pending restart backoff does not deadlock', () async {
       // Use a non-zero (but short) backoff so shutdown races with the
       // pending Timer/Future.delayed inside _restartOrLatch. The fix
       // ensures shutdown latches the supervisor and the in-flight
       // backoff resolves without referencing freed state.
-      final fake = _FakeClient(callBehavior: (m, p) async {
-        throw const SidecarError(code: -1, message: 'sidecar process exited');
-      });
+      final fake = _FakeClient(
+        callBehavior: (m, p) async {
+          throw const SidecarError(code: -1, message: 'sidecar process exited');
+        },
+      );
       final sup = SidecarSupervisor(
         spawn: () => fake,
         backoffSchedule: const [Duration(milliseconds: 200)],
@@ -252,7 +324,11 @@ void main() {
       // deadlocking. We don't assert the exact error class because
       // the ordering of latch vs restart-finish is racy by design;
       // the assertion is "this completes within the test timeout."
-      try { await pending; } on Object {/* expected */}
+      try {
+        await pending;
+      } on Object {
+        /* expected */
+      }
     });
   });
 }
@@ -265,17 +341,19 @@ const _zeroBackoff = <Duration>[Duration.zero, Duration.zero];
 /// process is involved.
 class _FakeClient extends SidecarClient {
   _FakeClient({this.callBehavior, this.streamBehavior})
-      : super(binaryPath: '/fake');
+    : super(binaryPath: '/fake');
 
   final Future<Map<String, dynamic>> Function(
     String method,
     Map<String, dynamic> params,
-  )? callBehavior;
+  )?
+  callBehavior;
 
   final Stream<SidecarEvent> Function(
     String method,
     Map<String, dynamic> params,
-  )? streamBehavior;
+  )?
+  streamBehavior;
 
   @override
   Future<void> start() async {
