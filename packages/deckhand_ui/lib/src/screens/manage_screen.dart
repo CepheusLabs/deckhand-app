@@ -10,6 +10,7 @@ import 'package:go_router/go_router.dart';
 import '../providers.dart';
 import '../theming/deckhand_tokens.dart';
 import '../utils/disk_display.dart';
+import '../utils/disk_operation_errors.dart';
 import '../widgets/deckhand_loading.dart';
 import '../widgets/wizard_progress_bar.dart';
 import '../widgets/wizard_scaffold.dart';
@@ -2036,14 +2037,8 @@ String _phaseLabel(FlashPhase? phase) => switch (phase) {
   null => 'RESTORING IMAGE',
 };
 
-String _friendlyRestoreError(Object error) {
-  final raw = error.toString();
-  const prefix = 'Exception: ';
-  final trimmed = raw.startsWith(prefix) ? raw.substring(prefix.length) : raw;
-  return trimmed
-      .replaceFirst('StateError: ', '')
-      .replaceFirst('ElevatedHelperException: ', '');
-}
+String _friendlyRestoreError(Object error) =>
+    userFacingDiskOperationError(error);
 
 // ---------------------------------------------------------------------
 // Flash MCU tab — same honest stance.

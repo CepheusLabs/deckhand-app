@@ -334,7 +334,18 @@ void main() {
         message,
         contains('Windows did not start Deckhand\'s disk helper'),
       );
-      expect(message, contains('Run Deckhand as Administrator'));
+      expect(message, contains('Start Deckhand as Administrator'));
+      expect(message, isNot(contains('ElevatedHelperException')));
+    });
+
+    test('progressRunErrorMessage explains raw disk access failures', () {
+      final message = progressRunErrorMessage(
+        r'Exception: ElevatedHelperException: write \\.\PHYSICALDRIVE3: Access is denied.',
+      );
+
+      expect(message, contains('Windows denied raw-disk access'));
+      expect(message, contains('Windows disk 3'));
+      expect(message, isNot(contains('PHYSICALDRIVE3')));
       expect(message, isNot(contains('ElevatedHelperException')));
     });
 
