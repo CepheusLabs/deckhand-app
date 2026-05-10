@@ -54,6 +54,14 @@ void main() {
       expect(routeForResumeStep('emmc-backup'), '/emmc-backup');
     });
 
+    test('first-boot handoff steps are navigable', () {
+      // Fresh-flash progress hands off to first boot after writing the
+      // eMMC. If the app closes there, Resume must return to the
+      // handoff instead of falling back into the wizard entry flow.
+      expect(routeForResumeStep('first-boot'), '/first-boot');
+      expect(routeForResumeStep('first-boot-setup'), '/first-boot-setup');
+    });
+
     test('manage and settings are navigable resume targets', () {
       // currentStep tracks every routed location now (via the
       // WizardShell router listener), so a user who closed the app
