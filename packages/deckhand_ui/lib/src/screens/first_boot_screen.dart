@@ -8,6 +8,7 @@ import 'package:go_router/go_router.dart';
 
 import '../providers.dart';
 import '../theming/deckhand_tokens.dart';
+import '../utils/user_facing_errors.dart';
 import '../widgets/deckhand_loading.dart';
 import '../widgets/wizard_scaffold.dart';
 
@@ -50,10 +51,17 @@ class _FirstBootScreenState extends ConsumerState<FirstBootScreen> {
       const Duration(seconds: 1),
       (_) => setState(() {}),
     );
-    final ok = await ref
-        .read(discoveryServiceProvider)
-        .waitForSsh(host: host, timeout: _pollTimeout);
-    _ticker?.cancel();
+    var ok = false;
+    Object? pollError;
+    try {
+      ok = await ref
+          .read(discoveryServiceProvider)
+          .waitForSsh(host: host, timeout: _pollTimeout);
+    } catch (error) {
+      pollError = error;
+    } finally {
+      _ticker?.cancel();
+    }
     if (!mounted) return;
     if (ok) {
       await ref
@@ -67,7 +75,9 @@ class _FirstBootScreenState extends ConsumerState<FirstBootScreen> {
       _timedOut = !ok;
       _status = ok
           ? 'SSH is up.'
-          : 'Printer did not answer before the timeout.';
+          : pollError == null
+          ? 'Printer did not answer before the timeout.'
+          : 'Deckhand could not check SSH: ${userFacingError(pollError)}';
     });
   }
 
