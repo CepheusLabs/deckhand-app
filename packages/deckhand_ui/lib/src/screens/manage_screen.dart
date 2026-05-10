@@ -828,9 +828,9 @@ class _RestoreTabState extends ConsumerState<_RestoreTab> {
     }
     if (image == null) {
       _publishFooterAction(const _RestoreFooterAction.none());
-      return Column(
+      return const Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: const [
+        children: [
           _RestoreStepStrip(step: _RestoreStep.backup),
           SizedBox(height: 12),
           _RestoreProblem(message: 'No backup image is selected.'),

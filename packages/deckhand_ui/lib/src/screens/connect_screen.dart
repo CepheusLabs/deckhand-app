@@ -1233,16 +1233,10 @@ class _TabbedBody extends StatelessWidget {
               if (constraints.maxWidth < 620) {
                 return SingleChildScrollView(
                   scrollDirection: Axis.horizontal,
-                  child: Row(children: [...tabs, if (refresh != null) refresh]),
+                  child: Row(children: [...tabs, ?refresh]),
                 );
               }
-              return Row(
-                children: [
-                  ...tabs,
-                  const Spacer(),
-                  if (refresh != null) refresh,
-                ],
-              );
+              return Row(children: [...tabs, const Spacer(), ?refresh]);
             },
           ),
         ),

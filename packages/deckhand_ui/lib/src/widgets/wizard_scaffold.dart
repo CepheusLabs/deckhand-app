@@ -197,7 +197,7 @@ class _WizardFooterActionBar extends StatelessWidget {
           children: [
             for (final button in leading) ...[button, const SizedBox(width: 8)],
             const Spacer(),
-            if (trailing != null) trailing,
+            ?trailing,
           ],
         );
       },
