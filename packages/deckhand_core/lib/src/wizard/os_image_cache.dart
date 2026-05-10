@@ -55,6 +55,7 @@ Future<List<OsImageCacheEntry>> scanOsImageCache(String root) async {
     final path = entity.path;
     final name = p.basename(path);
     if (name.endsWith(osImageDownloadManifestSuffix) ||
+        name.endsWith('$osImageDownloadManifestSuffix.tmp') ||
         name.endsWith('.part')) {
       continue;
     }
@@ -108,6 +109,7 @@ Future<void> deleteOsImageCacheEntry({
     '$safeImage.part',
     '$safeImage.download.part',
     '$safeImage$osImageDownloadManifestSuffix',
+    '$safeImage$osImageDownloadManifestSuffix.tmp',
   ]) {
     final type = await FileSystemEntity.type(related, followLinks: false);
     if (type == FileSystemEntityType.file) {

@@ -120,6 +120,21 @@ void main() {
     expect(entries.map((entry) => entry.fileName), ['real.img']);
   });
 
+  test('scanOsImageCache ignores temporary manifest writes', () async {
+    final root = await Directory.systemTemp.createTemp('deckhand-cache-test-');
+    addTearDown(() => root.delete(recursive: true));
+
+    final image = File(p.join(root.path, 'arco.img'));
+    await image.writeAsBytes([1]);
+    await File(
+      '${image.path}$osImageDownloadManifestSuffix.tmp',
+    ).writeAsString('{"schema_version":');
+
+    final entries = await scanOsImageCache(root.path);
+
+    expect(entries.map((entry) => entry.fileName), ['arco.img']);
+  });
+
   test(
     'deleteOsImageCacheEntry removes image, manifest, and partial',
     () async {
@@ -130,10 +145,14 @@ void main() {
 
       final image = File(p.join(root.path, 'arco.img'));
       final manifest = File('${image.path}$osImageDownloadManifestSuffix');
+      final tempManifest = File(
+        '${image.path}$osImageDownloadManifestSuffix.tmp',
+      );
       final part = File('${image.path}.part');
       final downloadPart = File('${image.path}.download.part');
       await image.writeAsBytes([1]);
       await manifest.writeAsString('{}');
+      await tempManifest.writeAsString('{}');
       await part.writeAsBytes([2]);
       await downloadPart.writeAsBytes([3]);
 
@@ -141,6 +160,7 @@ void main() {
 
       expect(await image.exists(), isFalse);
       expect(await manifest.exists(), isFalse);
+      expect(await tempManifest.exists(), isFalse);
       expect(await part.exists(), isFalse);
       expect(await downloadPart.exists(), isFalse);
     },
