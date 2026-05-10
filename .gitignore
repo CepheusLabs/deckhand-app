@@ -7,6 +7,7 @@
 .pub/
 build/
 pubspec.lock
+!app/pubspec.lock
 coverage/
 
 # Generated Flutter files
