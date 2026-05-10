@@ -430,35 +430,55 @@ class _PaneTabs extends StatelessWidget {
             color: tokens.ink2,
             border: Border(bottom: BorderSide(color: tokens.line)),
           ),
-          child: Row(
-            children: [
-              for (var i = 0; i < tabs.length; i++)
-                _PaneTabCell(
-                  tab: tabs[i],
-                  isActive: controller.index == i,
-                  tokens: tokens,
-                  onTap: () => controller.animateTo(i),
-                ),
-              const Spacer(),
-              IconButton(
-                tooltip: 'Copy log',
-                icon: const Icon(Icons.content_copy, size: 14),
-                color: tokens.text3,
-                disabledColor: tokens.text4.withValues(alpha: 0.5),
-                onPressed: onCopyLog,
-              ),
-              Padding(
-                padding: const EdgeInsets.only(right: 12),
-                child: Text(
-                  trailingLabel,
-                  style: TextStyle(
-                    fontFamily: DeckhandTokens.fontMono,
-                    fontSize: 10,
-                    color: tokens.text4,
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final showTrailing = constraints.maxWidth >= 460;
+              return Row(
+                children: [
+                  Expanded(
+                    child: SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          for (var i = 0; i < tabs.length; i++)
+                            _PaneTabCell(
+                              tab: tabs[i],
+                              isActive: controller.index == i,
+                              tokens: tokens,
+                              onTap: () => controller.animateTo(i),
+                            ),
+                        ],
+                      ),
+                    ),
                   ),
-                ),
-              ),
-            ],
+                  IconButton(
+                    tooltip: 'Copy log',
+                    icon: const Icon(Icons.content_copy, size: 14),
+                    color: tokens.text3,
+                    disabledColor: tokens.text4.withValues(alpha: 0.5),
+                    onPressed: onCopyLog,
+                  ),
+                  if (showTrailing)
+                    Padding(
+                      padding: const EdgeInsets.only(right: 12),
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 180),
+                        child: Text(
+                          trailingLabel,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontFamily: DeckhandTokens.fontMono,
+                            fontSize: 10,
+                            color: tokens.text4,
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              );
+            },
           ),
         );
       },

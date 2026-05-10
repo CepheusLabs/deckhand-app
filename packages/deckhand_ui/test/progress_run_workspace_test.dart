@@ -226,6 +226,39 @@ void main() {
     expect(find.textContaining('No host-side outbound HTTP'), findsOneWidget);
   });
 
+  testWidgets('log tabs stay usable in a narrow workspace', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(420, 640));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final controller = stubWizardController(profileJson: testProfileJson());
+    await controller.loadProfile('test-printer');
+
+    await tester.pumpWidget(
+      testHarnessWithSettings(
+        controller: controller,
+        settingsSeed: (settings) => settings.developerMode = true,
+        child: Scaffold(
+          body: Center(
+            child: SizedBox(
+              width: 320,
+              height: 520,
+              child: ProgressRunWorkspace(
+                steps: const [RunStep(id: 'download_os', kind: 'os_download')],
+                statusFor: (_) => RunStepStatus.done,
+                log: const ['[os] ready'],
+                networkEvents: const [],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('Log'), findsOneWidget);
+    expect(find.text('Network'), findsOneWidget);
+    expect(find.byTooltip('Copy log'), findsOneWidget);
+  });
+
   testWidgets('log pane defaults to readable text', (tester) async {
     final controller = stubWizardController(profileJson: testProfileJson());
     await controller.loadProfile('test-printer');
