@@ -48,6 +48,72 @@ func TestValidateBackupOutputPathRejectsExistingFile(t *testing.T) {
 	}
 }
 
+func TestValidateBackupPartialOutputPathRejectsExistingPartial(t *testing.T) {
+	root := makeBackupRoot(t)
+	output := filepath.Join(root, "backup.img")
+	partPath := output + ".part"
+	if err := os.WriteFile(partPath, []byte("partial"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := validateBackupPartialOutputPath(root, output)
+	if err == nil || !strings.Contains(err.Error(), "partial output") || !strings.Contains(err.Error(), "already exists") {
+		t.Fatalf("expected existing-partial error, got %v", err)
+	}
+}
+
+func TestPublishStagedBackupOutputPublishesAndRemovesPartial(t *testing.T) {
+	root := makeBackupRoot(t)
+	output := filepath.Join(root, "backup.img")
+	partPath := output + ".part"
+	payload := []byte("complete backup image")
+	if err := os.WriteFile(partPath, payload, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := publishStagedBackupOutput(partPath, output); err != nil {
+		t.Fatalf("publishStagedBackupOutput() error = %v", err)
+	}
+
+	got, err := os.ReadFile(output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != string(payload) {
+		t.Fatalf("published payload = %q, want %q", got, payload)
+	}
+	if _, err := os.Stat(partPath); !os.IsNotExist(err) {
+		t.Fatalf("partial output should be removed, stat err = %v", err)
+	}
+}
+
+func TestPublishStagedBackupOutputDoesNotOverwriteExistingOutput(t *testing.T) {
+	root := makeBackupRoot(t)
+	output := filepath.Join(root, "backup.img")
+	partPath := output + ".part"
+	if err := os.WriteFile(output, []byte("existing"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(partPath, []byte("partial"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	err := publishStagedBackupOutput(partPath, output)
+	if err == nil || !strings.Contains(err.Error(), "already exists") {
+		t.Fatalf("expected existing-output error, got %v", err)
+	}
+	got, err := os.ReadFile(output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "existing" {
+		t.Fatalf("output was overwritten: %q", got)
+	}
+	if got, err := os.ReadFile(partPath); err != nil || string(got) != "partial" {
+		t.Fatalf("partial changed after failed publish: %q, err=%v", got, err)
+	}
+}
+
 func TestWriteRawDeviceBytesRetriesLargeInvalidParameterWrites(t *testing.T) {
 	retryErr := errors.New("invalid parameter")
 	writer := &flakyWriter{failures: []error{retryErr}}

@@ -221,15 +221,19 @@ func runReadImage(args []string) {
 		total = *totalBytesHint
 	}
 
-	dst, err := os.OpenFile(*output, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	partPath, err := validateBackupPartialOutputPath(*outputRoot, *output)
 	if err != nil {
-		fatalf("create output: %v", err)
+		fatalf("validate partial output: %v", err)
+	}
+	dst, err := os.OpenFile(partPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		fatalf("create partial output: %v", err)
 	}
 	defer func() { _ = dst.Close() }()
 	cancelCleanup := func() {
 		_ = src.Close()
 		_ = dst.Close()
-		_ = os.Remove(*output)
+		_ = os.Remove(partPath)
 	}
 	failAfterOutputOpen := func(format string, args ...any) {
 		cancelCleanup()
@@ -277,6 +281,12 @@ func runReadImage(args []string) {
 	fatalIfCanceled(*cancelFile, cancelCleanup)
 	if err := dst.Sync(); err != nil {
 		failAfterOutputOpen("sync: %v", err)
+	}
+	if err := dst.Close(); err != nil {
+		failAfterOutputOpen("close output: %v", err)
+	}
+	if err := publishStagedBackupOutput(partPath, *output); err != nil {
+		failAfterOutputOpen("%v", err)
 	}
 
 	sum := hex.EncodeToString(hasher.Sum(nil))
@@ -473,6 +483,54 @@ func validateBackupOutputParent(cleanRoot, cleanOutput string) error {
 		if !info.IsDir() {
 			return fmt.Errorf("output directory %q is not a directory", cur)
 		}
+	}
+	return nil
+}
+
+func validateBackupPartialOutputPath(root, output string) (string, error) {
+	cleanRoot, err := filepath.Abs(filepath.Clean(root))
+	if err != nil {
+		return "", fmt.Errorf("resolve output-root: %w", err)
+	}
+	cleanOutput, err := filepath.Abs(filepath.Clean(output))
+	if err != nil {
+		return "", fmt.Errorf("resolve output: %w", err)
+	}
+	partPath := cleanOutput + ".part"
+	if err := rejectDeviceOutput(partPath); err != nil {
+		return "", err
+	}
+	if err := validateBackupOutputParent(cleanRoot, partPath); err != nil {
+		return "", err
+	}
+	if info, err := os.Lstat(partPath); err == nil {
+		if info.Mode()&os.ModeSymlink != 0 {
+			return "", fmt.Errorf("partial output %q is a symlink", partPath)
+		}
+		return "", fmt.Errorf("partial output %q already exists", partPath)
+	} else if !os.IsNotExist(err) {
+		return "", fmt.Errorf("inspect partial output: %w", err)
+	}
+	return partPath, nil
+}
+
+func publishStagedBackupOutput(partPath, output string) error {
+	if info, err := os.Lstat(output); err == nil {
+		if info.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("output %q is a symlink before publish", output)
+		}
+		return fmt.Errorf("output %q already exists before publish", output)
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("inspect output before publish: %w", err)
+	}
+	if err := os.Link(partPath, output); err != nil {
+		if os.IsExist(err) {
+			return fmt.Errorf("output %q already exists before publish", output)
+		}
+		return fmt.Errorf("publish output: %w", err)
+	}
+	if err := os.Remove(partPath); err != nil && !os.IsNotExist(err) {
+		fmt.Fprintf(os.Stderr, "warn: could not remove partial output %q: %v\n", partPath, err)
 	}
 	return nil
 }
