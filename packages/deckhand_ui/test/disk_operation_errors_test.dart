@@ -135,5 +135,14 @@ void main() {
         'Windows could not list storage devices. Reopen Deckhand as Administrator, then refresh disks; if it still fails, check that Windows Disk Management can open.',
       );
     });
+
+    test('explains Windows volume lock failures with privilege guidance', () {
+      expect(
+        userFacingDiskOperationError(
+          r'StepExecutionException: prepare target: lock volume \\?\Volume{81442efe-49a7-11f1-bd05-4c23380248b8}\ after dismounting busy filesystem: Access is denied.',
+        ),
+        'Windows would not release the selected disk. Start Deckhand as Administrator. Close File Explorer, Disk Management, terminals, and any app using that USB drive, then unplug/replug the adapter and retry.',
+      );
+    });
   });
 }

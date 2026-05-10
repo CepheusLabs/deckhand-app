@@ -50,7 +50,7 @@ String userFacingDiskOperationError(Object? error) {
     return 'Deckhand\'s disk helper stopped before finishing. Reconnect the USB adapter, make sure no other app is using the drive, then retry.';
   }
   if (lower.contains('lock volume') && lower.contains('access is denied')) {
-    return 'Windows would not release the selected disk. Close File Explorer, Disk Management, terminals, and any app using that USB drive, then unplug/replug the adapter and retry.';
+    return 'Windows would not release the selected disk. Start Deckhand as Administrator. Close File Explorer, Disk Management, terminals, and any app using that USB drive, then unplug/replug the adapter and retry.';
   }
   if (lower.contains('query volume') && lower.contains('incorrect function')) {
     return 'Windows could not inspect a partition on the selected disk. Replug the USB adapter and retry; if it repeats, use a different eMMC reader or clear stale drive letters in Disk Management.';
