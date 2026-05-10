@@ -21,6 +21,7 @@ class FirstBootScreen extends ConsumerStatefulWidget {
 class _FirstBootScreenState extends ConsumerState<FirstBootScreen> {
   bool _waiting = false;
   bool _ready = false;
+  bool _timedOut = false;
   String _status = 'Choose the printer after it boots.';
   DateTime? _pollStart;
   Timer? _ticker;
@@ -42,6 +43,7 @@ class _FirstBootScreenState extends ConsumerState<FirstBootScreen> {
     setState(() {
       _waiting = true;
       _pollStart = DateTime.now();
+      _timedOut = false;
       _status = 'Polling $host:22 for SSH…';
     });
     _ticker = Timer.periodic(
@@ -62,7 +64,10 @@ class _FirstBootScreenState extends ConsumerState<FirstBootScreen> {
     setState(() {
       _waiting = false;
       _ready = ok;
-      _status = ok ? 'SSH is up.' : 'Timed out waiting for SSH.';
+      _timedOut = !ok;
+      _status = ok
+          ? 'SSH is up.'
+          : 'Printer did not answer before the timeout.';
     });
   }
 
@@ -86,6 +91,7 @@ class _FirstBootScreenState extends ConsumerState<FirstBootScreen> {
             hasHost: hasHost,
             waiting: _waiting,
             ready: _ready,
+            timedOut: _timedOut,
             status: _status,
             elapsed: _pollStart == null
                 ? Duration.zero
@@ -114,7 +120,9 @@ class _FirstBootScreenState extends ConsumerState<FirstBootScreen> {
             ? 'Continue'
             : (_waiting
                   ? 'Waiting…'
-                  : (hasHost ? 'Start polling' : 'Choose printer')),
+                  : (_timedOut
+                        ? 'Retry polling'
+                        : (hasHost ? 'Start polling' : 'Choose printer'))),
         onPressed: _ready
             ? () => context.go('/first-boot-setup')
             : (_waiting
@@ -122,6 +130,11 @@ class _FirstBootScreenState extends ConsumerState<FirstBootScreen> {
                   : (hasHost ? _startPolling : () => context.go('/connect'))),
       ),
       secondaryActions: [
+        if (_timedOut)
+          WizardAction(
+            label: 'Choose printer',
+            onPressed: () => context.go('/connect'),
+          ),
         WizardAction(
           label: 'Back',
           onPressed: () => context.go('/flash-confirm'),
@@ -223,6 +236,7 @@ class _WaitingPanel extends StatelessWidget {
     required this.hasHost,
     required this.waiting,
     required this.ready,
+    required this.timedOut,
     required this.status,
     required this.elapsed,
     required this.timeout,
@@ -232,6 +246,7 @@ class _WaitingPanel extends StatelessWidget {
   final bool hasHost;
   final bool waiting;
   final bool ready;
+  final bool timedOut;
   final String status;
   final Duration elapsed;
   final Duration timeout;
@@ -264,7 +279,9 @@ class _WaitingPanel extends StatelessWidget {
             height: 80,
             child: CustomPaint(
               painter: _RingPainter(
-                color: ready ? tokens.ok : tokens.accent,
+                color: ready
+                    ? tokens.ok
+                    : (timedOut ? tokens.warn : tokens.accent),
                 strokeWidth: 2,
                 dashed: !ready,
               ),
@@ -275,7 +292,13 @@ class _WaitingPanel extends StatelessWidget {
                         size: 36,
                         color: tokens.ok,
                       )
-                    : const DeckhandSpinner(size: 40, strokeWidth: 2),
+                    : (timedOut
+                          ? Icon(
+                              Icons.wifi_off_outlined,
+                              size: 34,
+                              color: tokens.warn,
+                            )
+                          : const DeckhandSpinner(size: 40, strokeWidth: 2)),
               ),
             ),
           ),
@@ -285,7 +308,11 @@ class _WaitingPanel extends StatelessWidget {
                 ? 'SSH is up.'
                 : (waiting
                       ? 'Waiting for SSH…'
-                      : (hasHost ? 'Ready to poll' : 'Printer not selected')),
+                      : (timedOut
+                            ? 'No SSH response yet.'
+                            : (hasHost
+                                  ? 'Ready to poll'
+                                  : 'Printer not selected'))),
             style: TextStyle(
               fontFamily: DeckhandTokens.fontMono,
               fontSize: DeckhandTokens.tMd,
@@ -303,7 +330,32 @@ class _WaitingPanel extends StatelessWidget {
               fontSize: DeckhandTokens.tXs,
               color: tokens.text4,
             ),
+            textAlign: TextAlign.center,
           ),
+          if (timedOut) ...[
+            const SizedBox(height: 14),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: tokens.warn.withValues(alpha: 0.06),
+                border: Border.all(color: tokens.warn.withValues(alpha: 0.35)),
+                borderRadius: BorderRadius.circular(DeckhandTokens.r2),
+              ),
+              child: Text(
+                'Check that the eMMC is installed, the printer is powered on, '
+                'and the selected address is still correct. Then retry polling '
+                'or choose the printer again.',
+                style: TextStyle(
+                  fontFamily: DeckhandTokens.fontSans,
+                  fontSize: DeckhandTokens.tSm,
+                  height: 1.5,
+                  color: tokens.text2,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ),
+          ],
         ],
       ),
     );
