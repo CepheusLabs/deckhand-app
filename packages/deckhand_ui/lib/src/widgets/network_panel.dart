@@ -24,18 +24,16 @@ class NetworkPanel extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               Text(
-                'No host-side outbound HTTP yet.',
+                'No Deckhand HTTP requests in this run.',
                 style: theme.textTheme.bodyMedium,
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 6),
               Text(
-                'This panel only shows traffic from your computer (e.g. '
-                'profile fetch, OS image download, GitHub release '
-                'metadata). Commands Deckhand runs on the printer over '
-                'SSH — including `git clone` of Kalico/Klipper — happen '
-                'from the printer\'s network, not yours, so they never '
-                'land here.',
+                'Developer mode keeps this diagnostics tab visible even '
+                'when there is nothing to show. It only lists HTTP work '
+                'Deckhand performs on this computer, such as profile '
+                'fetches, release metadata, and OS image downloads.',
                 style: theme.textTheme.bodySmall,
                 textAlign: TextAlign.center,
               ),

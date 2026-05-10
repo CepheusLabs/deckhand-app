@@ -338,7 +338,12 @@ class _StepStatusIcon extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (status == RunStepStatus.active) {
-      return DeckhandSpinner(size: 16, strokeWidth: 2, color: color);
+      return Semantics(
+        container: true,
+        label: 'Active step',
+        value: 'In progress',
+        child: DeckhandSpinner(size: 16, strokeWidth: 2, color: color),
+      );
     }
     final icon = switch (status) {
       RunStepStatus.done => Icons.check,

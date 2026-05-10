@@ -40,6 +40,40 @@ void main() {
     expect(find.byType(CircularProgressIndicator), findsNothing);
   });
 
+  testWidgets('active step exposes progress semantics', (tester) async {
+    final semantics = tester.ensureSemantics();
+    final controller = stubWizardController(profileJson: testProfileJson());
+    await controller.loadProfile('test-printer');
+
+    await tester.pumpWidget(
+      testHarness(
+        controller: controller,
+        child: Scaffold(
+          body: Center(
+            child: SizedBox(
+              width: 1200,
+              height: 520,
+              child: ProgressRunWorkspace(
+                steps: const [
+                  RunStep(id: 'download_os', kind: 'os_download'),
+                  RunStep(id: 'flash_disk', kind: 'flash_disk'),
+                ],
+                statusFor: (step) => step.id == 'download_os'
+                    ? RunStepStatus.active
+                    : RunStepStatus.queued,
+                log: const [],
+                networkEvents: const [],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.bySemanticsLabel('Active step'), findsOneWidget);
+    semantics.dispose();
+  });
+
   testWidgets('step rail uses human task names instead of raw ids', (
     tester,
   ) async {
@@ -227,7 +261,7 @@ void main() {
 
     expect(find.text('Log'), findsOneWidget);
     expect(find.text('HTTP'), findsNothing);
-    expect(find.textContaining('No host-side outbound HTTP'), findsNothing);
+    expect(find.textContaining('No Deckhand HTTP requests'), findsNothing);
   });
 
   testWidgets('developer mode keeps the empty network tab available', (
@@ -260,7 +294,11 @@ void main() {
     expect(find.text('HTTP'), findsOneWidget);
     await tester.tap(find.text('HTTP'));
     await tester.pumpAndSettle();
-    expect(find.textContaining('No host-side outbound HTTP'), findsOneWidget);
+    expect(find.textContaining('No Deckhand HTTP requests'), findsOneWidget);
+    expect(
+      find.textContaining('Developer mode keeps this diagnostics tab visible'),
+      findsOneWidget,
+    );
   });
 
   testWidgets('log tabs stay usable in a narrow workspace', (tester) async {
