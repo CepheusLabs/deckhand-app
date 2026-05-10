@@ -160,7 +160,7 @@ func main() {
 // load-bearing case — `\\.\PHYSICALDRIVE3` returns "Access is denied"
 // without admin).
 func runReadImage(args []string) {
-	fs := flag.NewFlagSet("read-image", flag.ExitOnError)
+	fs := newHelperFlagSet("read-image")
 	target := fs.String("target", "", "source disk id, e.g. PhysicalDrive3 on Windows, /dev/sde on Linux, /dev/rdisk4 on macOS")
 	output := fs.String("output", "", "absolute path of the image file to write")
 	outputRoot := fs.String("output-root", "", "Deckhand-owned backup directory containing the output file")
@@ -279,7 +279,7 @@ func runReadImage(args []string) {
 // a completed eMMC backup image matches the currently attached live disk
 // before auto-acknowledging the rollback step.
 func runHashDevice(args []string) {
-	fs := flag.NewFlagSet("hash-device", flag.ExitOnError)
+	fs := newHelperFlagSet("hash-device")
 	target := fs.String("target", "", "source disk id, e.g. PhysicalDrive3 on Windows, /dev/sde on Linux, /dev/rdisk4 on macOS")
 	tokenFile := fs.String("token-file", "", "path to a 0600-mode file containing the UI-issued confirmation token; deleted on read")
 	cancelFile := fs.String("cancel-file", "", "optional regular file; operation aborts when the file disappears")
@@ -322,6 +322,12 @@ func runHashDevice(args []string) {
 		fatalf("hash device after %d of %d bytes: %v", done, total, err)
 	}
 	emitJSON(map[string]any{"event": "done", "sha256": sum, "bytes": done})
+}
+
+func newHelperFlagSet(name string) *flag.FlagSet {
+	fs := flag.NewFlagSet(name, flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	return fs
 }
 
 func readableSize(src *os.File, hint int64) int64 {

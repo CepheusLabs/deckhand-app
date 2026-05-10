@@ -418,6 +418,15 @@ func TestHashReaderHashesEveryByte(t *testing.T) {
 	}
 }
 
+func TestHelperFlagSetReturnsParseErrors(t *testing.T) {
+	fs := newHelperFlagSet("read-image")
+	fs.String("target", "", "target")
+
+	if err := fs.Parse([]string{"--missing"}); err == nil {
+		t.Fatal("expected parse error for unknown flag")
+	}
+}
+
 func TestTerminalDeviceReadErrorAcceptsEOFOnly(t *testing.T) {
 	if !isTerminalDeviceReadError(io.EOF, 1024, 1024) {
 		t.Fatal("io.EOF should be terminal")
