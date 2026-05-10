@@ -242,6 +242,34 @@ jobs:
             }
           }
 
+      - name: Smoke Windows runner payload
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $runner = "app\build\windows\x64\runner\Release"
+          $sidecar = Join-Path $runner "deckhand-sidecar.exe"
+          $helper = Join-Path $runner "deckhand-elevated-helper.exe"
+          & $sidecar --version
+          if ($LASTEXITCODE -ne 0) {
+            throw "sidecar version smoke failed: $sidecar"
+          }
+          $events = Join-Path $env:TEMP ("deckhand-helper-smoke-{0}.jsonl" -f ([guid]::NewGuid().ToString("N")))
+          try {
+            & $helper version --events-file $events
+            if ($LASTEXITCODE -ne 0) {
+              throw "helper version smoke failed: $helper"
+            }
+            if (-not (Test-Path -LiteralPath $events -PathType Leaf)) {
+              throw "helper smoke did not create an events file: $events"
+            }
+            $body = Get-Content -LiteralPath $events -Raw
+            if ($body -notmatch '"event":"started"' -or $body -notmatch '"event":"version"') {
+              throw "helper smoke did not emit started/version events: $events"
+            }
+          } finally {
+            Remove-Item -LiteralPath $events -Force -ErrorAction SilentlyContinue
+          }
+
       - name: Code-sign inner binaries (Authenticode)
         if: ${{ secrets.WINDOWS_SIGN_THUMBPRINT != '' }}
         shell: pwsh

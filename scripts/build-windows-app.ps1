@@ -232,6 +232,35 @@ Windows runner output is not usable until they are bundled.
     }
 }
 
+function Invoke-RuntimeSmoke {
+    param([Parameter(Mandatory = $true)][string]$RunnerDir)
+
+    $sidecar = Join-Path $RunnerDir 'deckhand-sidecar.exe'
+    $helper = Join-Path $RunnerDir 'deckhand-elevated-helper.exe'
+
+    & $sidecar --version
+    if ($LASTEXITCODE -ne 0) {
+        throw "Sidecar version smoke failed: $sidecar"
+    }
+
+    $eventsPath = Join-Path ([System.IO.Path]::GetTempPath()) ('deckhand-helper-smoke-{0}.jsonl' -f ([guid]::NewGuid().ToString('N')))
+    try {
+        & $helper version --events-file $eventsPath
+        if ($LASTEXITCODE -ne 0) {
+            throw "Elevated helper version smoke failed: $helper"
+        }
+        if (-not (Test-Path -LiteralPath $eventsPath -PathType Leaf)) {
+            throw "Elevated helper smoke did not create an events file: $eventsPath"
+        }
+        $events = Get-Content -LiteralPath $eventsPath -Raw
+        if ($events -notmatch '"event":"started"' -or $events -notmatch '"event":"version"') {
+            throw "Elevated helper smoke did not emit started/version events: $eventsPath"
+        }
+    } finally {
+        Remove-Item -LiteralPath $eventsPath -Force -ErrorAction SilentlyContinue
+    }
+}
+
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $appDir = Join-Path $repoRoot 'app'
 $keyringPath = Join-Path $appDir 'assets\keyring.asc'
@@ -315,3 +344,5 @@ try {
 
 Copy-RuntimeBinaries -SourceDir $sidecarDistDir -DestinationDir $runnerOutputDir
 Write-Host "Bundled runtime binaries into $runnerOutputDir"
+Invoke-RuntimeSmoke -RunnerDir $runnerOutputDir
+Write-Host "Runtime smoke passed for $runnerOutputDir"
