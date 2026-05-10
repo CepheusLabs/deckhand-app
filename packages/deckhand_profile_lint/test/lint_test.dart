@@ -41,6 +41,31 @@ void main() {
     expect(report.hasErrors, isTrue);
   });
 
+  test('flags malformed https download urls', () async {
+    _writeRegistry(tmp, ['bad-https-url']);
+    final profile =
+        '${_minimalValidProfile('bad-https-url')}'
+        '\nflows:\n  fresh_flash:\n    enabled: true\n    images:\n'
+        '      - id: no-host\n'
+        '        display_name: No Host\n'
+        '        url: "https:///img.xz"\n'
+        '        sha256: "${"a" * 64}"\n'
+        '      - id: credentialed\n'
+        '        display_name: Credentialed\n'
+        '        url: "https://token@example.com/img.xz"\n'
+        '        sha256: "${"b" * 64}"\n';
+    _writeProfile(tmp, 'bad-https-url', profile);
+
+    final report = await runProfileLint(['--root', tmp.path]);
+
+    expect(report.hasErrors, isTrue);
+    final messages = report.results
+        .expand((r) => r.findings.map((f) => f.message))
+        .join('\n');
+    expect(messages, contains('valid https:// URL'));
+    expect(messages, contains('without credentials'));
+  });
+
   test('flags malformed sha256', () async {
     _writeRegistry(tmp, ['bad-hash']);
     final profile =

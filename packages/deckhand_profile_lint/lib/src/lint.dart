@@ -775,13 +775,14 @@ void _walkUrlsAndHashes(Object? node, String path, List<LintFinding> out) {
     node.forEach((key, value) {
       final child = path.isEmpty ? key : '$path.$key';
       if (key == 'url' && value is String && (hasSha || isOsImage)) {
-        if (!value.startsWith('https://')) {
+        if (!_isSafeHttpsDownloadUrl(value)) {
           out.add(
             LintFinding(
               LintSeverity.error,
               child,
-              'url must be https:// (this node has a sha256 — '
-              'it\'s a download), got "$value"',
+              'url must be a valid https:// URL without credentials, '
+              'query, or fragment (this node has a sha256 — it\'s a '
+              'download), got "$value"',
             ),
           );
         }
@@ -811,6 +812,16 @@ bool _isOsImageDownloadNode(String path, Map<String, dynamic> node) {
   final normalized = path.toLowerCase();
   return normalized.contains('fresh_install_options[') ||
       normalized.contains('fresh_flash.images[');
+}
+
+bool _isSafeHttpsDownloadUrl(String value) {
+  final uri = Uri.tryParse(value);
+  return uri != null &&
+      uri.scheme == 'https' &&
+      uri.host.isNotEmpty &&
+      uri.userInfo.isEmpty &&
+      !uri.hasQuery &&
+      !uri.hasFragment;
 }
 
 Object? _toPlain(Object? node) {
