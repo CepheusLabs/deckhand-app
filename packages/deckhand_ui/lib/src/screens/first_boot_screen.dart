@@ -131,8 +131,8 @@ class _FirstBootScreenState extends ConsumerState<FirstBootScreen> {
             : (_waiting
                   ? 'Waiting…'
                   : (_timedOut
-                        ? 'Retry polling'
-                        : (hasHost ? 'Start polling' : 'Choose printer'))),
+                        ? 'Retry SSH check'
+                        : (hasHost ? 'Check for printer' : 'Choose printer'))),
         onPressed: _ready
             ? () => context.go('/first-boot-setup')
             : (_waiting
@@ -168,7 +168,7 @@ class _StepsPanel extends StatelessWidget {
       'Put the eMMC module back in the printer.',
       'Power the printer on.',
       if (hasHost)
-        'Click "Start polling" — Deckhand will wait for SSH for up to 10 minutes.'
+        'Start the SSH check once the printer is powered on. Deckhand will wait up to 10 minutes.'
       else
         'Choose the printer once it appears on the network.',
     ];

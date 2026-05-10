@@ -36,7 +36,7 @@ void main() {
       );
       await tester.pump();
 
-      await tester.tap(find.widgetWithText(FilledButton, 'Start polling'));
+      await tester.tap(find.widgetWithText(FilledButton, 'Check for printer'));
       await tester.pump();
       await tester.pump();
 
@@ -46,7 +46,7 @@ void main() {
         findsOneWidget,
       );
       expect(
-        find.widgetWithText(FilledButton, 'Retry polling'),
+        find.widgetWithText(FilledButton, 'Retry SSH check'),
         findsOneWidget,
       );
       expect(find.widgetWithText(TextButton, 'Choose printer'), findsOneWidget);
@@ -80,14 +80,14 @@ void main() {
       );
       await tester.pump();
 
-      await tester.tap(find.widgetWithText(FilledButton, 'Start polling'));
+      await tester.tap(find.widgetWithText(FilledButton, 'Check for printer'));
       await tester.pump();
       await tester.pump();
 
       expect(find.text('No SSH response yet.'), findsOneWidget);
       expect(find.textContaining('Deckhand could not check SSH'), findsOne);
       expect(
-        find.widgetWithText(FilledButton, 'Retry polling'),
+        find.widgetWithText(FilledButton, 'Retry SSH check'),
         findsOneWidget,
       );
       expect(find.widgetWithText(FilledButton, 'Waiting…'), findsNothing);
