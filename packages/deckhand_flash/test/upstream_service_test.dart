@@ -643,6 +643,53 @@ void main() {
       expect(manifest['reused_at'], isA<String>());
     });
 
+    test(
+      'rejects invalid OS image manifest paths without leaving temp files',
+      () async {
+        final dest = _managedOsImageDest('atomic-local-reuse-fail.img');
+        final manifestPath = '$dest.deckhand-download.json';
+        final tmpManifestPath = '$manifestPath.tmp';
+        addTearDown(() async {
+          await _deleteIfExists(dest);
+          await _deleteIfExists(tmpManifestPath);
+          final manifestType = await FileSystemEntity.type(
+            manifestPath,
+            followLinks: false,
+          );
+          if (manifestType == FileSystemEntityType.directory) {
+            await Directory(manifestPath).delete(recursive: true);
+          } else {
+            await _deleteIfExists(manifestPath);
+          }
+        });
+        await Directory(p.dirname(dest)).create(recursive: true);
+        const cachedBody = 'cached-image';
+        await File(dest).writeAsString(cachedBody);
+        await Directory(manifestPath).create();
+        final expected = sha256.convert(utf8.encode(cachedBody)).toString();
+        final sidecar = _FakeSidecar(hash: expected);
+        final security = _AllowAllSecurity(allowedHosts: const {});
+        final svc = SidecarUpstreamService(
+          sidecar: sidecar,
+          security: security,
+        );
+
+        await expectLater(
+          svc
+              .osDownload(
+                url: 'https://blocked.example.com/image.img',
+                destPath: dest,
+                expectedSha256: expected,
+              )
+              .drain<void>(),
+          throwsA(isA<UpstreamException>()),
+        );
+
+        expect(File(tmpManifestPath).existsSync(), isFalse);
+        expect(Directory(manifestPath).existsSync(), isTrue);
+      },
+    );
+
     test('does not reuse stale xz bytes masquerading as an image', () async {
       final dest = _managedOsImageDest('stale-xz-cache.img');
       addTearDown(() async {

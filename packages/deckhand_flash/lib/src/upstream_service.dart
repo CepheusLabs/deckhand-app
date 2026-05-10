@@ -463,11 +463,18 @@ class SidecarUpstreamService implements UpstreamService {
       await tmp.delete();
     }
     await tmp.writeAsString(body, flush: true);
+    var published = false;
     try {
       await tmp.rename(manifest.path);
+      published = true;
     } on FileSystemException {
       if (await manifest.exists()) await manifest.delete();
       await tmp.rename(manifest.path);
+      published = true;
+    } finally {
+      if (!published && await tmp.exists()) {
+        await tmp.delete();
+      }
     }
   }
 
