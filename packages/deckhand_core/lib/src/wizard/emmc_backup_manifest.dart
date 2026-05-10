@@ -396,11 +396,18 @@ Future<String> writeEmmcBackupManifest(EmmcBackupManifest manifest) async {
     const JsonEncoder.withIndent('  ').convert(manifest.toJson()),
     flush: true,
   );
+  var published = false;
   try {
     await tmp.rename(manifestPath);
+    published = true;
   } on FileSystemException {
     if (await manifestFile.exists()) await manifestFile.delete();
     await tmp.rename(manifestPath);
+    published = true;
+  } finally {
+    if (!published && await tmp.exists()) {
+      await tmp.delete();
+    }
   }
   return manifestPath;
 }

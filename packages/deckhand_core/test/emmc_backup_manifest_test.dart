@@ -283,6 +283,36 @@ void main() {
     expect(decoded['profile_id'], 'phrozen-arco');
   });
 
+  test('manifest writes remove temp files when publish fails', () async {
+    final dir = await Directory.systemTemp.createTemp(
+      'deckhand_emmc_manifest_atomic_fail_',
+    );
+    addTearDown(() async {
+      if (await dir.exists()) await dir.delete(recursive: true);
+    });
+
+    final image = File(p.join(dir.path, 'backup.img'));
+    await image.writeAsBytes(List<int>.filled(4096, 7), flush: true);
+    final manifest = EmmcBackupManifest.create(
+      profileId: 'phrozen-arco',
+      imagePath: image.path,
+      imageBytes: 4096,
+      imageSha256: 'b' * 64,
+      disk: disk,
+      deckhandVersion: 'dev',
+    );
+    final manifestPath = emmcBackupManifestPath(image.path);
+    await Directory(manifestPath).create();
+
+    await expectLater(
+      writeEmmcBackupManifest(manifest),
+      throwsA(isA<FileSystemException>()),
+    );
+
+    expect(await File('$manifestPath.tmp').exists(), isFalse);
+    expect(await Directory(manifestPath).exists(), isTrue);
+  });
+
   test('scanner accepts case-insensitive manifest file names', () async {
     final dir = await Directory.systemTemp.createTemp(
       'deckhand_emmc_manifest_case_',
