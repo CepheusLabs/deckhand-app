@@ -24,14 +24,14 @@ class NetworkPanel extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               Text(
-                'No Deckhand HTTP requests in this run.',
+                'No host-side downloads in this run.',
                 style: theme.textTheme.bodyMedium,
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 6),
               Text(
                 'Developer mode keeps this diagnostics tab visible even '
-                'when there is nothing to show. It only lists HTTP work '
+                'when there is nothing to show. It only lists network work '
                 'Deckhand performs on this computer, such as profile '
                 'fetches, release metadata, and OS image downloads.',
                 style: theme.textTheme.bodySmall,

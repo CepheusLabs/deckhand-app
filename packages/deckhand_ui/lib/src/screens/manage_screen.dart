@@ -109,44 +109,68 @@ class _RestoreFooterAction {
 
 class _ManageScreenState extends ConsumerState<ManageScreen> {
   _ManageTab _currentTab = _ManageTab.status;
+  late final ValueNotifier<_RestoreFooterAction> _restoreFooterAction =
+      ValueNotifier<_RestoreFooterAction>(const _RestoreFooterAction.none());
+
+  @override
+  void dispose() {
+    _restoreFooterAction.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    final controller = ref.watch(wizardControllerProvider);
-    final state = controller.state;
-    final profile = controller.profile;
+    return ValueListenableBuilder<_RestoreFooterAction>(
+      valueListenable: _restoreFooterAction,
+      builder: (context, restoreFooterAction, _) {
+        final controller = ref.watch(wizardControllerProvider);
+        final state = controller.state;
+        final profile = controller.profile;
 
-    // Title is "Manage · <printer>" when a profile is loaded; falls
-    // back to plain "Manage" so the screen still renders if the user
-    // navigates directly without an active session.
-    final printerLabel = profile?.displayName ?? state.profileId;
-    final title = printerLabel.isEmpty ? 'Manage' : 'Manage · $printerLabel';
+        // Title is "Manage · <printer>" when a profile is loaded; falls
+        // back to plain "Manage" so the screen still renders if the user
+        // navigates directly without an active session.
+        final printerLabel = profile?.displayName ?? state.profileId;
+        final title = printerLabel.isEmpty
+            ? 'Manage'
+            : 'Manage · $printerLabel';
 
-    return WizardScaffold(
-      screenId: 'MGR-manage',
-      title: title,
-      helperText:
-          'Things Klipper, Moonraker, and KIAUH don\'t already own. '
-          'Updates to those tools live in those tools — Deckhand stays '
-          'out of their lane.',
-      body: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _ManageTabStrip(
-            current: _currentTab,
-            onSelect: (t) => setState(() => _currentTab = t),
+        return WizardScaffold(
+          screenId: 'MGR-manage',
+          title: title,
+          helperText:
+              'Things Klipper, Moonraker, and KIAUH don\'t already own. '
+              'Updates to those tools live in those tools — Deckhand stays '
+              'out of their lane.',
+          primaryAction: _currentTab == _ManageTab.restore
+              ? restoreFooterAction.primaryAction
+              : null,
+          body: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _ManageTabStrip(
+                current: _currentTab,
+                onSelect: (t) => setState(() {
+                  _currentTab = t;
+                  if (t != _ManageTab.restore) {
+                    _restoreFooterAction.value =
+                        const _RestoreFooterAction.none();
+                  }
+                }),
+              ),
+              const SizedBox(height: 16),
+              _buildTabBody(state, profile),
+            ],
           ),
-          const SizedBox(height: 16),
-          _buildTabBody(state, profile),
-        ],
-      ),
-      secondaryActions: [
-        WizardAction(
-          label: 'Back',
-          onPressed: () => context.go('/'),
-          isBack: true,
-        ),
-      ],
+          secondaryActions: [
+            WizardAction(
+              label: 'Back',
+              onPressed: () => context.go('/'),
+              isBack: true,
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -155,7 +179,7 @@ class _ManageScreenState extends ConsumerState<ManageScreen> {
       _ManageTab.status => _StatusTab(state: state, profile: profile),
       _ManageTab.tune => const ManageTuningPanel(),
       _ManageTab.backup => const _BackupTab(),
-      _ManageTab.restore => const _RestoreTab(),
+      _ManageTab.restore => _RestoreTab(footerAction: _restoreFooterAction),
       _ManageTab.wizard => const _ReRunWizardTab(),
     };
   }
@@ -1357,6 +1381,9 @@ class _RestoreTabState extends ConsumerState<_RestoreTab> {
         content: Text(
           'Deckhand will erase ${diskDisplayName(disk)} and restore:\n\n'
           '${image.imagePath}\n\n'
+          'Backup size: ${_formatBytes(image.imageBytes)}\n'
+          'Target size: ${_formatBytes(disk.sizeBytes)}\n'
+          'SHA-256: ${image.indexed ? _shortSha(image.manifestSha256) : 'will be calculated before restore'}\n\n'
           '${image.indexed ? 'Deckhand will verify the backup manifest hash before writing.' : 'This image has no Deckhand manifest. Deckhand will hash the file before writing.'}\n\n'
           'This overwrites the selected eMMC. The host computer and other '
           'drives are not touched.',
@@ -2144,13 +2171,17 @@ class _RestoreSummaryGrid extends StatelessWidget {
       stats: [
         _Stat('BACKUP', _restoreImageTitle(image)),
         _Stat('TARGET', diskDisplaySummary(disk)),
+        _Stat('SOURCE SIZE', _formatBytes(image.imageBytes)),
+        _Stat('TARGET SIZE', _formatBytes(disk.sizeBytes)),
         _Stat(
-          'VERIFY',
-          image.indexed ? 'sha256 manifest' : 'sha256 before write',
+          'SHA-256',
+          image.indexed ? _shortSha(image.manifestSha256) : 'verify first',
         ),
         _Stat(
-          'DUPLICATES',
-          image.duplicateCount == 0 ? 'none' : '${image.duplicateCount} hidden',
+          'COPIES',
+          image.duplicateCount == 0
+              ? 'one file'
+              : _restoreDuplicateCopyWord(image.duplicateCount + 1),
         ),
       ],
     );
@@ -2307,10 +2338,16 @@ String _restoreImageTitle(_RestoreImage image) {
       : 'Partial image, not verified';
   final duplicates = image.duplicateCount == 0
       ? ''
-      : ' · ${image.duplicateCount} duplicate hidden'
-            '${image.duplicateCount == 1 ? '' : 's'}';
+      : ' · same image copied ${_restoreDuplicateCopyWord(image.duplicateCount + 1)}';
   return '$stamp · ${_formatBytes(image.imageBytes)} · $source$duplicates';
 }
+
+String _restoreDuplicateCopyWord(int totalCopies) => switch (totalCopies) {
+  2 => 'twice',
+  3 => 'three times',
+  4 => 'four times',
+  _ => '$totalCopies times',
+};
 
 String _restoreImageSubtitle(_RestoreImage image) {
   final profile = image.profileId == null || image.profileId!.isEmpty
@@ -2344,7 +2381,7 @@ String? _restoreImageDuplicateDetail(_RestoreImage image) {
       ? ''
       : '\n...and $hiddenCount more duplicate copy'
             '${hiddenCount == 1 ? '' : 'ies'}';
-  return 'Duplicate copies kept on disk:\n$shown$suffix';
+  return 'Alternate files kept on disk:\n$shown$suffix';
 }
 
 class _RestoreImageGroup {
@@ -2458,6 +2495,12 @@ String _formatBytes(int bytes) {
   final kib = bytes / 1024;
   if (kib >= 1) return '${kib.toStringAsFixed(1)} KiB';
   return '$bytes B';
+}
+
+String _shortSha(String sha) {
+  final trimmed = sha.trim();
+  if (trimmed.length <= 12) return trimmed;
+  return '${trimmed.substring(0, 12)}...';
 }
 
 String _phaseLabel(FlashPhase? phase) => switch (phase) {

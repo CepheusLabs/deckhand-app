@@ -381,9 +381,11 @@ void main() {
     await tester.tap(find.text('Restore').first);
     await tester.pump();
     await tester.pump(const Duration(seconds: 1));
+    await tester.pump();
     expect(find.text('BACKUP IMAGE'), findsOneWidget);
 
     await tester.tap(find.widgetWithText(FilledButton, 'Continue to target'));
+    await tester.pump();
     await tester.pump();
     expect(find.text('TARGET EMMC'), findsOneWidget);
     expect(find.textContaining('Generic STORAGE DEVICE'), findsWidgets);
@@ -391,6 +393,67 @@ void main() {
       find.widgetWithText(FilledButton, 'Review restore'),
     );
     expect(button.onPressed, isNotNull);
+  });
+
+  testWidgets('manage restore tab keeps continue action in the footer', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1400, 1000));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    const disk = DiskInfo(
+      id: 'PhysicalDrive3',
+      path: r'\\.\PHYSICALDRIVE3',
+      sizeBytes: 8 * 1024 * 1024,
+      bus: 'USB',
+      model: 'Generic STORAGE DEVICE',
+      removable: true,
+      partitions: [],
+    );
+    const sha =
+        'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+    final manifest = EmmcBackupManifest.create(
+      profileId: 'test-printer',
+      imagePath: r'C:\Deckhand\emmc-backups\test-printer\restore\emmc.img',
+      imageBytes: disk.sizeBytes,
+      imageSha256: sha,
+      disk: disk,
+      deckhandVersion: 'test',
+    );
+
+    final controller = stubWizardController(profileJson: testProfileJson());
+    await controller.loadProfile('test-printer');
+
+    await tester.pumpWidget(
+      testHarness(
+        controller: controller,
+        child: const ManageScreen(),
+        initialLocation: '/manage',
+        extraOverrides: [
+          emmcBackupManifestsProvider.overrideWith((ref) async => [manifest]),
+          emmcBackupImageCandidatesProvider.overrideWith(
+            (ref) async => const [],
+          ),
+          flashServiceProvider.overrideWithValue(
+            _RestoreFlash(disks: [disk], sha256Value: sha),
+          ),
+        ],
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+
+    await tester.tap(find.text('Restore').first);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+    await tester.pump();
+
+    final continueButton = find.widgetWithText(
+      FilledButton,
+      'Continue to target',
+    );
+    expect(continueButton, findsOneWidget);
+    expect(tester.getCenter(continueButton).dy, greaterThan(900));
   });
 
   testWidgets('direct eMMC restore screen reuses restore flow', (tester) async {
@@ -522,6 +585,70 @@ void main() {
       isTrue,
     );
     semantics.dispose();
+  });
+
+  testWidgets('restore backup list describes collapsed duplicate copies', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1400, 1000));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    const disk = DiskInfo(
+      id: 'PhysicalDrive3',
+      path: r'\\.\PHYSICALDRIVE3',
+      sizeBytes: 8 * 1024 * 1024,
+      bus: 'USB',
+      model: 'Generic STORAGE DEVICE',
+      removable: true,
+      partitions: [],
+    );
+    const sha =
+        'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+    final primary = EmmcBackupManifest.create(
+      profileId: 'phrozen-arco',
+      imagePath: r'C:\Deckhand\emmc-backups\phrozen-arco\a\emmc.img',
+      imageBytes: disk.sizeBytes,
+      imageSha256: sha,
+      disk: disk,
+      deckhandVersion: 'test',
+      createdAt: DateTime.utc(2026, 5, 4, 23, 2, 59),
+    );
+    final duplicate = EmmcBackupManifest.create(
+      profileId: 'phrozen-arco',
+      imagePath: r'C:\Deckhand\emmc-backups\phrozen-arco\b\emmc.img',
+      imageBytes: disk.sizeBytes,
+      imageSha256: sha,
+      disk: disk,
+      deckhandVersion: 'test',
+      createdAt: DateTime.utc(2026, 5, 4, 23, 10),
+    );
+
+    final controller = stubWizardController(profileJson: testProfileJson());
+    await controller.loadProfile('test-printer');
+
+    await tester.pumpWidget(
+      testHarness(
+        controller: controller,
+        child: const EmmcRestoreScreen(),
+        initialLocation: '/emmc-restore',
+        extraOverrides: [
+          emmcBackupManifestsProvider.overrideWith(
+            (ref) async => [primary, duplicate],
+          ),
+          emmcBackupImageCandidatesProvider.overrideWith(
+            (ref) async => const [],
+          ),
+          flashServiceProvider.overrideWithValue(
+            _RestoreFlash(disks: [disk], sha256Value: sha),
+          ),
+        ],
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+
+    expect(find.textContaining('same image copied twice'), findsOneWidget);
+    expect(find.textContaining('Duplicate copies kept on disk'), findsNothing);
   });
 
   testWidgets('direct eMMC restore backup step fits narrow windows', (
@@ -1231,9 +1358,9 @@ void main() {
     await tester.pump(const Duration(milliseconds: 250));
 
     expect(find.text('PHROZEN-ARCO'), findsOneWidget);
-    expect(find.textContaining('1 duplicate hidden'), findsOneWidget);
+    expect(find.textContaining('same image copied twice'), findsOneWidget);
     expect(
-      find.textContaining('Duplicate copies kept on disk:'),
+      find.textContaining('Alternate files kept on disk:'),
       findsOneWidget,
     );
     expect(find.textContaining(r'phrozen-arco\old\emmc.img'), findsOneWidget);
@@ -1556,10 +1683,16 @@ void main() {
     await tester.pump();
     await tester.pump();
     expect(find.text('RESTORE CONFIRMATION'), findsOneWidget);
+    expect(find.text('SOURCE SIZE'), findsOneWidget);
+    expect(find.text('TARGET SIZE'), findsOneWidget);
+    expect(find.text('SHA-256'), findsOneWidget);
 
     await tester.tap(find.widgetWithText(FilledButton, 'Restore backup'));
     await tester.pump();
     expect(find.text('Erase and restore eMMC?'), findsOneWidget);
+    expect(find.textContaining('Backup size: 4.0 KiB'), findsOneWidget);
+    expect(find.textContaining('Target size: 4.0 KiB'), findsOneWidget);
+    expect(find.textContaining(sha.substring(0, 12)), findsWidgets);
   });
 
   testWidgets('canceling an active restore is shown as canceled, not failed', (

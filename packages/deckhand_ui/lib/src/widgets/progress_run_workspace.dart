@@ -374,7 +374,7 @@ class _LogNetworkPane extends ConsumerWidget {
       _PaneTab(label: 'Log', icon: Icons.terminal, countLabel: 'live'),
       if (showNetworkTab)
         _PaneTab(
-          label: 'HTTP',
+          label: 'Downloads',
           icon: Icons.cloud_download_outlined,
           countLabel: '${networkEvents.length}',
         ),

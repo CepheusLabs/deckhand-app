@@ -227,7 +227,7 @@ void main() {
       ),
     );
 
-    await tester.tap(find.text('HTTP'));
+    await tester.tap(find.text('Downloads'));
     await tester.pumpAndSettle();
 
     expect(find.text('example.com'), findsOneWidget);
@@ -260,8 +260,8 @@ void main() {
     );
 
     expect(find.text('Log'), findsOneWidget);
-    expect(find.text('HTTP'), findsNothing);
-    expect(find.textContaining('No Deckhand HTTP requests'), findsNothing);
+    expect(find.text('Downloads'), findsNothing);
+    expect(find.textContaining('No host-side downloads'), findsNothing);
   });
 
   testWidgets('developer mode keeps the empty network tab available', (
@@ -291,10 +291,10 @@ void main() {
       ),
     );
 
-    expect(find.text('HTTP'), findsOneWidget);
-    await tester.tap(find.text('HTTP'));
+    expect(find.text('Downloads'), findsOneWidget);
+    await tester.tap(find.text('Downloads'));
     await tester.pumpAndSettle();
-    expect(find.textContaining('No Deckhand HTTP requests'), findsOneWidget);
+    expect(find.textContaining('No host-side downloads'), findsOneWidget);
     expect(
       find.textContaining('Developer mode keeps this diagnostics tab visible'),
       findsOneWidget,
@@ -330,7 +330,7 @@ void main() {
 
     expect(tester.takeException(), isNull);
     expect(find.text('Log'), findsOneWidget);
-    expect(find.text('HTTP'), findsOneWidget);
+    expect(find.text('Downloads'), findsOneWidget);
     expect(find.byTooltip('Copy log'), findsOneWidget);
   });
 
