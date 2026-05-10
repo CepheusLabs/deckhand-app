@@ -70,7 +70,7 @@ class PrinterProfile {
 
   factory PrinterProfile.fromJson(Map<String, dynamic> json) {
     return PrinterProfile(
-      raw: json,
+      raw: _immutableMap(json),
       id: _optionalString(json['profile_id']) ?? '',
       version: _optionalString(json['profile_version']) ?? '0.0.0',
       displayName: _optionalString(json['display_name']) ?? '',
@@ -82,30 +82,31 @@ class PrinterProfile {
       ssh: SshConfig.fromJson(_mapOr(json['ssh'])),
       firmware: FirmwareConfig.fromJson(_mapOr(json['firmware'])),
       stack: StackConfig.fromJson(_mapOr(json['stack'])),
-      mcus: _listOfMap(json['mcus'], 'mcus').map(McuConfig.fromJson).toList(),
-      screens: _listOfMap(
-        json['screens'],
-        'screens',
-      ).map(ScreenConfig.fromJson).toList(),
-      addons: _listOfMap(
-        json['addons'],
-        'addons',
-      ).map(AddonConfig.fromJson).toList(),
+      mcus: List.unmodifiable(
+        _listOfMap(json['mcus'], 'mcus').map(McuConfig.fromJson),
+      ),
+      screens: List.unmodifiable(
+        _listOfMap(json['screens'], 'screens').map(ScreenConfig.fromJson),
+      ),
+      addons: List.unmodifiable(
+        _listOfMap(json['addons'], 'addons').map(AddonConfig.fromJson),
+      ),
       stockOs: StockOsInventory.fromJson(_mapOr(json['stock_os'])),
       wizard: WizardConfig.fromJson(_mapOr(json['wizard'])),
       flows: FlowConfig.fromJson(_mapOr(json['flows'])),
-      verifiers: _listOfMap(
-        json['verifiers'],
-        'verifiers',
-      ).map(VerifierConfig.fromJson).toList(),
+      verifiers: List.unmodifiable(
+        _listOfMap(json['verifiers'], 'verifiers').map(VerifierConfig.fromJson),
+      ),
       requiredHosts: _stringList(json['required_hosts']),
       identification: ProfileIdentification.fromJson(
         _mapOr(json['identification']),
       ),
-      maintainers: _listOfMap(
-        json['maintainers'],
-        'maintainers',
-      ).map(MaintainerSpec.fromJson).toList(),
+      maintainers: List.unmodifiable(
+        _listOfMap(
+          json['maintainers'],
+          'maintainers',
+        ).map(MaintainerSpec.fromJson),
+      ),
     );
   }
 }
@@ -353,10 +354,12 @@ class OsSpec {
 
   factory OsSpec.fromJson(Map<String, dynamic> j) => OsSpec(
     stock: _fromMapOrNull(j['stock'], OsStockSpec.fromJson),
-    freshInstallOptions: _listOfMap(
-      j['fresh_install_options'],
-      'os.fresh_install_options',
-    ).map(OsImageOption.fromJson).toList(),
+    freshInstallOptions: List.unmodifiable(
+      _listOfMap(
+        j['fresh_install_options'],
+        'os.fresh_install_options',
+      ).map(OsImageOption.fromJson),
+    ),
     bootMode: _optionalString(j['boot_mode']),
   );
 }
@@ -434,10 +437,12 @@ class SshConfig {
     }
     return SshConfig(
       defaultPort: defaultPort,
-      defaultCredentials: _listOfMap(
-        j['default_credentials'],
-        'ssh.default_credentials',
-      ).map(SshDefaultCredential.fromJson).toList(),
+      defaultCredentials: List.unmodifiable(
+        _listOfMap(
+          j['default_credentials'],
+          'ssh.default_credentials',
+        ).map(SshDefaultCredential.fromJson),
+      ),
       recommendedUserAfterInstall: _optionalString(
         j['recommended_user_after_install'],
       ),
@@ -470,10 +475,9 @@ class FirmwareConfig {
   final bool replaceStockInPlace;
   final bool snapshotBeforeReplace;
   factory FirmwareConfig.fromJson(Map<String, dynamic> j) => FirmwareConfig(
-    choices: _listOfMap(
-      j['choices'],
-      'firmware.choices',
-    ).map(FirmwareChoice.fromJson).toList(),
+    choices: List.unmodifiable(
+      _listOfMap(j['choices'], 'firmware.choices').map(FirmwareChoice.fromJson),
+    ),
     defaultChoice: _optionalString(j['default_choice']),
     replaceStockInPlace: _optionalBool(j['replace_stock_in_place']) ?? true,
     snapshotBeforeReplace: _optionalBool(j['snapshot_before_replace']) ?? true,
@@ -538,7 +542,7 @@ class McuConfig {
   factory McuConfig.fromJson(Map<String, dynamic> j) => McuConfig(
     id: _requiredString(j, 'id', 'mcus[]'),
     displayName: _optionalString(j['display_name']),
-    raw: j,
+    raw: _immutableMap(j),
   );
 }
 
@@ -560,7 +564,7 @@ class ScreenConfig {
     displayName: _optionalString(j['display_name']),
     status: _optionalString(j['status']),
     recommended: _optionalBool(j['recommended']) ?? false,
-    raw: j,
+    raw: _immutableMap(j),
   );
 }
 
@@ -579,7 +583,7 @@ class AddonConfig {
     id: _requiredString(j, 'id', 'addons[]'),
     kind: _optionalString(j['kind']),
     displayName: _optionalString(j['display_name']),
-    raw: j,
+    raw: _immutableMap(j),
   );
 }
 
@@ -605,26 +609,27 @@ class StockOsInventory {
   final List<StockSnapshotPath> snapshotPaths;
 
   factory StockOsInventory.fromJson(Map<String, dynamic> j) => StockOsInventory(
-    detections: _listOfMap(
-      j['detections'],
-      'stock_os.detections',
-    ).map(DetectionRule.fromJson).toList(),
-    services: _listOfMap(
-      j['services'],
-      'stock_os.services',
-    ).map(StockService.fromJson).toList(),
-    files: _listOfMap(
-      j['files'],
-      'stock_os.files',
-    ).map(StockFile.fromJson).toList(),
-    paths: _listOfMap(
-      j['paths'],
-      'stock_os.paths',
-    ).map(StockPath.fromJson).toList(),
-    snapshotPaths: _listOfMap(
-      j['snapshot_paths'],
-      'stock_os.snapshot_paths',
-    ).map(StockSnapshotPath.fromJson).toList(),
+    detections: List.unmodifiable(
+      _listOfMap(
+        j['detections'],
+        'stock_os.detections',
+      ).map(DetectionRule.fromJson),
+    ),
+    services: List.unmodifiable(
+      _listOfMap(j['services'], 'stock_os.services').map(StockService.fromJson),
+    ),
+    files: List.unmodifiable(
+      _listOfMap(j['files'], 'stock_os.files').map(StockFile.fromJson),
+    ),
+    paths: List.unmodifiable(
+      _listOfMap(j['paths'], 'stock_os.paths').map(StockPath.fromJson),
+    ),
+    snapshotPaths: List.unmodifiable(
+      _listOfMap(
+        j['snapshot_paths'],
+        'stock_os.snapshot_paths',
+      ).map(StockSnapshotPath.fromJson),
+    ),
   );
 }
 
@@ -667,7 +672,7 @@ class DetectionRule {
   factory DetectionRule.fromJson(Map<String, dynamic> j) => DetectionRule(
     kind: _requiredString(j, 'kind', 'stock_os.detections[]'),
     required: _optionalBool(j['required']) ?? true,
-    raw: j,
+    raw: _immutableMap(j),
   );
 }
 
@@ -688,7 +693,7 @@ class StockService {
       id: id,
       displayName: _optionalString(j['display_name']) ?? id,
       defaultAction: _optionalString(j['default_action']) ?? 'keep',
-      raw: j,
+      raw: _immutableMap(j),
     );
   }
 }
@@ -713,7 +718,7 @@ class StockFile {
         _requiredString(j, 'id', 'stock_os.files[]'),
     paths: _stringList(j['paths']),
     defaultAction: _optionalString(j['default_action']) ?? 'keep',
-    raw: j,
+    raw: _immutableMap(j),
   );
 }
 
@@ -785,23 +790,26 @@ class VerifierConfig {
   const VerifierConfig({required this.id, required this.raw});
   final String id;
   final Map<String, dynamic> raw;
-  factory VerifierConfig.fromJson(Map<String, dynamic> j) =>
-      VerifierConfig(id: _requiredString(j, 'id', 'verifiers[]'), raw: j);
+  factory VerifierConfig.fromJson(Map<String, dynamic> j) => VerifierConfig(
+    id: _requiredString(j, 'id', 'verifiers[]'),
+    raw: _immutableMap(j),
+  );
 }
 
 // -----------------------------------------------------------------
 // small helpers
 
-Map<String, dynamic> _mapOr(Object? v) => _mapOrNull(v) ?? <String, dynamic>{};
+Map<String, dynamic> _mapOr(Object? v) =>
+    _mapOrNull(v) ?? const <String, dynamic>{};
 
 Map<String, dynamic>? _mapOrNull(Object? v) {
   if (v is! Map) return null;
   final out = <String, dynamic>{};
   for (final entry in v.entries) {
     final key = entry.key;
-    if (key is String) out[key] = entry.value;
+    if (key is String) out[key] = _immutableValue(entry.value);
   }
-  return out;
+  return Map<String, dynamic>.unmodifiable(out);
 }
 
 T? _fromMapOrNull<T>(Object? value, T Function(Map<String, dynamic>) build) {
@@ -823,15 +831,38 @@ List<Map<String, dynamic>> _listOfMap(Object? v, String context) {
     }
     out.add(map);
   }
-  return out;
+  return List.unmodifiable(out);
 }
 
 List<String> _stringList(Object? v) {
   if (v is! List) return const [];
-  return [
+  return List.unmodifiable([
     for (final entry in v)
       if (entry is String) entry,
-  ];
+  ]);
+}
+
+Map<String, dynamic> _immutableMap(Map<String, dynamic> value) {
+  final out = <String, dynamic>{};
+  for (final entry in value.entries) {
+    out[entry.key] = _immutableValue(entry.value);
+  }
+  return Map<String, dynamic>.unmodifiable(out);
+}
+
+Object? _immutableValue(Object? value) {
+  if (value is Map) {
+    final out = <String, dynamic>{};
+    for (final entry in value.entries) {
+      final key = entry.key;
+      if (key is String) out[key] = _immutableValue(entry.value);
+    }
+    return Map<String, dynamic>.unmodifiable(out);
+  }
+  if (value is List) {
+    return List<Object?>.unmodifiable(value.map(_immutableValue));
+  }
+  return value;
 }
 
 String _requiredString(Map<String, dynamic> j, String key, String context) {

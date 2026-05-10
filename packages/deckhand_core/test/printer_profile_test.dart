@@ -240,6 +240,59 @@ void main() {
       expect(p.stack.moonraker, {'repo': 'https://github.com/a/b'});
     });
 
+    test('returns immutable profile maps and lists', () {
+      final p = PrinterProfile.fromJson({
+        'profile_id': 'x',
+        'required_hosts': ['github.com'],
+        'hardware': {
+          'features': ['enclosed'],
+          'steppers': [
+            {'id': 'x'},
+          ],
+        },
+        'stack': {
+          'webui': {'repo': 'https://github.com/mainsail-crew/mainsail'},
+        },
+        'mcus': [
+          {'id': 'main', 'chip': 'stm32f407xx'},
+        ],
+        'flows': {
+          'fresh_flash': {
+            'enabled': true,
+            'steps': [
+              {'id': 'download_os'},
+            ],
+          },
+        },
+      });
+
+      expect(() => p.raw['profile_id'] = 'changed', throwsUnsupportedError);
+      expect(
+        () => (p.raw['hardware'] as Map<String, dynamic>)['features'] =
+            <String>[],
+        throwsUnsupportedError,
+      );
+      expect(() => p.requiredHosts.add('evil.example'), throwsUnsupportedError);
+      expect(() => p.hardware.features.add('open'), throwsUnsupportedError);
+      expect(
+        () => p.hardware.steppers.single['id'] = 'changed',
+        throwsUnsupportedError,
+      );
+      expect(
+        () => p.stack.webui!['repo'] = 'https://example.com',
+        throwsUnsupportedError,
+      );
+      expect(() => p.mcus.add(p.mcus.single), throwsUnsupportedError);
+      expect(
+        () => p.mcus.single.raw['chip'] = 'changed',
+        throwsUnsupportedError,
+      );
+      expect(
+        () => p.flows.freshFlash!.steps.single['id'] = 'changed',
+        throwsUnsupportedError,
+      );
+    });
+
     test('snapshot path optional metadata is tolerant', () {
       final p = PrinterProfile.fromJson({
         'profile_id': 'x',
