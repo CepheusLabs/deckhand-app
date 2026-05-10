@@ -467,7 +467,14 @@ String _webUiUrl({required String host, required PrinterProfile? profile}) {
           (normalizedScheme == 'https' && port == 443)
       ? ''
       : ':$port';
-  return '$normalizedScheme://$host$portSuffix';
+  return '$normalizedScheme://${_webUiHost(host)}$portSuffix';
+}
+
+String _webUiHost(String host) {
+  final clean = host.trim();
+  if (clean.startsWith('[') && clean.endsWith(']')) return clean;
+  if (clean.contains(':')) return '[${clean.replaceAll('%', '%25')}]';
+  return clean;
 }
 
 String? _optionalString(Object? value) {

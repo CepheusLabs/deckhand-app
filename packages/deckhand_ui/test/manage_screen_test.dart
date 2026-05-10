@@ -117,6 +117,55 @@ void main() {
     expect(clipboardWrites, contains('http://192.168.1.50:443'));
   });
 
+  testWidgets('status tab brackets IPv6 hosts in copied web ui urls', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1200, 900));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final controller = stubWizardController(
+      profileJson: testProfileJson(
+        stack: const {
+          'webui': {'port': 8808},
+        },
+      ),
+    );
+    await controller.loadProfile('test-printer');
+    controller.setSession(
+      const SshSession(id: 's', host: 'fe80::1', port: 22, user: 'mks'),
+    );
+    final clipboardWrites = <String>[];
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async {
+        if (call.method == 'Clipboard.setData') {
+          final data = (call.arguments as Map?)?['text'] as String?;
+          if (data != null) clipboardWrites.add(data);
+        }
+        return null;
+      },
+    );
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      ),
+    );
+
+    await tester.pumpWidget(
+      testHarness(
+        controller: controller,
+        child: const ManageScreen(),
+        initialLocation: '/manage',
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.widgetWithText(OutlinedButton, 'Copy Web UI URL'));
+    await tester.pump();
+
+    expect(clipboardWrites, contains('http://[fe80::1]:8808'));
+  });
+
   testWidgets('status tab copies saved printer ssh user and port', (
     tester,
   ) async {
