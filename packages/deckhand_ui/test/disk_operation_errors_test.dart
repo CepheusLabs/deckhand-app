@@ -70,6 +70,15 @@ void main() {
       );
     });
 
+    test('explains helper process exits in user terms', () {
+      expect(
+        userFacingDiskOperationError(
+          'ElevatedHelperException: elevated helper exited with code 1',
+        ),
+        'Deckhand\'s disk helper stopped before finishing. Reconnect the USB adapter, make sure no other app is using the drive, then retry.',
+      );
+    });
+
     test('hides raw disk ids behind StateError messages', () {
       expect(
         userFacingDiskOperationError(

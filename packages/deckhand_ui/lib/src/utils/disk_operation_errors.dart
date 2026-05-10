@@ -38,6 +38,9 @@ String userFacingDiskOperationError(Object? error) {
   if (lower.contains('elevated helper is not configured')) {
     return 'This Deckhand build is missing the elevated disk helper. Rebuild or reinstall the Windows release bundle, then retry.';
   }
+  if (lower.contains('elevated helper exited with code')) {
+    return 'Deckhand\'s disk helper stopped before finishing. Reconnect the USB adapter, make sure no other app is using the drive, then retry.';
+  }
   if (lower.contains('lock volume') && lower.contains('access is denied')) {
     return 'Windows would not release the selected disk. Close File Explorer, Disk Management, terminals, and any app using that USB drive, then unplug/replug the adapter and retry.';
   }
