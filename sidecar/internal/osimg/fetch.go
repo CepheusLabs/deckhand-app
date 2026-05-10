@@ -377,7 +377,50 @@ func decompressXZ(ctx context.Context, sourcePath, destPath string, note rpc.Not
 		return "", 0, fmt.Errorf("open xz image: %w", err)
 	}
 	defer func() { _ = src.Close() }()
-	xr, err := xz.NewReader(src)
+	compressedTotal := int64(0)
+	if info, statErr := src.Stat(); statErr == nil {
+		compressedTotal = info.Size()
+	}
+	var done int64
+	lastNotified := int64(0)
+	notifyProgress := func(candidate int64, force bool) {
+		if note == nil {
+			return
+		}
+		if candidate < 0 {
+			candidate = 0
+		}
+		if uncompressedTotal > 0 && candidate > uncompressedTotal {
+			candidate = uncompressedTotal
+		}
+		if !force && candidate-lastNotified < xzProgressEvery {
+			return
+		}
+		if !force && candidate <= lastNotified {
+			return
+		}
+		note.Notify("progress", DownloadProgress{BytesDone: candidate, BytesTotal: uncompressedTotal, Phase: "extracting"})
+		lastNotified = candidate
+	}
+	pr := &xzProgressReader{
+		r:                   src,
+		compressedTotal:     compressedTotal,
+		uncompressedTotal:   uncompressedTotal,
+		progressNotifyEvery: xzProgressEvery,
+		notify: func(estimated int64) {
+			if estimated < done {
+				estimated = done
+			}
+			if uncompressedTotal > 0 && done < uncompressedTotal {
+				limit := (uncompressedTotal * 95) / 100
+				if limit > 0 && estimated > limit {
+					estimated = limit
+				}
+			}
+			notifyProgress(estimated, false)
+		},
+	}
+	xr, err := xz.NewReader(pr)
 	if err != nil {
 		return "", 0, fmt.Errorf("open xz stream: %w", err)
 	}
@@ -390,11 +433,8 @@ func decompressXZ(ctx context.Context, sourcePath, destPath string, note rpc.Not
 	hasher := sha256.New()
 	mw := io.MultiWriter(dst, hasher)
 	buf := make([]byte, 1<<20)
-	var done int64
-	lastNotified := int64(0)
-	if note != nil {
-		note.Notify("progress", DownloadProgress{BytesDone: 0, BytesTotal: uncompressedTotal, Phase: "extracting"})
-	}
+	notifyProgress(0, true)
+	pr.enabled = true
 	for {
 		if err := ctx.Err(); err != nil {
 			return "", done, err
@@ -411,10 +451,7 @@ func decompressXZ(ctx context.Context, sourcePath, destPath string, note rpc.Not
 			if uncompressedTotal > 0 && done > uncompressedTotal {
 				return "", done, fmt.Errorf("extracted image exceeded declared uncompressed size %d", uncompressedTotal)
 			}
-			if note != nil && done-lastNotified >= xzProgressEvery {
-				note.Notify("progress", DownloadProgress{BytesDone: done, BytesTotal: uncompressedTotal, Phase: "extracting"})
-				lastNotified = done
-			}
+			notifyProgress(done, false)
 		}
 		if errors.Is(rerr, io.EOF) {
 			break
@@ -423,9 +460,7 @@ func decompressXZ(ctx context.Context, sourcePath, destPath string, note rpc.Not
 			return "", done, fmt.Errorf("read xz stream: %w", rerr)
 		}
 	}
-	if note != nil && done != lastNotified {
-		note.Notify("progress", DownloadProgress{BytesDone: done, BytesTotal: uncompressedTotal, Phase: "extracting"})
-	}
+	notifyProgress(done, true)
 	if err := dst.Sync(); err != nil {
 		return "", done, fmt.Errorf("sync extracted image: %w", err)
 	}
@@ -433,6 +468,37 @@ func decompressXZ(ctx context.Context, sourcePath, destPath string, note rpc.Not
 		return "", done, fmt.Errorf("close extracted image: %w", err)
 	}
 	return hex.EncodeToString(hasher.Sum(nil)), done, nil
+}
+
+type xzProgressReader struct {
+	r                   io.Reader
+	compressedTotal     int64
+	uncompressedTotal   int64
+	progressNotifyEvery int64
+	notify              func(done int64)
+	enabled             bool
+	read                int64
+	lastNotified        int64
+}
+
+func (r *xzProgressReader) Read(p []byte) (int, error) {
+	n, err := r.r.Read(p)
+	if n <= 0 || !r.enabled || r.notify == nil || r.compressedTotal <= 0 || r.uncompressedTotal <= 0 {
+		return n, err
+	}
+	r.read += int64(n)
+	estimated := (r.read * r.uncompressedTotal) / r.compressedTotal
+	if estimated > r.uncompressedTotal {
+		estimated = r.uncompressedTotal
+	}
+	if r.progressNotifyEvery <= 0 {
+		r.progressNotifyEvery = xzProgressEvery
+	}
+	if estimated-r.lastNotified >= r.progressNotifyEvery || estimated == r.uncompressedTotal {
+		r.notify(estimated)
+		r.lastNotified = estimated
+	}
+	return n, err
 }
 
 func countXZUncompressedSize(ctx context.Context, filePath string) (int64, error) {

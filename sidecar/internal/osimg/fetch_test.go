@@ -367,6 +367,39 @@ func TestDownloadReportsXZExtractionProgressWhenIndexProbeFails(t *testing.T) {
 	}
 }
 
+func TestXZProgressReaderEstimatesUncompressedProgress(t *testing.T) {
+	var got []int64
+	r := &xzProgressReader{
+		r:                   strings.NewReader("abcdefghij"),
+		compressedTotal:     10,
+		uncompressedTotal:   100,
+		progressNotifyEvery: 25,
+		notify: func(done int64) {
+			got = append(got, done)
+		},
+	}
+	r.enabled = true
+
+	if _, err := io.Copy(io.Discard, r); err != nil {
+		t.Fatalf("Copy: %v", err)
+	}
+
+	if len(got) == 0 {
+		t.Fatalf("expected progress estimates")
+	}
+	if got[len(got)-1] != 100 {
+		t.Fatalf("last estimate = %d, want 100", got[len(got)-1])
+	}
+	for i, v := range got {
+		if v < 0 || v > 100 {
+			t.Fatalf("estimate %d out of range: %d", i, v)
+		}
+		if i > 0 && v < got[i-1] {
+			t.Fatalf("estimate regressed: %v", got)
+		}
+	}
+}
+
 func TestDecompressXZHonorsCanceledContext(t *testing.T) {
 	var compressed bytes.Buffer
 	xw, err := xz.NewWriter(&compressed)
