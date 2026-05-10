@@ -924,6 +924,47 @@ void main() {
       expect(security.checkedHosts, ['example.com']);
     });
 
+    test('clears rejected cached image manifests before redownload', () async {
+      final dest = _managedOsImageDest('rejected-cache-family.img');
+      final manifestPath = '$dest.deckhand-download.json';
+      addTearDown(() async {
+        await _deleteIfExists(dest);
+        await _deleteIfExists(manifestPath);
+      });
+      await Directory(p.dirname(dest)).create(recursive: true);
+      await File(dest).writeAsString('raw image bytes');
+      await File(manifestPath).writeAsString(
+        jsonEncode({
+          'schema_version': 1,
+          'url': 'https://example.com/image.img.xz',
+          'path': dest,
+          'expected_sha256':
+              'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+          'actual_sha256':
+              'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+        }),
+      );
+      final sidecar = _FakeSidecar(
+        hash:
+            'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
+      );
+      final security = _AllowAllSecurity();
+      final svc = SidecarUpstreamService(sidecar: sidecar, security: security);
+
+      await svc
+          .osDownload(
+            url: 'https://example.com/image.img.xz',
+            destPath: dest,
+            expectedSha256:
+                'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+          )
+          .drain<void>();
+
+      expect(File(dest).existsSync(), isFalse);
+      expect(File(manifestPath).existsSync(), isFalse);
+      expect(sidecar.streamingCalls, hasLength(1));
+    });
+
     test('records completed downloads in the image manifest', () async {
       final dest = _managedOsImageDest('downloaded-image.img');
       addTearDown(() async {

@@ -510,7 +510,7 @@ class SidecarUpstreamService implements UpstreamService {
     }
     if (_isXzUrl(url)) {
       if (await _hasXzMagic(destPath)) {
-        await File(destPath).delete();
+        await _clearCachedOsImageFamily(destPath);
         return null;
       }
       final manifestSha = await _localManifestImageSha(
@@ -519,18 +519,38 @@ class SidecarUpstreamService implements UpstreamService {
         url: url,
       );
       if (manifestSha == null) {
-        await File(destPath).delete();
+        await _clearCachedOsImageFamily(destPath);
         return null;
       }
       final actual = await _hashLocalFile(destPath);
       if (actual == manifestSha) return actual;
-      await File(destPath).delete();
+      await _clearCachedOsImageFamily(destPath);
       return null;
     }
     final actual = await _hashLocalFile(destPath);
     if (actual == expectedSha256) return actual;
-    await File(destPath).delete();
+    await _clearCachedOsImageFamily(destPath);
     return null;
+  }
+
+  Future<void> _clearCachedOsImageFamily(String destPath) async {
+    for (final path in <String>[
+      destPath,
+      '$destPath.part',
+      '$destPath.download.part',
+      _manifestPath(destPath),
+      '${_manifestPath(destPath)}.tmp',
+    ]) {
+      final type = await FileSystemEntity.type(path, followLinks: false);
+      if (type == FileSystemEntityType.notFound) continue;
+      if (type == FileSystemEntityType.link ||
+          type == FileSystemEntityType.directory) {
+        throw UpstreamException(
+          'cached OS image family entries must be regular files: $path',
+        );
+      }
+      await File(path).delete();
+    }
   }
 
   Future<void> _clearStaleOsImagePart(String partPath) async {
