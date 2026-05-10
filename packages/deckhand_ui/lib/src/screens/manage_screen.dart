@@ -656,6 +656,7 @@ class _RestoreTabState extends ConsumerState<_RestoreTab> {
   bool get _usesFooterActions => widget.footerAction != null;
 
   void _refreshRestoreSources() {
+    ref.invalidate(emmcBackupOrganizationProvider);
     ref.invalidate(emmcBackupManifestsProvider);
     ref.invalidate(emmcBackupImageCandidatesProvider);
     ref.invalidate(disksProvider);
