@@ -39,6 +39,17 @@ func TestReadImageCopiesFileHashesAndNotifiesProgress(t *testing.T) {
 	if len(note.events) == 0 {
 		t.Fatalf("expected progress notifications")
 	}
+	first := note.events[0]
+	if first.method != "progress" {
+		t.Fatalf("first notification method = %q, want progress", first.method)
+	}
+	initial, ok := first.params.(ReadProgress)
+	if !ok {
+		t.Fatalf("first params type = %T, want ReadProgress", first.params)
+	}
+	if initial.Phase != "reading" || initial.BytesDone != 0 || initial.BytesTotal != int64(len(body)) {
+		t.Fatalf("unexpected initial progress: %+v", initial)
+	}
 	last := note.events[len(note.events)-1]
 	if last.method != "progress" {
 		t.Fatalf("last notification method = %q, want progress", last.method)

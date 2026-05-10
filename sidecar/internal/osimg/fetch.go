@@ -172,6 +172,9 @@ func Download(ctx context.Context, rawURL, destPath, expectedSha string, note rp
 	var done int64
 	lastNotified := int64(0)
 	buf := make([]byte, 1<<20)
+	if note != nil {
+		note.Notify("progress", DownloadProgress{BytesDone: 0, BytesTotal: total, Phase: "downloading"})
+	}
 
 	for {
 		if err := ctx.Err(); err != nil {
@@ -200,6 +203,9 @@ func Download(ctx context.Context, rawURL, destPath, expectedSha string, note rp
 		if rerr != nil {
 			return "", fmt.Errorf("read: %w", rerr)
 		}
+	}
+	if note != nil && done != lastNotified {
+		note.Notify("progress", DownloadProgress{BytesDone: done, BytesTotal: total, Phase: "downloading"})
 	}
 
 	if err := f.Sync(); err != nil {

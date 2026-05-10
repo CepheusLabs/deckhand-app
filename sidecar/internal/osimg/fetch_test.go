@@ -207,6 +207,22 @@ func TestDownload_HappyPath_WritesFile_AndReturnsSha(t *testing.T) {
 	}
 
 	// At minimum we emitted a `done` phase at the end.
+	events := note.progressEvents()
+	if len(events) == 0 {
+		t.Fatalf("expected progress notifications")
+	}
+	if events[0] != (DownloadProgress{BytesDone: 0, BytesTotal: int64(len(body)), Phase: "downloading"}) {
+		t.Fatalf("first progress = %+v, want initial downloading event", events[0])
+	}
+	var finalDownload *DownloadProgress
+	for i := range events {
+		if events[i].Phase == "downloading" && events[i].BytesDone == int64(len(body)) {
+			finalDownload = &events[i]
+		}
+	}
+	if finalDownload == nil {
+		t.Fatalf("expected final downloading progress for %d bytes, got %+v", len(body), events)
+	}
 	phases := note.phases()
 	if len(phases) == 0 || phases[len(phases)-1] != "done" {
 		t.Fatalf("expected final phase `done`, got %v", phases)

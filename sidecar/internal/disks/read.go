@@ -61,6 +61,11 @@ func ReadImage(ctx context.Context, devicePath, outputPath string, note rpc.Noti
 	buf := make([]byte, 4<<20) // 4 MiB
 	var done int64
 	lastNotified := int64(0)
+	if note != nil {
+		note.Notify("progress", ReadProgress{
+			BytesDone: 0, BytesTotal: total, Phase: "reading",
+		})
+	}
 
 	for {
 		if ctx.Err() != nil {
