@@ -66,7 +66,7 @@ void main() {
         userFacingDiskOperationError(
           'ElevatedHelperException: elevated helper never started. The UAC prompt may have been suppressed.',
         ),
-        'Windows did not start Deckhand\'s disk helper. Deckhand cannot write raw disks until the app is running with administrator rights. Relaunch Deckhand as Administrator; if UAC prompts are disabled, start it from an elevated Administrator terminal.',
+        'Windows did not start Deckhand\'s disk helper. Deckhand cannot write raw disks until the app is running with administrator rights. Start Deckhand as Administrator; if it is already open, close it first. If UAC prompts are disabled, start it from an elevated Administrator terminal.',
       );
     });
 

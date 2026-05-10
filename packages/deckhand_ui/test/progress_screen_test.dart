@@ -25,6 +25,30 @@ void main() {
     );
   });
 
+  test('progress updates only apply to the active step', () {
+    expect(
+      shouldApplyStepProgress(
+        activeStepId: 'flash_disk',
+        progressStepId: 'flash_disk',
+      ),
+      isTrue,
+    );
+    expect(
+      shouldApplyStepProgress(
+        activeStepId: 'flash_disk',
+        progressStepId: 'download_os',
+      ),
+      isFalse,
+    );
+    expect(
+      shouldApplyStepProgress(
+        activeStepId: null,
+        progressStepId: 'download_os',
+      ),
+      isTrue,
+    );
+  });
+
   group('ProgressScreen', () {
     testWidgets('phase-aware title reads step kind from controller', (
       tester,

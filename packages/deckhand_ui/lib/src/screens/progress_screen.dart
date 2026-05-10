@@ -176,7 +176,13 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> {
           _log.add('[warn] $stepId - $message');
           _stepStatusById.putIfAbsent(stepId, () => RunStepStatus.warning);
         });
-      case StepProgress(:final percent, :final message):
+      case StepProgress(:final stepId, :final percent, :final message):
+        if (!shouldApplyStepProgress(
+          activeStepId: _currentStepId,
+          progressStepId: stepId,
+        )) {
+          return;
+        }
         setState(() {
           _currentProgressIndeterminate = percent == null;
           _currentFraction = percent?.clamp(0, 1).toDouble();
@@ -767,6 +773,13 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> {
 }
 
 String? _jsonString(Object? value) => value is String ? value : null;
+
+bool shouldApplyStepProgress({
+  required String? activeStepId,
+  required String progressStepId,
+}) {
+  return activeStepId == null || activeStepId == progressStepId;
+}
 
 List<Object?> _jsonList(Object? value) => value is List ? value : const [];
 
