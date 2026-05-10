@@ -23,13 +23,18 @@ void main() {
     expect(offenders, isEmpty);
   });
 
-  test('UI text styles do not use negative letter spacing', () {
-    final pattern = RegExp(r'letterSpacing\s*:\s*-');
+  test('UI text styles do not use custom letter spacing', () {
+    final pattern = RegExp(r'letterSpacing\s*:\s*([^,\n)]+)');
     final offenders = <String>[];
 
     for (final file in dartSources()) {
       final source = file.readAsStringSync();
-      if (pattern.hasMatch(source)) offenders.add(file.path);
+      for (final match in pattern.allMatches(source)) {
+        final value = match.group(1)?.trim();
+        if (value != '0' && value != '0.0') {
+          offenders.add('${file.path}: $value');
+        }
+      }
     }
 
     expect(offenders, isEmpty);

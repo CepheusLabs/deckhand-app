@@ -328,7 +328,7 @@ class _FileRow extends StatelessWidget {
                     fontSize: 9,
                     color: tokens.text2,
                     fontWeight: FontWeight.w600,
-                    letterSpacing: 0.06 * 9,
+                    letterSpacing: 0,
                   ),
                 ),
               ),

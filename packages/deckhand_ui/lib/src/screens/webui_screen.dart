@@ -477,7 +477,7 @@ class _MiniPill extends StatelessWidget {
           fontSize: 9,
           color: color,
           fontWeight: FontWeight.w600,
-          letterSpacing: 0.06 * 9,
+          letterSpacing: 0,
         ),
       ),
     );

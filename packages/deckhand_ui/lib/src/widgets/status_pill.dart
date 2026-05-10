@@ -125,7 +125,7 @@ class StatusPill extends StatelessWidget {
               fontSize: 10,
               color: color,
               fontWeight: FontWeight.w600,
-              letterSpacing: 0.06 * 10,
+              letterSpacing: 0,
               height: 1.0,
             ),
           ),

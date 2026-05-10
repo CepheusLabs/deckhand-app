@@ -38,7 +38,7 @@ class DeckhandFootbar extends StatelessWidget {
           fontFamily: DeckhandTokens.fontMono,
           fontSize: 10,
           color: tokens.text3,
-          letterSpacing: 0.04 * 10,
+          letterSpacing: 0,
         ),
         child: Row(
           children: [
@@ -80,7 +80,7 @@ class _FootbarCell extends StatelessWidget {
             fontFamily: DeckhandTokens.fontMono,
             fontSize: 10,
             color: tokens.text3,
-            letterSpacing: 0.04 * 10,
+            letterSpacing: 0,
           ),
         ),
         const SizedBox(width: 6),
@@ -90,7 +90,7 @@ class _FootbarCell extends StatelessWidget {
             fontFamily: DeckhandTokens.fontMono,
             fontSize: 10,
             color: tokens.text4,
-            letterSpacing: 0.04 * 10,
+            letterSpacing: 0,
           ),
         ),
       ],

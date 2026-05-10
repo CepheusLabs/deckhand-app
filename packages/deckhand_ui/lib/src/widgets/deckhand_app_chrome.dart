@@ -122,7 +122,7 @@ class _TopBar extends StatelessWidget {
               fontFamily: DeckhandTokens.fontMono,
               fontSize: 10,
               color: tokens.text4,
-              letterSpacing: 0.04 * 10,
+              letterSpacing: 0,
             ),
           ),
           if (printerLabel != null) ...[
@@ -143,7 +143,7 @@ class _TopBar extends StatelessWidget {
                   fontFamily: DeckhandTokens.fontMono,
                   fontSize: DeckhandTokens.tXs,
                   color: tokens.text3,
-                  letterSpacing: 0.04 * DeckhandTokens.tXs,
+                  letterSpacing: 0,
                 ),
               ),
             ),

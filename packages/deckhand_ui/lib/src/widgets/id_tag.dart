@@ -43,7 +43,7 @@ class IdTag extends StatelessWidget {
               fontFamily: DeckhandTokens.fontMono,
               fontSize: 10,
               color: tokens.text3,
-              letterSpacing: 0.04 * 10,
+              letterSpacing: 0,
               height: 1.4,
             ),
           ),

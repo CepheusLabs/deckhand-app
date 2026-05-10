@@ -2550,7 +2550,7 @@ class _MonoLabel extends StatelessWidget {
       style: TextStyle(
         fontFamily: DeckhandTokens.fontMono,
         fontSize: 10,
-        letterSpacing: 0.1 * 10,
+        letterSpacing: 0,
         color: tokens.text4,
       ),
     );

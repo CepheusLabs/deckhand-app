@@ -672,7 +672,7 @@ class _ProbesPanel extends StatelessWidget {
                         fontFamily: DeckhandTokens.fontMono,
                         fontSize: 10,
                         color: tokens.text3,
-                        letterSpacing: 0.1 * 10,
+                        letterSpacing: 0,
                       ),
                     ),
                     const Spacer(),

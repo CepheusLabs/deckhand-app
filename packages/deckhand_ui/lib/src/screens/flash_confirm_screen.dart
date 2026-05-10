@@ -566,7 +566,7 @@ class _Banner extends StatelessWidget {
             style: TextStyle(
               fontFamily: DeckhandTokens.fontMono,
               fontSize: 10,
-              letterSpacing: 0.12 * 10,
+              letterSpacing: 0,
               color: tokens.bad,
             ),
           ),
@@ -697,7 +697,7 @@ class _BackupCta extends StatelessWidget {
                                       style: TextStyle(
                                         fontFamily: DeckhandTokens.fontMono,
                                         fontSize: 9,
-                                        letterSpacing: 0.12 * 9,
+                                        letterSpacing: 0,
                                         color: accent,
                                       ),
                                     ),
@@ -743,7 +743,7 @@ class _BackupCta extends StatelessWidget {
                             textStyle: const TextStyle(
                               fontFamily: DeckhandTokens.fontMono,
                               fontSize: 11,
-                              letterSpacing: 0.08 * 11,
+                              letterSpacing: 0,
                             ),
                           ),
                           onPressed: onTap,
@@ -832,7 +832,7 @@ class _TargetCard extends StatelessWidget {
             style: TextStyle(
               fontFamily: DeckhandTokens.fontMono,
               fontSize: 9,
-              letterSpacing: 0.14 * 9,
+              letterSpacing: 0,
               color: tokens.bad,
             ),
           ),
@@ -860,7 +860,7 @@ class _TargetCard extends StatelessWidget {
             style: TextStyle(
               fontFamily: DeckhandTokens.fontMono,
               fontSize: 12,
-              letterSpacing: 0.02 * 12,
+              letterSpacing: 0,
               color: tokens.text3,
             ),
           ),
@@ -871,7 +871,7 @@ class _TargetCard extends StatelessWidget {
               style: TextStyle(
                 fontFamily: DeckhandTokens.fontMono,
                 fontSize: 10,
-                letterSpacing: 0.04 * 10,
+                letterSpacing: 0,
                 color: tokens.text4,
               ),
             ),
@@ -895,7 +895,7 @@ class _TargetCard extends StatelessWidget {
                   style: TextStyle(
                     fontFamily: DeckhandTokens.fontMono,
                     fontSize: 9,
-                    letterSpacing: 0.12 * 9,
+                    letterSpacing: 0,
                     color: tokens.text4,
                   ),
                 ),
@@ -1036,7 +1036,7 @@ class _SourceCard extends StatelessWidget {
             style: TextStyle(
               fontFamily: DeckhandTokens.fontMono,
               fontSize: 9,
-              letterSpacing: 0.14 * 9,
+              letterSpacing: 0,
               color: tokens.text4,
             ),
           ),
@@ -1093,7 +1093,7 @@ class _SourceStat extends StatelessWidget {
           style: TextStyle(
             fontFamily: DeckhandTokens.fontMono,
             fontSize: 9,
-            letterSpacing: 0.1 * 9,
+            letterSpacing: 0,
             color: tokens.text4,
           ),
         ),
@@ -1197,7 +1197,7 @@ class _ConfirmBlock extends StatelessWidget {
             style: TextStyle(
               fontFamily: DeckhandTokens.fontMono,
               fontSize: 10,
-              letterSpacing: 0.12 * 10,
+              letterSpacing: 0,
               color: tokens.text4,
             ),
           ),
@@ -1211,7 +1211,7 @@ class _ConfirmBlock extends StatelessWidget {
               style: TextStyle(
                 fontFamily: DeckhandTokens.fontMono,
                 fontSize: 14,
-                letterSpacing: 0.02 * 14,
+                letterSpacing: 0,
                 color: tokens.text,
               ),
               decoration: InputDecoration(
@@ -1254,7 +1254,7 @@ class _ConfirmBlock extends StatelessWidget {
             style: TextStyle(
               fontFamily: DeckhandTokens.fontMono,
               fontSize: 11,
-              letterSpacing: 0.06 * 11,
+              letterSpacing: 0,
               color: matched ? tokens.ok : tokens.text4,
             ),
           ),
@@ -1318,7 +1318,7 @@ class _WipeAndFlashButton extends StatelessWidget {
           fontFamily: DeckhandTokens.fontSans,
           fontSize: 14,
           fontWeight: FontWeight.w600,
-          letterSpacing: 0.1,
+          letterSpacing: 0,
         ),
       ),
     );

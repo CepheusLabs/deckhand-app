@@ -403,7 +403,7 @@ class DeckhandTheme {
         height: 1.4,
         fontWeight: FontWeight.w500,
         color: t.text3,
-        letterSpacing: 0.04 * DeckhandTokens.tXs,
+        letterSpacing: 0,
       ),
     );
   }

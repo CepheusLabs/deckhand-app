@@ -239,7 +239,7 @@ class _Body extends StatelessWidget {
                     fontFamily: DeckhandTokens.fontMono,
                     fontSize: DeckhandTokens.tXs,
                     color: tokens.text4,
-                    letterSpacing: 0.04 * DeckhandTokens.tXs,
+                    letterSpacing: 0,
                   ),
                 ),
                 const SizedBox(width: 6),
@@ -622,7 +622,7 @@ class _Header extends StatelessWidget {
                 style: TextStyle(
                   fontFamily: DeckhandTokens.fontMono,
                   fontSize: 10,
-                  letterSpacing: 0.06 * 10,
+                  letterSpacing: 0,
                   color: tokens.text4,
                 ),
               ),
@@ -709,7 +709,7 @@ class _SpecCell {
             style: TextStyle(
               fontFamily: DeckhandTokens.fontMono,
               fontSize: 9,
-              letterSpacing: 0.08 * 9,
+              letterSpacing: 0,
               color: tokens.text4,
             ),
           ),
@@ -720,7 +720,7 @@ class _SpecCell {
             style: TextStyle(
               fontFamily: DeckhandTokens.fontMono,
               fontSize: 12,
-              letterSpacing: 0.02 * 12,
+              letterSpacing: 0,
               color: tokens.text2,
             ),
           ),
@@ -765,7 +765,7 @@ class _Footer extends StatelessWidget {
               style: TextStyle(
                 fontFamily: DeckhandTokens.fontMono,
                 fontSize: 10,
-                letterSpacing: 0.04 * 10,
+                letterSpacing: 0,
                 color: tokens.text4,
               ),
             ),
@@ -775,7 +775,7 @@ class _Footer extends StatelessWidget {
             style: TextStyle(
               fontFamily: DeckhandTokens.fontMono,
               fontSize: 10,
-              letterSpacing: 0.04 * 10,
+              letterSpacing: 0,
               color: tokens.text4,
             ),
           ),

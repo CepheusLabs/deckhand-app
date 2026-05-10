@@ -375,7 +375,7 @@ class _ExplainerPanel extends StatelessWidget {
               fontFamily: DeckhandTokens.fontMono,
               fontSize: 10,
               color: tokens.text4,
-              letterSpacing: 0.12 * 10,
+              letterSpacing: 0,
             ),
           ),
           const SizedBox(height: 10),
@@ -471,7 +471,7 @@ class _StateChip extends StatelessWidget {
           fontSize: 9,
           color: color,
           fontWeight: FontWeight.w600,
-          letterSpacing: 0.06 * 9,
+          letterSpacing: 0,
         ),
       ),
     );

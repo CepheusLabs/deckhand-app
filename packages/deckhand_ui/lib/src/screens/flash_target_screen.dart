@@ -403,7 +403,7 @@ class _HeaderCell extends StatelessWidget {
         fontFamily: DeckhandTokens.fontMono,
         fontSize: 10,
         color: tokens.text3,
-        letterSpacing: 0.1 * 10,
+        letterSpacing: 0,
       ),
     );
   }
@@ -464,7 +464,7 @@ class _MatchPill extends StatelessWidget {
             fontSize: 9,
             color: color,
             fontWeight: FontWeight.w600,
-            letterSpacing: 0.06 * 9,
+            letterSpacing: 0,
           ),
         ),
       ),

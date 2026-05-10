@@ -212,7 +212,7 @@ class _ScreenCard extends StatelessWidget {
                     fontFamily: DeckhandTokens.fontMono,
                     fontSize: 9,
                     fontWeight: FontWeight.w600,
-                    letterSpacing: 0.06 * 9,
+                    letterSpacing: 0,
                     color: installState == 'running' ? tokens.ok : tokens.info,
                   ),
                 ),

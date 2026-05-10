@@ -1167,7 +1167,7 @@ class _FieldLabel extends StatelessWidget {
       style: TextStyle(
         fontFamily: DeckhandTokens.fontMono,
         fontSize: 10,
-        letterSpacing: 0.1 * 10,
+        letterSpacing: 0,
         color: tokens.text4,
       ),
     );
@@ -1338,7 +1338,7 @@ class _CacheStatusChip extends StatelessWidget {
           fontFamily: DeckhandTokens.fontMono,
           fontSize: 10,
           color: color,
-          letterSpacing: 0.8,
+          letterSpacing: 0,
         ),
       ),
     );
