@@ -152,9 +152,10 @@ Every step declared in a profile flow MUST satisfy:
    - `cleanup_then_restart`: a defined teardown command followed
      by `restart`. Used when partial state would interfere
      (e.g. `rm -rf ~/klipper.partial`).
-   - `continue`: the step is internally checkpointed and can
-     pick up where it left off (`apt-get install` after a network
-     drop; `dd` with a recorded `seek=` offset).
+   Checkpointed continuation is intentionally not a profile
+   contract yet. Steps that need byte/range checkpoints must use
+   `cleanup_then_restart` until the runtime grows a typed checkpoint
+   format.
 3. **Post-check.** A separate probe run after the step claims
    success, to catch the "exited 0 but didn't actually do the
    thing" case. Mismatch is a `failed` status, not `completed`.
@@ -198,8 +199,8 @@ On entering S900-progress with an existing session:
      normal when the user jumps back and changes a decision.
    - If `in_progress`: invoke the step's resume strategy. `restart`
      re-runs the step, and `cleanup_then_restart` runs the declared
-     `cleanup` command before the retry. Checkpointed `continue`
-     is not implemented yet and falls back to restart with a warning.
+     `cleanup` command before the retry. Checkpointed continuation
+     is rejected by profile lint until runtime support exists.
    - If `failed`: present the recorded error with "retry / skip"
      buttons (current S900 behaviour, now with full context).
 3. Steps not yet recorded are run in declared order.
@@ -305,7 +306,7 @@ needing review — it can contain home-directory paths.
   the run-state file is now real; the UI renderer that reads it
   on enter and shows "continuing/re-running/skipping" is the
   remaining piece.
-- Profile DSL `idempotency` block on existing step kinds: partially
-  implemented — `inputs`, `pre_check`, `post_check`, `resume:
-  restart`, and `resume: cleanup_then_restart` are honored.
-  Checkpointed `resume: continue` remains pending.
+- Profile DSL `idempotency` block on existing step kinds: implemented
+  for `inputs`, `pre_check`, `post_check`, `resume: restart`, and
+  `resume: cleanup_then_restart`. Checkpointed continuation remains
+  future work and is rejected by profile lint.

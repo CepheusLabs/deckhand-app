@@ -421,7 +421,6 @@ void _walkIdempotency(Map<String, dynamic> profile, List<LintFinding> out) {
 const _resumeStrategies = <String>{
   'restart',
   'cleanup_then_restart',
-  'continue',
 };
 
 void _validateIdempotencyBlock(

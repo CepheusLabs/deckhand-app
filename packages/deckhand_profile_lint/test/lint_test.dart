@@ -533,6 +533,27 @@ void main() {
         contains('idempotency.cleanup is required for cleanup_then_restart'),
       );
     });
+
+    test('rejects checkpointed resume until runtime support exists', () async {
+      _writeRegistry(tmp, ['resume-continue']);
+      final profile =
+          '${_minimalValidProfile('resume-continue')}'
+          '\nflows:\n  stock_keep:\n    enabled: true\n    steps:\n'
+          '      - id: install_klipper\n'
+          '        kind: install_firmware\n'
+          '        idempotency:\n'
+          '          pre_check: "test -d ~/klipper"\n'
+          '          resume: continue\n';
+      _writeProfile(tmp, 'resume-continue', profile);
+      final report = await runProfileLint(['--root', tmp.path]);
+
+      expect(report.hasErrors, isTrue);
+      final messages = report.results
+          .expand((r) => r.findings.map((f) => f.message))
+          .join('\n');
+      expect(messages, contains('idempotency.resume must be one of'));
+      expect(messages, isNot(contains('continue')));
+    });
   });
 
   group('screen source lint', () {
