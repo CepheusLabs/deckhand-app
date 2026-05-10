@@ -133,6 +133,34 @@ void main() {
       expect(find.textContaining('{{firmware.install_path}}'), findsNothing);
     });
 
+    testWidgets('destructive disk writes use user-facing copy', (tester) async {
+      final controller = await buildController(
+        steps: [
+          {'id': 'flash', 'kind': 'flash_disk'},
+        ],
+        decisions: {'flash.disk': 'PhysicalDrive3'},
+      );
+      await tester.pumpWidget(
+        testHarness(
+          controller: controller,
+          child: const ReviewScreen(),
+          initialLocation: '/review',
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.textContaining('Disk image writes (destructive)'),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining('Write OS image to Windows disk 3'),
+        findsOneWidget,
+      );
+      expect(find.textContaining('raw image write'), findsNothing);
+      expect(find.textContaining('PhysicalDrive3'), findsNothing);
+    });
+
     testWidgets('conditional-wrapped steps get a "(maybe)" tag', (
       tester,
     ) async {

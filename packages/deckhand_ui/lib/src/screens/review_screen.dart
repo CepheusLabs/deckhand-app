@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import '../i18n/translations.g.dart';
 import '../providers.dart';
 import '../theming/deckhand_tokens.dart';
+import '../utils/disk_operation_errors.dart';
 import '../utils/json_safety.dart';
 import '../widgets/wizard_scaffold.dart';
 
@@ -153,13 +154,18 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
         label = 'KIAUH helper';
       } else if (key == 'screen') {
         label = 'Touchscreen daemon';
+      } else if (key == 'flash.disk') {
+        label = 'Target disk';
       }
       // Never surface `hardening.new_password` content to the UI.
       if (key == 'hardening.new_password') {
         continue;
       }
       label ??= key; // last-resort fallback - still better than raw id+colon
-      out.add('$label: $val');
+      final value = key == 'flash.disk'
+          ? hideRawDiskIds(val.toString())
+          : val.toString();
+      out.add('$label: $value');
     }
     return out;
   }
@@ -354,7 +360,9 @@ _MutationPlan _buildMutationPlan({
           if (path != null) scripts.add(_PlanItem(label: path + tag));
         case 'flash_disk':
           final disk = decisions['flash.disk']?.toString() ?? '(unchosen)';
-          diskWrites.add(_PlanItem(label: 'raw image write to $disk$tag'));
+          diskWrites.add(
+            _PlanItem(label: 'Write OS image to ${hideRawDiskIds(disk)}$tag'),
+          );
         case 'conditional':
           final when = jsonString(step['when']);
           final then = jsonStringKeyMapList(step['then']);
@@ -418,7 +426,7 @@ _MutationPlan _buildMutationPlan({
   if (diskWrites.isNotEmpty) {
     sections.add(
       _PlanSection(
-        title: 'Raw disk writes (DESTRUCTIVE)',
+        title: 'Disk image writes (destructive)',
         icon: Icons.warning_amber,
         items: diskWrites,
       ),
