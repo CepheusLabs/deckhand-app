@@ -905,7 +905,7 @@ String buildWindowsLaunchPowerShellCommandForTesting({
 String windowsPowerShellExecutableForTesting({
   required Map<String, String> environment,
   required bool Function(String path) exists,
-}) => _resolveWindowsPowerShellExecutable(
+}) => resolveTrustedWindowsPowerShellExecutable(
   environment: environment,
   exists: exists,
 );
@@ -921,36 +921,8 @@ List<String> _injectHelperEventsFile(
 }
 
 String _windowsPowerShellExecutable() {
-  if (!Platform.isWindows) return 'powershell.exe';
-  return _resolveWindowsPowerShellExecutable(
-    environment: Platform.environment,
-    exists: (path) => File(path).existsSync(),
-  );
+  return trustedWindowsPowerShellExecutable();
 }
-
-String _resolveWindowsPowerShellExecutable({
-  required Map<String, String> environment,
-  required bool Function(String path) exists,
-}) {
-  const defaultWindowsRoot = r'C:\Windows';
-  final roots = <String>[
-    defaultWindowsRoot,
-    environment['SystemRoot'] ?? '',
-    environment['WINDIR'] ?? '',
-  ];
-  final seen = <String>{};
-  for (final rawRoot in roots) {
-    final root = rawRoot.trim();
-    if (root.isEmpty || !seen.add(root.toLowerCase())) continue;
-    final candidate = _windowsPowerShellPathUnder(root);
-    if (exists(candidate)) return candidate;
-  }
-  return _windowsPowerShellPathUnder(defaultWindowsRoot);
-}
-
-String _windowsPowerShellPathUnder(String windowsRoot) => p.Context(
-  style: p.Style.windows,
-).join(windowsRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
 
 String _buildWindowsLaunchPowerShellCommand({
   required String helperPath,

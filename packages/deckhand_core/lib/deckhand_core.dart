@@ -7,6 +7,7 @@ library;
 export 'src/errors.dart';
 export 'src/logging.dart';
 export 'src/paths.dart';
+export 'src/platform/windows_tools.dart';
 export 'src/settings.dart';
 export 'src/shell/shell_quoting.dart';
 export 'src/models/printer_profile.dart';

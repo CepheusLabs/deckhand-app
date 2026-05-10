@@ -415,7 +415,7 @@ class _EmmcBackupScreenState extends ConsumerState<EmmcBackupScreen> {
             r'$f = New-Object System.Windows.Forms.FolderBrowserDialog;'
             r'$f.Description = "Choose where to save the eMMC backup image";'
             r'if ($f.ShowDialog() -eq "OK") { Write-Output $f.SelectedPath }';
-        final res = await Process.run('powershell.exe', [
+        final res = await Process.run(trustedWindowsPowerShellExecutable(), [
           '-NoProfile',
           '-STA',
           '-Command',
