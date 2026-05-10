@@ -93,25 +93,32 @@ class _WelcomePanels extends StatelessWidget {
       // full row, rather than centering an awkward half-width card.
       return newInstall;
     }
-    // IntrinsicHeight lets `CrossAxisAlignment.stretch` work in a
-    // vertically-unbounded parent (the WizardScaffold body Column).
-    // Without it, Row tries to size children to the full
-    // cross-axis (which is +infinity here) and Flutter asserts
-    // "BoxConstraints forces an infinite height". With it, the
-    // Row's height is the taller of the two panels' natural
-    // heights and both Expanded children get matched-height
-    // constraints — exactly what the mockup shows.
-    return IntrinsicHeight(
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Expanded(child: newInstall),
-          const SizedBox(width: 16),
-          Expanded(
-            child: _ResumePanel(tokens: tokens, saved: saved!),
+    final resume = _ResumePanel(tokens: tokens, saved: saved!);
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth < 720) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [newInstall, const SizedBox(height: 16), resume],
+          );
+        }
+        // IntrinsicHeight lets `CrossAxisAlignment.stretch` work in a
+        // vertically-unbounded parent (the WizardScaffold body Column).
+        // Without it, Row tries to size children to the full cross-axis
+        // (which is +infinity here) and Flutter asserts. With it, the
+        // Row's height is the taller panel's natural height and both
+        // Expanded children match it, which is what the mockup shows.
+        return IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(child: newInstall),
+              const SizedBox(width: 16),
+              Expanded(child: resume),
+            ],
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 }

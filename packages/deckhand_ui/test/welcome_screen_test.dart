@@ -103,6 +103,42 @@ void main() {
       expect(find.widgetWithText(TextButton, 'Discard'), findsOneWidget);
     });
 
+    testWidgets('resume panels stack without overflow in a narrow window', (
+      tester,
+    ) async {
+      await tester.binding.setSurfaceSize(const Size(520, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      final store = InMemoryWizardStateStore();
+      await store.save(
+        const WizardState(
+          profileId: 'phrozen-arco',
+          decisions: {'firmware': 'kalico'},
+          currentStep: 'choose-path',
+          flow: WizardFlow.stockKeep,
+        ),
+      );
+
+      final controller = stubWizardController(profileJson: testProfileJson());
+      await controller.loadProfile('test-printer');
+      await tester.pumpWidget(
+        testHarness(
+          controller: controller,
+          child: const WelcomeScreen(),
+          initialLocation: '/',
+          extraOverrides: [wizardStateStoreProvider.overrideWithValue(store)],
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+
+      expect(tester.takeException(), isNull);
+      expect(find.text('NEW INSTALL'), findsOneWidget);
+      expect(find.text('RESUME'), findsOneWidget);
+      expect(find.text('You have one in-progress install.'), findsOneWidget);
+    });
+
     testWidgets('discard keeps resume card visible when store clear fails', (
       tester,
     ) async {
