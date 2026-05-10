@@ -22,6 +22,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 
@@ -384,12 +385,25 @@ func checkDisks(ctx context.Context, p Probe) Result {
 	const name = "disks_enumerate"
 	n, err := p.ListDisksCount(ctx)
 	if err != nil {
-		return Result{Name: name, Status: StatusFail, Detail: fmt.Sprintf("disks.List error: %v", err)}
+		return Result{Name: name, Status: StatusFail, Detail: diskEnumerationFailureDetail(p.GOOS(), err)}
 	}
 	if n == 0 {
 		return Result{Name: name, Status: StatusWarn, Detail: "no disks reported (unusual — expected at least the system disk)"}
 	}
 	return Result{Name: name, Status: StatusPass, Detail: fmt.Sprintf("%d disk(s) enumerated", n)}
+}
+
+func diskEnumerationFailureDetail(goos string, err error) string {
+	detail := fmt.Sprintf("disks.List error: %v", err)
+	if goos != "windows" {
+		return detail
+	}
+
+	lowerErr := strings.ToLower(err.Error())
+	if strings.Contains(lowerErr, "get-disk") {
+		return detail + "; Run Deckhand as Administrator, confirm Windows Disk Management can see disks, then retry. To isolate the host issue, run PowerShell Get-Disk from an elevated prompt."
+	}
+	return detail
 }
 
 // checkDirWritable verifies a directory exists (or can be created) and

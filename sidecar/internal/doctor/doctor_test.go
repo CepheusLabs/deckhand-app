@@ -292,6 +292,29 @@ func TestCollect_DiskEnumFailure_Fails(t *testing.T) {
 	}
 }
 
+func TestCollect_WindowsGetDiskFailure_ExplainsRemediation(t *testing.T) {
+	p := baseProbe()
+	p.goos = "windows"
+	p.disksErr = errors.New("Get-Disk failed: exit status 1")
+	p.disksCount = 0
+	got := collectWithProbe(context.Background(), "1.0.0", p)
+
+	r := findResult(t, got, "disks_enumerate")
+	if r.Status != StatusFail {
+		t.Fatalf("disks_enumerate status = %s, want FAIL", r.Status)
+	}
+	for _, want := range []string{
+		"Get-Disk failed",
+		"Run Deckhand as Administrator",
+		"Windows Disk Management",
+		"PowerShell Get-Disk",
+	} {
+		if !strings.Contains(r.Detail, want) {
+			t.Errorf("detail = %q, want to contain %q", r.Detail, want)
+		}
+	}
+}
+
 func TestCollect_ZeroDisks_Warns(t *testing.T) {
 	p := baseProbe()
 	p.disksCount = 0
