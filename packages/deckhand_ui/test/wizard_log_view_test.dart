@@ -97,6 +97,37 @@ void main() {
     );
   });
 
+  testWidgets('readable log uses friendly maintenance step names', (
+    tester,
+  ) async {
+    final controller = stubWizardController(profileJson: testProfileJson());
+    await controller.loadProfile('test-printer');
+
+    await tester.pumpWidget(
+      testHarness(
+        controller: controller,
+        child: const WizardLogView(
+          lines: [
+            '> starting snapshot_paths',
+            '[ok] apply_services',
+            '[run-state] skipping install_marker; already completed',
+          ],
+        ),
+      ),
+    );
+
+    expect(find.textContaining('Back up stock files'), findsOneWidget);
+    expect(
+      find.textContaining('Finished Clean up stock services'),
+      findsOneWidget,
+    );
+    expect(
+      find.textContaining('Already completed: Mark printer as managed'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('Install Marker'), findsNothing);
+  });
+
   test('clipboard log uses visible fixed-width separators', () {
     final text = formatWizardLogForClipboard([
       '> starting choose_os_image',

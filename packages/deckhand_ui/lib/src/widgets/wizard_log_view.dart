@@ -338,6 +338,15 @@ class _LogLine extends StatelessWidget {
       'link_extras' => 'Install profile extras',
       'install_screen' => 'Install the screen package',
       'flash_mcus' => 'Reject unsupported MCU flash step',
+      'apply_services' => 'Clean up stock services',
+      'apply_files' => 'Clean up stock files',
+      'snapshot_paths' => 'Back up stock files',
+      'write_file' => 'Write config',
+      'install_marker' => 'Mark printer as managed',
+      'verify' => 'Verify install',
+      'script' => 'Run setup script',
+      'ssh_commands' => 'Run remote commands',
+      'conditional' => 'Evaluate condition',
       _ => _titleCaseIdentifier(stepId),
     };
   }
