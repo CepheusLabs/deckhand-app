@@ -563,6 +563,50 @@ void main() {
       },
     );
 
+    test('writes OS image manifests through a clean temp file', () async {
+      final dest = _managedOsImageDest('atomic-local-reuse.img');
+      final manifestPath = '$dest.deckhand-download.json';
+      final tmpManifestPath = '$manifestPath.tmp';
+      addTearDown(() async {
+        await _deleteIfExists(dest);
+        await _deleteIfExists(manifestPath);
+        await _deleteIfExists(tmpManifestPath);
+      });
+      await Directory(p.dirname(dest)).create(recursive: true);
+      const cachedBody = 'cached-image';
+      await File(dest).writeAsString(cachedBody);
+      final expected = sha256.convert(utf8.encode(cachedBody)).toString();
+      await File(manifestPath).writeAsString(
+        jsonEncode({
+          'schema_version': 1,
+          'url': 'https://blocked.example.com/image.img',
+          'path': dest,
+          'expected_sha256': expected,
+          'actual_sha256': expected,
+          'downloaded_at': '2026-05-04T12:00:00Z',
+        }),
+      );
+      await File(tmpManifestPath).writeAsString('{partial');
+      final sidecar = _FakeSidecar(hash: expected);
+      final security = _AllowAllSecurity(allowedHosts: const {});
+      final svc = SidecarUpstreamService(sidecar: sidecar, security: security);
+
+      await svc
+          .osDownload(
+            url: 'https://blocked.example.com/image.img',
+            destPath: dest,
+            expectedSha256: expected,
+          )
+          .drain<void>();
+
+      expect(File(tmpManifestPath).existsSync(), isFalse);
+      final manifest =
+          jsonDecode(await File(manifestPath).readAsString())
+              as Map<String, dynamic>;
+      expect(manifest['downloaded_at'], '2026-05-04T12:00:00Z');
+      expect(manifest['reused_at'], isA<String>());
+    });
+
     test('does not reuse stale xz bytes masquerading as an image', () async {
       final dest = _managedOsImageDest('stale-xz-cache.img');
       addTearDown(() async {

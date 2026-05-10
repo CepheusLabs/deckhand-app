@@ -402,17 +402,33 @@ class SidecarUpstreamService implements UpstreamService {
         ? await _existingDownloadManifestDownloadedAt(manifest)
         : null;
     final now = DateTime.now().toUtc().toIso8601String();
-    await manifest.writeAsString(
-      const JsonEncoder.withIndent('  ').convert({
-        'schema_version': 1,
-        'url': url,
-        'path': destPath,
-        'expected_sha256': expectedSha256,
-        'actual_sha256': actualSha256,
-        'downloaded_at': ?downloadedAt,
-        if (reused) 'reused_at': now else 'downloaded_at': now,
-      }),
-    );
+    final body = const JsonEncoder.withIndent('  ').convert({
+      'schema_version': 1,
+      'url': url,
+      'path': destPath,
+      'expected_sha256': expectedSha256,
+      'actual_sha256': actualSha256,
+      'downloaded_at': ?downloadedAt,
+      if (reused) 'reused_at': now else 'downloaded_at': now,
+    });
+    final tmp = File('${manifest.path}.tmp');
+    final tmpType = await FileSystemEntity.type(tmp.path, followLinks: false);
+    if (tmpType == FileSystemEntityType.link ||
+        tmpType == FileSystemEntityType.directory) {
+      throw UpstreamException(
+        'download manifest temp path must be a regular file: ${tmp.path}',
+      );
+    }
+    if (tmpType == FileSystemEntityType.file) {
+      await tmp.delete();
+    }
+    await tmp.writeAsString(body, flush: true);
+    try {
+      await tmp.rename(manifest.path);
+    } on FileSystemException {
+      if (await manifest.exists()) await manifest.delete();
+      await tmp.rename(manifest.path);
+    }
   }
 
   String _manifestPath(String destPath) => '$destPath.deckhand-download.json';
