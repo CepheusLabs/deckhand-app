@@ -482,9 +482,9 @@ void main() {
       const cachedBody = 'cached-image';
       await File(dest).writeAsString(cachedBody);
       await File('$dest.part').writeAsString('stale extracted partial');
-      await File('$dest.download.part').writeAsString(
-        'stale downloaded artifact',
-      );
+      await File(
+        '$dest.download.part',
+      ).writeAsString('stale downloaded artifact');
       final expected = sha256.convert(utf8.encode(cachedBody)).toString();
       final sidecar = _FakeSidecar(
         hash:
@@ -515,6 +515,53 @@ void main() {
       ).readAsString();
       expect(manifest, contains('"reused_at"'));
     });
+
+    test(
+      'preserves original download time when reusing local images',
+      () async {
+        final dest = _managedOsImageDest('local-reuse-preserves-download.img');
+        addTearDown(() async {
+          await _deleteIfExists(dest);
+          await _deleteIfExists('$dest.deckhand-download.json');
+        });
+        await Directory(p.dirname(dest)).create(recursive: true);
+        const cachedBody = 'cached-image';
+        await File(dest).writeAsString(cachedBody);
+        final expected = sha256.convert(utf8.encode(cachedBody)).toString();
+        await File('$dest.deckhand-download.json').writeAsString(
+          jsonEncode({
+            'schema_version': 1,
+            'url': 'https://blocked.example.com/image.img',
+            'path': dest,
+            'expected_sha256': expected,
+            'actual_sha256': expected,
+            'downloaded_at': '2026-05-04T12:00:00Z',
+          }),
+        );
+        final sidecar = _FakeSidecar(hash: expected);
+        final security = _AllowAllSecurity(allowedHosts: const {});
+        final svc = SidecarUpstreamService(
+          sidecar: sidecar,
+          security: security,
+        );
+
+        await svc
+            .osDownload(
+              url: 'https://blocked.example.com/image.img',
+              destPath: dest,
+              expectedSha256: expected,
+            )
+            .drain<void>();
+
+        final manifest =
+            jsonDecode(
+                  await File('$dest.deckhand-download.json').readAsString(),
+                )
+                as Map<String, dynamic>;
+        expect(manifest['downloaded_at'], '2026-05-04T12:00:00Z');
+        expect(manifest['reused_at'], isA<String>());
+      },
+    );
 
     test('does not reuse stale xz bytes masquerading as an image', () async {
       final dest = _managedOsImageDest('stale-xz-cache.img');

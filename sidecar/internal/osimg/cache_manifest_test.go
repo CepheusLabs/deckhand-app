@@ -3,8 +3,10 @@ package osimg
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -60,5 +62,46 @@ func TestTryReuseCachedImageRejectsManifestWhenImageHashDiffers(t *testing.T) {
 	}
 	if reused {
 		t.Fatalf("expected stale manifest not to be reused")
+	}
+}
+
+func TestWriteCacheManifestPreservesDownloadedAtOnReuse(t *testing.T) {
+	dest := filepath.Join(t.TempDir(), "image.img")
+	rawURL := "https://github.com/example/releases/download/v1/image.img.xz"
+	expected := strings.Repeat("a", 64)
+	actual := strings.Repeat("b", 64)
+
+	if err := WriteCacheManifest(dest, rawURL, expected, actual, false); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.ReadFile(CacheManifestPath(dest))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var first map[string]any
+	if err := json.Unmarshal(before, &first); err != nil {
+		t.Fatal(err)
+	}
+	downloadedAt, ok := first["downloaded_at"].(string)
+	if !ok || downloadedAt == "" {
+		t.Fatalf("missing original downloaded_at in %+v", first)
+	}
+
+	if err := WriteCacheManifest(dest, rawURL, expected, actual, true); err != nil {
+		t.Fatal(err)
+	}
+	after, err := os.ReadFile(CacheManifestPath(dest))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var second map[string]any
+	if err := json.Unmarshal(after, &second); err != nil {
+		t.Fatal(err)
+	}
+	if got := second["downloaded_at"]; got != downloadedAt {
+		t.Fatalf("downloaded_at = %v, want %s", got, downloadedAt)
+	}
+	if _, ok := second["reused_at"].(string); !ok {
+		t.Fatalf("missing reused_at in %+v", second)
 	}
 }

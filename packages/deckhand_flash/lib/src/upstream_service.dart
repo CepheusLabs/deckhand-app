@@ -398,6 +398,9 @@ class SidecarUpstreamService implements UpstreamService {
         'download manifest path must be a regular file: ${manifest.path}',
       );
     }
+    final downloadedAt = reused
+        ? await _existingDownloadManifestDownloadedAt(manifest)
+        : null;
     final now = DateTime.now().toUtc().toIso8601String();
     await manifest.writeAsString(
       const JsonEncoder.withIndent('  ').convert({
@@ -406,12 +409,28 @@ class SidecarUpstreamService implements UpstreamService {
         'path': destPath,
         'expected_sha256': expectedSha256,
         'actual_sha256': actualSha256,
+        if (downloadedAt != null) 'downloaded_at': downloadedAt,
         if (reused) 'reused_at': now else 'downloaded_at': now,
       }),
     );
   }
 
   String _manifestPath(String destPath) => '$destPath.deckhand-download.json';
+
+  Future<String?> _existingDownloadManifestDownloadedAt(File manifest) async {
+    final type = await FileSystemEntity.type(manifest.path, followLinks: false);
+    if (type != FileSystemEntityType.file) return null;
+    try {
+      final decoded = _stringKeyMap(jsonDecode(await manifest.readAsString()));
+      final downloadedAt = _jsonString(decoded?['downloaded_at']);
+      if (downloadedAt == null || DateTime.tryParse(downloadedAt) == null) {
+        return null;
+      }
+      return downloadedAt;
+    } catch (_) {
+      return null;
+    }
+  }
 
   Future<String?> _tryReuseOrClearLocalOsImage(
     String destPath,

@@ -79,6 +79,18 @@ func WriteCacheManifest(dest, rawURL, expectedSha, actualSha string, reused bool
 	if err := os.MkdirAll(filepath.Dir(manifestPath), 0o700); err != nil {
 		return fmt.Errorf("create download manifest directory: %w", err)
 	}
+	downloadedAt := ""
+	if reused {
+		existing, ok, err := readCacheManifest(dest)
+		if err != nil {
+			return err
+		}
+		if ok && existing.DownloadedAt != "" {
+			if _, err := time.Parse(time.RFC3339Nano, existing.DownloadedAt); err == nil {
+				downloadedAt = existing.DownloadedAt
+			}
+		}
+	}
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 	manifest := cacheManifest{
 		SchemaVersion:  cacheManifestSchemaVersion,
@@ -86,6 +98,7 @@ func WriteCacheManifest(dest, rawURL, expectedSha, actualSha string, reused bool
 		Path:           dest,
 		ExpectedSHA256: expectedSha,
 		ActualSHA256:   actualSha,
+		DownloadedAt:   downloadedAt,
 	}
 	if reused {
 		manifest.ReusedAt = now
