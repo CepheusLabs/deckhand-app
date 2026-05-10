@@ -135,6 +135,27 @@ void main() {
     });
   });
 
+  group('disksProvider', () {
+    test('refreshes cached disk enumeration after the cache ttl', () async {
+      final flash = _CountingFlashService();
+      final container = ProviderContainer(
+        overrides: [
+          flashServiceProvider.overrideWithValue(flash),
+          diskEnumerationCacheTtlProvider.overrideWithValue(Duration.zero),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      final first = await container.read(disksProvider.future);
+      await Future<void>.delayed(Duration.zero);
+      final second = await container.read(disksProvider.future);
+
+      expect(first.single.id, 'PhysicalDrive1');
+      expect(second.single.id, 'PhysicalDrive2');
+      expect(flash.listCalls, 2);
+    });
+  });
+
   group('isPersistableWizardState', () {
     test('initial state (welcome + empty profile + no decisions) is NOT '
         'persistable', () {
@@ -196,6 +217,47 @@ void main() {
       expect(isPersistableWizardState(s), isFalse);
     });
   });
+}
+
+class _CountingFlashService implements FlashService {
+  var listCalls = 0;
+
+  @override
+  Future<List<DiskInfo>> listDisks() async {
+    listCalls += 1;
+    return [
+      DiskInfo(
+        id: 'PhysicalDrive$listCalls',
+        path: r'\\.\PHYSICALDRIVE1',
+        sizeBytes: 8 * 1024 * 1024,
+        bus: 'USB',
+        model: 'Test eMMC',
+        removable: true,
+        partitions: const [],
+      ),
+    ];
+  }
+
+  @override
+  Stream<FlashProgress> readImage({
+    required String diskId,
+    required String outputPath,
+  }) => const Stream.empty();
+
+  @override
+  Future<FlashSafetyVerdict> safetyCheck({required String diskId}) async =>
+      FlashSafetyVerdict(diskId: diskId, allowed: true);
+
+  @override
+  Future<String> sha256(String path) async => '';
+
+  @override
+  Stream<FlashProgress> writeImage({
+    required String imagePath,
+    required String diskId,
+    required String confirmationToken,
+    bool verifyAfterWrite = true,
+  }) => const Stream.empty();
 }
 
 class _ThrowingSettings extends DeckhandSettings {

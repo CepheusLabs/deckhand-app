@@ -295,21 +295,37 @@ final osImageCacheClearProvider = Provider<OsImageCacheClear>((ref) {
   };
 });
 
+/// How long a disk enumeration can be reused before Deckhand re-probes
+/// the host. USB/eMMC adapters can be unplugged and reinserted under
+/// the same Windows PhysicalDrive number, so this should be long enough
+/// to avoid duplicate PowerShell calls while moving between adjacent
+/// wizard screens, but short enough that a resumed or idle screen does
+/// not present stale destructive-write targets indefinitely.
+final diskEnumerationCacheTtlProvider = Provider<Duration>(
+  (_) => const Duration(seconds: 30),
+);
+
 /// Cached host-disk enumeration. Populated lazily by whichever screen
 /// asks first (flash-target on freshFlash, emmc-backup on either
 /// flow). Once cached, both screens share the same future — no
 /// duplicate `listDisks()` call when the user navigates between
 /// flash-target → choose-os → flash-confirm → emmc-backup.
 ///
-/// `ref.keepAlive()` so the cache survives navigation between
-/// screens that don't watch it (choose-os, flash-confirm). Without
-/// it the FutureProvider auto-disposed every time the user moved
-/// off flash-target, and the slow PowerShell-driven `listDisks()`
-/// call re-ran whenever they came back. Use
+/// The short TTL keeps that navigation cache but avoids keeping a
+/// destructive target list alive for the whole app session. Use
 /// `ref.invalidate(disksProvider)` for the explicit "Refresh" action.
 final disksProvider = FutureProvider<List<DiskInfo>>((ref) async {
   ref.keepAlive();
-  return ref.read(flashServiceProvider).listDisks();
+  final ttl = ref.watch(diskEnumerationCacheTtlProvider);
+  Timer? staleTimer;
+  ref.onDispose(() => staleTimer?.cancel());
+  final disks = await ref.read(flashServiceProvider).listDisks();
+  if (ttl <= Duration.zero) {
+    scheduleMicrotask(ref.invalidateSelf);
+  } else {
+    staleTimer = Timer(ttl, ref.invalidateSelf);
+  }
+  return disks;
 });
 
 /// Where on the host full-eMMC `dd` images land when the user clicks
