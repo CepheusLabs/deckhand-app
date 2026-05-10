@@ -343,6 +343,21 @@ void main() {
     },
   );
 
+  test('profile inference handles organized Windows and POSIX paths', () {
+    expect(
+      inferEmmcBackupProfileId(
+        r'C:\Users\eknof\AppData\Roaming\CepheusLabs\Deckhand\state\emmc-backups\phrozen-arco\2026-05-04T23-02-59Z\emmc.img',
+      ),
+      'phrozen-arco',
+    );
+    expect(
+      inferEmmcBackupProfileId(
+        '/home/user/.local/share/deckhand/emmc-backups/sovol-zero/2026-05-04T23-02-59Z/emmc.img',
+      ),
+      'sovol-zero',
+    );
+  });
+
   test('backup image paths are organized by profile and timestamp', () {
     final path = emmcBackupImagePath(
       rootDir: r'C:\Deckhand\emmc-backups',
@@ -536,32 +551,35 @@ void main() {
     expect(catalog.single.indexed, isTrue);
   });
 
-  test('catalog skips candidates that match manifest paths by normalized path', () {
-    final manifest = EmmcBackupManifest.create(
-      profileId: 'phrozen-arco',
-      imagePath: r'C:\Deckhand\emmc-backups\phrozen-arco\full\emmc.img',
-      imageBytes: 4096,
-      imageSha256: 'f' * 64,
-      disk: disk,
-      deckhandVersion: 'dev',
-      createdAt: DateTime.utc(2026, 5, 4, 12),
-    );
-    final candidate = EmmcBackupImageCandidate(
-      imagePath: 'c:/Deckhand/emmc-backups/phrozen-arco/full/emmc.img',
-      imageBytes: 4096,
-      modifiedAt: DateTime.utc(2026, 5, 4, 13),
-      inferredProfileId: 'phrozen-arco',
-    );
+  test(
+    'catalog skips candidates that match manifest paths by normalized path',
+    () {
+      final manifest = EmmcBackupManifest.create(
+        profileId: 'phrozen-arco',
+        imagePath: r'C:\Deckhand\emmc-backups\phrozen-arco\full\emmc.img',
+        imageBytes: 4096,
+        imageSha256: 'f' * 64,
+        disk: disk,
+        deckhandVersion: 'dev',
+        createdAt: DateTime.utc(2026, 5, 4, 12),
+      );
+      final candidate = EmmcBackupImageCandidate(
+        imagePath: 'c:/Deckhand/emmc-backups/phrozen-arco/full/emmc.img',
+        imageBytes: 4096,
+        modifiedAt: DateTime.utc(2026, 5, 4, 13),
+        inferredProfileId: 'phrozen-arco',
+      );
 
-    final catalog = buildEmmcBackupCatalog(
-      manifests: [manifest],
-      candidates: [candidate],
-    );
+      final catalog = buildEmmcBackupCatalog(
+        manifests: [manifest],
+        candidates: [candidate],
+      );
 
-    expect(catalog, hasLength(1));
-    expect(catalog.single.indexed, isTrue);
-    expect(catalog.single.imagePath, manifest.imagePath);
-  });
+      expect(catalog, hasLength(1));
+      expect(catalog.single.indexed, isTrue);
+      expect(catalog.single.imagePath, manifest.imagePath);
+    },
+  );
 
   test('catalog keeps unindexed candidates and labels partial images', () {
     final full = EmmcBackupImageCandidate(

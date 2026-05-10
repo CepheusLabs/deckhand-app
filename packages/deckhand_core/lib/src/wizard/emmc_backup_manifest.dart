@@ -368,7 +368,8 @@ class EmmcBackupOrganizeFailure {
 
 Future<String> writeEmmcBackupManifest(EmmcBackupManifest manifest) async {
   final manifestPath = emmcBackupManifestPath(manifest.imagePath);
-  await Directory(p.dirname(manifestPath)).create(recursive: true);
+  final context = _pathContextForRoot(manifestPath);
+  await Directory(context.dirname(manifestPath)).create(recursive: true);
   final manifestFile = File(manifestPath);
   final tmp = File('$manifestPath.tmp');
   await tmp.writeAsString(
@@ -522,7 +523,8 @@ Future<EmmcBackupOrganizedMove?> _organizeLooseBackupImage({
     profileId: profileId,
     createdAt: createdAt,
   );
-  await Directory(p.dirname(target)).create(recursive: true);
+  final context = _pathContextForRoot(target);
+  await Directory(context.dirname(target)).create(recursive: true);
   await image.rename(target);
 
   String? newManifestPath;
@@ -591,7 +593,8 @@ final _sha256Re = RegExp(r'^[0-9a-f]{64}$');
 bool _isSha256Hex(String value) => _sha256Re.hasMatch(value);
 
 DateTime? _inferLegacyBackupCreatedAt(String imagePath) {
-  final base = p.basename(imagePath);
+  final context = _pathContextForRoot(imagePath);
+  final base = context.basename(imagePath);
   final dashed = RegExp(
     r'(\d{4})-(\d{2})-(\d{2})T(\d{2})-(\d{2})-(\d{2})(?:-\d+)?Z',
   ).firstMatch(base);
@@ -648,10 +651,13 @@ EmmcBackupImageCandidate? findMatchingEmmcBackupImageCandidate({
 }
 
 String? inferEmmcBackupProfileId(String imagePath) {
-  final base = p.basename(imagePath);
+  final context = _pathContextForRoot(imagePath);
+  final base = context.basename(imagePath);
   final lower = base.toLowerCase();
   if (lower == 'emmc.img') {
-    final profile = p.basename(p.dirname(p.dirname(imagePath)));
+    final profile = context.basename(
+      context.dirname(context.dirname(imagePath)),
+    );
     if (profile.isNotEmpty && profile != 'emmc-backups') return profile;
   }
   const marker = '-emmc-';
