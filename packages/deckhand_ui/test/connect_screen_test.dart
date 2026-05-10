@@ -333,7 +333,103 @@ void main() {
       expect(find.textContaining('Windows disk 3'), findsOneWidget);
       expect(find.textContaining('PHYSICALDRIVE3'), findsNothing);
     });
+
+    testWidgets('late generic connect failures are ignored after dispose', (
+      tester,
+    ) async {
+      final ssh = _CompleterSsh();
+      final controller = stubWizardController(
+        profileJson: testProfileJson(),
+        ssh: ssh,
+      );
+      await controller.loadProfile('test-printer');
+
+      await tester.pumpWidget(
+        testHarness(
+          controller: controller,
+          child: const ConnectScreen(),
+          initialLocation: '/connect',
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+
+      await tester.tap(find.text('Manual host'));
+      await tester.pump();
+      await tester.enterText(find.byType(TextField), '192.168.1.50');
+      await tester.pump();
+      await tester.tap(find.text('Connect'));
+      await tester.pump();
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      ssh.connection.completeError(StateError('late connect failure'));
+      await tester.pump();
+
+      expect(tester.takeException(), isNull);
+    });
   });
+}
+
+class _CompleterSsh implements SshService {
+  final Completer<SshSession> connection = Completer<SshSession>();
+
+  @override
+  Future<SshSession> connect({
+    required String host,
+    int port = 22,
+    required SshCredential credential,
+    bool acceptHostKey = false,
+    String? acceptedHostFingerprint,
+  }) => connection.future;
+
+  @override
+  Future<SshSession> tryDefaults({
+    required String host,
+    int port = 22,
+    required List<SshCredential> credentials,
+    bool acceptHostKey = false,
+    String? acceptedHostFingerprint,
+  }) => connection.future;
+
+  @override
+  Future<SshCommandResult> run(
+    SshSession session,
+    String command, {
+    Duration timeout = const Duration(seconds: 30),
+    String? sudoPassword,
+  }) async => const SshCommandResult(stdout: '', stderr: '', exitCode: 0);
+
+  @override
+  Stream<String> runStream(SshSession session, String command) =>
+      const Stream.empty();
+
+  @override
+  Stream<String> runStreamMerged(SshSession session, String command) =>
+      const Stream.empty();
+
+  @override
+  Future<int> upload(
+    SshSession session,
+    String localPath,
+    String remotePath, {
+    int? mode,
+  }) async => 0;
+
+  @override
+  Future<int> download(
+    SshSession session,
+    String remotePath,
+    String localPath,
+  ) async => 0;
+
+  @override
+  Future<Map<String, int>> duPaths(
+    SshSession session,
+    List<String> paths,
+  ) async => const {};
+
+  @override
+  Future<void> disconnect(SshSession session) async {}
 }
 
 class _RecordingSettings extends DeckhandSettings {

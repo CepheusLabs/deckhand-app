@@ -368,6 +368,7 @@ class _ConnectScreenState extends ConsumerState<ConnectScreen> {
       }
       if (mounted) setState(() => _error = e.userTitle);
     } catch (e) {
+      if (!mounted) return;
       setState(() => _error = userFacingError(e));
     } finally {
       if (mounted) {
