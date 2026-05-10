@@ -9,6 +9,8 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+
+	"github.com/CepheusLabs/deckhand/sidecar/internal/winutil"
 )
 
 // List enumerates physical disks using PowerShell's Get-Disk cmdlet.
@@ -131,7 +133,11 @@ func listPartitions(ctx context.Context, diskNumber int) ([]Partition, error) {
 }
 
 var runPowerShell = func(ctx context.Context, script string) ([]byte, error) {
-	cmd := exec.CommandContext(ctx, "powershell.exe", "-NoProfile", "-Command", script)
+	powerShell, err := winutil.PowerShellExe()
+	if err != nil {
+		return nil, fmt.Errorf("locate PowerShell: %w", err)
+	}
+	cmd := exec.CommandContext(ctx, powerShell, "-NoProfile", "-Command", script)
 	out, err := cmd.Output()
 	if err != nil {
 		var detail string

@@ -10,6 +10,8 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+	"github.com/CepheusLabs/deckhand/sidecar/internal/winutil"
 )
 
 // HelperSmokeOptions controls the human-facing helper launch probe.
@@ -124,7 +126,11 @@ func runHelperSmokeCommand(ctx context.Context, helper string, args []string) (i
 
 	ps := windowsHelperSmokePowerShell(helper, args)
 
-	cmd := exec.CommandContext(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-Command", ps)
+	powerShell, err := winutil.PowerShellExe()
+	if err != nil {
+		return -1, "", fmt.Errorf("locate PowerShell: %w", err)
+	}
+	cmd := exec.CommandContext(ctx, powerShell, "-NoProfile", "-NonInteractive", "-Command", ps)
 	out, err := cmd.CombinedOutput()
 	return commandExitCode(err), string(out), err
 }

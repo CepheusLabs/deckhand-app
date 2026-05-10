@@ -366,6 +366,33 @@ void main() {
     });
   });
 
+  group('windowsPowerShellExecutable', () {
+    test('prefers the trusted system32 executable over PATH lookup', () {
+      final got = windowsPowerShellExecutableForTesting(
+        environment: const {
+          'SystemRoot': r'D:\Windows',
+          'WINDIR': r'E:\Windows',
+        },
+        exists: (path) =>
+            path ==
+            r'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe',
+      );
+
+      expect(got, r'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe');
+    });
+
+    test('uses SystemRoot when Windows is not installed on C', () {
+      final got = windowsPowerShellExecutableForTesting(
+        environment: const {'SystemRoot': r'D:\Windows'},
+        exists: (path) =>
+            path ==
+            r'D:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe',
+      );
+
+      expect(got, r'D:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe');
+    });
+  });
+
   group('Windows helper launcher', () {
     test('launches helper and lets the events file own completion', () {
       final command = buildWindowsLaunchPowerShellCommandForTesting(
