@@ -171,6 +171,7 @@ jobs:
           - packages/deckhand_ssh
           - packages/deckhand_flash
           - packages/deckhand_discovery
+          - packages/deckhand_hitl
           - packages/deckhand_ui
           - packages/deckhand_profile_script
           - packages/deckhand_profile_lint
@@ -246,6 +247,7 @@ jobs:
             packages/deckhand_ssh)             floor=20 ;;
             packages/deckhand_flash)           floor=30 ;;
             packages/deckhand_discovery)       floor=30 ;;
+            packages/deckhand_hitl)            floor=40 ;;
             *)                                 floor=0  ;;
           esac
           echo "${{ matrix.package }} coverage: ${pct}% (floor ${floor}%)"

@@ -71,6 +71,12 @@ updates:
     labels: [dependencies, flutter]
 
   - package-ecosystem: pub
+    directory: /packages/deckhand_hitl
+    schedule: { interval: weekly, day: monday }
+    open-pull-requests-limit: 3
+    labels: [dependencies, flutter, security-sensitive]
+
+  - package-ecosystem: pub
     directory: /packages/deckhand_ui
     schedule: { interval: weekly, day: monday }
     open-pull-requests-limit: 3
