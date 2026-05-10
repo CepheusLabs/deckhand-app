@@ -342,6 +342,37 @@ void main() {
     },
   );
 
+  test('scanner rejects manifests that point outside backup root', () async {
+    final dir = await Directory.systemTemp.createTemp(
+      'deckhand_emmc_manifest_external_',
+    );
+    final outside = await Directory.systemTemp.createTemp(
+      'deckhand_emmc_manifest_external_target_',
+    );
+    addTearDown(() async {
+      if (await dir.exists()) await dir.delete(recursive: true);
+      if (await outside.exists()) await outside.delete(recursive: true);
+    });
+
+    final externalImage = File(p.join(outside.path, 'external.img'));
+    await externalImage.writeAsBytes(List<int>.filled(4096, 7), flush: true);
+    final manifest = EmmcBackupManifest.create(
+      profileId: 'phrozen-arco',
+      imagePath: externalImage.path,
+      imageBytes: 4096,
+      imageSha256: 'b' * 64,
+      disk: disk,
+      deckhandVersion: 'dev',
+    );
+    await File(
+      p.join(dir.path, 'backup.img.manifest.json'),
+    ).writeAsString(jsonEncode(manifest.toJson()), flush: true);
+
+    final manifests = await scanEmmcBackupManifests(dir.path);
+
+    expect(manifests, isEmpty);
+  });
+
   test(
     'scanner returns full-size image candidates without manifests',
     () async {

@@ -445,11 +445,12 @@ Future<List<EmmcBackupManifest>> scanEmmcBackupManifests(String dir) async {
     final manifest = await _readManifest(entity);
     if (manifest == null) continue;
     if (!_isValidIndexedManifest(manifest)) continue;
-    final manifestImagePath = await _manifestImagePath(manifest, entity);
+    final manifestImagePath = await _manifestImagePath(dir, manifest, entity);
     if (manifestImagePath == null) continue;
-    final image = File(manifestImagePath);
-    if (!await image.exists()) continue;
-    if (await image.length() != manifest.imageBytes) continue;
+    if (!await _isRegularFile(manifestImagePath)) continue;
+    if (await File(manifestImagePath).length() != manifest.imageBytes) {
+      continue;
+    }
     manifests.add(
       manifest.imagePath == manifestImagePath
           ? manifest
@@ -461,15 +462,21 @@ Future<List<EmmcBackupManifest>> scanEmmcBackupManifests(String dir) async {
 }
 
 Future<String?> _manifestImagePath(
+  String rootDir,
   EmmcBackupManifest manifest,
   File manifestFile,
 ) async {
   if (manifest.imagePath.isNotEmpty &&
+      _isPathInsideRoot(rootDir, manifest.imagePath) &&
       await File(manifest.imagePath).exists()) {
     return manifest.imagePath;
   }
   final sibling = _imagePathFromManifestPath(manifestFile.path);
-  if (sibling == null || !await File(sibling).exists()) return null;
+  if (sibling == null ||
+      !_isPathInsideRoot(rootDir, sibling) ||
+      !await File(sibling).exists()) {
+    return null;
+  }
   return sibling;
 }
 
@@ -612,6 +619,23 @@ final _sha256Re = RegExp(r'^[0-9a-f]{64}$');
 
 bool _isSha256Hex(String value) => _sha256Re.hasMatch(value);
 
+Future<bool> _isRegularFile(String path) async {
+  final type = await FileSystemEntity.type(path, followLinks: false);
+  return type == FileSystemEntityType.file;
+}
+
+bool _isPathInsideRoot(String rootDir, String candidate) {
+  final context = _pathContextForRoot(rootDir);
+  if (!context.isAbsolute(candidate)) return false;
+  final root = context.normalize(rootDir);
+  final child = context.normalize(candidate);
+  final windows = _usesWindowsPathSemantics(rootDir);
+  final rootCompare = windows ? root.toLowerCase() : root;
+  final childCompare = windows ? child.toLowerCase() : child;
+  return childCompare == rootCompare ||
+      context.isWithin(rootCompare, childCompare);
+}
+
 DateTime? _inferLegacyBackupCreatedAt(String imagePath) {
   final context = _pathContextForRoot(imagePath);
   final base = context.basename(imagePath);
@@ -696,13 +720,18 @@ String _slugSegment(String raw) {
 
 p.Context _pathContextForRoot(String rootDir) {
   final trimmed = rootDir.trim();
-  if (RegExp(r'^[A-Za-z]:[/\\]').hasMatch(trimmed) ||
-      trimmed.startsWith(r'\\') ||
-      trimmed.startsWith('//')) {
+  if (_usesWindowsPathSemantics(trimmed)) {
     return p.windows;
   }
   if (trimmed.startsWith('/')) return p.posix;
   return p.context;
+}
+
+bool _usesWindowsPathSemantics(String path) {
+  final trimmed = path.trim();
+  return RegExp(r'^[A-Za-z]:[/\\]').hasMatch(trimmed) ||
+      trimmed.startsWith(r'\\') ||
+      trimmed.startsWith('//');
 }
 
 String _pathKey(String path) {
