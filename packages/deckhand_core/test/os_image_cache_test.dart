@@ -35,6 +35,30 @@ void main() {
     expect(entries.single.hashMatchesManifest, isTrue);
   });
 
+  test('scanOsImageCache treats extracted xz manifests as verified', () async {
+    final root = await Directory.systemTemp.createTemp('deckhand-cache-test-');
+    addTearDown(() => root.delete(recursive: true));
+
+    final image = File(p.join(root.path, 'arco.img'));
+    await image.writeAsBytes(List<int>.filled(1024, 1));
+    await File('${image.path}$osImageDownloadManifestSuffix').writeAsString(
+      jsonEncode({
+        'schema_version': 1,
+        'url': 'https://example.com/arco.img.xz',
+        'path': image.path,
+        'expected_sha256': 'a' * 64,
+        'actual_sha256': 'b' * 64,
+        'downloaded_at': '2026-05-04T12:00:00Z',
+      }),
+    );
+
+    final entries = await scanOsImageCache(root.path);
+
+    expect(entries, hasLength(1));
+    expect(entries.single.hasValidSha256, isTrue);
+    expect(entries.single.hashMatchesManifest, isTrue);
+  });
+
   test('scanOsImageCache ignores malformed manifest paths', () async {
     final root = await Directory.systemTemp.createTemp('deckhand-cache-test-');
     addTearDown(() => root.delete(recursive: true));

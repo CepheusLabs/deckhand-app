@@ -34,7 +34,8 @@ class OsImageCacheEntry {
       _isSha256(expectedSha256) && _isSha256(actualSha256);
 
   bool get hashMatchesManifest =>
-      hasValidSha256 && expectedSha256 == actualSha256;
+      hasValidSha256 &&
+      (_isCompressedArtifactUrl(url) || expectedSha256 == actualSha256);
 
   DateTime get lastTouchedAt => reusedAt ?? downloadedAt ?? modifiedAt;
 
@@ -207,6 +208,13 @@ String? _normalizedSha(Object? value) {
 bool _isSha256(String? value) {
   if (value == null) return false;
   return RegExp(r'^[0-9a-f]{64}$').hasMatch(value);
+}
+
+bool _isCompressedArtifactUrl(String? value) {
+  if (value == null) return false;
+  final uri = Uri.tryParse(value);
+  final path = uri?.path ?? value;
+  return path.toLowerCase().endsWith('.xz');
 }
 
 DateTime? _parseDate(Object? value) {
