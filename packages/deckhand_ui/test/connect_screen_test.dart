@@ -54,6 +54,32 @@ void main() {
       expect(find.text('Refresh'), findsOneWidget);
     });
 
+    testWidgets('manual connect footer only appears on manual host tab', (
+      tester,
+    ) async {
+      final controller = stubWizardController(profileJson: testProfileJson());
+      await controller.loadProfile('test-printer');
+      await tester.pumpWidget(
+        testHarness(
+          controller: controller,
+          child: const ConnectScreen(),
+          initialLocation: '/connect',
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+
+      expect(find.widgetWithText(FilledButton, 'Connect'), findsNothing);
+
+      await tester.tap(find.text('Saved'));
+      await tester.pump();
+      expect(find.widgetWithText(FilledButton, 'Connect'), findsNothing);
+
+      await tester.tap(find.text('Manual host'));
+      await tester.pump();
+      expect(find.widgetWithText(FilledButton, 'Connect'), findsOneWidget);
+    });
+
     testWidgets(
       'discovered card detail uses "Printer found" (not "Moonraker")',
       (tester) async {

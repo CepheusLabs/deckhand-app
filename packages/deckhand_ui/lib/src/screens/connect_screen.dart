@@ -601,6 +601,7 @@ class _ConnectScreenState extends ConsumerState<ConnectScreen> {
             ),
           )
         : null;
+    final showManualFooterAction = focused || _tab == _ConnectTab.manual;
 
     return WizardScaffold(
       screenId: 'S20-connect',
@@ -647,14 +648,16 @@ class _ConnectScreenState extends ConsumerState<ConnectScreen> {
                 onForget: (h) => unawaited(_forgetSavedHost(h)),
               ),
             ),
-      primaryAction: WizardAction(
-        label: _connecting
-            ? t.connect.action_connecting
-            : t.connect.action_connect,
-        onPressed: _connecting || manualHost.isEmpty
-            ? null
-            : () => _connect(manualHost),
-      ),
+      primaryAction: showManualFooterAction
+          ? WizardAction(
+              label: _connecting
+                  ? t.connect.action_connecting
+                  : t.connect.action_connect,
+              onPressed: _connecting || manualHost.isEmpty
+                  ? null
+                  : () => _connect(manualHost),
+            )
+          : null,
       secondaryActions: [
         WizardAction(
           label: t.common.action_back,
