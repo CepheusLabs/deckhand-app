@@ -29,6 +29,14 @@ String userFacingDiskOperationError(Object? error) {
   if (lower.contains('get-disk failed')) {
     return 'Windows could not list storage devices. Reopen Deckhand as Administrator, then refresh disks; if it still fails, check that Windows Disk Management can open.';
   }
+  if (lower.contains('sidecar shutdown')) {
+    return 'Deckhand stopped the local service before this operation finished. Retry the operation after Deckhand finishes starting up.';
+  }
+  if (lower.contains('sidecar process exited') ||
+      lower.contains('sidecar crashed') ||
+      lower.contains('sidecar exited')) {
+    return 'Deckhand\'s local service stopped unexpectedly. Reopen Deckhand and retry; if it repeats, open the report so we can inspect the sidecar log.';
+  }
   if (lower.contains('ssh did not come up within')) {
     return 'Deckhand did not see the printer come online over SSH. Make sure the eMMC is installed, the printer is powered on, and the printer is on the network, then retry.';
   }

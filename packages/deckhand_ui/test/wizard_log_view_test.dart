@@ -97,6 +97,28 @@ void main() {
     );
   });
 
+  testWidgets('user log does not title-case saved file paths', (tester) async {
+    final controller = stubWizardController(profileJson: testProfileJson());
+    await controller.loadProfile('test-printer');
+
+    await tester.pumpWidget(
+      testHarness(
+        controller: controller,
+        child: const WizardLogView(
+          lines: [
+            r'[input] using existing decision: C:\Users\test\Deckhand\some_file.img',
+          ],
+        ),
+      ),
+    );
+
+    expect(
+      find.textContaining(r'C:\Users\test\Deckhand\some_file.img'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('Some File Img'), findsNothing);
+  });
+
   testWidgets('readable log uses friendly maintenance step names', (
     tester,
   ) async {

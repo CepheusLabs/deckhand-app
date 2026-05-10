@@ -79,6 +79,19 @@ void main() {
       );
     });
 
+    test('explains sidecar lifecycle failures in user terms', () {
+      expect(
+        userFacingDiskOperationError('SidecarError(-1): sidecar shutdown'),
+        'Deckhand stopped the local service before this operation finished. Retry the operation after Deckhand finishes starting up.',
+      );
+      expect(
+        userFacingDiskOperationError(
+          'SidecarError(-1): sidecar process exited',
+        ),
+        'Deckhand\'s local service stopped unexpectedly. Reopen Deckhand and retry; if it repeats, open the report so we can inspect the sidecar log.',
+      );
+    });
+
     test('hides raw disk ids behind StateError messages', () {
       expect(
         userFacingDiskOperationError(

@@ -404,6 +404,7 @@ class _LogLine extends StatelessWidget {
     final trimmed = value.trim();
     final physicalDrive = _friendlyPhysicalDrive(trimmed);
     if (physicalDrive != null) return physicalDrive;
+    if (_looksLikePath(trimmed)) return trimmed;
     if (!trimmed.contains('-') && !trimmed.contains('_')) return trimmed;
     return _titleCaseIdentifier(trimmed);
   }
@@ -432,6 +433,11 @@ class _LogLine extends StatelessWidget {
         )
         .join(' ');
   }
+
+  static bool _looksLikePath(String value) =>
+      value.contains(r'\') ||
+      value.contains('/') ||
+      RegExp(r'^[A-Za-z]:').hasMatch(value);
 
   static _LogKind _kindForSource(String source) {
     return switch (source) {
