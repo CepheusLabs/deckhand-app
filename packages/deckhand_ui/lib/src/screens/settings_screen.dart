@@ -1246,6 +1246,8 @@ class _OsImageCacheRow extends StatelessWidget {
                   children: [
                     Text(
                       entry.fileName,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         fontFamily: DeckhandTokens.fontSans,
                         fontSize: DeckhandTokens.tMd,

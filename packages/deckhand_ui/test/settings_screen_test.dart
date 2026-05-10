@@ -263,6 +263,52 @@ void main() {
     expect(find.textContaining('Cleared 4 OS image cache files'), findsOne);
   });
 
+  testWidgets('SettingsScreen cache rows fit narrow windows with long paths', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(360, 760));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    final root = Directory.systemTemp.createTempSync('deckhand-os-cache-ui-');
+    addTearDown(() => root.deleteSync(recursive: true));
+    final longName =
+        'armbian-community-26-2-0-trunk-821-mkspi-trixie-current-'
+        '6-18-26-minimal-very-long-cache-name.img';
+    final image = File(p.join(root.path, longName));
+    image.writeAsBytesSync(List<int>.filled(2048, 1));
+    final entry = OsImageCacheEntry(
+      imagePath: image.path,
+      bytes: image.lengthSync(),
+      modifiedAt: DateTime.utc(2026, 5, 4, 12),
+      url:
+          'https://github.com/armbian/community/releases/download/'
+          '26.2.0-trunk.821/$longName.xz',
+      expectedSha256: 'a' * 64,
+      actualSha256: 'b' * 64,
+      downloadedAt: DateTime.utc(2026, 5, 4, 12),
+      manifestPath: '${image.path}$osImageDownloadManifestSuffix',
+    );
+    final controller = stubWizardController(profileJson: testProfileJson());
+    await controller.loadProfile('test-printer');
+
+    await tester.pumpWidget(
+      testHarness(
+        controller: controller,
+        child: const SettingsScreen(),
+        initialLocation: '/settings',
+        extraOverrides: [
+          osImagesDirProvider.overrideWithValue(root.path),
+          osImageCacheProvider.overrideWith((ref) async => [entry]),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('OS IMAGE CACHE'), findsOneWidget);
+    expect(find.text('VERIFIED'), findsOneWidget);
+  });
+
   testWidgets('SettingsScreen sanitizes OS image cache errors', (tester) async {
     final controller = stubWizardController(profileJson: testProfileJson());
     await controller.loadProfile('test-printer');
