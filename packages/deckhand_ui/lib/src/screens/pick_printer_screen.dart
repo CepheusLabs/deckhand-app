@@ -164,8 +164,8 @@ class _PickPrinterScreenState extends ConsumerState<PickPrinterScreen> {
     List<ProfileRegistryEntry> input,
     String query,
   ) {
-    if (query.isEmpty) return input;
-    final q = query.toLowerCase();
+    final q = query.trim().toLowerCase();
+    if (q.isEmpty) return input;
     return input
         .where(
           (e) =>

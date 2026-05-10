@@ -120,7 +120,7 @@ void main() {
 
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 200));
-      await tester.enterText(find.byType(TextField), 'corexy');
+      await tester.enterText(find.byType(TextField), ' corexy ');
       await tester.pump();
 
       expect(find.text('Test Printer'), findsOneWidget);
