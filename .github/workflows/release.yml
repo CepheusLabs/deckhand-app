@@ -500,11 +500,13 @@ jobs:
           REF: ${{ needs.version.outputs.ref }}
         run: |
           set -euo pipefail
+          DOWNLOAD_BASE="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}"
           python3 scripts/build_manifest.py \
             --version "$VERSION" --build "$BUILD" \
             --tag "$TAG" --ref "$REF" \
             --artifacts-dir release-artifacts \
-            --output release-artifacts/manifest.json
+            --output release-artifacts/manifest.json \
+            --download-base "$DOWNLOAD_BASE"
           cat release-artifacts/manifest.json
 
       - name: Compute SHA256SUMS
