@@ -2,6 +2,7 @@ package disks
 
 import (
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -82,6 +83,41 @@ func TestAssessWriteTarget_BlocksSystemMount(t *testing.T) {
 	}
 }
 
+func TestAssessWriteTarget_BlocksWindowsSystemMetadata(t *testing.T) {
+	got := AssessWriteTarget(DiskInfo{
+		ID:        "PhysicalDrive0",
+		SizeBytes: 32 * 1024 * 1024 * 1024,
+		Removable: true,
+		IsBoot:    true,
+		IsSystem:  true,
+	})
+	if got.Allowed {
+		t.Fatalf("expected boot/system metadata to block")
+	}
+	if !containsReason(got.BlockingReasons, "Windows boot/system disk") {
+		t.Fatalf("blocking reasons = %v", got.BlockingReasons)
+	}
+}
+
+func TestAssessWriteTarget_BlocksUnwritableWindowsMetadata(t *testing.T) {
+	got := AssessWriteTarget(DiskInfo{
+		ID:         "PhysicalDrive3",
+		SizeBytes:  32 * 1024 * 1024 * 1024,
+		Removable:  true,
+		IsReadOnly: true,
+		IsOffline:  true,
+	})
+	if got.Allowed {
+		t.Fatalf("expected read-only/offline metadata to block")
+	}
+	if !containsReason(got.BlockingReasons, "read-only") {
+		t.Fatalf("blocking reasons = %v", got.BlockingReasons)
+	}
+	if !containsReason(got.BlockingReasons, "offline") {
+		t.Fatalf("blocking reasons = %v", got.BlockingReasons)
+	}
+}
+
 func TestAssessWriteTarget_NonRemovableWindowsBlocked(t *testing.T) {
 	if runtime.GOOS != "windows" {
 		t.Skip("windows-only semantics")
@@ -95,4 +131,13 @@ func TestAssessWriteTarget_NonRemovableWindowsBlocked(t *testing.T) {
 	if got.Allowed {
 		t.Fatalf("expected disallowed on Windows for non-removable disks")
 	}
+}
+
+func containsReason(reasons []string, needle string) bool {
+	for _, reason := range reasons {
+		if strings.Contains(reason, needle) {
+			return true
+		}
+	}
+	return false
 }

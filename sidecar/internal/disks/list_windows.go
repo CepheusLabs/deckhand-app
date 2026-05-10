@@ -21,7 +21,7 @@ import (
 // windows_parse.go for the full story.
 func List(ctx context.Context) ([]DiskInfo, error) {
 	out, err := runPowerShell(ctx,
-		`Get-Disk | Select-Object Number,FriendlyName,Size,BusType,OperationalStatus | ConvertTo-Json -Compress`)
+		`Get-Disk | Select-Object Number,FriendlyName,Size,BusType,OperationalStatus,IsBoot,IsSystem,IsReadOnly,IsOffline | ConvertTo-Json -Compress`)
 	if err != nil {
 		return listDisksViaCIM(ctx, err)
 	}
@@ -33,6 +33,10 @@ func List(ctx context.Context) ([]DiskInfo, error) {
 		Size              int64           `json:"Size"`
 		BusType           json.RawMessage `json:"BusType"`
 		OperationalStatus json.RawMessage `json:"OperationalStatus"`
+		IsBoot            bool            `json:"IsBoot"`
+		IsSystem          bool            `json:"IsSystem"`
+		IsReadOnly        bool            `json:"IsReadOnly"`
+		IsOffline         bool            `json:"IsOffline"`
 	}
 	var disks []raw
 	if err := json.Unmarshal(out, &disks); err != nil {
@@ -67,6 +71,10 @@ func List(ctx context.Context) ([]DiskInfo, error) {
 			Bus:        busName,
 			Model:      d.FriendlyName,
 			Removable:  isRemovableBus(busName),
+			IsBoot:     d.IsBoot,
+			IsSystem:   d.IsSystem,
+			IsReadOnly: d.IsReadOnly,
+			IsOffline:  d.IsOffline,
 			Partitions: parts,
 		})
 	}

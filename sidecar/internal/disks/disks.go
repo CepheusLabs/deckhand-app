@@ -11,6 +11,10 @@ type DiskInfo struct {
 	Bus        string      `json:"bus"`
 	Model      string      `json:"model"`
 	Removable  bool        `json:"removable"`
+	IsBoot     bool        `json:"is_boot,omitempty"`
+	IsSystem   bool        `json:"is_system,omitempty"`
+	IsReadOnly bool        `json:"is_read_only,omitempty"`
+	IsOffline  bool        `json:"is_offline,omitempty"`
 	Partitions []Partition `json:"partitions"`
 	// InterruptedFlash is set when a sentinel left over from a prior,
 	// unfinished flash matches this disk. The UI surfaces it so users

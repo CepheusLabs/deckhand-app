@@ -77,6 +77,21 @@ func AssessWriteTarget(d DiskInfo) SafetyCheckResult {
 				"disk is reported as non-removable; confirm it is the printer's internal storage, not your own SSD")
 		}
 	}
+	if d.IsBoot || d.IsSystem {
+		res.Allowed = false
+		res.BlockingReasons = append(res.BlockingReasons,
+			"disk is marked as a Windows boot/system disk — refusing to flash")
+	}
+	if d.IsReadOnly {
+		res.Allowed = false
+		res.BlockingReasons = append(res.BlockingReasons,
+			"disk is read-only — refusing to flash")
+	}
+	if d.IsOffline {
+		res.Allowed = false
+		res.BlockingReasons = append(res.BlockingReasons,
+			"disk is offline — refusing to flash")
+	}
 
 	// Partitions containing a filesystem Windows/macOS/Linux actively
 	// mounts at / or C:\ are a hard block.

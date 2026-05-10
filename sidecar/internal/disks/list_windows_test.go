@@ -121,6 +121,46 @@ func TestListDropsInvalidGetDiskRecords(t *testing.T) {
 	}
 }
 
+func TestListPreservesWindowsSafetyMetadata(t *testing.T) {
+	orig := runPowerShell
+	t.Cleanup(func() { runPowerShell = orig })
+
+	runPowerShell = func(_ context.Context, script string) ([]byte, error) {
+		switch {
+		case strings.Contains(script, "Get-Partition"):
+			return []byte(`[]`), nil
+		case strings.Contains(script, "Get-Disk"):
+			return []byte(`{
+				"Number": 0,
+				"FriendlyName": "System SSD",
+				"Size": 16000000000,
+				"BusType": "NVMe",
+				"OperationalStatus": "Online",
+				"IsBoot": true,
+				"IsSystem": true,
+				"IsReadOnly": true,
+				"IsOffline": true
+			}`), nil
+		default:
+			t.Fatalf("unexpected PowerShell script: %s", script)
+			return nil, nil
+		}
+	}
+
+	got, err := List(context.Background())
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("List() returned %d disks, want 1: %#v", len(got), got)
+	}
+	d := got[0]
+	if !d.IsBoot || !d.IsSystem || !d.IsReadOnly || !d.IsOffline {
+		t.Fatalf("safety metadata = boot:%v system:%v readonly:%v offline:%v",
+			d.IsBoot, d.IsSystem, d.IsReadOnly, d.IsOffline)
+	}
+}
+
 func TestCIMFallbackDropsInvalidRecords(t *testing.T) {
 	orig := runPowerShell
 	t.Cleanup(func() { runPowerShell = orig })
