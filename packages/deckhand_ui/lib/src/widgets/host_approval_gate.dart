@@ -101,12 +101,16 @@ class HostApprovalGate {
             children: [
               Text(
                 profileBatch
-                    ? 'This printer profile can contact $hostText for images, '
-                          'source code, and release assets. You can revoke '
-                          'this later from Settings.'
-                    : 'Deckhand wants to contact $hostText to fetch profiles '
-                          'or firmware. You can revoke this later from '
-                          'Settings.',
+                    ? 'The selected printer profile declares $hostText for OS '
+                          'images, source archives, and release assets. '
+                          'Approving keeps this install moving while still '
+                          'making unexpected outbound hosts visible. You can '
+                          'revoke this later from Settings.'
+                    : 'Deckhand needs to contact $hostText for the current '
+                          'profile, image, or firmware step. Approving keeps '
+                          'unexpected outbound hosts visible instead of '
+                          'silently allowing them. You can revoke this later '
+                          'from Settings.',
               ),
               const SizedBox(height: 14),
               _HostApprovalList(hosts: hosts),
