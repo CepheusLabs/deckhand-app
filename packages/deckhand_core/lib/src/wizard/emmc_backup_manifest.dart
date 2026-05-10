@@ -733,7 +733,9 @@ String? inferEmmcBackupProfileId(String imagePath) {
     final profile = context.basename(
       context.dirname(context.dirname(imagePath)),
     );
-    if (profile.isNotEmpty && profile != 'emmc-backups') return profile;
+    if (profile.isNotEmpty && profile.toLowerCase() != 'emmc-backups') {
+      return profile;
+    }
   }
   const marker = '-emmc-';
   final markerIndex = lower.indexOf(marker);

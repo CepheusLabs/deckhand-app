@@ -789,4 +789,19 @@ void main() {
     );
     expect(catalog.single.duplicatePaths, [older.imagePath]);
   });
+
+  test('organized backup profile inference ignores backup-root casing', () {
+    expect(
+      inferEmmcBackupProfileId(
+        r'C:\Deckhand\EMMC-BACKUPS\phrozen-arco\2026-05-04T23-02-59Z\emmc.img',
+      ),
+      'phrozen-arco',
+    );
+    expect(
+      inferEmmcBackupProfileId(
+        r'C:\Deckhand\EMMC-BACKUPS\2026-05-04T23-02-59Z\emmc.img',
+      ),
+      isNull,
+    );
+  });
 }
