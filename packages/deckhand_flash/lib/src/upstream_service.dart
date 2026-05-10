@@ -409,7 +409,7 @@ class SidecarUpstreamService implements UpstreamService {
         'path': destPath,
         'expected_sha256': expectedSha256,
         'actual_sha256': actualSha256,
-        if (downloadedAt != null) 'downloaded_at': downloadedAt,
+        'downloaded_at': ?downloadedAt,
         if (reused) 'reused_at': now else 'downloaded_at': now,
       }),
     );

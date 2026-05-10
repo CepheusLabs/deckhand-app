@@ -160,8 +160,8 @@ class SidecarClient implements SidecarConnection {
   /// can't trace that ownership chain.
   @override
   Stream<SidecarNotification> subscribeToOperation(String operationId) {
+    // ignore: close_sinks
     final c = _operationSubscribers.putIfAbsent(
-      // ignore: close_sinks
       operationId,
       () => StreamController<SidecarNotification>.broadcast(),
     );

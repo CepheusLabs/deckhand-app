@@ -39,6 +39,10 @@ class DiskInfo {
     required this.model,
     required this.removable,
     required this.partitions,
+    this.isBoot = false,
+    this.isSystem = false,
+    this.isReadOnly = false,
+    this.isOffline = false,
     this.interruptedFlash,
   });
 
@@ -49,7 +53,14 @@ class DiskInfo {
   final String model;
   final bool removable;
   final List<PartitionInfo> partitions;
+  final bool isBoot;
+  final bool isSystem;
+  final bool isReadOnly;
+  final bool isOffline;
   final InterruptedFlashInfo? interruptedFlash;
+
+  bool get hasWindowsSystemRole => isBoot || isSystem;
+  bool get isWindowsWriteBlocked => isReadOnly || isOffline;
 }
 
 class InterruptedFlashInfo {

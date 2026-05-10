@@ -83,6 +83,42 @@ void main() {
       expect(find.text('PhysicalDrive3'), findsNothing);
     });
 
+    testWidgets('does not allow Windows boot disks even if removable', (
+      tester,
+    ) async {
+      final controller = stubWizardController(profileJson: testProfileJson());
+      await controller.loadProfile('test-printer');
+      final flash = _MutableFlashService([
+        const DiskInfo(
+          id: 'PhysicalDrive0',
+          path: r'\\.\PhysicalDrive0',
+          sizeBytes: 32 * 1024 * 1024 * 1024,
+          bus: 'USB',
+          model: 'System USB',
+          removable: true,
+          isBoot: true,
+          partitions: [],
+        ),
+      ]);
+
+      await tester.pumpWidget(
+        testHarness(
+          controller: controller,
+          child: const FlashTargetScreen(),
+          initialLocation: '/flash-target',
+          extraOverrides: [flashServiceProvider.overrideWithValue(flash)],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('System USB'));
+      await tester.pumpAndSettle();
+
+      expect(_primaryButton(tester).onPressed, isNull);
+      expect(controller.decision<String>('flash.disk'), isNull);
+      expect(find.text('SYSTEM'), findsOneWidget);
+    });
+
     testWidgets('sanitizes disk enumeration errors', (tester) async {
       final controller = stubWizardController(profileJson: testProfileJson());
       await controller.loadProfile('test-printer');
@@ -102,7 +138,10 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.textContaining('Error listing disks'), findsOneWidget);
-      expect(find.textContaining('Windows disk 3'), findsOneWidget);
+      expect(
+        find.textContaining('Windows could not list storage devices'),
+        findsOneWidget,
+      );
       expect(find.textContaining('PHYSICALDRIVE3'), findsNothing);
       expect(find.textContaining('StateError'), findsNothing);
     });

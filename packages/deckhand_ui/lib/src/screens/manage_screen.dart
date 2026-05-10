@@ -2140,6 +2140,10 @@ String _restoreDiskSubtitle(DiskInfo disk, _RestoreImage? image) {
             '${disk.partitions.length == 1 ? '' : 's'}';
   final match = !disk.removable
       ? 'not removable'
+      : disk.hasWindowsSystemRole
+      ? 'system disk'
+      : disk.isWindowsWriteBlocked
+      ? 'not writable'
       : !_isRestoreAdapterDisk(disk)
       ? 'not an adapter'
       : image != null && disk.sizeBytes < image.imageBytes
@@ -2163,6 +2167,7 @@ bool _restoreDiskSelectable(DiskInfo disk, _RestoreImage? image) {
 
 bool _isRestoreAdapterDisk(DiskInfo disk) {
   if (!disk.removable) return false;
+  if (disk.hasWindowsSystemRole || disk.isWindowsWriteBlocked) return false;
   final bus = disk.bus.trim().toLowerCase();
   if (bus == 'usb' || bus == 'sd' || bus == 'mmc') return true;
   if (bus.isNotEmpty && bus != 'unknown') return false;

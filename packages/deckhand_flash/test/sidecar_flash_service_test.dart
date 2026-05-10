@@ -15,6 +15,10 @@ void main() {
               'bus': 'USB',
               'model': 'Generic STORAGE DEVICE',
               'removable': true,
+              'is_boot': true,
+              'is_system': true,
+              'is_read_only': true,
+              'is_offline': true,
               'partitions': <Map<String, dynamic>>[],
               'interrupted_flash': <String, dynamic>{
                 'started_at': '2026-05-04T14:30:00Z',
@@ -31,6 +35,10 @@ void main() {
 
       expect(disks, hasLength(1));
       final interrupted = disks.single.interruptedFlash;
+      expect(disks.single.isBoot, isTrue);
+      expect(disks.single.isSystem, isTrue);
+      expect(disks.single.isReadOnly, isTrue);
+      expect(disks.single.isOffline, isTrue);
       expect(interrupted, isNotNull);
       expect(interrupted!.startedAt, DateTime.utc(2026, 5, 4, 14, 30));
       expect(interrupted.imagePath, r'C:\Deckhand\images\arco.img');

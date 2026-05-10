@@ -188,7 +188,9 @@ class _DisksTable extends StatelessWidget {
                 disk: disks[i],
                 isLast: i == disks.length - 1,
                 selected: selected == disks[i].id,
-                onTap: disks[i].removable ? () => onSelect(disks[i].id) : null,
+                onTap: _diskSelectable(disks[i])
+                    ? () => onSelect(disks[i].id)
+                    : null,
               ),
         ],
       ),
@@ -213,7 +215,7 @@ class _DiskRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final tokens = DeckhandTokens.of(context);
     final clickable = onTap != null;
-    final dim = !disk.removable;
+    final dim = !_diskSelectable(disk);
     return MouseRegion(
       cursor: clickable ? SystemMouseCursors.click : SystemMouseCursors.basic,
       child: Opacity(
@@ -429,6 +431,10 @@ class _MatchPill extends StatelessWidget {
   Widget build(BuildContext context) {
     final (label, color) = disk.interruptedFlash != null
         ? ('interrupted', tokens.bad)
+        : disk.hasWindowsSystemRole
+        ? ('system', tokens.bad)
+        : disk.isWindowsWriteBlocked
+        ? ('blocked', tokens.bad)
         : !disk.removable
         ? ('system', tokens.bad)
         : ('removable', tokens.ok);
@@ -455,3 +461,6 @@ class _MatchPill extends StatelessWidget {
     );
   }
 }
+
+bool _diskSelectable(DiskInfo disk) =>
+    disk.removable && !disk.hasWindowsSystemRole && !disk.isWindowsWriteBlocked;

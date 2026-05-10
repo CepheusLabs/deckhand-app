@@ -131,6 +131,10 @@ Map<String, dynamic> _diskToJson(DiskInfo disk) => {
   'bus': disk.bus,
   'model': disk.model,
   'removable': disk.removable,
+  'is_boot': disk.isBoot,
+  'is_system': disk.isSystem,
+  'is_read_only': disk.isReadOnly,
+  'is_offline': disk.isOffline,
   'partitions': disk.partitions.map(_partToJson).toList(),
 };
 
@@ -171,6 +175,10 @@ DiskInfo? _diskFromJson(Map<String, dynamic>? raw) {
     bus: _jsonString(raw['bus']) ?? 'Unknown',
     model: _jsonString(raw['model']) ?? 'Unknown disk',
     removable: raw['removable'] == true,
+    isBoot: raw['is_boot'] == true,
+    isSystem: raw['is_system'] == true,
+    isReadOnly: raw['is_read_only'] == true,
+    isOffline: raw['is_offline'] == true,
     partitions: parts,
     interruptedFlash: _interruptedFlashFromJson(raw['interrupted_flash']),
   );
