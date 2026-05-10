@@ -608,6 +608,45 @@ void main() {
     );
   });
 
+  test('organizer quarantines unreadable legacy manifests', () async {
+    final dir = await Directory.systemTemp.createTemp(
+      'deckhand_emmc_organize_bad_manifest_',
+    );
+    addTearDown(() async {
+      if (await dir.exists()) await dir.delete(recursive: true);
+    });
+
+    final image = File(
+      p.join(dir.path, 'phrozen-arco-emmc-2026-05-04T23-02-59Z.img'),
+    );
+    await image.writeAsBytes(List<int>.filled(1024, 1), flush: true);
+    await File(
+      emmcBackupManifestPath(image.path),
+    ).writeAsString('{not json', flush: true);
+
+    final result = await organizeLegacyEmmcBackups(dir.path);
+    final movedPath = p.join(
+      dir.path,
+      'phrozen-arco',
+      '2026-05-04T23-02-59Z',
+      'emmc.img',
+    );
+    final movedManifestPath = emmcBackupManifestPath(movedPath);
+
+    expect(result.moved, 1);
+    expect(result.moves.single.toImagePath, movedPath);
+    expect(result.moves.single.toManifestPath, isNull);
+    expect(await File(movedPath).exists(), isTrue);
+    expect(await File(movedManifestPath).exists(), isFalse);
+    expect(await File('$movedManifestPath.invalid').exists(), isTrue);
+
+    final manifests = await scanEmmcBackupManifests(dir.path);
+    final candidates = await scanEmmcBackupImageCandidates(dir.path);
+
+    expect(manifests, isEmpty);
+    expect(candidates.map((c) => c.imagePath), contains(movedPath));
+  });
+
   test('catalog collapses manifest backups with identical hashes', () {
     final older = EmmcBackupManifest.create(
       profileId: 'phrozen-arco',

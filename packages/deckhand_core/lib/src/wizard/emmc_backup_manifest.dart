@@ -579,8 +579,10 @@ Future<EmmcBackupOrganizedMove?> _organizeLooseBackupImage({
       await oldManifestFile.delete();
     }
   } else if (oldManifestExists) {
-    newManifestPath = emmcBackupManifestPath(target);
-    await oldManifestFile.rename(newManifestPath);
+    final quarantinedPath = await _availableInvalidManifestPath(
+      emmcBackupManifestPath(target),
+    );
+    await oldManifestFile.rename(quarantinedPath);
   }
 
   return EmmcBackupOrganizedMove(
@@ -588,6 +590,16 @@ Future<EmmcBackupOrganizedMove?> _organizeLooseBackupImage({
     toImagePath: target,
     toManifestPath: newManifestPath,
   );
+}
+
+Future<String> _availableInvalidManifestPath(String manifestPath) async {
+  final base = '$manifestPath.invalid';
+  if (!await File(base).exists()) return base;
+  for (var i = 2; i < 10000; i++) {
+    final candidate = '$base-$i';
+    if (!await File(candidate).exists()) return candidate;
+  }
+  throw StateError('Could not find an available quarantine path for $base');
 }
 
 Future<String> _availableOrganizedImagePath({
