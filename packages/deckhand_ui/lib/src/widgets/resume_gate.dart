@@ -24,6 +24,7 @@ bool shouldOfferResume(WizardState? snapshot) {
 String? routeForResumeStep(String step) {
   const routes = <String, String>{
     'welcome': '/',
+    'printers': '/printers',
     'pick-printer': '/pick-printer',
     'connect': '/connect',
     'verify': '/verify',
@@ -41,11 +42,14 @@ String? routeForResumeStep(String step) {
     'kiauh': '/kiauh',
     'snapshot': '/snapshot',
     'emmc-backup': '/emmc-backup',
+    'recovery-emmc-backup': '/recovery-emmc-backup',
     'hardening': '/hardening',
     'review': '/review',
     'progress': '/progress',
     'done': '/done',
     'manage': '/manage',
+    'manage-emmc-backup': '/manage-emmc-backup',
+    'emmc-restore': '/emmc-restore',
     'settings': '/settings',
   };
   return routes[step];

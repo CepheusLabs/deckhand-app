@@ -62,6 +62,20 @@ void main() {
       expect(routeForResumeStep('settings'), '/settings');
     });
 
+    test('manager and recovery routes are navigable resume targets', () {
+      // Router-driven currentStep tokens are route paths without the
+      // leading slash. Keep every non-ephemeral app route resumable so
+      // closing on a manager/recovery page does not fall back to the
+      // install wizard.
+      expect(routeForResumeStep('printers'), '/printers');
+      expect(routeForResumeStep('manage-emmc-backup'), '/manage-emmc-backup');
+      expect(
+        routeForResumeStep('recovery-emmc-backup'),
+        '/recovery-emmc-backup',
+      );
+      expect(routeForResumeStep('emmc-restore'), '/emmc-restore');
+    });
+
     test('unknown step returns null — caller falls back to welcome', () {
       expect(routeForResumeStep('time-travel'), isNull);
       expect(routeForResumeStep(''), isNull);

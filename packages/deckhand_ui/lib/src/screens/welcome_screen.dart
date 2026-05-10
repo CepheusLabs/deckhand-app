@@ -649,6 +649,7 @@ class _PanelShell extends StatelessWidget {
 String _stepIdTagLabel(String step) {
   const table = <String, String>{
     'welcome': 'S10',
+    'printers': 'MGR',
     'pick-printer': 'S15',
     'connect': 'S20',
     'verify': 'S30',
@@ -661,6 +662,7 @@ String _stepIdTagLabel(String step) {
     'files': 'S140',
     'snapshot': 'S145',
     'emmc-backup': 'S148',
+    'recovery-emmc-backup': 'REC',
     'hardening': 'S150',
     'flash-target': 'S200',
     'choose-os': 'S210',
@@ -670,6 +672,10 @@ String _stepIdTagLabel(String step) {
     'first-boot-setup': 'S250',
     'review': 'S800',
     'done': 'S910',
+    'manage': 'MGR',
+    'manage-emmc-backup': 'MGR',
+    'emmc-restore': 'REC',
+    'settings': 'CFG',
   };
   final id = table[step];
   return id == null ? step : '$id · $step';
