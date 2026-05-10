@@ -513,7 +513,7 @@ profiles:
   - id: phrozen-arco
     display_name: Phrozen Arco
     status: beta
-  - id: phrozen-arco
+  - id: PHROZEN-ARCO
     display_name: Duplicate Arco
     status: alpha
 ''');

@@ -152,7 +152,7 @@ class SidecarProfileService implements ProfileService {
     final seen = <String>{};
     final deduped = <ProfileRegistryEntry>[];
     for (final entry in entries) {
-      if (seen.add(entry.id)) deduped.add(entry);
+      if (seen.add(entry.id.toLowerCase())) deduped.add(entry);
     }
     return deduped;
   }
