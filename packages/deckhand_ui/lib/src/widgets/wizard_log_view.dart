@@ -99,6 +99,9 @@ class _LogLine extends StatelessWidget {
     required this.tokens,
     required this.ordinal,
   });
+  static const _clipboardMessageWidth = 96;
+  static const _clipboardContinuationIndent = 19;
+
   final String raw;
   final WizardLogMode mode;
   final DeckhandTokens tokens;
@@ -188,14 +191,58 @@ class _LogLine extends StatelessWidget {
       'TIME       TAG     MESSAGE',
       '---------  ------  ----------------------------------------',
       for (var i = 0; i < lines.length; i++)
-        _formatClipboardLine(i, _parse(lines[i], mode)),
+        ..._formatClipboardLines(i, _parse(lines[i], mode)),
     ].join('\n');
   }
 
-  static String _formatClipboardLine(int ordinal, _Parsed parsed) =>
-      '${_ordinalLabel(ordinal).padRight(9)}  '
-      '${parsed.tag.padRight(6)}  '
-      '${parsed.msg}';
+  static List<String> _formatClipboardLines(int ordinal, _Parsed parsed) {
+    final chunks = _wrapClipboardMessage(
+      parsed.msg,
+      width: _clipboardMessageWidth,
+    );
+    final prefix = _formatClipboardPrefix(ordinal, parsed);
+    if (chunks.isEmpty) return [prefix];
+    return [
+      '$prefix${chunks.first}',
+      for (final chunk in chunks.skip(1))
+        '${' ' * _clipboardContinuationIndent}$chunk',
+    ];
+  }
+
+  static String _formatClipboardPrefix(int ordinal, _Parsed parsed) =>
+      '${_ordinalLabel(ordinal).padRight(9)}  ${parsed.tag.padRight(6)}  ';
+
+  static List<String> _wrapClipboardMessage(
+    String message, {
+    required int width,
+  }) {
+    final normalized = message.trim().replaceAll(RegExp(r'\s+'), ' ');
+    if (normalized.isEmpty) return const [];
+    final lines = <String>[];
+    var current = '';
+    for (final token in normalized.split(' ')) {
+      var remaining = token;
+      while (remaining.length > width) {
+        if (current.isNotEmpty) {
+          lines.add(current);
+          current = '';
+        }
+        lines.add(remaining.substring(0, width));
+        remaining = remaining.substring(width);
+      }
+      if (remaining.isEmpty) continue;
+      if (current.isEmpty) {
+        current = remaining;
+      } else if (current.length + 1 + remaining.length <= width) {
+        current = '$current $remaining';
+      } else {
+        lines.add(current);
+        current = remaining;
+      }
+    }
+    if (current.isNotEmpty) lines.add(current);
+    return lines;
+  }
 
   /// Synthesize a `mm:ss.frac`-shaped marker from the line index.
   static String _ordinalLabel(int n) {

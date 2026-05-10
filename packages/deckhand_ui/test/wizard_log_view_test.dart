@@ -145,4 +145,18 @@ void main() {
     expect(text, contains('00:01.017  OK      Finished Choose the OS image'));
     expect(text, isNot(contains('\t')));
   });
+
+  test('clipboard log wraps long messages with continuation rows', () {
+    final text = formatWizardLogForClipboard([
+      '[fail] flash_disk - StepExecutionException: prepare target: lock volume \\\\?\\Volume{81442efe-49a7-11f1-bd05-4c23380248b8}\\ after dismounting busy filesystem: Access is denied.',
+    ], WizardLogMode.user);
+
+    final body = text.split('\n').skip(3).toList();
+
+    expect(body.first, startsWith('00:00.000  FAIL    '));
+    expect(body.skip(1), isNotEmpty);
+    expect(body.skip(1).every((line) => line.startsWith(' ' * 19)), isTrue);
+    expect(body.every((line) => line.length <= 115), isTrue);
+    expect(text, isNot(contains('\t')));
+  });
 }
