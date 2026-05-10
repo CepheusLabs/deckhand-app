@@ -30,6 +30,9 @@ type fakeProbe struct {
 	// lookPathResults maps name → resolved path (or "" + error).
 	lookPathResults map[string]lookPathAnswer
 
+	powerShellPath string
+	powerShellErr  error
+
 	hostInfo host.Info
 
 	// writable: map dir → nil for writable, an error otherwise.
@@ -75,6 +78,15 @@ func (f *fakeProbe) LookPath(name string) (string, error) {
 	}
 	return "", errors.New("not found")
 }
+func (f *fakeProbe) PowerShellExe() (string, error) {
+	if f.powerShellErr != nil {
+		return "", f.powerShellErr
+	}
+	if f.powerShellPath != "" {
+		return f.powerShellPath, nil
+	}
+	return `C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe`, nil
+}
 func (f *fakeProbe) HostInfo() host.Info { return f.hostInfo }
 func (f *fakeProbe) ProbeWritable(dir string) error {
 	if err, ok := f.writable[dir]; ok {
@@ -118,19 +130,21 @@ func (f fakeFileInfo) Sys() any           { return nil }
 func baseProbe() *fakeProbe {
 	exe := filepath.Join(string(filepath.Separator)+"opt", "deckhand", "deckhand-sidecar")
 	helper := filepath.Join(filepath.Dir(exe), "deckhand-elevated-helper")
+	powerShell := `C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe`
 	return &fakeProbe{
 		goos:      "linux",
 		goarch:    "amd64",
 		goVersion: "go1.22.0",
 		exePath:   exe,
 		statResults: map[string]statAnswer{
-			helper: {info: fakeFileInfo{name: "deckhand-elevated-helper"}},
+			helper:     {info: fakeFileInfo{name: "deckhand-elevated-helper"}},
+			powerShell: {info: fakeFileInfo{name: "powershell.exe"}},
 		},
 		lookPathResults: map[string]lookPathAnswer{
-			"pkexec":         {path: "/usr/bin/pkexec"},
-			"osascript":      {path: "/usr/bin/osascript"},
-			"powershell.exe": {path: `C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe`},
+			"pkexec":    {path: "/usr/bin/pkexec"},
+			"osascript": {path: "/usr/bin/osascript"},
 		},
+		powerShellPath: powerShell,
 		hostInfo: host.Info{
 			OS:    "linux",
 			Arch:  "amd64",
@@ -212,23 +226,27 @@ func TestCollect_HelperIsDirectory_Fails(t *testing.T) {
 	}
 }
 
-func TestCollect_WindowsUsesExeSuffixAndPowerShell(t *testing.T) {
+func TestCollect_WindowsUsesExeSuffixAndTrustedPowerShell(t *testing.T) {
 	p := baseProbe()
 	p.goos = "windows"
 	p.goarch = "amd64"
 	// Build paths via filepath.Join so the test is portable: on Linux
 	// runners the separators will be /, on Windows \. What we're
 	// actually exercising here is that (a) the `.exe` suffix is applied
-	// to the helper name regardless of host and (b) the powershell.exe
-	// probe fires on GOOS=windows.
+	// to the helper name regardless of host and (b) the trusted
+	// System32 PowerShell probe fires on GOOS=windows.
 	dataDir := filepath.Join("Users", "x", "AppData", "Roaming")
 	cacheDir := filepath.Join("Users", "x", "AppData", "Local")
 	exe := filepath.Join("Program Files", "Deckhand", "deckhand-sidecar.exe")
 	helper := filepath.Join(filepath.Dir(exe), "deckhand-elevated-helper.exe")
+	powerShell := `C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe`
 	p.exePath = exe
+	p.powerShellPath = powerShell
 	p.statResults = map[string]statAnswer{
-		helper: {info: fakeFileInfo{name: "deckhand-elevated-helper.exe"}},
+		helper:     {info: fakeFileInfo{name: "deckhand-elevated-helper.exe"}},
+		powerShell: {info: fakeFileInfo{name: "powershell.exe"}},
 	}
+	p.lookPathResults = map[string]lookPathAnswer{}
 	p.hostInfo = host.Info{OS: "windows", Data: dataDir, Cache: cacheDir}
 	p.writable = map[string]error{
 		dataDir:  nil,
@@ -240,9 +258,12 @@ func TestCollect_WindowsUsesExeSuffixAndPowerShell(t *testing.T) {
 	if helperR.Status != StatusPass {
 		t.Fatalf("helper status = %s, want PASS; detail=%s", helperR.Status, helperR.Detail)
 	}
-	tool := findResult(t, got, "powershell_on_path")
+	tool := findResult(t, got, "powershell_system")
 	if tool.Status != StatusPass {
 		t.Fatalf("powershell status = %s, want PASS", tool.Status)
+	}
+	if tool.Detail != powerShell {
+		t.Fatalf("powershell detail = %q, want trusted path %q", tool.Detail, powerShell)
 	}
 }
 

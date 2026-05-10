@@ -3,7 +3,7 @@
 // Run produces a human-readable report of the host environment, the
 // presence of the elevated helper binary, disk enumeration health,
 // writability of the sidecar's managed data/cache dirs, and a few
-// platform-specific probes (pkexec / osascript / powershell.exe).
+// platform-specific probes (pkexec / osascript / trusted Windows PowerShell).
 //
 // The checks are executed against a pluggable Probe so they can be
 // unit-tested without depending on the real host. The package exposes
@@ -27,6 +27,7 @@ import (
 
 	"github.com/CepheusLabs/deckhand/sidecar/internal/disks"
 	"github.com/CepheusLabs/deckhand/sidecar/internal/host"
+	"github.com/CepheusLabs/deckhand/sidecar/internal/winutil"
 )
 
 // Status is the verdict of a single diagnostic check.
@@ -67,6 +68,9 @@ type Probe interface {
 	Stat(path string) (os.FileInfo, error)
 	// LookPath is exec.LookPath wrapped for fakeability.
 	LookPath(name string) (string, error)
+	// PowerShellExe returns the trusted Windows PowerShell executable.
+	// Windows production code does not resolve powershell.exe via PATH.
+	PowerShellExe() (string, error)
 	// HostInfo returns the host.Info Deckhand uses for its data/cache
 	// directories.
 	HostInfo() host.Info
@@ -102,6 +106,7 @@ func (defaultProbe) Executable() (string, error) {
 }
 func (defaultProbe) Stat(path string) (os.FileInfo, error) { return os.Stat(path) }
 func (defaultProbe) LookPath(name string) (string, error)  { return exec.LookPath(name) }
+func (defaultProbe) PowerShellExe() (string, error)        { return winutil.PowerShellExe() }
 func (defaultProbe) HostInfo() host.Info                   { return host.Current() }
 func (defaultProbe) ProbeWritable(dir string) error        { return probeWritable(dir) }
 func (defaultProbe) ListDisksCount(ctx context.Context) (int, error) {
@@ -401,8 +406,9 @@ func checkDirWritable(p Probe, label, dir string) Result {
 }
 
 // checkPlatformTool probes the elevation tool used on the current OS:
-// pkexec on Linux, osascript on macOS, powershell.exe on Windows. An
-// unknown OS is an informational WARN rather than FAIL.
+// pkexec on Linux, osascript on macOS, and the trusted System32 Windows
+// PowerShell path on Windows. An unknown OS is an informational WARN
+// rather than FAIL.
 func checkPlatformTool(p Probe) Result {
 	var (
 		tool, label string
@@ -413,7 +419,22 @@ func checkPlatformTool(p Probe) Result {
 	case "darwin":
 		tool, label = "osascript", "osascript_on_path"
 	case "windows":
-		tool, label = "powershell.exe", "powershell_on_path"
+		powerShell, err := p.PowerShellExe()
+		if err != nil {
+			return Result{
+				Name:   "powershell_system",
+				Status: StatusFail,
+				Detail: fmt.Sprintf("trusted Windows PowerShell path unavailable: %v", err),
+			}
+		}
+		if _, err := p.Stat(powerShell); err != nil {
+			return Result{
+				Name:   "powershell_system",
+				Status: StatusFail,
+				Detail: fmt.Sprintf("%s not found: %v", powerShell, err),
+			}
+		}
+		return Result{Name: "powershell_system", Status: StatusPass, Detail: powerShell}
 	default:
 		return Result{
 			Name:   "platform_tool",
