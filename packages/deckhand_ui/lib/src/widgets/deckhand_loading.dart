@@ -93,15 +93,9 @@ class _DeckhandSpinnerPainter extends CustomPainter {
       ..style = PaintingStyle.stroke;
     canvas.drawCircle(center, radius, track);
     final rect = Rect.fromCircle(center: center, radius: radius);
-    final sweep = math.pi * 0.55;
+    final sweep = math.pi * 1.25;
     final head = progress * math.pi * 2 - math.pi / 2;
     canvas.drawArc(rect, head, sweep, false, arc);
-    final dotAngle = head + sweep;
-    final dotCenter = Offset(
-      center.dx + math.cos(dotAngle) * radius,
-      center.dy + math.sin(dotAngle) * radius,
-    );
-    canvas.drawCircle(dotCenter, strokeWidth * 0.55, arc);
   }
 
   @override
