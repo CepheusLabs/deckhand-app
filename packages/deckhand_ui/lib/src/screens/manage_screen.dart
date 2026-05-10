@@ -999,6 +999,9 @@ class _RestoreTabState extends ConsumerState<_RestoreTab> {
               Padding(
                 padding: const EdgeInsets.only(bottom: 8),
                 child: _RestoreChoiceTile(
+                  semanticKey: ValueKey(
+                    'restore-image-choice-${restoreImage.imagePath}',
+                  ),
                   selected: identical(restoreImage, selected),
                   icon: Icons.image_outlined,
                   title: _restoreImageTitle(restoreImage),
@@ -1073,6 +1076,7 @@ class _RestoreTabState extends ConsumerState<_RestoreTab> {
               Padding(
                 padding: const EdgeInsets.only(bottom: 8),
                 child: _RestoreChoiceTile(
+                  semanticKey: ValueKey('restore-target-choice-${d.id}'),
                   selected: identical(d, selectedDisk),
                   icon: Icons.album_outlined,
                   title: diskDisplaySummary(d),
@@ -1854,6 +1858,7 @@ class _RestoreStepPill extends StatelessWidget {
 
 class _RestoreChoiceTile extends StatelessWidget {
   const _RestoreChoiceTile({
+    required this.semanticKey,
     required this.selected,
     required this.icon,
     required this.title,
@@ -1863,6 +1868,7 @@ class _RestoreChoiceTile extends StatelessWidget {
     required this.onTap,
   });
 
+  final Key semanticKey;
   final bool selected;
   final IconData icon;
   final String title;
@@ -1876,7 +1882,7 @@ class _RestoreChoiceTile extends StatelessWidget {
     final tokens = DeckhandTokens.of(context);
     final enabled = onTap != null;
     final accent = danger && selected ? tokens.bad : tokens.accent;
-    return MouseRegion(
+    final visual = MouseRegion(
       cursor: enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
       child: Opacity(
         opacity: enabled ? 1 : 0.46,
@@ -1970,6 +1976,16 @@ class _RestoreChoiceTile extends StatelessWidget {
           ),
         ),
       ),
+    );
+    return Semantics(
+      key: semanticKey,
+      button: true,
+      enabled: enabled,
+      selected: selected,
+      label: title,
+      value: detail == null ? subtitle : '$subtitle. $detail',
+      onTap: onTap,
+      child: ExcludeSemantics(child: visual),
     );
   }
 }

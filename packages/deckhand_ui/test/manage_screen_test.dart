@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:ui';
 
 import 'package:deckhand_core/deckhand_core.dart';
 import 'package:deckhand_ui/src/providers.dart';
@@ -443,6 +444,84 @@ void main() {
     await tester.tap(find.widgetWithText(FilledButton, 'Continue to target'));
     await tester.pump();
     expect(find.textContaining('Generic STORAGE DEVICE'), findsWidgets);
+  });
+
+  testWidgets('direct eMMC restore choices expose radio semantics', (
+    tester,
+  ) async {
+    final semantics = tester.ensureSemantics();
+    await tester.binding.setSurfaceSize(const Size(1400, 1000));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    final imagePath =
+        r'C:\Users\eknof\AppData\Roaming\CepheusLabs\Deckhand\state\emmc-backups\phrozen-arco\2026-05-04T23-02-59Z\emmc.img';
+    const disk = DiskInfo(
+      id: 'PhysicalDrive3',
+      path: r'\\.\PHYSICALDRIVE3',
+      sizeBytes: 8 * 1024 * 1024,
+      bus: 'USB',
+      model: 'Generic STORAGE DEVICE',
+      removable: true,
+      partitions: [],
+    );
+    const sha =
+        'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+    final manifest = EmmcBackupManifest.create(
+      profileId: 'phrozen-arco',
+      imagePath: imagePath,
+      imageBytes: disk.sizeBytes,
+      imageSha256: sha,
+      disk: disk,
+      deckhandVersion: 'test',
+      createdAt: DateTime.utc(2026, 5, 4, 23, 2, 59),
+    );
+
+    final controller = stubWizardController(profileJson: testProfileJson());
+    await controller.loadProfile('test-printer');
+
+    await tester.pumpWidget(
+      testHarness(
+        controller: controller,
+        child: const EmmcRestoreScreen(),
+        initialLocation: '/emmc-restore',
+        extraOverrides: [
+          emmcBackupManifestsProvider.overrideWith((ref) async => [manifest]),
+          flashServiceProvider.overrideWithValue(
+            _RestoreFlash(disks: [disk], sha256Value: sha),
+          ),
+        ],
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+
+    final imageSemantics = tester.getSemantics(
+      find.byKey(ValueKey('restore-image-choice-$imagePath')),
+    );
+    expect(imageSemantics.label, contains('Verified full-disk backup'));
+    expect(imageSemantics.hasFlag(SemanticsFlag.hasSelectedState), isTrue);
+    expect(imageSemantics.hasFlag(SemanticsFlag.isSelected), isTrue);
+    expect(imageSemantics.hasFlag(SemanticsFlag.isButton), isTrue);
+    expect(
+      imageSemantics.getSemanticsData().hasAction(SemanticsAction.tap),
+      isTrue,
+    );
+
+    await tester.tap(find.widgetWithText(FilledButton, 'Continue to target'));
+    await tester.pump();
+
+    final diskSemantics = tester.getSemantics(
+      find.byKey(const ValueKey('restore-target-choice-PhysicalDrive3')),
+    );
+    expect(diskSemantics.label, contains('Generic STORAGE DEVICE'));
+    expect(diskSemantics.hasFlag(SemanticsFlag.hasSelectedState), isTrue);
+    expect(diskSemantics.hasFlag(SemanticsFlag.isSelected), isTrue);
+    expect(diskSemantics.hasFlag(SemanticsFlag.isButton), isTrue);
+    expect(
+      diskSemantics.getSemanticsData().hasAction(SemanticsAction.tap),
+      isTrue,
+    );
+    semantics.dispose();
   });
 
   testWidgets('direct eMMC restore backup step fits narrow windows', (
