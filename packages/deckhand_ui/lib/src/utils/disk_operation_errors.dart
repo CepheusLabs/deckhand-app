@@ -16,8 +16,12 @@ String userFacingDiskOperationError(Object? error) {
     return 'Deckhand does not have a printer address yet. Connect to the printer before continuing.';
   }
   if (lower.contains('validate sha256') ||
-      lower.contains('sha256 is required and must be 64 lowercase hex')) {
+      lower.contains('sha256 is required and must be 64 lowercase hex') ||
+      lower.contains('must declare a 64-hex sha256 before download')) {
     return 'The selected OS image is missing a valid SHA-256 checksum. Refresh profiles or choose another OS image before flashing.';
+  }
+  if (lower.contains('network access was not approved for this profile')) {
+    return 'Network access for this profile was not approved. Retry and choose Allow for each required host, or approve hosts from Settings.';
   }
   if (lower.contains('unexpected status 404')) {
     return 'Deckhand could not download the OS image because the configured URL was not found. Refresh profiles or choose another OS image.';

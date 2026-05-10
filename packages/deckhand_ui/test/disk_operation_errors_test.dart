@@ -17,6 +17,12 @@ void main() {
         ),
         'The selected OS image is missing a valid SHA-256 checksum. Refresh profiles or choose another OS image before flashing.',
       );
+      expect(
+        userFacingDiskOperationError(
+          'StepExecutionException: OS image "armbian-trixie-minimal" must declare a 64-hex sha256 before download',
+        ),
+        'The selected OS image is missing a valid SHA-256 checksum. Refresh profiles or choose another OS image before flashing.',
+      );
     });
 
     test('explains missing download assets in user terms', () {
@@ -34,6 +40,15 @@ void main() {
           'StepExecutionException: ssh did not come up within 600 seconds',
         ),
         'Deckhand did not see the printer come online over SSH. Make sure the eMMC is installed, the printer is powered on, and the printer is on the network, then retry.',
+      );
+    });
+
+    test('explains profile network approval failures in user terms', () {
+      expect(
+        userFacingDiskOperationError(
+          'StepExecutionException: Network access was not approved for this profile.',
+        ),
+        'Network access for this profile was not approved. Retry and choose Allow for each required host, or approve hosts from Settings.',
       );
     });
 
