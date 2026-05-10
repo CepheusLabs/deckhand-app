@@ -392,6 +392,69 @@ func TestValidateHashPathWindowsDevicePolicy(t *testing.T) {
 	}
 }
 
+func TestValidateHashPathPosixDevicePolicy(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX device namespace policy")
+	}
+
+	for _, path := range []string{
+		"/dev/sda",
+		"/dev/vdb",
+		"/dev/nvme0n1",
+		"/dev/mmcblk0",
+		"/dev/disk2",
+		"/dev/rdisk2",
+		"/dev/loop0",
+	} {
+		if err := validateHashPath(path); err != nil {
+			t.Fatalf("expected whole-disk path %q to pass: %v", path, err)
+		}
+	}
+
+	for _, path := range []string{
+		"/dev/sda1",
+		"/dev/vdb2",
+		"/dev/nvme0n1p1",
+		"/dev/mmcblk0p1",
+		"/dev/disk/by-id/usb-printer",
+		"/dev/loop0p1",
+	} {
+		if err := validateHashPath(path); err == nil {
+			t.Fatalf("expected partition or symlink-style path %q to be rejected", path)
+		}
+	}
+}
+
+func TestIsAllowedHashDevicePath(t *testing.T) {
+	for _, path := range []string{
+		"/dev/sda",
+		"/dev/vdb",
+		"/dev/nvme0n1",
+		"/dev/mmcblk0",
+		"/dev/disk2",
+		"/dev/rdisk2",
+		"/dev/loop0",
+	} {
+		if !isAllowedHashDevicePath(path) {
+			t.Fatalf("expected %q to be allowed", path)
+		}
+	}
+
+	for _, path := range []string{
+		"/dev/sda1",
+		"/dev/vdb2",
+		"/dev/nvme0n1p1",
+		"/dev/mmcblk0p1",
+		"/dev/disk/by-id/usb-printer",
+		"/dev/loop0p1",
+		"/dev/sdz-extra",
+	} {
+		if isAllowedHashDevicePath(path) {
+			t.Fatalf("expected %q to be rejected", path)
+		}
+	}
+}
+
 func TestDownloadDestPolicyRejectsUnmanagedAndExistingPaths(t *testing.T) {
 	outside := filepath.Join(t.TempDir(), "image.img")
 	if _, err := validateDownloadDestPolicy(outside); err == nil {

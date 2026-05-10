@@ -14,6 +14,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 
@@ -30,6 +31,8 @@ const (
 	backupRootMarker     = ".deckhand-emmc-backups-root"
 	downloadTempRootName = "deckhand-os-images"
 )
+
+var wholeDiskHashDevicePattern = regexp.MustCompile(`^/dev/(sd[a-z]+|vd[a-z]+|nvme[0-9]+n[0-9]+|mmcblk[0-9]+|disk[0-9]+|rdisk[0-9]+|loop[0-9]+)$`)
 
 // Register wires every handler onto s. The cancel parameter is the
 // outer Serve context's cancel func; `shutdown` calls it so the Serve
@@ -501,16 +504,8 @@ func validateHashPath(p string) error {
 	if strings.Contains(clean, "..") {
 		return fmt.Errorf("path %q contains traversal", p)
 	}
-	// Raw-disk paths we use across OSes. These mirror the elevated
-	// helper's allowlist (keep them in sync if one changes).
-	devicePrefixes := []string{
-		"/dev/sd", "/dev/nvme", "/dev/mmcblk", "/dev/disk",
-		"/dev/rdisk", "/dev/loop", "/dev/vd",
-	}
-	for _, prefix := range devicePrefixes {
-		if strings.HasPrefix(clean, prefix) && len(clean) > len(prefix) {
-			return nil
-		}
+	if runtime.GOOS != "windows" && isAllowedHashDevicePath(clean) {
+		return nil
 	}
 	if runtime.GOOS == "windows" {
 		devicePath := strings.ReplaceAll(clean, `/`, `\`)
@@ -538,6 +533,10 @@ func validateHashPath(p string) error {
 		return nil
 	}
 	return fmt.Errorf("path %q is not under a Deckhand-managed OS image directory or a recognised device node", p)
+}
+
+func isAllowedHashDevicePath(clean string) bool {
+	return wholeDiskHashDevicePattern.MatchString(clean)
 }
 
 func validateRepoURL(raw string) error {
