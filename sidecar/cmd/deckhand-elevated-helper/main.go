@@ -1139,12 +1139,27 @@ func emitJSON(v any) {
 		return
 	}
 	fmt.Fprintln(eventsOut, string(b))
-	// Best-effort flush so the parent sees events in real time when
-	// eventsOut is a file. os.Stdout is line-buffered by default for
-	// ttys; for an opened file we need to nudge it. Ignoring the
-	// type-assertion failure handles os.Stdout (no Sync method needed).
-	if f, ok := eventsOut.(*os.File); ok {
+	if !shouldSyncEvent(v) {
+		return
+	}
+	// Best-effort durability for terminal lifecycle events. Ordinary
+	// writes are immediately readable by the parent without fsync; doing
+	// that for every progress event makes long disk copies much slower.
+	if f, ok := eventsOut.(interface{ Sync() error }); ok {
 		_ = f.Sync()
+	}
+}
+
+func shouldSyncEvent(v any) bool {
+	m, ok := v.(map[string]any)
+	if !ok {
+		return false
+	}
+	switch m["event"] {
+	case "started", "version", "done", "error":
+		return true
+	default:
+		return false
 	}
 }
 

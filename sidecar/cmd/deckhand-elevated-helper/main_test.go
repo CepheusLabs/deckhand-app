@@ -427,6 +427,24 @@ func TestHelperFlagSetReturnsParseErrors(t *testing.T) {
 	}
 }
 
+func TestEmitJSONOnlySyncsTerminalEvents(t *testing.T) {
+	original := eventsOut
+	t.Cleanup(func() { eventsOut = original })
+	rec := &syncRecorder{}
+	eventsOut = rec
+
+	emitJSON(map[string]any{"event": "progress", "bytes_done": 1})
+	emitJSON(map[string]any{"event": "done"})
+
+	if rec.syncs != 1 {
+		t.Fatalf("sync count = %d, want 1", rec.syncs)
+	}
+	if got := rec.String(); !strings.Contains(got, `"event":"progress"`) ||
+		!strings.Contains(got, `"event":"done"`) {
+		t.Fatalf("events were not written: %q", got)
+	}
+}
+
 func TestTerminalDeviceReadErrorAcceptsEOFOnly(t *testing.T) {
 	if !isTerminalDeviceReadError(io.EOF, 1024, 1024) {
 		t.Fatal("io.EOF should be terminal")
@@ -505,4 +523,14 @@ func (w *flakyWriter) Write(p []byte) (int, error) {
 	}
 	w.data = append(w.data, p...)
 	return len(p), nil
+}
+
+type syncRecorder struct {
+	strings.Builder
+	syncs int
+}
+
+func (r *syncRecorder) Sync() error {
+	r.syncs++
+	return nil
 }
