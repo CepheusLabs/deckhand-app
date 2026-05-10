@@ -68,7 +68,7 @@ func ReadImage(ctx context.Context, devicePath, outputPath string, note rpc.Noti
 		}
 		n, rerr := src.Read(buf)
 		if n > 0 {
-			if _, werr := dst.Write(buf[:n]); werr != nil {
+			if werr := writeAll(dst, buf[:n]); werr != nil {
 				return "", fmt.Errorf("write: %w", werr)
 			}
 			h.Write(buf[:n])
@@ -98,4 +98,20 @@ func ReadImage(ctx context.Context, devicePath, outputPath string, note rpc.Noti
 		})
 	}
 	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+func writeAll(dst io.Writer, p []byte) error {
+	for len(p) > 0 {
+		n, err := dst.Write(p)
+		if n > 0 {
+			p = p[n:]
+		}
+		if err != nil {
+			return err
+		}
+		if n == 0 {
+			return io.ErrShortWrite
+		}
+	}
+	return nil
 }

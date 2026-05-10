@@ -231,6 +231,10 @@ func runReadImage(args []string) {
 		_ = dst.Close()
 		_ = os.Remove(*output)
 	}
+	failAfterOutputOpen := func(format string, args ...any) {
+		cancelCleanup()
+		fatalf(format, args...)
+	}
 
 	hasher := sha256.New()
 	buf := make([]byte, 4<<20)
@@ -241,8 +245,8 @@ func runReadImage(args []string) {
 		fatalIfCanceled(*cancelFile, cancelCleanup)
 		n, rerr := src.Read(buf)
 		if n > 0 {
-			if _, werr := dst.Write(buf[:n]); werr != nil {
-				fatalf("write output: %v", werr)
+			if _, werr := writeFull(dst, buf[:n]); werr != nil {
+				failAfterOutputOpen("write output: %v", werr)
 			}
 			hasher.Write(buf[:n])
 			done += int64(n)
@@ -261,13 +265,18 @@ func runReadImage(args []string) {
 			if isTerminalDeviceReadError(rerr, done, total) {
 				break
 			}
-			fatalf("read device after %d of %d bytes: %v", done, total, rerr)
+			failAfterOutputOpen(
+				"read device after %d of %d bytes: %v",
+				done,
+				total,
+				rerr,
+			)
 		}
 	}
 
 	fatalIfCanceled(*cancelFile, cancelCleanup)
 	if err := dst.Sync(); err != nil {
-		fatalf("sync: %v", err)
+		failAfterOutputOpen("sync: %v", err)
 	}
 
 	sum := hex.EncodeToString(hasher.Sum(nil))

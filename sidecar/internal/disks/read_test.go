@@ -93,6 +93,25 @@ func TestReadImageRemovesPartialOutputOnCancellation(t *testing.T) {
 	}
 }
 
+func TestWriteAllCompletesShortWrites(t *testing.T) {
+	writer := &shortWriteBuffer{maxPerWrite: 3}
+	body := []byte("deckhand backup image bytes")
+
+	if err := writeAll(writer, body); err != nil {
+		t.Fatalf("writeAll() error = %v", err)
+	}
+	if !bytes.Equal(writer.Bytes(), body) {
+		t.Fatalf("written bytes = %q, want %q", writer.Bytes(), body)
+	}
+}
+
+func TestWriteAllRejectsZeroLengthProgress(t *testing.T) {
+	err := writeAll(zeroProgressWriter{}, []byte("deckhand"))
+	if err == nil {
+		t.Fatal("writeAll() error = nil, want short write")
+	}
+}
+
 type recordingNotifier struct {
 	events []notification
 }
@@ -104,4 +123,22 @@ type notification struct {
 
 func (n *recordingNotifier) Notify(method string, params any) {
 	n.events = append(n.events, notification{method: method, params: params})
+}
+
+type shortWriteBuffer struct {
+	bytes.Buffer
+	maxPerWrite int
+}
+
+func (w *shortWriteBuffer) Write(p []byte) (int, error) {
+	if len(p) > w.maxPerWrite {
+		p = p[:w.maxPerWrite]
+	}
+	return w.Buffer.Write(p)
+}
+
+type zeroProgressWriter struct{}
+
+func (zeroProgressWriter) Write([]byte) (int, error) {
+	return 0, nil
 }
