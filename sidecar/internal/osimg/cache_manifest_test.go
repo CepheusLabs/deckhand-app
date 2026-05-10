@@ -105,3 +105,38 @@ func TestWriteCacheManifestPreservesDownloadedAtOnReuse(t *testing.T) {
 		t.Fatalf("missing reused_at in %+v", second)
 	}
 }
+
+func TestWriteCacheManifestReplacesExistingManifestWithoutTempFiles(t *testing.T) {
+	dest := filepath.Join(t.TempDir(), "image.img")
+	rawURL := "https://github.com/example/releases/download/v1/image.img.xz"
+	expected := strings.Repeat("a", 64)
+	firstActual := strings.Repeat("b", 64)
+	secondActual := strings.Repeat("c", 64)
+
+	if err := WriteCacheManifest(dest, rawURL, expected, firstActual, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteCacheManifest(dest, rawURL, expected, secondActual, false); err != nil {
+		t.Fatal(err)
+	}
+
+	body, err := os.ReadFile(CacheManifestPath(dest))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var manifest map[string]any
+	if err := json.Unmarshal(body, &manifest); err != nil {
+		t.Fatal(err)
+	}
+	if got := manifest["actual_sha256"]; got != secondActual {
+		t.Fatalf("actual_sha256 = %v, want %s", got, secondActual)
+	}
+
+	matches, err := filepath.Glob(CacheManifestPath(dest) + ".tmp-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 0 {
+		t.Fatalf("left temp manifests: %v", matches)
+	}
+}

@@ -110,10 +110,79 @@ func WriteCacheManifest(dest, rawURL, expectedSha, actualSha string, reused bool
 		return fmt.Errorf("encode download manifest: %w", err)
 	}
 	body = append(body, '\n')
-	if err := os.WriteFile(manifestPath, body, 0o600); err != nil {
+	if err := writeCacheManifestFile(manifestPath, body); err != nil {
 		return fmt.Errorf("write download manifest: %w", err)
 	}
 	return nil
+}
+
+func writeCacheManifestFile(manifestPath string, body []byte) error {
+	dir := filepath.Dir(manifestPath)
+	tmp, err := os.CreateTemp(dir, filepath.Base(manifestPath)+".tmp-*")
+	if err != nil {
+		return err
+	}
+	tmpPath := tmp.Name()
+	removeTmp := true
+	defer func() {
+		if removeTmp {
+			_ = os.Remove(tmpPath)
+		}
+	}()
+
+	if _, err := tmp.Write(body); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if err := os.Chmod(tmpPath, 0o600); err != nil {
+		return err
+	}
+	if err := os.Rename(tmpPath, manifestPath); err == nil {
+		removeTmp = false
+		return nil
+	} else if !isRenameOverExistingFileError(err) {
+		return err
+	}
+
+	info, err := os.Lstat(manifestPath)
+	if os.IsNotExist(err) {
+		if err := os.Rename(tmpPath, manifestPath); err != nil {
+			return err
+		}
+		removeTmp = false
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if info.Mode()&os.ModeSymlink != 0 || info.IsDir() {
+		return fmt.Errorf("download manifest path %q must be a regular file", manifestPath)
+	}
+	if err := os.Remove(manifestPath); err != nil {
+		return err
+	}
+	if err := os.Rename(tmpPath, manifestPath); err != nil {
+		return err
+	}
+	removeTmp = false
+	return nil
+}
+
+func isRenameOverExistingFileError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if runtime.GOOS == "windows" {
+		return true
+	}
+	return false
 }
 
 func RemoveCacheManifest(dest string) error {
