@@ -76,6 +76,42 @@ void main() {
     expect(find.text('Wait for ssh'), findsNothing);
   });
 
+  testWidgets('step rail uses human subtitles instead of raw kinds', (
+    tester,
+  ) async {
+    final controller = stubWizardController(profileJson: testProfileJson());
+    await controller.loadProfile('test-printer');
+    await tester.pumpWidget(
+      testHarness(
+        controller: controller,
+        child: Scaffold(
+          body: Center(
+            child: SizedBox(
+              width: 1200,
+              height: 520,
+              child: ProgressRunWorkspace(
+                steps: const [
+                  RunStep(id: 'download_os', kind: 'os_download'),
+                  RunStep(id: 'wait_for_ssh', kind: 'wait_for_ssh'),
+                  RunStep(id: 'first_boot_setup', kind: 'ssh_commands'),
+                ],
+                statusFor: (_) => RunStepStatus.queued,
+                log: const [],
+                networkEvents: const [],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('01 · OS image'), findsOneWidget);
+    expect(find.text('02 · printer wait'), findsOneWidget);
+    expect(find.text('03 · SSH commands'), findsOneWidget);
+    expect(find.textContaining('os download'), findsNothing);
+    expect(find.textContaining('wait for ssh'), findsNothing);
+  });
+
   testWidgets('step rail scrolls the active step into view', (tester) async {
     final controller = stubWizardController(profileJson: testProfileJson());
     await controller.loadProfile('test-printer');

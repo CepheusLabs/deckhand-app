@@ -603,6 +603,32 @@ String runStepTitle(String id) {
 }
 
 String _kindTitle(String kind) {
+  final mapped = switch (kind) {
+    'choose_one' => 'choice',
+    'disk_picker' => 'disk picker',
+    'os_download' => 'OS image',
+    'flash_disk' => 'disk write',
+    'prompt' => 'confirmation',
+    'wait_for_ssh' => 'printer wait',
+    'ssh_commands' => 'SSH commands',
+    'install_firmware' => 'firmware',
+    'install_stack' => 'Klipper services',
+    'link_extras' => 'profile extras',
+    'install_screen' => 'screen UI',
+    'flash_mcus' => 'MCU flashing',
+    'apply_services' => 'service cleanup',
+    'apply_files' => 'file cleanup',
+    'snapshot_archive' => 'config backup',
+    'snapshot_paths' => 'config backup',
+    'hardening' => 'system hardening',
+    'write_file' => 'config write',
+    'install_marker' => 'managed marker',
+    'verify' => 'verification',
+    'script' => 'remote script',
+    'conditional' => 'condition',
+    _ => null,
+  };
+  if (mapped != null) return mapped;
   if (kind.isEmpty) return 'step';
   return kind.replaceAll('_', ' ');
 }
