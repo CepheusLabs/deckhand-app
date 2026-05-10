@@ -499,9 +499,9 @@ void main() {
       find.byKey(ValueKey('restore-image-choice-$imagePath')),
     );
     expect(imageSemantics.label, contains('Verified full-disk backup'));
-    expect(imageSemantics.hasFlag(SemanticsFlag.hasSelectedState), isTrue);
-    expect(imageSemantics.hasFlag(SemanticsFlag.isSelected), isTrue);
-    expect(imageSemantics.hasFlag(SemanticsFlag.isButton), isTrue);
+    expect(imageSemantics.flagsCollection.isSelected, isNot(Tristate.none));
+    expect(imageSemantics.flagsCollection.isSelected, Tristate.isTrue);
+    expect(imageSemantics.flagsCollection.isButton, isTrue);
     expect(
       imageSemantics.getSemanticsData().hasAction(SemanticsAction.tap),
       isTrue,
@@ -514,9 +514,9 @@ void main() {
       find.byKey(const ValueKey('restore-target-choice-PhysicalDrive3')),
     );
     expect(diskSemantics.label, contains('Generic STORAGE DEVICE'));
-    expect(diskSemantics.hasFlag(SemanticsFlag.hasSelectedState), isTrue);
-    expect(diskSemantics.hasFlag(SemanticsFlag.isSelected), isTrue);
-    expect(diskSemantics.hasFlag(SemanticsFlag.isButton), isTrue);
+    expect(diskSemantics.flagsCollection.isSelected, isNot(Tristate.none));
+    expect(diskSemantics.flagsCollection.isSelected, Tristate.isTrue);
+    expect(diskSemantics.flagsCollection.isButton, isTrue);
     expect(
       diskSemantics.getSemanticsData().hasAction(SemanticsAction.tap),
       isTrue,

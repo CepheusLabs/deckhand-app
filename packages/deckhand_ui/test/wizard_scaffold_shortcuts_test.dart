@@ -102,8 +102,8 @@ void main() {
     final buttonSemantics = tester.getSemantics(button);
     expect(buttonSemantics.label, 'Continue');
     expect(buttonSemantics.hint, 'Select a target eMMC first.');
-    expect(buttonSemantics.hasFlag(SemanticsFlag.isButton), isTrue);
-    expect(buttonSemantics.hasFlag(SemanticsFlag.isEnabled), isFalse);
+    expect(buttonSemantics.flagsCollection.isButton, isTrue);
+    expect(buttonSemantics.flagsCollection.isEnabled, Tristate.isFalse);
     expect(find.byTooltip('Select a target eMMC first.'), findsOneWidget);
     semantics.dispose();
   });
