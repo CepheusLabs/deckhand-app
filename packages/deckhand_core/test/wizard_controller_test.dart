@@ -2953,6 +2953,51 @@ void main() {
       expect(ssh.runCalls.any((c) => c.contains('/safe/cache')), isTrue);
     });
 
+    test('apply_files fails when a selected delete fails', () async {
+      final ssh = FakeSsh()
+        ..responsesByContains['/safe/cache'] = const SshCommandResult(
+          stdout: '',
+          stderr: 'permission denied',
+          exitCode: 1,
+        );
+      final controller = newController(
+        profileJson: {
+          ...baseProfileJson(
+            stockKeepSteps: [
+              {'id': 'files', 'kind': 'apply_files'},
+            ],
+          ),
+          'stock_os': {
+            'files': [
+              {
+                'id': 'cache',
+                'display_name': 'Cache',
+                'default_action': 'delete',
+                'paths': ['/safe/cache'],
+              },
+            ],
+          },
+        },
+        ssh: ssh,
+      );
+      await controller.loadProfile('test-printer');
+      controller.setFlow(WizardFlow.stockKeep);
+      controller.setSession(
+        const SshSession(id: 'fake', host: 'h', port: 22, user: 'root'),
+      );
+
+      await expectLater(
+        controller.startExecution(),
+        throwsA(
+          isA<StepExecutionException>().having(
+            (e) => e.toString(),
+            'message',
+            contains('file cleanup failed'),
+          ),
+        ),
+      );
+    });
+
     test('install_firmware rejects unsafe refs before cloning', () async {
       final ssh = FakeSsh();
       final controller = newController(

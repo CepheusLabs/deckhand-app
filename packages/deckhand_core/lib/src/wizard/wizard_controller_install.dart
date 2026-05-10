@@ -537,6 +537,12 @@ Future<void> _runApplyFilesImpl(
       }
       final res = await c._runSsh(cmd);
       c._log(step, '[files] rm ${f.id}: $path (exit ${res.exitCode})');
+      if (!res.success) {
+        throw StepExecutionException(
+          'file cleanup failed for ${f.id}: $path',
+          stderr: res.stderr,
+        );
+      }
       if (res.stdout.trim().isNotEmpty) {
         for (final line in res.stdout.trim().split('\n')) {
           c._log(step, '[files]   removed: $line');
