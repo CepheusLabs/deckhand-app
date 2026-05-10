@@ -1,6 +1,8 @@
 import 'package:deckhand_core/deckhand_core.dart';
 import 'package:deckhand_ui/src/screens/pick_printer_screen.dart';
 import 'package:deckhand_ui/src/providers.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'helpers.dart';
@@ -161,6 +163,69 @@ void main() {
       expect(find.text('RK3328'), findsNothing);
       expect(find.text('ChromaKit'), findsNothing);
       expect(find.text('—'), findsNothing);
+    });
+
+    testWidgets('printer cards expose semantics and keyboard activation', (
+      tester,
+    ) async {
+      final controller = stubWizardController(profileJson: testProfileJson());
+      await controller.loadProfile('test-printer');
+      final semantics = tester.ensureSemantics();
+
+      await tester.pumpWidget(
+        testHarness(
+          controller: controller,
+          child: const PickPrinterScreen(),
+          initialLocation: '/pick-printer',
+          extraOverrides: [
+            profileServiceProvider.overrideWithValue(
+              const _RegistryProfileService(
+                ProfileRegistry(
+                  entries: [
+                    ProfileRegistryEntry(
+                      id: 'test-printer',
+                      displayName: 'Test Printer',
+                      manufacturer: 'Acme',
+                      model: 'Robo',
+                      status: 'beta',
+                      directory: 'printers/test-printer',
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+
+      final card = find.byKey(const ValueKey('profile-card-test-printer'));
+      expect(card, findsOneWidget);
+      expect(
+        tester.getSemantics(card),
+        matchesSemantics(
+          label: 'Test Printer printer profile',
+          isButton: true,
+          hasSelectedState: true,
+          hasTapAction: true,
+        ),
+      );
+      semantics.dispose();
+
+      final focusableCard = find.byKey(
+        const ValueKey('profile-card-focus-test-printer'),
+      );
+      expect(focusableCard, findsOneWidget);
+      final focusWidget = tester.widget<Focus>(focusableCard);
+      focusWidget.focusNode!.requestFocus();
+      await tester.pump();
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.enter);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.enter);
+      await tester.pump();
+
+      expect(find.text('Continue with Test Printer'), findsOneWidget);
     });
 
     testWidgets('approves selected profile network hosts in one prompt', (

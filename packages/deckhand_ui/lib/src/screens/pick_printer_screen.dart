@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:deckhand_core/deckhand_core.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -434,7 +435,15 @@ class _SpecCard extends StatefulWidget {
 }
 
 class _SpecCardState extends State<_SpecCard> {
+  final FocusNode _focusNode = FocusNode();
   bool _hovering = false;
+  bool _focused = false;
+
+  @override
+  void dispose() {
+    _focusNode.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -442,7 +451,7 @@ class _SpecCardState extends State<_SpecCard> {
     final entry = widget.entry;
     final selected = widget.selected;
 
-    final borderColor = selected
+    final borderColor = selected || _focused
         ? tokens.accent
         : _hovering
         ? tokens.rule
@@ -451,87 +460,109 @@ class _SpecCardState extends State<_SpecCard> {
         ? Color.alphaBlend(tokens.accent.withValues(alpha: 0.04), tokens.ink1)
         : tokens.ink1;
 
-    return MouseRegion(
-      cursor: SystemMouseCursors.click,
-      onEnter: (_) => setState(() => _hovering = true),
-      onExit: (_) => setState(() => _hovering = false),
-      child: GestureDetector(
-        onTap: widget.onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 120),
-          // Subtle hover lift. Matches the design's "feels physically
-          // pickable" intent without overdoing it. `translationValues`
-          // writes a proper affine translation; the previous
-          // `translateByDouble(..., 0)` form passed w=0, which the
-          // matrix treats as a direction vector at infinity and made
-          // the card vanish on hover.
-          transform: _hovering && !selected
-              ? Matrix4.translationValues(0, -1, 0)
-              : Matrix4.identity(),
-          decoration: BoxDecoration(
-            color: backgroundColor,
-            border: Border.all(color: borderColor),
-            borderRadius: BorderRadius.circular(DeckhandTokens.r3),
-            boxShadow: selected
-                ? [
-                    BoxShadow(
-                      color: tokens.accent.withValues(alpha: 0.18),
-                      blurRadius: 20,
-                      offset: const Offset(0, 6),
-                    ),
-                  ]
-                : _hovering
-                ? [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.18),
-                      blurRadius: 16,
-                      offset: const Offset(0, 4),
-                    ),
-                  ]
-                : null,
-          ),
-          child: Stack(
-            children: [
-              if (selected)
-                // 3px left rail anchors the selected state and gives
-                // the card a measurable "you picked this" silhouette
-                // even when scrolled in a dense list.
-                Positioned(
-                  left: 0,
-                  top: 0,
-                  bottom: 0,
-                  child: Container(
-                    width: 3,
-                    decoration: BoxDecoration(
-                      color: tokens.accent,
-                      borderRadius: const BorderRadius.only(
-                        topLeft: Radius.circular(DeckhandTokens.r3),
-                        bottomLeft: Radius.circular(DeckhandTokens.r3),
+    return Semantics(
+      key: ValueKey('profile-card-${entry.id}'),
+      button: true,
+      selected: selected,
+      label: '${entry.displayName} printer profile',
+      onTap: widget.onTap,
+      child: Focus(
+        key: ValueKey('profile-card-focus-${entry.id}'),
+        focusNode: _focusNode,
+        onFocusChange: (value) => setState(() => _focused = value),
+        onKeyEvent: (_, event) {
+          if (event is KeyDownEvent &&
+              (event.logicalKey == LogicalKeyboardKey.enter ||
+                  event.logicalKey == LogicalKeyboardKey.numpadEnter ||
+                  event.logicalKey == LogicalKeyboardKey.space)) {
+            widget.onTap();
+            return KeyEventResult.handled;
+          }
+          return KeyEventResult.ignored;
+        },
+        child: MouseRegion(
+          cursor: SystemMouseCursors.click,
+          onEnter: (_) => setState(() => _hovering = true),
+          onExit: (_) => setState(() => _hovering = false),
+          child: GestureDetector(
+            onTap: widget.onTap,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 120),
+              // Subtle hover lift. Matches the design's "feels physically
+              // pickable" intent without overdoing it. `translationValues`
+              // writes a proper affine translation; the previous
+              // `translateByDouble(..., 0)` form passed w=0, which the
+              // matrix treats as a direction vector at infinity and made
+              // the card vanish on hover.
+              transform: _hovering && !selected
+                  ? Matrix4.translationValues(0, -1, 0)
+                  : Matrix4.identity(),
+              decoration: BoxDecoration(
+                color: backgroundColor,
+                border: Border.all(color: borderColor),
+                borderRadius: BorderRadius.circular(DeckhandTokens.r3),
+                boxShadow: selected
+                    ? [
+                        BoxShadow(
+                          color: tokens.accent.withValues(alpha: 0.18),
+                          blurRadius: 20,
+                          offset: const Offset(0, 6),
+                        ),
+                      ]
+                    : _hovering
+                    ? [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.18),
+                          blurRadius: 16,
+                          offset: const Offset(0, 4),
+                        ),
+                      ]
+                    : null,
+              ),
+              child: Stack(
+                children: [
+                  if (selected)
+                    // 3px left rail anchors the selected state and gives
+                    // the card a measurable "you picked this" silhouette
+                    // even when scrolled in a dense list.
+                    Positioned(
+                      left: 0,
+                      top: 0,
+                      bottom: 0,
+                      child: Container(
+                        width: 3,
+                        decoration: BoxDecoration(
+                          color: tokens.accent,
+                          borderRadius: const BorderRadius.only(
+                            topLeft: Radius.circular(DeckhandTokens.r3),
+                            bottomLeft: Radius.circular(DeckhandTokens.r3),
+                          ),
+                        ),
                       ),
                     ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        _Header(entry: entry),
+                        const SizedBox(height: 12),
+                        _SpecGrid(entry: entry),
+                        const SizedBox(height: 12),
+                        _Footer(entry: entry, tokens: tokens),
+                      ],
+                    ),
                   ),
-                ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    _Header(entry: entry),
-                    const SizedBox(height: 12),
-                    _SpecGrid(entry: entry),
-                    const SizedBox(height: 12),
-                    _Footer(entry: entry, tokens: tokens),
-                  ],
-                ),
+                  if (selected)
+                    Positioned(
+                      top: 10,
+                      right: 10,
+                      child: _SelBadge(tokens: tokens),
+                    ),
+                ],
               ),
-              if (selected)
-                Positioned(
-                  top: 10,
-                  right: 10,
-                  child: _SelBadge(tokens: tokens),
-                ),
-            ],
+            ),
           ),
         ),
       ),
