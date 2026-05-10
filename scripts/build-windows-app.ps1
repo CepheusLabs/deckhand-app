@@ -193,10 +193,51 @@ function Remove-BuildTree {
     Remove-Item -LiteralPath $resolved.Path -Recurse -Force
 }
 
+function Copy-RuntimeBinaries {
+    param(
+        [Parameter(Mandatory = $true)][string]$SourceDir,
+        [Parameter(Mandatory = $true)][string]$DestinationDir
+    )
+
+    $required = @('deckhand-sidecar.exe', 'deckhand-elevated-helper.exe')
+    foreach ($name in $required) {
+        $source = Join-Path $SourceDir $name
+        if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {
+            throw @"
+Missing runtime binary: $source
+
+Build the Windows sidecar/helper first:
+  .\scripts\build-windows-sidecar.ps1
+
+Deckhand resolves these binaries next to deckhand.exe at runtime, so the
+Windows runner output is not usable until they are bundled.
+"@
+        }
+        if ((Get-Item -LiteralPath $source).Length -le 0) {
+            throw "Runtime binary is empty: $source"
+        }
+
+        New-Item -ItemType Directory -Force -Path $DestinationDir | Out-Null
+        Copy-Item -LiteralPath $source -Destination (Join-Path $DestinationDir $name) -Force
+    }
+
+    foreach ($name in @('deckhand.exe') + $required) {
+        $path = Join-Path $DestinationDir $name
+        if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+            throw "Windows runner payload is missing: $path"
+        }
+        if ((Get-Item -LiteralPath $path).Length -le 0) {
+            throw "Windows runner payload is empty: $path"
+        }
+    }
+}
+
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $appDir = Join-Path $repoRoot 'app'
 $keyringPath = Join-Path $appDir 'assets\keyring.asc'
 $buildDir = Join-Path $appDir 'build\windows\x64'
+$runnerOutputDir = Join-Path $buildDir "runner\$Configuration"
+$sidecarDistDir = Join-Path $repoRoot 'sidecar\dist'
 $windowsDir = Join-Path $appDir 'windows'
 
 # Keep the MSBuild invocation deterministic when Flutter shells out through
@@ -271,3 +312,6 @@ try {
 } finally {
     Pop-Location
 }
+
+Copy-RuntimeBinaries -SourceDir $sidecarDistDir -DestinationDir $runnerOutputDir
+Write-Host "Bundled runtime binaries into $runnerOutputDir"
