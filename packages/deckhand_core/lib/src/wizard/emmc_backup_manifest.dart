@@ -523,7 +523,10 @@ Future<List<EmmcBackupImageCandidate>> scanEmmcBackupImageCandidates(
       EmmcBackupImageCandidate(
         imagePath: entity.path,
         imageBytes: stat.size,
-        modifiedAt: stat.modified,
+        modifiedAt:
+            _inferOrganizedBackupCreatedAt(entity.path) ??
+            _inferLegacyBackupCreatedAt(entity.path) ??
+            stat.modified,
         inferredProfileId: inferEmmcBackupProfileId(entity.path),
       ),
     );
@@ -657,10 +660,19 @@ bool _isPathInsideRoot(String rootDir, String candidate) {
 
 DateTime? _inferLegacyBackupCreatedAt(String imagePath) {
   final context = _pathContextForRoot(imagePath);
-  final base = context.basename(imagePath);
+  return _parseBackupTimestamp(context.basename(imagePath));
+}
+
+DateTime? _inferOrganizedBackupCreatedAt(String imagePath) {
+  final context = _pathContextForRoot(imagePath);
+  if (context.basename(imagePath).toLowerCase() != 'emmc.img') return null;
+  return _parseBackupTimestamp(context.basename(context.dirname(imagePath)));
+}
+
+DateTime? _parseBackupTimestamp(String value) {
   final dashed = RegExp(
-    r'(\d{4})-(\d{2})-(\d{2})T(\d{2})-(\d{2})-(\d{2})(?:-\d+)?Z',
-  ).firstMatch(base);
+    r'(\d{4})-(\d{2})-(\d{2})T(\d{2})-(\d{2})-(\d{2})(?:-\d+)?Z(?:-\d+)?',
+  ).firstMatch(value);
   if (dashed != null) {
     return DateTime.utc(
       int.parse(dashed.group(1)!),
@@ -672,8 +684,8 @@ DateTime? _inferLegacyBackupCreatedAt(String imagePath) {
     );
   }
   final compact = RegExp(
-    r'(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z',
-  ).firstMatch(base);
+    r'(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z(?:-\d+)?',
+  ).firstMatch(value);
   if (compact != null) {
     return DateTime.utc(
       int.parse(compact.group(1)!),

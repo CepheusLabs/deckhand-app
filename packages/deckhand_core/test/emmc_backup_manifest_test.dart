@@ -508,6 +508,27 @@ void main() {
     );
   });
 
+  test('candidate scanner uses organized folder timestamps', () async {
+    final dir = await Directory.systemTemp.createTemp(
+      'deckhand_emmc_candidate_stamp_',
+    );
+    addTearDown(() async {
+      if (await dir.exists()) await dir.delete(recursive: true);
+    });
+
+    final image = File(
+      p.join(dir.path, 'phrozen-arco', '2026-05-04T23-02-59Z', 'emmc.img'),
+    );
+    await image.parent.create(recursive: true);
+    await image.writeAsBytes(List<int>.filled(1024, 1), flush: true);
+    await image.setLastModified(DateTime.utc(2027, 1, 1));
+
+    final candidates = await scanEmmcBackupImageCandidates(dir.path);
+
+    expect(candidates, hasLength(1));
+    expect(candidates.single.modifiedAt, DateTime.utc(2026, 5, 4, 23, 2, 59));
+  });
+
   test('organizer moves loose backups beside corrected manifests', () async {
     final dir = await Directory.systemTemp.createTemp(
       'deckhand_emmc_organize_',
