@@ -474,11 +474,17 @@ void main() {
       final dest = _managedOsImageDest('local-preflight-reuse.img');
       addTearDown(() async {
         await _deleteIfExists(dest);
+        await _deleteIfExists('$dest.part');
+        await _deleteIfExists('$dest.download.part');
         await _deleteIfExists('$dest.deckhand-download.json');
       });
       await Directory(p.dirname(dest)).create(recursive: true);
       const cachedBody = 'cached-image';
       await File(dest).writeAsString(cachedBody);
+      await File('$dest.part').writeAsString('stale extracted partial');
+      await File('$dest.download.part').writeAsString(
+        'stale downloaded artifact',
+      );
       final expected = sha256.convert(utf8.encode(cachedBody)).toString();
       final sidecar = _FakeSidecar(
         hash:
@@ -502,6 +508,8 @@ void main() {
       expect(sidecar.hashPaths, isEmpty);
       expect(sidecar.streamingCalls, isEmpty);
       expect(security.checkedHosts, isEmpty);
+      expect(File('$dest.part').existsSync(), isFalse);
+      expect(File('$dest.download.part').existsSync(), isFalse);
       final manifest = await File(
         '$dest.deckhand-download.json',
       ).readAsString();

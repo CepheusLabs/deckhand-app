@@ -249,13 +249,14 @@ class SidecarUpstreamService implements UpstreamService {
       throw UpstreamException('OS image downloads require a 64-hex sha256');
     }
     final safeDestPath = _validateManagedOsImageDest(destPath);
-    await _clearStaleOsImagePart(safeDestPath);
+    await _clearStaleOsImagePart('$safeDestPath.part');
     final cachedSha = await _tryReuseOrClearLocalOsImage(
       safeDestPath,
       normalizedExpected,
       url,
     );
     if (cachedSha != null) {
+      await _clearStaleOsImagePart('$safeDestPath.download.part');
       await _writeDownloadManifest(
         url: url,
         destPath: safeDestPath,
@@ -450,8 +451,7 @@ class SidecarUpstreamService implements UpstreamService {
     return null;
   }
 
-  Future<void> _clearStaleOsImagePart(String destPath) async {
-    final partPath = '$destPath.part';
+  Future<void> _clearStaleOsImagePart(String partPath) async {
     final type = await FileSystemEntity.type(partPath, followLinks: false);
     if (type == FileSystemEntityType.notFound) return;
     if (type == FileSystemEntityType.link ||
