@@ -113,7 +113,10 @@ class FlashProgress {
   final int bytesTotal;
   final FlashPhase phase;
   final String? message;
-  double get fraction => bytesTotal == 0 ? 0 : bytesDone / bytesTotal;
+  double get fraction {
+    if (bytesTotal <= 0) return 0;
+    return (bytesDone / bytesTotal).clamp(0, 1).toDouble();
+  }
 }
 
 enum FlashPhase { preparing, writing, verifying, done, failed }

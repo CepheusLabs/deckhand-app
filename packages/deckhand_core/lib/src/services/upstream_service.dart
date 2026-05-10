@@ -59,7 +59,10 @@ class OsDownloadProgress {
   final String? path;
   final bool reused;
 
-  double get fraction => bytesTotal == 0 ? 0 : bytesDone / bytesTotal;
+  double get fraction {
+    if (bytesTotal <= 0) return 0;
+    return (bytesDone / bytesTotal).clamp(0, 1).toDouble();
+  }
 }
 
 enum OsDownloadPhase { downloading, extracting, done, failed }
