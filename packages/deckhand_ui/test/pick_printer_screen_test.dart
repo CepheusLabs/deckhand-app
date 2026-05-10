@@ -75,6 +75,58 @@ void main() {
       expect(find.text('ChromaKit'), findsOneWidget);
     });
 
+    testWidgets('search matches registry hardware spec fields', (
+      tester,
+    ) async {
+      final controller = stubWizardController(profileJson: testProfileJson());
+      await controller.loadProfile('test-printer');
+      await tester.pumpWidget(
+        testHarness(
+          controller: controller,
+          child: const PickPrinterScreen(),
+          initialLocation: '/pick-printer',
+          extraOverrides: [
+            profileServiceProvider.overrideWithValue(
+              const _RegistryProfileService(
+                ProfileRegistry(
+                  entries: [
+                    ProfileRegistryEntry(
+                      id: 'test-printer',
+                      displayName: 'Test Printer',
+                      manufacturer: 'Acme',
+                      model: 'Robo',
+                      status: 'beta',
+                      directory: 'printers/test-printer',
+                      sbc: 'RK3328',
+                      kinematics: 'CoreXY',
+                      mcu: 'STM32F407',
+                      extras: 'ChromaKit',
+                    ),
+                    ProfileRegistryEntry(
+                      id: 'other-printer',
+                      displayName: 'Other Printer',
+                      manufacturer: 'Other',
+                      model: 'Bedslinger',
+                      status: 'alpha',
+                      directory: 'printers/other-printer',
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+      await tester.enterText(find.byType(TextField), 'corexy');
+      await tester.pump();
+
+      expect(find.text('Test Printer'), findsOneWidget);
+      expect(find.text('Other Printer'), findsNothing);
+    });
+
     testWidgets('renders useful fallback facts for sparse registry cards', (
       tester,
     ) async {

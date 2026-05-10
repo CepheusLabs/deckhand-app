@@ -171,7 +171,12 @@ class _PickPrinterScreenState extends ConsumerState<PickPrinterScreen> {
           (e) =>
               e.displayName.toLowerCase().contains(q) ||
               e.manufacturer.toLowerCase().contains(q) ||
-              e.model.toLowerCase().contains(q),
+              e.model.toLowerCase().contains(q) ||
+              e.status.toLowerCase().contains(q) ||
+              _searchField(e.sbc).contains(q) ||
+              _searchField(e.kinematics).contains(q) ||
+              _searchField(e.mcu).contains(q) ||
+              _searchField(e.extras).contains(q),
         )
         .toList(growable: false);
   }
@@ -185,6 +190,8 @@ class _PickPrinterScreenState extends ConsumerState<PickPrinterScreen> {
     return null;
   }
 }
+
+String _searchField(String? value) => value?.toLowerCase() ?? '';
 
 class _Body extends StatelessWidget {
   const _Body({
