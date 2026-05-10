@@ -22,6 +22,9 @@ String userFacingDiskOperationError(Object? error) {
   if (lower.contains('unexpected status 404')) {
     return 'Deckhand could not download the OS image because the configured URL was not found. Refresh profiles or choose another OS image.';
   }
+  if (lower.contains('ssh did not come up within')) {
+    return 'Deckhand did not see the printer come online over SSH. Make sure the eMMC is installed, the printer is powered on, and the printer is on the network, then retry.';
+  }
   if (lower.contains('elevated helper never started')) {
     return 'Windows did not start Deckhand\'s disk helper. Deckhand cannot write raw disks until that helper launches with administrator rights. Start Deckhand as Administrator, then retry.';
   }

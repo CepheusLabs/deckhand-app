@@ -28,6 +28,15 @@ void main() {
       );
     });
 
+    test('explains SSH wait timeouts in user terms', () {
+      expect(
+        userFacingDiskOperationError(
+          'StepExecutionException: ssh did not come up within 600 seconds',
+        ),
+        'Deckhand did not see the printer come online over SSH. Make sure the eMMC is installed, the printer is powered on, and the printer is on the network, then retry.',
+      );
+    });
+
     test('hides raw disk ids behind StateError messages', () {
       expect(
         userFacingDiskOperationError(
