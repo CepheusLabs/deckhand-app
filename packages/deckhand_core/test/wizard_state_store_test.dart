@@ -103,6 +103,35 @@ void main() {
       expect(decoded.flow, WizardFlow.none);
     });
 
+    test('decoded and copied decisions are immutable snapshots', () {
+      final decoded = WizardState.fromJson({
+        'schema': 'deckhand.wizard_state/1',
+        'profileId': 'phrozen-arco',
+        'decisions': {
+          'flash.disk': 'PhysicalDrive3',
+          'nested': {'path': 'C:\\temp\\image.img'},
+        },
+        'currentStep': 's220-confirm',
+        'flow': 'freshFlash',
+      });
+
+      expect(
+        () => decoded.decisions['flash.disk'] = 'PhysicalDrive4',
+        throwsUnsupportedError,
+      );
+      expect(
+        () => (decoded.decisions['nested'] as Map<String, Object>)['path'] =
+            'changed',
+        throwsUnsupportedError,
+      );
+
+      final copied = decoded.copyWith(decisions: {'flash.disk': 'disk2'});
+      expect(
+        () => copied.decisions['flash.disk'] = 'disk3',
+        throwsUnsupportedError,
+      );
+    });
+
     test('copyWith can clear optional SSH fields', () {
       const state = WizardState(
         profileId: 'phrozen-arco',

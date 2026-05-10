@@ -43,7 +43,8 @@ class WizardState {
     final decisions = <String, Object>{};
     if (decisionsRaw is Map) {
       decisionsRaw.forEach((k, v) {
-        if (k is String && v != null) decisions[k] = v as Object;
+        final value = _immutableDecisionValue(v);
+        if (k is String && value != null) decisions[k] = value;
       });
     }
     final flowRaw = _decodeOptionalString(json['flow']) ?? 'none';
@@ -53,7 +54,7 @@ class WizardState {
     );
     return WizardState(
       profileId: _decodeRequiredString(json['profileId'], ''),
-      decisions: decisions,
+      decisions: Map<String, Object>.unmodifiable(decisions),
       currentStep: _decodeRequiredString(json['currentStep'], 'welcome'),
       flow: flow,
       sshHost: _decodeOptionalString(json['sshHost']),
@@ -91,7 +92,7 @@ class WizardState {
     Object? sshUser = _copyWithUnset,
   }) => WizardState(
     profileId: profileId ?? this.profileId,
-    decisions: decisions ?? this.decisions,
+    decisions: _immutableDecisionMap(decisions ?? this.decisions),
     currentStep: currentStep ?? this.currentStep,
     flow: flow ?? this.flow,
     sshHost: identical(sshHost, _copyWithUnset)
@@ -104,6 +105,34 @@ class WizardState {
         ? this.sshUser
         : sshUser as String?,
   );
+}
+
+Map<String, Object> _immutableDecisionMap(Map<String, Object> decisions) {
+  final out = <String, Object>{};
+  for (final entry in decisions.entries) {
+    final value = _immutableDecisionValue(entry.value);
+    if (value != null) out[entry.key] = value;
+  }
+  return Map<String, Object>.unmodifiable(out);
+}
+
+Object? _immutableDecisionValue(Object? value) {
+  if (value == null) return null;
+  if (value is Map) {
+    final out = <String, Object>{};
+    for (final entry in value.entries) {
+      final key = entry.key;
+      final child = _immutableDecisionValue(entry.value);
+      if (key is String && child != null) out[key] = child;
+    }
+    return Map<String, Object>.unmodifiable(out);
+  }
+  if (value is List) {
+    return List<Object>.unmodifiable(
+      value.map(_immutableDecisionValue).whereType<Object>(),
+    );
+  }
+  return value;
 }
 
 int? _decodePort(Object? raw) {
