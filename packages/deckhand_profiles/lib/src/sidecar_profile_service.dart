@@ -109,10 +109,12 @@ class SidecarProfileService implements ProfileService {
         .whereType<ProfileRegistryEntry>()
         .toList();
     return ProfileRegistry(
-      entries: await Future.wait(
-        _dedupeRegistryEntries(
-          entries,
-        ).map((e) => _withProfileSpecFallback(e, local)),
+      entries: List.unmodifiable(
+        await Future.wait(
+          _dedupeRegistryEntries(
+            entries,
+          ).map((e) => _withProfileSpecFallback(e, local)),
+        ),
       ),
     );
   }

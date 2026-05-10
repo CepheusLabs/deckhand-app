@@ -407,6 +407,7 @@ profiles:
       expect(entry.kinematics, 'CoreXY');
       expect(entry.mcu, 'STM32F407');
       expect(entry.extras, 'ChromaKit');
+      expect(() => registry.entries.add(entry), throwsUnsupportedError);
     });
 
     test(
