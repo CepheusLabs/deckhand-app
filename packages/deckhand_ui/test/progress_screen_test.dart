@@ -642,6 +642,65 @@ void main() {
       expect(find.text('All done'), findsOneWidget);
     });
 
+    testWidgets('extracting with a reported total is determinate', (
+      tester,
+    ) async {
+      final releaseDownload = Completer<void>();
+      final upstream = _HoldingExtractionUpstream(
+        releaseDownload,
+        reportedTotalBytes: 10 * 1024 * 1024,
+      );
+      final controller = stubWizardController(
+        upstream: upstream,
+        profileJson: testProfileJson(
+          os: {
+            'fresh_install_options': [
+              {
+                'id': 'trixie',
+                'display_name': 'Debian',
+                'url': 'https://downloads.example.com/image.img.xz',
+                'sha256':
+                    'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+                'recommended': true,
+              },
+            ],
+          },
+          freshFlashSteps: [
+            {'id': 'download_os', 'kind': 'os_download'},
+          ],
+        ),
+      );
+      await controller.loadProfile('test-printer');
+      controller.setFlow(WizardFlow.freshFlash);
+      await controller.setDecision('flash.os', 'trixie');
+
+      await tester.pumpWidget(
+        testHarness(
+          controller: controller,
+          child: const ProgressScreen(),
+          initialLocation: '/progress',
+        ),
+      );
+      for (var i = 0; i < 10; i++) {
+        await tester.pump(const Duration(milliseconds: 50));
+      }
+
+      expect(find.text('Extracting image'), findsOneWidget);
+      expect(find.text('80.0%'), findsOneWidget);
+      expect(find.textContaining('8.0 MiB / 10.0 MiB'), findsOneWidget);
+
+      final bar = tester.widget<WizardProgressBar>(
+        find.byType(WizardProgressBar),
+      );
+      expect(bar.fraction, 0.8);
+
+      releaseDownload.complete();
+      for (var i = 0; i < 10; i++) {
+        await tester.pump(const Duration(milliseconds: 50));
+      }
+      expect(find.text('All done'), findsOneWidget);
+    });
+
     testWidgets('host approval prompt can approve sequential hosts', (
       tester,
     ) async {
@@ -824,9 +883,13 @@ class _HoldingProgressUpstream implements UpstreamService {
 }
 
 class _HoldingExtractionUpstream implements UpstreamService {
-  _HoldingExtractionUpstream(this.releaseDownload);
+  _HoldingExtractionUpstream(
+    this.releaseDownload, {
+    this.reportedTotalBytes = 0,
+  });
 
   final Completer<void> releaseDownload;
+  final int reportedTotalBytes;
 
   @override
   Stream<OsDownloadProgress> osDownload({
@@ -836,7 +899,7 @@ class _HoldingExtractionUpstream implements UpstreamService {
   }) async* {
     yield OsDownloadProgress(
       bytesDone: 8 * 1024 * 1024,
-      bytesTotal: 0,
+      bytesTotal: reportedTotalBytes,
       phase: OsDownloadPhase.extracting,
       path: destPath,
     );

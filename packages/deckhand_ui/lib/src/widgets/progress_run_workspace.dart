@@ -6,7 +6,6 @@ import 'package:flutter/services.dart';
 import '../i18n/translations.g.dart';
 import '../providers.dart';
 import '../theming/deckhand_tokens.dart';
-import 'deckhand_loading.dart';
 import 'deckhand_panel.dart';
 import 'network_panel.dart';
 import 'wizard_log_view.dart';
@@ -149,6 +148,7 @@ class _StepRail extends StatefulWidget {
 
 class _StepRailState extends State<_StepRail> {
   final _controller = ScrollController();
+  final _rowKeys = <String, GlobalKey>{};
 
   @override
   void initState() {
@@ -174,6 +174,16 @@ class _StepRailState extends State<_StepRail> {
       (step) => widget.statusFor(step) == RunStepStatus.active,
     );
     if (activeIndex < 0) return;
+    final activeStep = widget.steps[activeIndex];
+    final activeContext = _rowKeys[activeStep.id]?.currentContext;
+    if (activeContext != null) {
+      Scrollable.ensureVisible(
+        activeContext,
+        alignment: 0.5,
+        duration: Duration.zero,
+      );
+      return;
+    }
     const rowExtent = 58.0;
     final target = (activeIndex * rowExtent).clamp(
       0.0,
@@ -185,6 +195,8 @@ class _StepRailState extends State<_StepRail> {
 
   @override
   Widget build(BuildContext context) {
+    final stepIds = widget.steps.map((step) => step.id).toSet();
+    _rowKeys.removeWhere((id, _) => !stepIds.contains(id));
     final done = widget.steps
         .where((s) => widget.statusFor(s) == RunStepStatus.done)
         .length;
@@ -211,10 +223,13 @@ class _StepRailState extends State<_StepRail> {
               separatorBuilder: (_, _) => const Divider(height: 1),
               itemBuilder: (context, i) {
                 final step = widget.steps[i];
-                return _StepRow(
-                  step: step,
-                  index: i + 1,
-                  status: widget.statusFor(step),
+                return KeyedSubtree(
+                  key: _rowKeys.putIfAbsent(step.id, GlobalKey.new),
+                  child: _StepRow(
+                    step: step,
+                    index: i + 1,
+                    status: widget.statusFor(step),
+                  ),
                 );
               },
             ),
@@ -322,7 +337,15 @@ class _StepStatusIcon extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (status == RunStepStatus.active) {
-      return DeckhandSpinner(size: 16, strokeWidth: 2, color: color);
+      return SizedBox.square(
+        dimension: 16,
+        child: CircularProgressIndicator(
+          strokeWidth: 2,
+          strokeCap: StrokeCap.round,
+          color: color,
+          backgroundColor: color.withValues(alpha: 0.18),
+        ),
+      );
     }
     final icon = switch (status) {
       RunStepStatus.done => Icons.check,

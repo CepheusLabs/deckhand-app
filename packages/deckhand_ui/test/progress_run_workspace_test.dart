@@ -1,5 +1,4 @@
 import 'package:deckhand_core/deckhand_core.dart';
-import 'package:deckhand_ui/src/widgets/deckhand_loading.dart';
 import 'package:deckhand_ui/src/widgets/progress_run_workspace.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -8,7 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'helpers.dart';
 
 void main() {
-  testWidgets('active step uses Deckhand spinner', (tester) async {
+  testWidgets('active step uses a circular progress indicator', (tester) async {
     final controller = stubWizardController(profileJson: testProfileJson());
     await controller.loadProfile('test-printer');
     await tester.pumpWidget(
@@ -36,7 +35,7 @@ void main() {
       ),
     );
 
-    expect(find.byType(DeckhandSpinner), findsOneWidget);
+    expect(find.byType(CircularProgressIndicator), findsOneWidget);
   });
 
   testWidgets('step rail uses human task names instead of raw ids', (

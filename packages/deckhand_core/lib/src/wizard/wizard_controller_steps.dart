@@ -328,13 +328,17 @@ Future<void> _runOsDownloadImpl(
     } else if (ev.phase == OsDownloadPhase.failed) {
       throw StepExecutionException('os download failed');
     } else if (ev.phase == OsDownloadPhase.extracting) {
+      final doneMiB = (ev.bytesDone / (1 << 20)).toStringAsFixed(1);
+      final totalMiB = ev.bytesTotal > 0
+          ? ' / ${(ev.bytesTotal / (1 << 20)).toStringAsFixed(1)} MiB'
+          : '';
       c._emit(
         StepProgress(
           stepId: stepId,
           percent: ev.bytesTotal > 0 ? ev.fraction : null,
           message:
               'extracting image'
-              '${ev.bytesDone > 0 ? ' (${(ev.bytesDone / (1 << 20)).toStringAsFixed(1)} MiB)' : ''}',
+              '${ev.bytesDone > 0 ? ' ($doneMiB MiB$totalMiB)' : ''}',
         ),
       );
     } else {
