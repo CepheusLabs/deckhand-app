@@ -54,6 +54,32 @@ void main() {
     expect(settings.lastPreflight?['passed'], isFalse);
   });
 
+  testWidgets('SettingsScreen uses a compact tab strip on narrow windows', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(520, 900));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    final settings = _MemorySettings();
+    final controller = stubWizardController(profileJson: testProfileJson());
+    await controller.loadProfile('test-printer');
+
+    await tester.pumpWidget(
+      testHarness(
+        controller: controller,
+        child: const SettingsScreen(),
+        initialLocation: '/settings',
+        extraOverrides: [deckhandSettingsProvider.overrideWithValue(settings)],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('General'), findsOneWidget);
+    expect(find.text('Connections'), findsOneWidget);
+    expect(find.text('Save general settings'), findsOneWidget);
+  });
+
   testWidgets('Preflight cache rolls back when saving fails', (tester) async {
     final settings =
         _MemorySettings(

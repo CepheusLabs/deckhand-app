@@ -311,26 +311,37 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       helperText:
           'Persistent across sessions; written to settings.json. '
           'Changes apply immediately unless the row says otherwise.',
-      body: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _TabRail(
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          final rail = _TabRail(
             current: _currentTab,
             onSelect: (tab) => setState(() => _currentTab = tab),
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Container(
-              padding: const EdgeInsets.all(22),
-              decoration: BoxDecoration(
-                color: tokens.ink1,
-                border: Border.all(color: tokens.line),
-                borderRadius: BorderRadius.circular(DeckhandTokens.r3),
-              ),
-              child: _buildTabBody(context, tokens, settings),
+            horizontal: constraints.maxWidth < 720,
+          );
+          final panel = Container(
+            padding: const EdgeInsets.all(22),
+            decoration: BoxDecoration(
+              color: tokens.ink1,
+              border: Border.all(color: tokens.line),
+              borderRadius: BorderRadius.circular(DeckhandTokens.r3),
             ),
-          ),
-        ],
+            child: _buildTabBody(context, tokens, settings),
+          );
+          if (constraints.maxWidth < 720) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [rail, const SizedBox(height: 16), panel],
+            );
+          }
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              rail,
+              const SizedBox(width: 16),
+              Expanded(child: panel),
+            ],
+          );
+        },
       ),
       primaryAction: WizardAction(
         label: t.common.action_back,
@@ -1048,10 +1059,15 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 /// Left-rail tab list. Pure presentation — `current`/`onSelect`
 /// are wired to the parent state.
 class _TabRail extends StatelessWidget {
-  const _TabRail({required this.current, required this.onSelect});
+  const _TabRail({
+    required this.current,
+    required this.onSelect,
+    this.horizontal = false,
+  });
 
   final _SettingsTab current;
   final void Function(_SettingsTab) onSelect;
+  final bool horizontal;
 
   static const _items = <(_SettingsTab, String, IconData)>[
     (_SettingsTab.general, 'General', Icons.settings_outlined),
@@ -1065,27 +1081,31 @@ class _TabRail extends StatelessWidget {
   Widget build(BuildContext context) {
     final tokens = DeckhandTokens.of(context);
     return Container(
-      width: 200,
+      width: horizontal ? double.infinity : 200,
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
         color: tokens.ink1,
         border: Border.all(color: tokens.line),
         borderRadius: BorderRadius.circular(DeckhandTokens.r3),
       ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          for (final (tab, label, icon) in _items)
-            _TabRailItem(
-              icon: icon,
-              label: label,
-              selected: current == tab,
-              onTap: () => onSelect(tab),
-            ),
-        ],
-      ),
+      child: horizontal
+          ? SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(mainAxisSize: MainAxisSize.min, children: _buttons),
+            )
+          : Column(mainAxisSize: MainAxisSize.min, children: _buttons),
     );
   }
+
+  List<Widget> get _buttons => [
+    for (final (tab, label, icon) in _items)
+      _TabRailItem(
+        icon: icon,
+        label: label,
+        selected: current == tab,
+        onTap: () => onSelect(tab),
+      ),
+  ];
 }
 
 class _TabRailItem extends StatelessWidget {
