@@ -17,12 +17,25 @@ void main() {
   );
 
   test('serializes and matches a completed backup manifest', () {
+    const protectedDisk = DiskInfo(
+      id: 'disk-1',
+      path: r'\\.\PhysicalDrive3',
+      sizeBytes: 4096,
+      bus: 'USB',
+      model: 'Generic STORAGE DEVICE',
+      removable: true,
+      partitions: [],
+      isBoot: true,
+      isSystem: true,
+      isReadOnly: true,
+      isOffline: true,
+    );
     final manifest = EmmcBackupManifest.create(
       profileId: 'phrozen-arco',
       imagePath: r'C:\Deckhand\phrozen-arco.img',
       imageBytes: 4096,
       imageSha256: 'A' * 64,
-      disk: disk,
+      disk: protectedDisk,
       deckhandVersion: 'dev',
     );
 
@@ -31,8 +44,15 @@ void main() {
     expect(parsed.profileId, 'phrozen-arco');
     expect(parsed.imageSha256, 'a' * 64);
     expect(parsed.disk.model, 'Generic STORAGE DEVICE');
-    expect(parsed.matches(profileId: 'phrozen-arco', disk: disk), isTrue);
-    expect(parsed.matches(profileId: 'other', disk: disk), isFalse);
+    expect(parsed.disk.isBoot, isTrue);
+    expect(parsed.disk.isSystem, isTrue);
+    expect(parsed.disk.isReadOnly, isTrue);
+    expect(parsed.disk.isOffline, isTrue);
+    expect(
+      parsed.matches(profileId: 'phrozen-arco', disk: protectedDisk),
+      isTrue,
+    );
+    expect(parsed.matches(profileId: 'other', disk: protectedDisk), isFalse);
     expect(
       parsed.matches(
         profileId: 'phrozen-arco',
@@ -109,6 +129,10 @@ void main() {
         'bus': 'USB',
         'model': 'Generic STORAGE DEVICE',
         'removable': 'true',
+        'is_boot': 'true',
+        'is_system': 'true',
+        'is_read_only': 'true',
+        'is_offline': 'true',
       },
       'deckhand_version': 'dev',
     });
@@ -121,6 +145,10 @@ void main() {
     expect(parsed.imageBytes, 0);
     expect(parsed.disk.sizeBytes, 0);
     expect(parsed.disk.removable, isFalse);
+    expect(parsed.disk.isBoot, isFalse);
+    expect(parsed.disk.isSystem, isFalse);
+    expect(parsed.disk.isReadOnly, isFalse);
+    expect(parsed.disk.isOffline, isFalse);
   });
 
   test('scanner returns only manifests with existing images', () async {

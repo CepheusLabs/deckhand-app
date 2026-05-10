@@ -114,6 +114,10 @@ class EmmcBackupDiskIdentity {
     required this.bus,
     required this.model,
     required this.removable,
+    this.isBoot = false,
+    this.isSystem = false,
+    this.isReadOnly = false,
+    this.isOffline = false,
   });
 
   factory EmmcBackupDiskIdentity.fromDisk(DiskInfo disk) {
@@ -124,6 +128,10 @@ class EmmcBackupDiskIdentity {
       bus: disk.bus,
       model: disk.model,
       removable: disk.removable,
+      isBoot: disk.isBoot,
+      isSystem: disk.isSystem,
+      isReadOnly: disk.isReadOnly,
+      isOffline: disk.isOffline,
     );
   }
 
@@ -135,6 +143,10 @@ class EmmcBackupDiskIdentity {
       bus: _jsonString(json['bus']) ?? '',
       model: _jsonString(json['model']) ?? '',
       removable: _jsonBool(json['removable']),
+      isBoot: _jsonBool(json['is_boot']),
+      isSystem: _jsonBool(json['is_system']),
+      isReadOnly: _jsonBool(json['is_read_only']),
+      isOffline: _jsonBool(json['is_offline']),
     );
   }
 
@@ -144,6 +156,10 @@ class EmmcBackupDiskIdentity {
   final String bus;
   final String model;
   final bool removable;
+  final bool isBoot;
+  final bool isSystem;
+  final bool isReadOnly;
+  final bool isOffline;
 
   Map<String, dynamic> toJson() => {
     'id': id,
@@ -152,6 +168,10 @@ class EmmcBackupDiskIdentity {
     'bus': bus,
     'model': model,
     'removable': removable,
+    'is_boot': isBoot,
+    'is_system': isSystem,
+    'is_read_only': isReadOnly,
+    'is_offline': isOffline,
   };
 
   bool matches(DiskInfo disk) {
