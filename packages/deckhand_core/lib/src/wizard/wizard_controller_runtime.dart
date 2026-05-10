@@ -243,13 +243,8 @@ Future<void> _prepareInterruptedStepForRestart(
     return;
   }
   if (resume == 'continue') {
-    c._emit(
-      StepWarning(
-        stepId: id,
-        message:
-            'Interrupted step requested resume=continue, but checkpointed '
-            'continue is not implemented yet; restarting the step.',
-      ),
+    throw StepExecutionException(
+      'resume=continue is not implemented for interrupted step $id',
     );
   }
 }

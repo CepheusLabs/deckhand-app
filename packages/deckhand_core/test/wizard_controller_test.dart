@@ -3494,6 +3494,64 @@ void main() {
       );
     });
 
+    test('interrupted resume continue fails instead of restarting', () async {
+      final existing =
+          RunState.empty(
+            deckhandVersion: 'unknown',
+            profileId: 'test-printer',
+            profileCommit: 'deadbeef',
+          ).appending(
+            RunStateStep(
+              id: 'cmd',
+              status: RunStateStatus.inProgress,
+              startedAt: DateTime.utc(2026, 5, 6),
+              inputHash: canonicalInputHash({'marker': 'resume-continue'}),
+            ),
+          );
+      final ssh = FakeSsh()
+        ..nextRun = SshCommandResult(
+          stdout: const JsonEncoder().convert(existing.toJson()),
+          stderr: '',
+          exitCode: 0,
+        );
+      final controller = newController(
+        profileJson: baseProfileJson(
+          stockKeepSteps: [
+            {
+              'id': 'cmd',
+              'kind': 'ssh_commands',
+              'commands': ['touch /tmp/should-not-continue'],
+              'idempotency': {
+                'inputs': {'marker': 'resume-continue'},
+                'resume': 'continue',
+              },
+            },
+          ],
+        ),
+        ssh: ssh,
+      );
+      await controller.loadProfile('test-printer');
+      controller.setFlow(WizardFlow.stockKeep);
+      controller.setSession(
+        const SshSession(id: 'fake', host: 'h', port: 22, user: 'root'),
+      );
+
+      await expectLater(
+        controller.startExecution(),
+        throwsA(
+          isA<StepExecutionException>().having(
+            (e) => e.toString(),
+            'message',
+            contains('resume=continue is not implemented'),
+          ),
+        ),
+      );
+      expect(
+        ssh.runCalls.any((c) => c.contains('/tmp/should-not-continue')),
+        isFalse,
+      );
+    });
+
     test('flash_disk consumes confirmation token bound to target', () async {
       final security = FakeSecurity();
       final helper = FakeElevatedHelper();
