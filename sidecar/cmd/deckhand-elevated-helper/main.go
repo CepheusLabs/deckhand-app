@@ -380,10 +380,10 @@ func hashReader(src io.Reader, total int64, cancelFile string) (string, int64, e
 		if operationCanceled(cancelFile) {
 			return "", done, fmt.Errorf("operation canceled by user")
 		}
-		if errors.Is(rerr, io.EOF) {
-			break
-		}
 		if rerr != nil {
+			if isTerminalDeviceReadError(rerr, done, total) {
+				break
+			}
 			return "", done, rerr
 		}
 	}

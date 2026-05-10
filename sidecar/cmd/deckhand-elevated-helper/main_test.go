@@ -418,6 +418,16 @@ func TestHashReaderHashesEveryByte(t *testing.T) {
 	}
 }
 
+func TestHashReaderRejectsEarlyEOF(t *testing.T) {
+	_, gotBytes, err := hashReader(strings.NewReader("short"), 1024, "")
+	if err == nil {
+		t.Fatal("hashReader() error = nil, want early EOF")
+	}
+	if gotBytes != int64(len("short")) {
+		t.Fatalf("hashReader() bytes = %d, want %d", gotBytes, len("short"))
+	}
+}
+
 func TestHelperFlagSetReturnsParseErrors(t *testing.T) {
 	fs := newHelperFlagSet("read-image")
 	fs.String("target", "", "target")
