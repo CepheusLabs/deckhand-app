@@ -1843,7 +1843,7 @@ class _IndexImagePanel extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Unindexed image',
+                  'Verification needed',
                   style: TextStyle(
                     fontFamily: DeckhandTokens.fontSans,
                     fontSize: DeckhandTokens.tSm,

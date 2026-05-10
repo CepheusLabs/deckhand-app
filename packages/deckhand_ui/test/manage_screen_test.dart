@@ -670,12 +670,13 @@ void main() {
     await tester.pump(const Duration(milliseconds: 250));
 
     expect(find.textContaining('deckhand-cli-backup.img'), findsOneWidget);
-    expect(find.textContaining('Unindexed image'), findsWidgets);
+    expect(find.textContaining('Not verified yet'), findsWidgets);
 
     await tester.tap(find.widgetWithText(FilledButton, 'Continue to target'));
     await tester.pump();
     await tester.pump();
     expect(find.textContaining('Generic STORAGE DEVICE'), findsWidgets);
+    expect(find.text('Verification needed'), findsOneWidget);
     final button = tester.widget<FilledButton>(
       find.widgetWithText(FilledButton, 'Review restore'),
     );
