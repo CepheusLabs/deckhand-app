@@ -167,6 +167,54 @@ void main() {
     expect(clipboardWrites, contains('ssh -p 2222 mks@192.168.1.51'));
   });
 
+  testWidgets('status tab refreshes when the managed host changes', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1200, 900));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final controller = stubWizardController(profileJson: testProfileJson());
+    await controller.restore(
+      const WizardState(
+        profileId: 'test-printer',
+        decisions: {},
+        currentStep: 'manage',
+        flow: WizardFlow.none,
+        sshHost: '192.168.1.50',
+        sshPort: 22,
+        sshUser: 'mks',
+      ),
+    );
+    final moonraker = _HostMoonraker();
+
+    Widget buildHarness() => testHarness(
+      controller: controller,
+      child: const ManageScreen(),
+      initialLocation: '/manage',
+      extraOverrides: [moonrakerServiceProvider.overrideWithValue(moonraker)],
+    );
+
+    await tester.pumpWidget(buildHarness());
+    await tester.pumpAndSettle();
+    expect(find.text('printer-192.168.1.50'), findsOneWidget);
+
+    await controller.restore(
+      const WizardState(
+        profileId: 'test-printer',
+        decisions: {},
+        currentStep: 'manage',
+        flow: WizardFlow.none,
+        sshHost: '192.168.1.51',
+        sshPort: 22,
+        sshUser: 'mks',
+      ),
+    );
+    await tester.pumpWidget(buildHarness());
+    await tester.pumpAndSettle();
+
+    expect(find.text('printer-192.168.1.51'), findsOneWidget);
+    expect(find.text('printer-192.168.1.50'), findsNothing);
+  });
+
   testWidgets('backup tab uses a direct eMMC backup action label', (
     tester,
   ) async {
@@ -1102,6 +1150,48 @@ void main() {
     expect(message, contains('Windows would not release the selected disk'));
     expect(message, isNot(contains(r'\\?\Volume')));
   });
+}
+
+class _HostMoonraker implements MoonrakerService {
+  @override
+  Future<KlippyInfo> info({required String host, int port = 7125}) async =>
+      KlippyInfo(
+        state: 'ready',
+        hostname: 'printer-$host',
+        softwareVersion: '',
+        klippyState: 'ready',
+      );
+
+  @override
+  Future<bool> isPrinting({required String host, int port = 7125}) async =>
+      false;
+
+  @override
+  Future<Map<String, dynamic>> queryObjects({
+    required String host,
+    int port = 7125,
+    required List<String> objects,
+  }) async => const {};
+
+  @override
+  Future<void> runGCode({
+    required String host,
+    int port = 7125,
+    required String script,
+  }) async {}
+
+  @override
+  Future<List<String>> listObjects({
+    required String host,
+    int port = 7125,
+  }) async => const [];
+
+  @override
+  Future<String?> fetchConfigFile({
+    required String host,
+    int port = 7125,
+    required String filename,
+  }) async => null;
 }
 
 class _RestoreFlash implements FlashService {

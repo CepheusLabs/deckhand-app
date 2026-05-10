@@ -274,19 +274,32 @@ class _StatusTabState extends ConsumerState<_StatusTab> {
   @override
   void initState() {
     super.initState();
-    _refresh();
+    _snapshot = _snapshotForCurrentHost();
+  }
+
+  @override
+  void didUpdateWidget(covariant _StatusTab oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.state.sshHost != widget.state.sshHost ||
+        oldWidget.profile?.id != widget.profile?.id) {
+      _refresh();
+    }
   }
 
   void _refresh() {
+    final next = _snapshotForCurrentHost();
+    setState(() {
+      _snapshot = next;
+    });
+  }
+
+  Future<_StatusSnapshot> _snapshotForCurrentHost() {
     final host = widget.state.sshHost;
     if (host == null || host.isEmpty) {
-      _snapshot = Future.value(const _StatusSnapshot.disconnected());
-      return;
+      return Future.value(const _StatusSnapshot.disconnected());
     }
     final moonraker = ref.read(moonrakerServiceProvider);
-    setState(() {
-      _snapshot = _query(moonraker, host);
-    });
+    return _query(moonraker, host);
   }
 
   Future<_StatusSnapshot> _query(
