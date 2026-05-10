@@ -4,7 +4,7 @@ go 1.22
 
 require (
 	github.com/go-git/go-git/v5 v5.13.1
-	github.com/ulikunitz/xz v0.5.14
+	github.com/ulikunitz/xz v0.5.15
 	golang.org/x/sys v0.28.0
 )
 
