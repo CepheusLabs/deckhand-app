@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 
 import '../providers.dart';
 import '../theming/deckhand_tokens.dart';
+import '../utils/managed_printer_actions.dart';
 import '../utils/user_facing_errors.dart';
 import '../widgets/deckhand_loading.dart';
 import '../widgets/id_tag.dart';
@@ -337,40 +338,10 @@ class _ManagedPrintersPanelState extends ConsumerState<_ManagedPrintersPanel> {
     if (_busyId != null) return;
     setState(() => _busyId = printer.id);
     try {
-      await ref
-          .read(wizardControllerProvider)
-          .restore(
-            WizardState(
-              profileId: printer.profileId,
-              decisions: const {},
-              currentStep: 'manage',
-              flow: WizardFlow.none,
-              sshHost: printer.host,
-              sshPort: printer.port,
-              sshUser: printer.user,
-            ),
-          );
-      if (!mounted) return;
-      context.go('/manage');
-    } on ResumeFailedException catch (e) {
-      if (!mounted) return;
-      await showDialog<void>(
+      await openManagedPrinterForManagement(
         context: context,
-        builder: (ctx) => AlertDialog(
-          icon: const Icon(Icons.error_outline),
-          title: const Text("Couldn't open this printer"),
-          content: Text(
-            'Deckhand found "${printer.displayName}", but the profile '
-            '"${printer.profileId}" could not be loaded:\n\n'
-            '${userFacingError(e.cause)}',
-          ),
-          actions: [
-            FilledButton(
-              onPressed: () => Navigator.of(ctx).pop(),
-              child: const Text('OK'),
-            ),
-          ],
-        ),
+        ref: ref,
+        printer: printer,
       );
     } finally {
       if (mounted) setState(() => _busyId = null);
@@ -379,23 +350,12 @@ class _ManagedPrintersPanelState extends ConsumerState<_ManagedPrintersPanel> {
 
   Future<void> _forget(ManagedPrinter printer) async {
     if (_busyId == printer.id) return;
-    final registry = ref.read(managedPrinterRegistryProvider);
-    registry.forgetManagedPrinter(printer.id);
-    setState(() {});
-    try {
-      await registry.save();
-    } catch (error) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            "Deckhand couldn't save that change. The printer is removed "
-            'for this session, but may return after restart: '
-            '${userFacingError(error)}',
-          ),
-        ),
-      );
-    }
+    await forgetManagedPrinterWithWarning(
+      context: context,
+      ref: ref,
+      printer: printer,
+      onForgot: () => setState(() {}),
+    );
   }
 
   @override
