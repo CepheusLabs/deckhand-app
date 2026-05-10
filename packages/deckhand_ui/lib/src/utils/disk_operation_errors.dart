@@ -64,8 +64,15 @@ String hideRawDiskIds(String message) {
 String _stripExceptionPrefixes(String message) {
   var remaining = message.trim();
   var changed = true;
+  final sidecarPrefix = RegExp(r'^SidecarError\(-?\d+\):\s*');
   while (changed) {
     changed = false;
+    final sidecar = sidecarPrefix.firstMatch(remaining);
+    if (sidecar != null) {
+      remaining = remaining.substring(sidecar.end).trim();
+      changed = true;
+      continue;
+    }
     for (final prefix in const [
       'Exception: ',
       'StateError: ',

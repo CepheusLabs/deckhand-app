@@ -70,6 +70,12 @@ void main() {
         ),
         'invalid managed printer port',
       );
+      expect(
+        userFacingDiskOperationError(
+          'SidecarError(-32603): Get-Disk failed: exit status 1',
+        ),
+        'Get-Disk failed: exit status 1',
+      );
     });
   });
 }
