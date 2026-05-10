@@ -109,6 +109,24 @@ void main() {
     expect(messages, contains('OS image'));
   });
 
+  test('notes incomplete picker hardware metadata', () async {
+    _writeRegistry(tmp, ['sparse-card']);
+    _writeProfile(tmp, 'sparse-card', _minimalValidProfile('sparse-card'));
+
+    final report = await runProfileLint(['--root', tmp.path]);
+
+    expect(report.hasErrors, isFalse);
+    final findings = report.results.expand((r) => r.findings).toList();
+    expect(
+      findings.any(
+        (f) =>
+            f.severity == LintSeverity.info &&
+            f.message.contains('printer picker hardware metadata'),
+      ),
+      isTrue,
+    );
+  });
+
   test('flags snapshot paths that look like tar options', () async {
     _writeRegistry(tmp, ['tar-option-path']);
     final profile =

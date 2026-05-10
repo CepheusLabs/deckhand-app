@@ -316,6 +316,8 @@ Future<LintReport> runProfileLint(List<String> argv) async {
       );
     }
 
+    _noteIncompletePickerMetadata(parsed, findings);
+
     // URL safety: every url field must be https, every sha256 must be a
     // 64-char hex. We walk generically because the schema nests urls
     // under many shapes (firmware_variants, stack components, etc).
@@ -822,6 +824,26 @@ bool _isSafeHttpsDownloadUrl(String value) {
       uri.userInfo.isEmpty &&
       !uri.hasQuery &&
       !uri.hasFragment;
+}
+
+void _noteIncompletePickerMetadata(
+  Map<String, dynamic> parsed,
+  List<LintFinding> out,
+) {
+  final missing = <String>[];
+  if (_deriveSbc(parsed) == null) missing.add('hardware.sbc.soc');
+  if (_deriveKinematics(parsed) == null) missing.add('hardware.kinematics');
+  if (_deriveMcu(parsed) == null) missing.add('mcus[].chip');
+  if (missing.isEmpty) return;
+
+  out.add(
+    LintFinding(
+      LintSeverity.info,
+      'hardware',
+      'printer picker hardware metadata is incomplete (${missing.join(', ')}); '
+          'the picker card will fall back to model/status/profile fields',
+    ),
+  );
 }
 
 Object? _toPlain(Object? node) {
