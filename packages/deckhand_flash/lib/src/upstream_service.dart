@@ -518,8 +518,12 @@ class SidecarUpstreamService implements UpstreamService {
         'download manifest path must be a regular file: ${manifest.path}',
       );
     }
-    final body = jsonDecode(await manifest.readAsString());
-    final decoded = _stringKeyMap(body);
+    final Map<String, dynamic>? decoded;
+    try {
+      decoded = _stringKeyMap(jsonDecode(await manifest.readAsString()));
+    } catch (_) {
+      return null;
+    }
     if (decoded == null) return null;
     if (decoded['url'] != url ||
         decoded['path'] != destPath ||

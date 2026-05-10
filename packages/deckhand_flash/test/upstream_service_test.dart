@@ -762,6 +762,41 @@ void main() {
       expect(security.checkedHosts, ['example.com']);
     });
 
+    test('clears corrupt xz image manifests instead of crashing', () async {
+      final dest = _managedOsImageDest('corrupt-xz-manifest.img');
+      addTearDown(() async {
+        await _deleteIfExists(dest);
+        await _deleteIfExists('$dest.deckhand-download.json');
+      });
+      await Directory(p.dirname(dest)).create(recursive: true);
+      await File(dest).writeAsString('raw image bytes');
+      await File('$dest.deckhand-download.json').writeAsString('{not-json');
+      final imageSha =
+          'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+      final sidecar = _FakeSidecar(
+        hash: imageSha,
+        streamEvents: [
+          SidecarResult({'sha256': imageSha, 'path': dest, 'reused': false}),
+        ],
+      );
+      final security = _AllowAllSecurity();
+      final svc = SidecarUpstreamService(sidecar: sidecar, security: security);
+
+      final events = await svc
+          .osDownload(
+            url: 'https://example.com/image.img.xz',
+            destPath: dest,
+            expectedSha256:
+                'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+          )
+          .toList();
+
+      expect(events.single.sha256, imageSha);
+      expect(events.single.reused, isFalse);
+      expect(sidecar.streamingCalls, hasLength(1));
+      expect(security.checkedHosts, ['example.com']);
+    });
+
     test('records completed downloads in the image manifest', () async {
       final dest = _managedOsImageDest('downloaded-image.img');
       addTearDown(() async {
