@@ -24,7 +24,7 @@ class WelcomeScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // Gate the primary action on the boot-time preflight result.
+    // Gate the new-install panel on the boot-time preflight result.
     // While the future is pending we disable Start so a user can't
     // race past the checks; once it resolves (pass *or* fail) Start
     // re-enables — the design's "loud-but-non-blocking" stance for
@@ -32,7 +32,6 @@ class WelcomeScreen extends ConsumerWidget {
     // in is just bad affordance.
     final preflight = ref.watch(preflightReportProvider);
     final ready = !preflight.isLoading;
-    final primaryLabel = preflight.isLoading ? 'Checking preflight…' : 'Start';
 
     final tokens = DeckhandTokens.of(context);
     final saved = ref.watch(savedWizardSnapshotProvider).value;
@@ -59,10 +58,6 @@ class WelcomeScreen extends ConsumerWidget {
           const SizedBox(height: 18),
           const PreflightStrip(),
         ],
-      ),
-      primaryAction: WizardAction(
-        label: primaryLabel,
-        onPressed: ready ? () => context.go('/pick-printer') : null,
       ),
     );
   }

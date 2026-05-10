@@ -40,9 +40,10 @@ void main() {
         findsOneWidget,
       );
 
-      // The bottom-of-screen Start affordance still wires to the
-      // same destination so keyboard/Enter advances the wizard.
-      expect(find.text('Start'), findsOneWidget);
+      // The welcome screen keeps action choices inside the panels;
+      // a duplicate footer Start button made the entry point look
+      // like two competing flows.
+      expect(find.text('Start'), findsNothing);
 
       // Without a saved snapshot the RESUME panel must NOT render.
       expect(find.text('RESUME'), findsNothing);
