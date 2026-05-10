@@ -528,6 +528,85 @@ void main() {
     expect(find.widgetWithText(OutlinedButton, 'Refresh backups'), findsOne);
   });
 
+  testWidgets('direct eMMC restore reports legacy backup organization', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1400, 1000));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    const disk = DiskInfo(
+      id: 'PhysicalDrive3',
+      path: r'\\.\PHYSICALDRIVE3',
+      sizeBytes: 8 * 1024 * 1024,
+      bus: 'USB',
+      model: 'Generic STORAGE DEVICE',
+      removable: true,
+      partitions: [],
+    );
+    const sha =
+        'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+    final manifest = EmmcBackupManifest.create(
+      profileId: 'phrozen-arco',
+      imagePath: r'C:\Deckhand\emmc-backups\phrozen-arco\backup\emmc.img',
+      imageBytes: disk.sizeBytes,
+      imageSha256: sha,
+      disk: disk,
+      deckhandVersion: 'test',
+    );
+    const organization = EmmcBackupOrganizeResult(
+      moves: [
+        EmmcBackupOrganizedMove(
+          fromImagePath: r'C:\Deckhand\emmc-backups\legacy-a.img',
+          toImagePath: r'C:\Deckhand\emmc-backups\phrozen-arco\a\emmc.img',
+          toManifestPath: null,
+        ),
+        EmmcBackupOrganizedMove(
+          fromImagePath: r'C:\Deckhand\emmc-backups\legacy-b.img',
+          toImagePath: r'C:\Deckhand\emmc-backups\phrozen-arco\b\emmc.img',
+          toManifestPath: null,
+        ),
+      ],
+      failures: [
+        EmmcBackupOrganizeFailure(
+          imagePath: r'C:\Deckhand\emmc-backups\locked.img',
+          message: 'access denied',
+        ),
+      ],
+    );
+
+    final controller = stubWizardController(profileJson: testProfileJson());
+    await controller.loadProfile('test-printer');
+
+    await tester.pumpWidget(
+      testHarness(
+        controller: controller,
+        child: const EmmcRestoreScreen(),
+        initialLocation: '/emmc-restore',
+        extraOverrides: [
+          emmcBackupOrganizationProvider.overrideWith(
+            (ref) async => organization,
+          ),
+          emmcBackupManifestsProvider.overrideWith((ref) async => [manifest]),
+          emmcBackupImageCandidatesProvider.overrideWith(
+            (ref) async => const [],
+          ),
+          flashServiceProvider.overrideWithValue(
+            _RestoreFlash(disks: [disk], sha256Value: sha),
+          ),
+        ],
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+
+    expect(find.textContaining('Organized 2 legacy backups'), findsOneWidget);
+    expect(
+      find.textContaining('1 backup could not be organized'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('locked.img'), findsOneWidget);
+  });
+
   testWidgets('direct eMMC restore sanitizes disk scan failures', (
     tester,
   ) async {

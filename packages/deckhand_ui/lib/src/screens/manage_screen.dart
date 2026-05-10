@@ -724,6 +724,7 @@ class _RestoreTabState extends ConsumerState<_RestoreTab> {
   Widget build(BuildContext context) {
     final manifestsAsync = ref.watch(emmcBackupManifestsProvider);
     final candidatesAsync = ref.watch(emmcBackupImageCandidatesProvider);
+    final organizationAsync = ref.watch(emmcBackupOrganizationProvider);
     final disksAsync = ref.watch(disksProvider);
     final backupDir = ref.watch(emmcBackupsDirProvider);
     final controller = ref.watch(wizardControllerProvider);
@@ -836,6 +837,10 @@ class _RestoreTabState extends ConsumerState<_RestoreTab> {
             images: images,
             selected: image,
             preferredProfileId: preferredProfileId,
+            organization: organizationAsync.valueOrNull,
+            organizationError: organizationAsync.hasError
+                ? organizationAsync.error
+                : null,
           ),
         ],
       );
@@ -905,6 +910,10 @@ class _RestoreTabState extends ConsumerState<_RestoreTab> {
             images: images,
             selected: image,
             preferredProfileId: preferredProfileId,
+            organization: organizationAsync.valueOrNull,
+            organizationError: organizationAsync.hasError
+                ? organizationAsync.error
+                : null,
           ),
           _RestoreStep.target => _buildTargetStep(
             context: context,
@@ -929,6 +938,8 @@ class _RestoreTabState extends ConsumerState<_RestoreTab> {
     required List<_RestoreImage> images,
     required _RestoreImage? selected,
     required String? preferredProfileId,
+    required EmmcBackupOrganizeResult? organization,
+    required Object? organizationError,
   }) {
     final tokens = DeckhandTokens.of(context);
     final grouped = _groupRestoreImagesByProfile(
@@ -961,6 +972,21 @@ class _RestoreTabState extends ConsumerState<_RestoreTab> {
               height: 1.5,
             ),
           ),
+          if (organizationError != null) ...[
+            const SizedBox(height: 12),
+            _RestoreOrganizationNotice(
+              severity: _RestoreNoticeSeverity.warning,
+              title: 'Backup folder cleanup did not finish',
+              message:
+                  'Restore can continue with readable images, but Deckhand '
+                  'could not finish organizing the backup folder.',
+              detail: userFacingError(organizationError),
+            ),
+          ] else if (_restoreOrganizationMessage(organization)
+              case final notice?) ...[
+            const SizedBox(height: 12),
+            notice,
+          ],
           const SizedBox(height: 18),
           for (final group in grouped) ...[
             _SectionHeader(
@@ -1558,6 +1584,133 @@ class _RestoreProblem extends StatelessWidget {
               ),
             ),
           ],
+        ],
+      ),
+    );
+  }
+}
+
+enum _RestoreNoticeSeverity { info, warning }
+
+Widget? _restoreOrganizationMessage(EmmcBackupOrganizeResult? result) {
+  if (result == null || (result.moves.isEmpty && result.failures.isEmpty)) {
+    return null;
+  }
+  final moved = result.moves.length;
+  final failed = result.failures.length;
+  final parts = <String>[
+    if (moved > 0)
+      'Organized $moved legacy backup${moved == 1 ? '' : 's'} into profile folders.',
+    if (failed > 0)
+      '$failed backup${failed == 1 ? '' : 's'} could not be organized.',
+  ];
+  return _RestoreOrganizationNotice(
+    severity: failed > 0
+        ? _RestoreNoticeSeverity.warning
+        : _RestoreNoticeSeverity.info,
+    title: failed > 0
+        ? 'Backup folder needs attention'
+        : 'Backup folder organized',
+    message: parts.join(' '),
+    detail: failed == 0
+        ? null
+        : _restoreOrganizationFailureDetail(result.failures),
+  );
+}
+
+String _restoreOrganizationFailureDetail(
+  List<EmmcBackupOrganizeFailure> failures,
+) {
+  final first = failures.first;
+  final fileName = _restorePathBasename(first.imagePath);
+  final suffix = failures.length > 1
+      ? ' (${failures.length - 1} more not shown)'
+      : '';
+  return '$fileName: ${first.message}$suffix';
+}
+
+String _restorePathBasename(String path) {
+  final normalized = path.replaceAll('\\', '/');
+  final slash = normalized.lastIndexOf('/');
+  return slash < 0 ? normalized : normalized.substring(slash + 1);
+}
+
+class _RestoreOrganizationNotice extends StatelessWidget {
+  const _RestoreOrganizationNotice({
+    required this.severity,
+    required this.title,
+    required this.message,
+    this.detail,
+  });
+
+  final _RestoreNoticeSeverity severity;
+  final String title;
+  final String message;
+  final String? detail;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = DeckhandTokens.of(context);
+    final color = switch (severity) {
+      _RestoreNoticeSeverity.info => tokens.ok,
+      _RestoreNoticeSeverity.warning => tokens.warn,
+    };
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.07),
+        border: Border.all(color: color.withValues(alpha: 0.35)),
+        borderRadius: BorderRadius.circular(DeckhandTokens.r2),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            severity == _RestoreNoticeSeverity.info
+                ? Icons.drive_file_move_outline
+                : Icons.warning_amber_outlined,
+            size: 18,
+            color: color,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: TextStyle(
+                    fontFamily: DeckhandTokens.fontSans,
+                    fontSize: DeckhandTokens.tSm,
+                    fontWeight: FontWeight.w600,
+                    color: tokens.text,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  message,
+                  style: TextStyle(
+                    fontFamily: DeckhandTokens.fontSans,
+                    fontSize: DeckhandTokens.tXs,
+                    color: tokens.text2,
+                    height: 1.45,
+                  ),
+                ),
+                if (detail != null) ...[
+                  const SizedBox(height: 5),
+                  Text(
+                    detail!,
+                    style: TextStyle(
+                      fontFamily: DeckhandTokens.fontMono,
+                      fontSize: DeckhandTokens.tXs,
+                      color: tokens.text3,
+                      height: 1.35,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
         ],
       ),
     );
