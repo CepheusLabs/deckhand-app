@@ -64,7 +64,11 @@ void main() {
 
       expect(res.assetName, 'fluidd.zip');
       expect(await File(res.localPath).readAsString(), 'asset-bytes');
-      expect(sidecar.hashPaths, [p.join(tmp.path, 'fluidd.zip')]);
+      expect(sidecar.hashPaths, [p.join(tmp.path, 'fluidd.zip.download')]);
+      expect(
+        File(p.join(tmp.path, 'fluidd.zip.download')).existsSync(),
+        isFalse,
+      );
     });
 
     test('deletes and rejects release assets with mismatched sha256', () async {
@@ -94,6 +98,38 @@ void main() {
         throwsA(isA<UpstreamException>()),
       );
       expect(File(p.join(tmp.path, 'fluidd.zip')).existsSync(), isFalse);
+      expect(
+        File(p.join(tmp.path, 'fluidd.zip.download')).existsSync(),
+        isFalse,
+      );
+    });
+
+    test('clears stale release asset temp files before downloading', () async {
+      final tmp = await Directory.systemTemp.createTemp('deckhand-upstream-');
+      addTearDown(() async => tmp.delete(recursive: true));
+
+      final temp = File(p.join(tmp.path, 'fluidd.zip.download'));
+      await temp.writeAsString('interrupted previous download');
+      final expected =
+          'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+      final sidecar = _FakeSidecar(hash: expected);
+      final dio = Dio()..httpClientAdapter = _FakeGitHubAdapter();
+      final svc = SidecarUpstreamService(
+        sidecar: sidecar,
+        security: _AllowAllSecurity(),
+        dio: dio,
+      );
+
+      final res = await svc.releaseFetch(
+        repoSlug: 'fluidd-core/fluidd',
+        assetPattern: 'fluidd.zip',
+        destPath: tmp.path,
+        expectedSha256: expected,
+      );
+
+      expect(await File(res.localPath).readAsString(), 'asset-bytes');
+      expect(temp.existsSync(), isFalse);
+      expect(sidecar.hashPaths, [temp.path]);
     });
 
     test('rejects invalid sidecar hash responses', () async {

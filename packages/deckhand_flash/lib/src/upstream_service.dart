@@ -116,8 +116,17 @@ class SidecarUpstreamService implements UpstreamService {
     _validateReleaseAssetName(assetName);
 
     final outPath = p.join(destPath, assetName);
+    final tempPath = '$outPath.download';
     await Directory(destPath).create(recursive: true);
-    if (await File(outPath).exists()) {
+    await _deleteRegularFileIfPresent(tempPath, 'release asset temp path');
+    final outType = await FileSystemEntity.type(outPath, followLinks: false);
+    if (outType == FileSystemEntityType.link ||
+        outType == FileSystemEntityType.directory) {
+      throw UpstreamException(
+        'release asset path must be a regular file: $outPath',
+      );
+    }
+    if (outType == FileSystemEntityType.file) {
       final existingSha = await _hashFile(outPath);
       if (existingSha == normalizedExpected) {
         return UpstreamFetchResult(
@@ -126,21 +135,30 @@ class SidecarUpstreamService implements UpstreamService {
           assetName: assetName,
         );
       }
-      await File(outPath).delete();
+      await _deleteRegularFileIfPresent(outPath, 'release asset path');
     }
-    await _downloadApproved(dlUrl, outPath);
-    final actualSha = await _hashFile(outPath);
-    if (actualSha != normalizedExpected) {
-      try {
-        await File(outPath).delete();
-      } on FileSystemException {
-        // Best-effort cleanup; the important behavior is that the
-        // unverified file is not returned to the install flow.
+    var promoted = false;
+    try {
+      await _downloadApproved(dlUrl, tempPath);
+      final actualSha = await _hashFile(tempPath);
+      if (actualSha != normalizedExpected) {
+        throw UpstreamException(
+          'sha256 mismatch for $assetName: expected '
+          '$normalizedExpected, got $actualSha',
+        );
       }
-      throw UpstreamException(
-        'sha256 mismatch for $assetName: expected '
-        '$normalizedExpected, got $actualSha',
-      );
+      try {
+        await File(tempPath).rename(outPath);
+      } on FileSystemException {
+        await _deleteRegularFileIfPresent(outPath, 'release asset path');
+        await File(tempPath).rename(outPath);
+      }
+      promoted = true;
+    } catch (_) {
+      if (!promoted) {
+        await _deleteRegularFileBestEffort(tempPath);
+      }
+      rethrow;
     }
 
     return UpstreamFetchResult(
@@ -198,6 +216,28 @@ class SidecarUpstreamService implements UpstreamService {
       current = _resolveRedirect(current, res.headers);
     }
     throw UpstreamException('too many redirects while downloading $url');
+  }
+
+  Future<void> _deleteRegularFileIfPresent(String path, String label) async {
+    final type = await FileSystemEntity.type(path, followLinks: false);
+    if (type == FileSystemEntityType.notFound) return;
+    if (type != FileSystemEntityType.file) {
+      throw UpstreamException('$label must be a regular file: $path');
+    }
+    await File(path).delete();
+  }
+
+  Future<void> _deleteRegularFileBestEffort(String path) async {
+    try {
+      final type = await FileSystemEntity.type(path, followLinks: false);
+      if (type == FileSystemEntityType.file) {
+        await File(path).delete();
+      }
+    } on FileSystemException {
+      // The original download/hash/rename failure is more useful than
+      // a cleanup failure. Symlinks and directories are intentionally
+      // left untouched here.
+    }
   }
 
   Uri _resolveRedirect(Uri current, Headers headers) {
