@@ -587,8 +587,8 @@ class TranslationsReviewEn {
 	/// en: 'Review your choices'
 	String get title => 'Review your choices';
 
-	/// en: 'Every decision you made is listed below, plus every file Deckhand is about to touch on the printer. Deckhand auto-snapshots each target before overwriting (you can restore from the Verify screen), but it is cheaper to catch a mistake now. '
-	String get helper => 'Every decision you made is listed below, plus every file Deckhand\nis about to touch on the printer. Deckhand auto-snapshots each\ntarget before overwriting (you can restore from the Verify\nscreen), but it is cheaper to catch a mistake now.\n';
+	/// en: 'Every decision you made is listed below, plus every file Deckhand is about to touch on the printer. Deckhand auto-snapshots each target before overwriting; use Manage after install to review or restore those backups. It is cheaper to catch a mistake now. '
+	String get helper => 'Every decision you made is listed below, plus every file Deckhand\nis about to touch on the printer. Deckhand auto-snapshots each\ntarget before overwriting; use Manage after install to review\nor restore those backups. It is cheaper to catch a mistake now.\n';
 
 	/// en: 'Setup path: $flow'
 	String flow_line({required Object flow}) => 'Setup path: ${flow}';
@@ -1203,7 +1203,7 @@ extension on Translations {
 			'first_boot.title' => 'Put the eMMC back in the printer',
 			'first_boot_setup.title' => 'First boot setup',
 			'review.title' => 'Review your choices',
-			'review.helper' => 'Every decision you made is listed below, plus every file Deckhand\nis about to touch on the printer. Deckhand auto-snapshots each\ntarget before overwriting (you can restore from the Verify\nscreen), but it is cheaper to catch a mistake now.\n',
+			'review.helper' => 'Every decision you made is listed below, plus every file Deckhand\nis about to touch on the printer. Deckhand auto-snapshots each\ntarget before overwriting; use Manage after install to review\nor restore those backups. It is cheaper to catch a mistake now.\n',
 			'review.flow_line' => ({required Object flow}) => 'Setup path: ${flow}',
 			'review.printer_line' => ({required Object printer}) => 'Printer: ${printer}',
 			'review.host_line' => ({required Object host}) => 'SSH host: ${host}',

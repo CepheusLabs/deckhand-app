@@ -259,8 +259,8 @@ review:
   helper: |
     Every decision you made is listed below, plus every file Deckhand
     is about to touch on the printer. Deckhand auto-snapshots each
-    target before overwriting (you can restore from the Verify
-    screen), but it is cheaper to catch a mistake now.
+    target before overwriting; use Manage after install to review
+    or restore those backups. It is cheaper to catch a mistake now.
   flow_line: "Setup path: $flow"
   printer_line: "Printer: $printer"
   host_line: "SSH host: $host"
