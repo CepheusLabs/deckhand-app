@@ -150,4 +150,16 @@ void main() {
 
     expect(s.lastPreflight, {'passed': true, 'report': '[PASS] cached'});
   });
+
+  test('lastPreflight returns and stores defensive snapshots', () {
+    final s = DeckhandSettings(path: '<memory>');
+    final report = <String, dynamic>{'passed': true};
+
+    s.lastPreflight = report;
+    report['passed'] = false;
+
+    expect(s.lastPreflight, {'passed': true});
+    expect(() => s.lastPreflight!['passed'] = false, throwsUnsupportedError);
+    expect(s.lastPreflight, {'passed': true});
+  });
 }

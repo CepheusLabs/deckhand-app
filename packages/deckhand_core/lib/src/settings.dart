@@ -391,7 +391,7 @@ class DeckhandSettings {
         final key = entry.key;
         if (key is String) out[key] = entry.value;
       }
-      return out.isEmpty ? null : out;
+      return out.isEmpty ? null : Map.unmodifiable(out);
     }
     return null;
   }
@@ -400,7 +400,7 @@ class DeckhandSettings {
     if (v == null) {
       _values.remove('last_preflight');
     } else {
-      _values['last_preflight'] = v;
+      _values['last_preflight'] = Map<String, dynamic>.of(v);
     }
   }
 
