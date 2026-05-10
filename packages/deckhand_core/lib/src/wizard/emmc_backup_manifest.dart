@@ -272,7 +272,7 @@ List<EmmcBackupCatalogEntry> buildEmmcBackupCatalog({
   final entries = <EmmcBackupCatalogEntry>[];
 
   for (final manifest in manifests) {
-    final keyPath = manifest.imagePath.toLowerCase();
+    final keyPath = _pathKey(manifest.imagePath);
     if (!manifestPaths.add(keyPath)) continue;
     final hash = manifest.imageSha256.trim().toLowerCase();
     final entry = EmmcBackupCatalogEntry(
@@ -313,7 +313,7 @@ List<EmmcBackupCatalogEntry> buildEmmcBackupCatalog({
 
   entries.addAll(entriesByHash.values);
   for (final candidate in candidates) {
-    if (manifestPaths.contains(candidate.imagePath.toLowerCase())) continue;
+    if (manifestPaths.contains(_pathKey(candidate.imagePath))) continue;
     entries.add(
       EmmcBackupCatalogEntry(
         imagePath: candidate.imagePath,
@@ -677,6 +677,11 @@ p.Context _pathContextForRoot(String rootDir) {
   }
   if (trimmed.startsWith('/')) return p.posix;
   return p.context;
+}
+
+String _pathKey(String path) {
+  final context = _pathContextForRoot(path);
+  return context.normalize(path).toLowerCase();
 }
 
 Future<EmmcBackupManifest?> _readManifest(File file) async {

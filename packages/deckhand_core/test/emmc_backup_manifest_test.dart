@@ -536,6 +536,33 @@ void main() {
     expect(catalog.single.indexed, isTrue);
   });
 
+  test('catalog skips candidates that match manifest paths by normalized path', () {
+    final manifest = EmmcBackupManifest.create(
+      profileId: 'phrozen-arco',
+      imagePath: r'C:\Deckhand\emmc-backups\phrozen-arco\full\emmc.img',
+      imageBytes: 4096,
+      imageSha256: 'f' * 64,
+      disk: disk,
+      deckhandVersion: 'dev',
+      createdAt: DateTime.utc(2026, 5, 4, 12),
+    );
+    final candidate = EmmcBackupImageCandidate(
+      imagePath: 'c:/Deckhand/emmc-backups/phrozen-arco/full/emmc.img',
+      imageBytes: 4096,
+      modifiedAt: DateTime.utc(2026, 5, 4, 13),
+      inferredProfileId: 'phrozen-arco',
+    );
+
+    final catalog = buildEmmcBackupCatalog(
+      manifests: [manifest],
+      candidates: [candidate],
+    );
+
+    expect(catalog, hasLength(1));
+    expect(catalog.single.indexed, isTrue);
+    expect(catalog.single.imagePath, manifest.imagePath);
+  });
+
   test('catalog keeps unindexed candidates and labels partial images', () {
     final full = EmmcBackupImageCandidate(
       imagePath: r'C:\Deckhand\phrozen-arco\full\emmc.img',
