@@ -193,7 +193,7 @@ void main() {
       ),
     );
 
-    await tester.tap(find.text('Network'));
+    await tester.tap(find.text('HTTP'));
     await tester.pumpAndSettle();
 
     expect(find.text('example.com'), findsOneWidget);
@@ -226,7 +226,7 @@ void main() {
     );
 
     expect(find.text('Log'), findsOneWidget);
-    expect(find.text('Network'), findsNothing);
+    expect(find.text('HTTP'), findsNothing);
     expect(find.textContaining('No host-side outbound HTTP'), findsNothing);
   });
 
@@ -257,8 +257,8 @@ void main() {
       ),
     );
 
-    expect(find.text('Network'), findsOneWidget);
-    await tester.tap(find.text('Network'));
+    expect(find.text('HTTP'), findsOneWidget);
+    await tester.tap(find.text('HTTP'));
     await tester.pumpAndSettle();
     expect(find.textContaining('No host-side outbound HTTP'), findsOneWidget);
   });
@@ -292,7 +292,7 @@ void main() {
 
     expect(tester.takeException(), isNull);
     expect(find.text('Log'), findsOneWidget);
-    expect(find.text('Network'), findsOneWidget);
+    expect(find.text('HTTP'), findsOneWidget);
     expect(find.byTooltip('Copy log'), findsOneWidget);
   });
 
