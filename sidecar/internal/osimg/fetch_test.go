@@ -320,6 +320,53 @@ func TestDownloadReportsXZExtractionProgressWithUncompressedTotal(t *testing.T) 
 	}
 }
 
+func TestDownloadReportsXZExtractionProgressWhenIndexProbeFails(t *testing.T) {
+	oldProbe := probeXZUncompressedSize
+	probeXZUncompressedSize = func(string) (int64, bool, error) {
+		return 0, false, errors.New("unsupported xz index")
+	}
+	t.Cleanup(func() {
+		probeXZUncompressedSize = oldProbe
+	})
+
+	raw := bytes.Repeat([]byte("fallback-counted raw image\n"), 50000)
+	var compressed bytes.Buffer
+	xw, err := xz.NewWriter(&compressed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := xw.Write(raw); err != nil {
+		t.Fatal(err)
+	}
+	if err := xw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	url := serveBodyAt(t, compressed.Bytes(), "/image.img.xz")
+	compressedSum := sha256.Sum256(compressed.Bytes())
+	expectedArtifactSha := hex.EncodeToString(compressedSum[:])
+
+	dest := filepath.Join(t.TempDir(), "out.img")
+	note := &recordingNotifier{}
+	if _, err := Download(context.Background(), url, dest, expectedArtifactSha, note); err != nil {
+		t.Fatalf("Download: %v", err)
+	}
+
+	var extractionEvents []DownloadProgress
+	for _, event := range note.progressEvents() {
+		if event.Phase == "extracting" {
+			extractionEvents = append(extractionEvents, event)
+		}
+	}
+	if len(extractionEvents) == 0 {
+		t.Fatalf("expected extracting progress events, got phases %v", note.phases())
+	}
+	for _, event := range extractionEvents {
+		if event.BytesTotal != int64(len(raw)) {
+			t.Fatalf("extracting total = %d, want %d", event.BytesTotal, len(raw))
+		}
+	}
+}
+
 func TestDecompressXZHonorsCanceledContext(t *testing.T) {
 	var compressed bytes.Buffer
 	xw, err := xz.NewWriter(&compressed)

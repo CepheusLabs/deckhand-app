@@ -78,6 +78,8 @@ var approvedDownloadHostSuffixes = []string{
 	"raspberrypi.org",
 }
 
+var probeXZUncompressedSize = xzUncompressedSize
+
 // Download fetches rawURL to destPath, streaming progress through note.
 // If expectedSha is non-empty, the final file is verified against it.
 //
@@ -353,12 +355,21 @@ func decompressXZ(ctx context.Context, sourcePath, destPath string, note rpc.Not
 	if err := ctx.Err(); err != nil {
 		return "", 0, err
 	}
-	uncompressedTotal, totalKnown, err := xzUncompressedSize(sourcePath)
+	uncompressedTotal, totalKnown, err := probeXZUncompressedSize(sourcePath)
+	var probeErr error
 	if err != nil {
-		return "", 0, fmt.Errorf("probe xz uncompressed size: %w", err)
+		probeErr = err
+		totalKnown = false
 	}
 	if !totalKnown {
-		uncompressedTotal = 0
+		countedTotal, countErr := countXZUncompressedSize(ctx, sourcePath)
+		if countErr != nil {
+			if probeErr != nil {
+				return "", 0, fmt.Errorf("probe xz uncompressed size: %v; fallback count: %w", probeErr, countErr)
+			}
+			return "", 0, fmt.Errorf("count xz uncompressed size: %w", countErr)
+		}
+		uncompressedTotal = countedTotal
 	}
 
 	src, err := os.Open(sourcePath)
@@ -422,6 +433,39 @@ func decompressXZ(ctx context.Context, sourcePath, destPath string, note rpc.Not
 		return "", done, fmt.Errorf("close extracted image: %w", err)
 	}
 	return hex.EncodeToString(hasher.Sum(nil)), done, nil
+}
+
+func countXZUncompressedSize(ctx context.Context, filePath string) (int64, error) {
+	f, err := os.Open(filePath)
+	if err != nil {
+		return 0, fmt.Errorf("open xz for streamed size probe: %w", err)
+	}
+	defer func() { _ = f.Close() }()
+	xr, err := xz.NewReader(f)
+	if err != nil {
+		return 0, fmt.Errorf("open xz stream for size probe: %w", err)
+	}
+
+	buf := make([]byte, 1<<20)
+	var total int64
+	for {
+		if err := ctx.Err(); err != nil {
+			return 0, err
+		}
+		n, rerr := xr.Read(buf)
+		if n > 0 {
+			total += int64(n)
+			if total > maxDownloadBytes {
+				return 0, fmt.Errorf("extracted image exceeded maximum size %d during size probe", maxDownloadBytes)
+			}
+		}
+		if errors.Is(rerr, io.EOF) {
+			return total, nil
+		}
+		if rerr != nil {
+			return 0, fmt.Errorf("read xz stream for size probe: %w", rerr)
+		}
+	}
 }
 
 func xzUncompressedSize(filePath string) (int64, bool, error) {
