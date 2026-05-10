@@ -684,6 +684,7 @@ class _RestoreTabState extends ConsumerState<_RestoreTab> {
         signature: 'backup:${image?.imagePath ?? '<none>'}:$_busy',
         primaryAction: WizardAction(
           label: 'Continue to target',
+          disabledReason: _restoreBackupDisabledReason(image),
           onPressed: image == null || _busy
               ? null
               : () => setState(() => _step = _RestoreStep.target),
@@ -696,6 +697,7 @@ class _RestoreTabState extends ConsumerState<_RestoreTab> {
             '${target?.id ?? '<none>'}:$_busy',
         primaryAction: WizardAction(
           label: 'Review restore',
+          disabledReason: _restoreTargetDisabledReason(target),
           onPressed: target == null || _busy
               ? null
               : () => setState(() => _step = _RestoreStep.confirm),
@@ -711,6 +713,7 @@ class _RestoreTabState extends ConsumerState<_RestoreTab> {
         primaryAction: WizardAction(
           label: 'Restore backup',
           destructive: true,
+          disabledReason: _restoreConfirmDisabledReason(image, target),
           onPressed: image == null || target == null || _busy
               ? null
               : () => _confirmRestore(image, target),
@@ -718,6 +721,31 @@ class _RestoreTabState extends ConsumerState<_RestoreTab> {
       ),
       _RestoreStep.progress => const _RestoreFooterAction.none(),
     };
+  }
+
+  String? _restoreBackupDisabledReason(_RestoreImage? image) {
+    if (_busy) return 'Wait for the restore checks to finish.';
+    if (image == null) return 'Select a backup image first.';
+    return null;
+  }
+
+  String? _restoreTargetDisabledReason(DiskInfo? target) {
+    if (_busy) return 'Wait for the target disk check to finish.';
+    if (target == null) return 'Select a target eMMC first.';
+    return null;
+  }
+
+  String? _restoreConfirmDisabledReason(
+    _RestoreImage? image,
+    DiskInfo? target,
+  ) {
+    if (_busy) return 'Wait for the restore check to finish.';
+    if (image == null && target == null) {
+      return 'Select a backup image and target eMMC first.';
+    }
+    if (image == null) return 'Select a backup image first.';
+    if (target == null) return 'Select a target eMMC first.';
+    return null;
   }
 
   @override

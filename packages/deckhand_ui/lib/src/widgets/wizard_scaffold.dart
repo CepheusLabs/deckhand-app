@@ -206,17 +206,23 @@ class _WizardFooterActionBar extends StatelessWidget {
 
   Widget _secondaryButton(WizardAction action) {
     if (action.isBack) return _backButton(action);
-    return TextButton(
-      onPressed: action.onPressed,
-      child: Text(action.label, overflow: TextOverflow.ellipsis),
+    return _withDisabledTooltip(
+      action,
+      TextButton(
+        onPressed: action.onPressed,
+        child: Text(action.label, overflow: TextOverflow.ellipsis),
+      ),
     );
   }
 
   Widget _backButton(WizardAction action) {
-    return OutlinedButton.icon(
-      onPressed: action.onPressed,
-      icon: const Icon(Icons.arrow_back, size: 14),
-      label: Text(action.label, overflow: TextOverflow.ellipsis),
+    return _withDisabledTooltip(
+      action,
+      OutlinedButton.icon(
+        onPressed: action.onPressed,
+        icon: const Icon(Icons.arrow_back, size: 14),
+        label: Text(action.label, overflow: TextOverflow.ellipsis),
+      ),
     );
   }
 
@@ -225,26 +231,39 @@ class _WizardFooterActionBar extends StatelessWidget {
     // Destructive actions advertise themselves to assistive tech so a
     // screen-reader user hears "flash disk, warning: destructive"
     // before activating the button.
+    final disabledReason = action.onPressed == null
+        ? action.disabledReason
+        : null;
     return Semantics(
       button: true,
       enabled: action.onPressed != null,
       label: action.destructive ? '${action.label}, destructive' : action.label,
+      hint: disabledReason,
       child: ExcludeSemantics(
-        child: FilledButton.icon(
-          onPressed: action.onPressed,
-          style: action.destructive
-              ? FilledButton.styleFrom(
-                  backgroundColor: theme.colorScheme.error,
-                  foregroundColor: theme.colorScheme.onError,
-                )
-              : null,
-          icon: action.destructive
-              ? const SizedBox.shrink()
-              : const Icon(Icons.arrow_forward, size: 14),
-          label: Text(action.label, overflow: TextOverflow.ellipsis),
+        child: _withDisabledTooltip(
+          action,
+          FilledButton.icon(
+            onPressed: action.onPressed,
+            style: action.destructive
+                ? FilledButton.styleFrom(
+                    backgroundColor: theme.colorScheme.error,
+                    foregroundColor: theme.colorScheme.onError,
+                  )
+                : null,
+            icon: action.destructive
+                ? const SizedBox.shrink()
+                : const Icon(Icons.arrow_forward, size: 14),
+            label: Text(action.label, overflow: TextOverflow.ellipsis),
+          ),
         ),
       ),
     );
+  }
+
+  Widget _withDisabledTooltip(WizardAction action, Widget child) {
+    final reason = action.onPressed == null ? action.disabledReason : null;
+    if (reason == null || reason.trim().isEmpty) return child;
+    return Tooltip(message: reason, child: child);
   }
 }
 
@@ -305,6 +324,7 @@ class WizardAction {
     required this.onPressed,
     this.destructive = false,
     this.isBack = false,
+    this.disabledReason,
   });
   final String label;
   final VoidCallback? onPressed;
@@ -319,6 +339,11 @@ class WizardAction {
   /// Esc will fire it. Prefer this flag over heuristics on [label] —
   /// labels are localized, keyboards aren't.
   final bool isBack;
+
+  /// Short explanation shown when [onPressed] is null. This is used
+  /// as both a hover tooltip and the semantic hint so disabled footer
+  /// actions do not leave users guessing what selection is missing.
+  final String? disabledReason;
 }
 
 class _ActivatePrimaryIntent extends Intent {

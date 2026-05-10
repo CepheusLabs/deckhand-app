@@ -1,3 +1,5 @@
+import 'dart:ui';
+
 import 'package:deckhand_core/deckhand_core.dart';
 import 'package:deckhand_ui/deckhand_ui.dart';
 import 'package:flutter/material.dart';
@@ -11,6 +13,7 @@ void main() {
     required VoidCallback? onPrimary,
     VoidCallback? onBack,
     bool destructive = false,
+    String? disabledReason,
   }) async {
     await tester.pumpWidget(
       ProviderScope(
@@ -28,6 +31,7 @@ void main() {
               label: 'Continue',
               onPressed: onPrimary,
               destructive: destructive,
+              disabledReason: disabledReason,
             ),
             secondaryActions: [
               if (onBack != null)
@@ -81,6 +85,27 @@ void main() {
     await tester.pump();
     // No assertion needed — the test passes if no exception is
     // thrown when the CallbackAction's null onPressed fires.
+  });
+
+  testWidgets('disabled primary action explains why it is disabled', (
+    tester,
+  ) async {
+    final semantics = tester.ensureSemantics();
+    await pumpScaffold(
+      tester,
+      onPrimary: null,
+      disabledReason: 'Select a target eMMC first.',
+    );
+
+    final button = find.widgetWithText(FilledButton, 'Continue');
+    expect(button, findsOneWidget);
+    final buttonSemantics = tester.getSemantics(button);
+    expect(buttonSemantics.label, 'Continue');
+    expect(buttonSemantics.hint, 'Select a target eMMC first.');
+    expect(buttonSemantics.hasFlag(SemanticsFlag.isButton), isTrue);
+    expect(buttonSemantics.hasFlag(SemanticsFlag.isEnabled), isFalse);
+    expect(find.byTooltip('Select a target eMMC first.'), findsOneWidget);
+    semantics.dispose();
   });
 
   testWidgets('Escape with no Back action is a no-op', (tester) async {
