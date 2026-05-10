@@ -1025,6 +1025,46 @@ void main() {
       },
     );
 
+    test('rejects absolute script paths before upload', () async {
+      final outside = File(
+        p.join(Directory.systemTemp.path, 'deckhand-outside-script.sh'),
+      );
+      await outside.writeAsString('#!/bin/sh\nexit 0\n');
+      final ssh = FakeSsh();
+      final controller = newController(
+        profileJson: baseProfileJson(
+          stockKeepSteps: [
+            {
+              'id': 'sh',
+              'kind': 'script',
+              'path': outside.path,
+              'askpass': false,
+            },
+          ],
+        ),
+        ssh: ssh,
+      );
+      await controller.loadProfile('test-printer');
+      controller.setFlow(WizardFlow.stockKeep);
+      controller.setSession(
+        const SshSession(id: 'fake', host: 'h', port: 22, user: 'root'),
+      );
+
+      await expectLater(
+        controller.startExecution(),
+        throwsA(
+          isA<StepExecutionException>().having(
+            (e) => e.message,
+            'message',
+            contains('profile-local or shared source path'),
+          ),
+        ),
+      );
+
+      expect(ssh.uploadCalls, isEmpty);
+      await outside.delete();
+    });
+
     test(
       'script default: sudo:false + askpass helper staged; internal sudos work',
       () async {
@@ -3692,7 +3732,7 @@ class _StubProfileService implements ProfileService {
   }) async => ProfileCacheEntry(
     profileId: profileId,
     ref: ref ?? 'main',
-    localPath: '.',
+    localPath: Directory.systemTemp.path,
     resolvedSha: 'deadbeef',
   );
   @override
@@ -3972,12 +4012,12 @@ class FakeSsh implements SshService {
   }
 }
 
-/// Writes a minimal shell script to the test's temp dir and returns
-/// its absolute path. Lets `_runScript` pass its file-exists gate.
+/// Writes a minimal shell script to the stub profile directory and
+/// returns the profile-relative reference a real profile would use.
 Future<String> _stageLocalScript(String basename) async {
   final f = File(p.join(Directory.systemTemp.path, basename));
   await f.writeAsString('#!/bin/sh\nexit 0\n');
-  return f.path;
+  return './$basename';
 }
 
 class FakeUpstream implements UpstreamService {

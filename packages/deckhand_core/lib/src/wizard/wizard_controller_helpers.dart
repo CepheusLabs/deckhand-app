@@ -55,7 +55,6 @@ String? _stripSudoPrefix(String command) {
 /// Turn a profile-declared relative path into an absolute local path.
 ///
 /// Three conventions, in priority order:
-///   - absolute (`/etc/foo`): returned as-is.
 ///   - profile-local (`./scripts/foo.sh`): resolved against the
 ///     profile's directory (where profile.yaml lives).
 ///   - repo-root-relative (`shared/scripts/build-python.sh`): resolved
@@ -65,16 +64,35 @@ String? _stripSudoPrefix(String command) {
 /// Bare paths without a prefix default to profile-local (the legacy
 /// behaviour) - add `./` for new profiles to make the intent loud.
 String _resolveProfilePathImpl(WizardController c, String ref) {
-  final profileDir = c._profileCache?.localPath ?? '.';
-  if (ref.startsWith('/')) return ref;
-  if (ref.startsWith('./')) return p.join(profileDir, ref.substring(2));
+  if (!_isSafeProfileAssetPath(ref)) {
+    throw StepExecutionException(
+      'profile-local or shared source path is required; absolute paths and '
+      'parent-directory traversal are not allowed',
+    );
+  }
+  final profileDir = p.normalize(p.absolute(c._profileCache?.localPath ?? '.'));
+  final normalizedRef = ref.trim().replaceAll('\\', '/');
+  final relative = normalizedRef.startsWith('./')
+      ? normalizedRef.substring(2)
+      : normalizedRef;
   // `shared/` is the repo-level tree of scripts and templates reused
   // across printers. Resolve it against the repo root.
-  if (ref.startsWith('shared/') || ref.startsWith('shared\\')) {
+  if (relative == 'shared' || relative.startsWith('shared/')) {
     final repoRoot = p.dirname(p.dirname(profileDir));
-    return p.join(repoRoot, ref);
+    return _joinSafeProfilePath(repoRoot, relative, 'shared source path');
   }
-  return p.join(profileDir, ref);
+  return _joinSafeProfilePath(profileDir, relative, 'profile source path');
+}
+
+String _joinSafeProfilePath(String root, String relative, String label) {
+  final normalizedRoot = p.normalize(p.absolute(root));
+  final target = p.normalize(p.join(normalizedRoot, relative));
+  if (target != normalizedRoot && !p.isWithin(normalizedRoot, target)) {
+    throw StepExecutionException(
+      '$label must resolve inside the profile checkout',
+    );
+  }
+  return target;
 }
 
 String _resolveBundledProfileAssetPathImpl(WizardController c, String ref) {
@@ -91,7 +109,7 @@ bool _isSafeProfileAssetPath(String value) {
   final trimmed = value.trim();
   if (trimmed.isEmpty || trimmed.contains('\u0000')) return false;
   if (trimmed.startsWith('/') || trimmed.startsWith('\\')) return false;
-  if (RegExp(r'^[A-Za-z]:[\\/]').hasMatch(trimmed)) return false;
+  if (RegExp(r'^[A-Za-z]:').hasMatch(trimmed)) return false;
   if (trimmed.startsWith('~')) return false;
 
   final normalized = trimmed.replaceAll('\\', '/');
