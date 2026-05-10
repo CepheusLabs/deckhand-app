@@ -217,40 +217,38 @@ class _Ticks extends StatelessWidget {
       height: 14,
       child: LayoutBuilder(
         builder: (context, constraints) {
-          final colWidth = constraints.maxWidth / count;
-          return Row(
+          final safeCount = count <= 0 ? 1 : count;
+          final stepWidth = constraints.maxWidth / safeCount;
+          return Stack(
+            clipBehavior: Clip.none,
             children: [
-              for (var i = 0; i < count; i++)
-                SizedBox(
-                  width: colWidth,
-                  child: Stack(
-                    clipBehavior: Clip.none,
-                    children: [
-                      Positioned(
-                        left: 0,
-                        top: 0,
-                        child: Container(
-                          width: 1,
-                          height: i % 5 == 0 ? 6 : 4,
-                          color: i % 5 == 0 ? tokens.text3 : tokens.rule,
-                        ),
-                      ),
-                      if (i % 5 == 0)
-                        Positioned(
-                          left: 2,
-                          top: 6,
-                          child: Text(
-                            '${i * 5}%',
-                            style: TextStyle(
-                              fontFamily: DeckhandTokens.fontMono,
-                              fontSize: 9,
-                              color: tokens.text4,
-                            ),
-                          ),
-                        ),
-                    ],
+              for (var i = 0; i <= safeCount; i++) ...[
+                Positioned(
+                  left: stepWidth * i,
+                  top: 0,
+                  child: Container(
+                    width: 1,
+                    height: i % 5 == 0 ? 6 : 4,
+                    color: i % 5 == 0 ? tokens.text3 : tokens.rule,
                   ),
                 ),
+                if (i % 5 == 0)
+                  Positioned(
+                    left: stepWidth * i,
+                    top: 6,
+                    child: Transform.translate(
+                      offset: Offset(i == safeCount ? -24 : 2, 0),
+                      child: Text(
+                        '${(i * 100 ~/ safeCount)}%',
+                        style: TextStyle(
+                          fontFamily: DeckhandTokens.fontMono,
+                          fontSize: 9,
+                          color: tokens.text4,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
             ],
           );
         },
