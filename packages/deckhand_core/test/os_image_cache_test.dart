@@ -281,4 +281,53 @@ void main() {
     expect(deleted, 0);
     expect(await image.exists(), isTrue);
   });
+
+  test('pruneOsImageCache removes stale orphan temp files', () async {
+    final root = await Directory.systemTemp.createTemp('deckhand-cache-test-');
+    addTearDown(() => root.delete(recursive: true));
+
+    final stalePart = File(p.join(root.path, 'stale.img.part'));
+    final staleDownloadPart = File(
+      p.join(root.path, 'stale.img.download.part'),
+    );
+    final staleManifestTmp = File(
+      p.join(root.path, 'stale.img$osImageDownloadManifestSuffix.tmp'),
+    );
+    final freshPart = File(p.join(root.path, 'fresh.img.part'));
+    for (final file in [
+      stalePart,
+      staleDownloadPart,
+      staleManifestTmp,
+      freshPart,
+    ]) {
+      await file.writeAsBytes([1]);
+    }
+    final old = DateTime.utc(2026, 5, 1);
+    await stalePart.setLastModified(old);
+    await staleDownloadPart.setLastModified(old);
+    await staleManifestTmp.setLastModified(old);
+
+    final deleted = await pruneOsImageCache(
+      root: root.path,
+      olderThan: DateTime.utc(2026, 5, 4),
+    );
+
+    expect(deleted, 3);
+    expect(await stalePart.exists(), isFalse);
+    expect(await staleDownloadPart.exists(), isFalse);
+    expect(await staleManifestTmp.exists(), isFalse);
+    expect(await freshPart.exists(), isTrue);
+  });
+
+  test('pruneOsImageCache rejects temp directories', () async {
+    final root = await Directory.systemTemp.createTemp('deckhand-cache-test-');
+    addTearDown(() => root.delete(recursive: true));
+
+    await Directory(p.join(root.path, 'bad.img.part')).create();
+
+    expect(
+      pruneOsImageCache(root: root.path, olderThan: DateTime.now()),
+      throwsA(isA<FileSystemException>()),
+    );
+  });
 }

@@ -158,8 +158,47 @@ Future<int> pruneOsImageCache({
     await deleteOsImageCacheEntry(root: root, imagePath: entry.imagePath);
     deleted++;
   }
+  deleted += await _pruneStaleOsImageTempFiles(
+    root: root,
+    olderThan: olderThan,
+  );
   return deleted;
 }
+
+Future<int> _pruneStaleOsImageTempFiles({
+  required String root,
+  required DateTime olderThan,
+}) async {
+  final safeRoot = p.normalize(p.absolute(root));
+  final rootType = await FileSystemEntity.type(safeRoot, followLinks: false);
+  if (rootType == FileSystemEntityType.notFound) return 0;
+  if (rootType != FileSystemEntityType.directory) {
+    throw FileSystemException('OS image cache must be a directory', root);
+  }
+
+  var deleted = 0;
+  await for (final entity in Directory(safeRoot).list(followLinks: false)) {
+    final name = p.basename(entity.path);
+    if (!_isOsImageTempName(name)) continue;
+    final type = await FileSystemEntity.type(entity.path, followLinks: false);
+    if (type == FileSystemEntityType.notFound) continue;
+    if (type != FileSystemEntityType.file) {
+      throw FileSystemException(
+        'OS image cache temp entries must be regular files',
+        entity.path,
+      );
+    }
+    final stat = await File(entity.path).stat();
+    if (!stat.modified.isBefore(olderThan)) continue;
+    await File(entity.path).delete();
+    deleted++;
+  }
+  return deleted;
+}
+
+bool _isOsImageTempName(String name) =>
+    name.endsWith('.part') ||
+    name.endsWith('$osImageDownloadManifestSuffix.tmp');
 
 Future<_OsImageManifest?> _readOsImageManifest(String imagePath) async {
   final manifestPath = '$imagePath$osImageDownloadManifestSuffix';
