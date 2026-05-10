@@ -512,9 +512,16 @@ func validateHashPath(p string) error {
 			return nil
 		}
 	}
-	if runtime.GOOS == "windows" &&
-		(strings.HasPrefix(clean, `\\.\`) || strings.HasPrefix(clean, `//./`)) {
-		return nil
+	if runtime.GOOS == "windows" {
+		devicePath := strings.ReplaceAll(clean, `/`, `\`)
+		if strings.HasPrefix(devicePath, `\\.\`) || strings.HasPrefix(devicePath, `\\?\`) {
+			if strings.HasPrefix(devicePath, `\\.\`) {
+				if _, err := disks.ResolveDevicePath(devicePath, ""); err == nil {
+					return nil
+				}
+			}
+			return fmt.Errorf("path %q is not a recognised Windows PhysicalDrive<N> device", p)
+		}
 	}
 	abs, err := filepath.Abs(clean)
 	if err != nil {

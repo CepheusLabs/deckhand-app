@@ -375,6 +375,23 @@ func TestValidateHashPathRejectsBroadTempAndAllowsManagedOSImage(t *testing.T) {
 	}
 }
 
+func TestValidateHashPathWindowsDevicePolicy(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("Windows device namespace policy")
+	}
+	if err := validateHashPath(`\\.\PHYSICALDRIVE3`); err != nil {
+		t.Fatalf("expected physical drive path to pass: %v", err)
+	}
+	for _, path := range []string{
+		`\\.\PIPE\deckhand`,
+		`\\?\Volume{81442efe-49a7-11f1-bd05-4c23380248b8}\`,
+	} {
+		if err := validateHashPath(path); err == nil {
+			t.Fatalf("expected %q to be rejected", path)
+		}
+	}
+}
+
 func TestDownloadDestPolicyRejectsUnmanagedAndExistingPaths(t *testing.T) {
 	outside := filepath.Join(t.TempDir(), "image.img")
 	if _, err := validateDownloadDestPolicy(outside); err == nil {
