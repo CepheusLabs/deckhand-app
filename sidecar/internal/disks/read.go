@@ -49,7 +49,13 @@ func ReadImage(ctx context.Context, devicePath, outputPath string, note rpc.Noti
 	if err != nil {
 		return "", fmt.Errorf("create output: %w", err)
 	}
-	defer func() { _ = dst.Close() }()
+	completed := false
+	defer func() {
+		_ = dst.Close()
+		if !completed {
+			_ = os.Remove(outputPath)
+		}
+	}()
 
 	h := sha256.New()
 	buf := make([]byte, 4<<20) // 4 MiB
@@ -82,6 +88,10 @@ func ReadImage(ctx context.Context, devicePath, outputPath string, note rpc.Noti
 		}
 	}
 
+	if err := dst.Sync(); err != nil {
+		return "", fmt.Errorf("sync output: %w", err)
+	}
+	completed = true
 	if note != nil {
 		note.Notify("progress", ReadProgress{
 			BytesDone: done, BytesTotal: total, Phase: "done",

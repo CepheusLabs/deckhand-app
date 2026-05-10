@@ -75,6 +75,24 @@ func TestReadImageRejectsExistingOutput(t *testing.T) {
 	}
 }
 
+func TestReadImageRemovesPartialOutputOnCancellation(t *testing.T) {
+	root := t.TempDir()
+	source := filepath.Join(root, "source.img")
+	output := filepath.Join(root, "backup.img")
+	if err := os.WriteFile(source, bytes.Repeat([]byte("x"), 4096), 0o600); err != nil {
+		t.Fatalf("write source: %v", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	if _, err := ReadImage(ctx, source, output, nil); err == nil {
+		t.Fatalf("expected cancellation error")
+	}
+	if _, err := os.Stat(output); !os.IsNotExist(err) {
+		t.Fatalf("partial output should be removed, stat err = %v", err)
+	}
+}
+
 type recordingNotifier struct {
 	events []notification
 }
