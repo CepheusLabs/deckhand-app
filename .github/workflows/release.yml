@@ -115,7 +115,46 @@ jobs:
           go-version: "1.22"
           cache-dependency-path: sidecar/go.sum
 
+      - name: Build sidecar + helper (Windows)
+        if: matrix.goos == 'windows'
+        working-directory: sidecar
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "0"
+          STAMP: ${{ needs.version.outputs.version }}+${{ needs.version.outputs.build }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          if (-not (Get-Command windres -ErrorAction SilentlyContinue)) {
+            throw "windres is required to embed the elevated-helper UAC manifest"
+          }
+          $helperDir = "cmd/deckhand-elevated-helper"
+          $helperSyso = Join-Path $helperDir "rsrc_windows.syso"
+          try {
+            Push-Location $helperDir
+            try {
+              & windres -i resource_windows.rc -O coff -o rsrc_windows.syso
+              if ($LASTEXITCODE -ne 0) { throw "windres failed" }
+            } finally {
+              Pop-Location
+            }
+
+            foreach ($cmd in @("deckhand-sidecar", "deckhand-elevated-helper")) {
+              $ldflags = "-s -w -X main.Version=$env:STAMP"
+              if ($cmd -eq "deckhand-elevated-helper") {
+                $ldflags = "$ldflags -H windowsgui"
+              }
+              & go build -trimpath -ldflags $ldflags -o "dist/$cmd.exe" "./cmd/$cmd"
+              if ($LASTEXITCODE -ne 0) { throw "go build failed for $cmd" }
+            }
+          } finally {
+            Remove-Item -Force -ErrorAction SilentlyContinue $helperSyso
+          }
+
       - name: Build sidecar + helper
+        if: matrix.goos != 'windows'
         working-directory: sidecar
         env:
           GOOS: ${{ matrix.goos }}
@@ -125,23 +164,8 @@ jobs:
         shell: bash
         run: |
           mkdir -p dist
-          helper_syso=""
-          if [ "${{ matrix.goos }}" = "windows" ]; then
-            command -v windres >/dev/null 2>&1 || {
-              echo "::error ::windres is required to embed the elevated-helper UAC manifest"
-              exit 1
-            }
-            helper_dir="cmd/deckhand-elevated-helper"
-            helper_syso="$helper_dir/rsrc_windows.syso"
-            ( cd "$helper_dir" && windres \
-              -i resource_windows.rc -O coff -o rsrc_windows.syso )
-            trap 'rm -f "$helper_syso"' EXIT
-          fi
           for cmd in deckhand-sidecar deckhand-elevated-helper; do
             ldflags="-s -w -X main.Version=${STAMP}"
-            if [ "${{ matrix.goos }}" = "windows" ] && [ "$cmd" = "deckhand-elevated-helper" ]; then
-              ldflags="$ldflags -H windowsgui"
-            fi
             go build -trimpath \
               -ldflags "$ldflags" \
               -o "dist/${cmd}${{ matrix.ext }}" \
@@ -152,6 +176,7 @@ jobs:
         with:
           name: go-${{ matrix.goos }}-${{ matrix.goarch }}
           path: sidecar/dist/*
+          if-no-files-found: error
 
   # ------------------------------------------------------------------
   # Flutter desktop builds → installers (one per OS).
@@ -189,8 +214,8 @@ jobs:
         env:
           VERSION: ${{ needs.version.outputs.version }}
           BUILD: ${{ needs.version.outputs.build }}
-        shell: bash
-        run: flutter build windows --release --build-name="$VERSION" --build-number="$BUILD"
+        shell: pwsh
+        run: flutter build windows --release --build-name="$env:VERSION" --build-number="$env:BUILD" --dart-define="DECKHAND_VERSION=$env:VERSION+$env:BUILD"
 
       - name: Code-sign inner binaries (Authenticode)
         if: ${{ secrets.WINDOWS_SIGN_THUMBPRINT != '' }}
@@ -252,6 +277,7 @@ jobs:
         with:
           name: deckhand-windows
           path: packaging/windows/dist/*
+          if-no-files-found: error
 
   macos:
     name: macOS (DMG)
@@ -289,7 +315,7 @@ jobs:
         env:
           VERSION: ${{ needs.version.outputs.version }}
           BUILD: ${{ needs.version.outputs.build }}
-        run: flutter build macos --release --build-name="$VERSION" --build-number="$BUILD"
+        run: flutter build macos --release --build-name="$VERSION" --build-number="$BUILD" --dart-define="DECKHAND_VERSION=$VERSION+$BUILD"
 
       - name: Import signing certificate
         if: ${{ secrets.MACOS_SIGN_CERT_P12 != '' }}
@@ -338,6 +364,7 @@ jobs:
         with:
           name: deckhand-macos-${{ matrix.arch }}
           path: packaging/macos/dist/*
+          if-no-files-found: error
 
   linux:
     name: Linux (AppImage)
@@ -377,7 +404,7 @@ jobs:
         env:
           VERSION: ${{ needs.version.outputs.version }}
           BUILD: ${{ needs.version.outputs.build }}
-        run: flutter build linux --release --build-name="$VERSION" --build-number="$BUILD"
+        run: flutter build linux --release --build-name="$VERSION" --build-number="$BUILD" --dart-define="DECKHAND_VERSION=$VERSION+$BUILD"
 
       - name: Install appimagetool
         run: |
@@ -412,6 +439,7 @@ jobs:
         with:
           name: deckhand-linux
           path: packaging/linux/dist/*
+          if-no-files-found: error
 
   # ------------------------------------------------------------------
   # Tag the commit + publish a GitHub Release with every artifact.
@@ -430,18 +458,6 @@ jobs:
         with:
           path: release-artifacts
           merge-multiple: false
-
-      - name: Compute SHA256SUMS
-        run: |
-          set -euo pipefail
-          cd release-artifacts
-          find . -type f \
-            ! -name 'SHA256SUMS*' \
-            ! -name '*.asc' \
-            ! -name '*.sig' \
-            ! -name 'sbom.*' \
-            -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS
-          cat SHA256SUMS
 
       - name: Install syft
         # Pin to a specific syft release tarball + verify the SHA256
@@ -476,6 +492,32 @@ jobs:
             --output cyclonedx-json=release-artifacts/sbom.cdx.json \
             --quiet
 
+      - name: Build release manifest.json
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+          BUILD: ${{ needs.version.outputs.build }}
+          TAG: ${{ needs.version.outputs.tag }}
+          REF: ${{ needs.version.outputs.ref }}
+        run: |
+          set -euo pipefail
+          python3 scripts/build_manifest.py \
+            --version "$VERSION" --build "$BUILD" \
+            --tag "$TAG" --ref "$REF" \
+            --artifacts-dir release-artifacts \
+            --output release-artifacts/manifest.json
+          cat release-artifacts/manifest.json
+
+      - name: Compute SHA256SUMS
+        run: |
+          set -euo pipefail
+          cd release-artifacts
+          find . -type f \
+            ! -name 'SHA256SUMS*' \
+            ! -name '*.asc' \
+            ! -name '*.sig' \
+            -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS
+          cat SHA256SUMS
+
       - name: SLSA provenance digest
         id: provenance
         run: |
@@ -504,21 +546,6 @@ jobs:
             --detach-sign --armor \
             --output release-artifacts/SHA256SUMS.asc \
             release-artifacts/SHA256SUMS
-
-      - name: Build release manifest.json
-        env:
-          VERSION: ${{ needs.version.outputs.version }}
-          BUILD: ${{ needs.version.outputs.build }}
-          TAG: ${{ needs.version.outputs.tag }}
-          REF: ${{ needs.version.outputs.ref }}
-        run: |
-          set -euo pipefail
-          python3 scripts/build_manifest.py \
-            --version "$VERSION" --build "$BUILD" \
-            --tag "$TAG" --ref "$REF" \
-            --artifacts-dir release-artifacts \
-            --output release-artifacts/manifest.json
-          cat release-artifacts/manifest.json
 
       - name: Stamp CHANGELOG with the resolved tag
         env:
