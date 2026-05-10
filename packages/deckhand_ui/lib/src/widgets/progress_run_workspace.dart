@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import '../i18n/translations.g.dart';
 import '../providers.dart';
 import '../theming/deckhand_tokens.dart';
+import 'deckhand_loading.dart';
 import 'deckhand_panel.dart';
 import 'network_panel.dart';
 import 'wizard_log_view.dart';
@@ -337,15 +338,7 @@ class _StepStatusIcon extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (status == RunStepStatus.active) {
-      return SizedBox.square(
-        dimension: 16,
-        child: CircularProgressIndicator(
-          strokeWidth: 2,
-          strokeCap: StrokeCap.round,
-          color: color,
-          backgroundColor: color.withValues(alpha: 0.18),
-        ),
-      );
+      return DeckhandSpinner(size: 16, strokeWidth: 2, color: color);
     }
     final icon = switch (status) {
       RunStepStatus.done => Icons.check,
