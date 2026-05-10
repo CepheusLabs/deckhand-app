@@ -565,7 +565,10 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 250));
 
-    expect(find.textContaining('Windows disk 3'), findsOneWidget);
+    expect(
+      find.textContaining('Windows could not list storage devices'),
+      findsOneWidget,
+    );
     expect(find.textContaining('PHYSICALDRIVE3'), findsNothing);
     expect(find.textContaining('StateError'), findsNothing);
     expect(find.widgetWithText(OutlinedButton, 'Refresh'), findsOneWidget);
@@ -1078,6 +1081,82 @@ void main() {
     expect(find.textContaining(r'phrozen-arco\old\emmc.img'), findsOneWidget);
     expect(find.textContaining('Verified full-disk backup'), findsOneWidget);
     expect(find.textContaining('Partial image, not verified'), findsOneWidget);
+  });
+
+  testWidgets('restore view lists active profile backups first', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1400, 1000));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    const disk = DiskInfo(
+      id: 'PhysicalDrive3',
+      path: r'\\.\PHYSICALDRIVE3',
+      sizeBytes: 4096,
+      bus: 'USB',
+      model: 'Generic STORAGE DEVICE',
+      removable: true,
+      partitions: [],
+    );
+    final phrozen = EmmcBackupManifest.create(
+      profileId: 'phrozen-arco',
+      imagePath: r'C:\Deckhand\emmc-backups\phrozen-arco\full\emmc.img',
+      imageBytes: 4096,
+      imageSha256:
+          '1111111111111111111111111111111111111111111111111111111111111111',
+      disk: disk,
+      deckhandVersion: 'test',
+      createdAt: DateTime.utc(2026, 5, 4, 12),
+    );
+    final sovol = EmmcBackupManifest.create(
+      profileId: 'sovol-zero',
+      imagePath: r'C:\Deckhand\emmc-backups\sovol-zero\full\emmc.img',
+      imageBytes: 4096,
+      imageSha256:
+          '2222222222222222222222222222222222222222222222222222222222222222',
+      disk: disk,
+      deckhandVersion: 'test',
+      createdAt: DateTime.utc(2026, 5, 3, 12),
+    );
+
+    final controller = stubWizardController(
+      profileJson: {
+        ...testProfileJson(),
+        'profile_id': 'sovol-zero',
+        'display_name': 'Sovol Zero',
+      },
+    );
+    await controller.loadProfile('sovol-zero');
+
+    await tester.pumpWidget(
+      testHarness(
+        controller: controller,
+        child: const EmmcRestoreScreen(),
+        initialLocation: '/emmc-restore',
+        extraOverrides: [
+          emmcBackupManifestsProvider.overrideWith(
+            (ref) async => [phrozen, sovol],
+          ),
+          emmcBackupImageCandidatesProvider.overrideWith(
+            (ref) async => const [],
+          ),
+          flashServiceProvider.overrideWithValue(
+            _RestoreFlash(
+              disks: [disk],
+              sha256Value:
+                  '2222222222222222222222222222222222222222222222222222222222222222',
+            ),
+          ),
+        ],
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+
+    final activeGroupTop = tester.getTopLeft(find.text('SOVOL-ZERO')).dy;
+    final otherGroupTop = tester.getTopLeft(find.text('PHROZEN-ARCO')).dy;
+
+    expect(activeGroupTop, lessThan(otherGroupTop));
   });
 
   testWidgets(

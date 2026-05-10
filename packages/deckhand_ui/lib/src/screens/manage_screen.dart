@@ -726,6 +726,10 @@ class _RestoreTabState extends ConsumerState<_RestoreTab> {
     final candidatesAsync = ref.watch(emmcBackupImageCandidatesProvider);
     final disksAsync = ref.watch(disksProvider);
     final backupDir = ref.watch(emmcBackupsDirProvider);
+    final controller = ref.watch(wizardControllerProvider);
+    final preferredProfileId =
+        _nonEmpty(controller.profile?.id) ??
+        _nonEmpty(controller.state.profileId);
     final tokens = DeckhandTokens.of(context);
 
     if ((manifestsAsync.isLoading && !manifestsAsync.hasValue) ||
@@ -816,7 +820,10 @@ class _RestoreTabState extends ConsumerState<_RestoreTab> {
         ),
       );
     }
-    final image = _selectedImage(images);
+    final image = _selectedImage(
+      images,
+      preferredProfileId: preferredProfileId,
+    );
     if (_step == _RestoreStep.backup) {
       _publishFooterAction(_footerActionFor(image: image, target: null));
       return Column(
@@ -824,7 +831,12 @@ class _RestoreTabState extends ConsumerState<_RestoreTab> {
         children: [
           _RestoreStepStrip(step: _step),
           const SizedBox(height: 12),
-          _buildBackupStep(context: context, images: images, selected: image),
+          _buildBackupStep(
+            context: context,
+            images: images,
+            selected: image,
+            preferredProfileId: preferredProfileId,
+          ),
         ],
       );
     }
@@ -892,6 +904,7 @@ class _RestoreTabState extends ConsumerState<_RestoreTab> {
             context: context,
             images: images,
             selected: image,
+            preferredProfileId: preferredProfileId,
           ),
           _RestoreStep.target => _buildTargetStep(
             context: context,
@@ -915,9 +928,13 @@ class _RestoreTabState extends ConsumerState<_RestoreTab> {
     required BuildContext context,
     required List<_RestoreImage> images,
     required _RestoreImage? selected,
+    required String? preferredProfileId,
   }) {
     final tokens = DeckhandTokens.of(context);
-    final grouped = _groupRestoreImagesByProfile(images);
+    final grouped = _groupRestoreImagesByProfile(
+      images,
+      preferredProfileId: preferredProfileId,
+    );
     return _Panel(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1155,13 +1172,34 @@ class _RestoreTabState extends ConsumerState<_RestoreTab> {
     );
   }
 
-  _RestoreImage? _selectedImage(List<_RestoreImage> images) {
+  _RestoreImage? _selectedImage(
+    List<_RestoreImage> images, {
+    required String? preferredProfileId,
+  }) {
     if (images.isEmpty) return null;
     final selected = _selectedImagePath;
     if (selected != null) {
       for (final image in images) {
         if (image.imagePath == selected) return image;
       }
+    }
+    final preferred = _nonEmpty(preferredProfileId)?.toLowerCase();
+    if (preferred != null) {
+      final preferredImages = images
+          .where(
+            (image) => _nonEmpty(image.profileId)?.toLowerCase() == preferred,
+          )
+          .toList(growable: false);
+      for (final image in preferredImages) {
+        if (image.indexed && image.fullSize) return image;
+      }
+      for (final image in preferredImages) {
+        if (image.fullSize) return image;
+      }
+      for (final image in preferredImages) {
+        if (image.indexed) return image;
+      }
+      if (preferredImages.isNotEmpty) return preferredImages.first;
     }
     for (final image in images) {
       if (image.indexed && image.fullSize) return image;
@@ -2113,24 +2151,52 @@ String? _restoreImageDuplicateDetail(_RestoreImage image) {
 }
 
 class _RestoreImageGroup {
-  const _RestoreImageGroup({required this.label, required this.images});
+  const _RestoreImageGroup({
+    required this.profileId,
+    required this.label,
+    required this.images,
+  });
 
+  final String profileId;
   final String label;
   final List<_RestoreImage> images;
 }
 
 List<_RestoreImageGroup> _groupRestoreImagesByProfile(
-  List<_RestoreImage> images,
-) {
+  List<_RestoreImage> images, {
+  String? preferredProfileId,
+}) {
   final grouped = <String, List<_RestoreImage>>{};
   for (final image in images) {
     final profile = _nonEmpty(image.profileId) ?? 'unknown-profile';
     grouped.putIfAbsent(profile, () => []).add(image);
   }
-  return [
+  final preferred = _nonEmpty(preferredProfileId)?.toLowerCase();
+  final groups = [
     for (final entry in grouped.entries)
-      _RestoreImageGroup(label: entry.key.toUpperCase(), images: entry.value),
-  ]..sort((a, b) => a.label.compareTo(b.label));
+      _RestoreImageGroup(
+        profileId: entry.key,
+        label: entry.key.toUpperCase(),
+        images: entry.value,
+      ),
+  ];
+  groups.sort((a, b) {
+    final aKey = a.profileId.toLowerCase();
+    final bKey = b.profileId.toLowerCase();
+    final aRank = aKey == preferred
+        ? 0
+        : aKey == 'unknown-profile'
+        ? 2
+        : 1;
+    final bRank = bKey == preferred
+        ? 0
+        : bKey == 'unknown-profile'
+        ? 2
+        : 1;
+    if (aRank != bRank) return aRank.compareTo(bRank);
+    return a.label.compareTo(b.label);
+  });
+  return groups;
 }
 
 String _restoreDiskSubtitle(DiskInfo disk, _RestoreImage? image) {
