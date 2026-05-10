@@ -591,7 +591,7 @@ String runStepTitle(String id) {
     'install_stack' => 'Install Klipper services',
     'link_extras' => 'Install profile extras',
     'install_screen' => 'Install touchscreen UI',
-    'flash_mcus' => 'MCU flashing unavailable',
+    'flash_mcus' => 'Flash printer MCUs',
     'apply_services' => 'Clean up stock services',
     'apply_files' => 'Clean up stock files',
     'snapshot_paths' => 'Back up stock files',

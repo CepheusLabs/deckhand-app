@@ -109,6 +109,7 @@ void main() {
         child: const WizardLogView(
           lines: [
             '> starting snapshot_paths',
+            '> starting flash_mcus',
             '[ok] apply_services',
             '[run-state] skipping install_marker; already completed',
           ],
@@ -117,6 +118,7 @@ void main() {
     );
 
     expect(find.textContaining('Back up stock files'), findsOneWidget);
+    expect(find.textContaining('Flash printer MCUs'), findsOneWidget);
     expect(
       find.textContaining('Finished Clean up stock services'),
       findsOneWidget,

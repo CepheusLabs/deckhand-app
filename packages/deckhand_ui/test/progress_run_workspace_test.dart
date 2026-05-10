@@ -115,7 +115,7 @@ void main() {
     );
     await tester.pump();
 
-    expect(find.text('MCU flashing unavailable'), findsOneWidget);
+    expect(find.text('Flash printer MCUs'), findsOneWidget);
   });
 
   testWidgets('network tab renders captured egress events', (tester) async {
