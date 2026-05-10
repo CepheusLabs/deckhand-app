@@ -5,8 +5,10 @@
 > probes the host environment for the conditions Deckhand needs:
 > the elevated helper is present, disk enumeration works, the
 > per-OS data and cache dirs are writable, and the platform's
-> elevation tool (pkexec / osascript / powershell.exe) is on the
-> path. This file documents how that diagnostic is exposed to
+> elevation launch tool is available. On Linux/macOS this means
+> `pkexec` / `osascript` on PATH; on Windows it means the trusted
+> `%WINDIR%\System32\WindowsPowerShell\v1.0\powershell.exe` path.
+> This file documents how that diagnostic is exposed to
 > the UI and where it appears in the wizard.
 
 ## Surfaces
@@ -109,7 +111,7 @@ Defined in [`doctor.go`](../sidecar/internal/doctor/doctor.go):
 | `disks_enumerate` | `disks.List` returns at least one device | FAIL on enumeration error; WARN on zero disks |
 | `data_dir` | `<config dir>/Deckhand/` is writable | FAIL when the directory can't be created or written |
 | `cache_dir` | `<cache dir>` is writable | Same |
-| `<platform>_on_path` | pkexec / osascript / powershell.exe on `$PATH` | FAIL when the OS-appropriate tool is missing |
+| `pkexec_on_path` / `osascript_on_path` / `powershell_system` | Linux/macOS elevation launcher on `$PATH`, or the trusted Windows PowerShell path under `%WINDIR%\System32` | FAIL when the OS-appropriate launcher is missing |
 | `mdns_resolvable` | Open a UDP socket + join the mDNS multicast group | WARN when blocked; auto-discovery on S20 will silently return zero hits otherwise |
 | `github_rate_limit` | `GET https://api.github.com/rate_limit` unauthenticated | WARN below 10 requests remaining (set a PAT in Settings); WARN on network failure |
 | `clock_skew` | Compare host clock to GitHub's `Date` header | WARN above 5 minutes of skew (TLS validation gets flaky); WARN on network failure |
@@ -161,8 +163,9 @@ and wants to re-verify without restarting the wizard.
 - `doctor.run` JSON-RPC method: registered in
   [`handlers.go`](../sidecar/internal/handlers/handlers.go).
 - All nine checks (runtime, elevated_helper, disks_enumerate,
-  data_dir, cache_dir, `<platform>_on_path`, mdns_resolvable,
-  github_rate_limit, clock_skew): implemented in
+  data_dir, cache_dir, `pkexec_on_path` / `osascript_on_path` /
+  `powershell_system`, mdns_resolvable, github_rate_limit, clock_skew):
+  implemented in
   [`doctor.go`](../sidecar/internal/doctor/doctor.go).
 - `DoctorService` Dart interface: implemented in
   [`doctor_service.dart`](../packages/deckhand_core/lib/src/services/doctor_service.dart).
