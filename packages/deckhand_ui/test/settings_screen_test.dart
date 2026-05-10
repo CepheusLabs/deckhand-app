@@ -210,6 +210,40 @@ void main() {
     expect(File('${image.path}.part').existsSync(), isFalse);
   });
 
+  testWidgets('SettingsScreen labels cache entries without manifests clearly', (
+    tester,
+  ) async {
+    final root = Directory.systemTemp.createTempSync('deckhand-os-cache-ui-');
+    addTearDown(() => root.deleteSync(recursive: true));
+    final image = File(p.join(root.path, 'manual.img'));
+    image.writeAsBytesSync(List<int>.filled(1024, 1));
+    final entry = OsImageCacheEntry(
+      imagePath: image.path,
+      bytes: image.lengthSync(),
+      modifiedAt: DateTime.utc(2026, 5, 4, 12),
+    );
+
+    final controller = stubWizardController(profileJson: testProfileJson());
+    await controller.loadProfile('test-printer');
+
+    await tester.pumpWidget(
+      testHarness(
+        controller: controller,
+        child: const SettingsScreen(),
+        initialLocation: '/settings',
+        extraOverrides: [
+          osImagesDirProvider.overrideWithValue(root.path),
+          osImageCacheProvider.overrideWith((ref) async => [entry]),
+        ],
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('manual.img'), findsOneWidget);
+    expect(find.text('NOT INDEXED'), findsOneWidget);
+    expect(find.text('NEEDS MANIFEST'), findsNothing);
+  });
+
   testWidgets('SettingsScreen clears stale OS image cache files', (
     tester,
   ) async {
