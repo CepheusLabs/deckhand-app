@@ -193,7 +193,7 @@ class _PathCard extends StatelessWidget {
               fontSize: DeckhandTokens.tXl,
               fontWeight: FontWeight.w500,
               color: tokens.text,
-              letterSpacing: -0.01 * DeckhandTokens.tXl,
+              letterSpacing: 0,
             ),
           ),
           const SizedBox(height: 8),

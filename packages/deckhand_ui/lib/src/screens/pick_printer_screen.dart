@@ -611,7 +611,7 @@ class _Header extends StatelessWidget {
                   fontFamily: DeckhandTokens.fontSans,
                   fontSize: 16,
                   fontWeight: FontWeight.w500,
-                  letterSpacing: -0.01 * 16,
+                  letterSpacing: 0,
                   height: 1.2,
                   color: tokens.text,
                 ),

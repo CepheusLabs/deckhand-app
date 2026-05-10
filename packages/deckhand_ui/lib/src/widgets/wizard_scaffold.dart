@@ -288,7 +288,7 @@ class _ScreenHead extends StatelessWidget {
               title,
               style: theme.textTheme.headlineMedium?.copyWith(
                 fontWeight: FontWeight.w500,
-                letterSpacing: -0.015 * DeckhandTokens.t2Xl,
+                letterSpacing: 0,
                 color: tokens.text,
               ),
             ),

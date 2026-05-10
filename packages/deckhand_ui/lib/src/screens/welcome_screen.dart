@@ -618,7 +618,7 @@ class _PanelShell extends StatelessWidget {
             style: TextStyle(
               fontSize: 22,
               fontWeight: FontWeight.w500,
-              letterSpacing: -0.015 * 22,
+              letterSpacing: 0,
               color: tokens.text,
               height: 1.25,
             ),

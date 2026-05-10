@@ -111,7 +111,7 @@ class _TopBar extends StatelessWidget {
               fontFamily: DeckhandTokens.fontSans,
               fontSize: DeckhandTokens.tMd,
               fontWeight: FontWeight.w600,
-              letterSpacing: -0.01 * DeckhandTokens.tMd,
+              letterSpacing: 0,
               color: tokens.text,
             ),
           ),

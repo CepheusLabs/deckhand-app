@@ -278,7 +278,7 @@ class _Hero extends StatelessWidget {
               fontFamily: DeckhandTokens.fontSans,
               fontSize: DeckhandTokens.t3Xl,
               fontWeight: FontWeight.w500,
-              letterSpacing: -0.02 * DeckhandTokens.t3Xl,
+              letterSpacing: 0,
               color: tokens.text,
               height: 1.15,
             ),
