@@ -309,6 +309,26 @@ void main() {
     expect(find.widgetWithText(FilledButton, 'Back'), findsNothing);
   });
 
+  testWidgets('manage screen does not show the unwired MCU flash tab', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1200, 900));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final controller = stubWizardController(profileJson: testProfileJson());
+    await controller.loadProfile('test-printer');
+
+    await tester.pumpWidget(
+      testHarness(
+        controller: controller,
+        child: const ManageScreen(),
+        initialLocation: '/manage',
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Flash MCU'), findsNothing);
+  });
+
   testWidgets('restore tab surfaces indexed backups and arms restore action', (
     tester,
   ) async {

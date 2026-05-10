@@ -29,8 +29,6 @@ import 'manage_tuning_panel.dart';
 ///    flow at `/manage-emmc-backup` so cancel/finish returns here.
 ///  * Restore — writes a previously captured full-eMMC backup image
 ///    back to a selected removable target through the elevated helper.
-///  * Flash MCU — same story; MCU detection + reflashing is a
-///    distinct service surface that doesn't exist yet.
 ///  * Re-run wizard — jumps back to S40 with the printer's
 ///    identity preserved, so a user can repair / reconfigure
 ///    without losing their profile selection.
@@ -94,7 +92,7 @@ class _EmmcRestoreScreenState extends State<EmmcRestoreScreen> {
   }
 }
 
-enum _ManageTab { status, tune, backup, restore, mcu, wizard }
+enum _ManageTab { status, tune, backup, restore, wizard }
 
 enum _RestoreStep { backup, target, confirm, progress }
 
@@ -156,7 +154,6 @@ class _ManageScreenState extends ConsumerState<ManageScreen> {
       _ManageTab.tune => const ManageTuningPanel(),
       _ManageTab.backup => const _BackupTab(),
       _ManageTab.restore => const _RestoreTab(),
-      _ManageTab.mcu => const _McuTab(),
       _ManageTab.wizard => const _ReRunWizardTab(),
     };
   }
@@ -176,7 +173,6 @@ class _ManageTabStrip extends StatelessWidget {
     (_ManageTab.tune, 'Tune', Icons.tune),
     (_ManageTab.backup, 'Backup', Icons.inventory_2_outlined),
     (_ManageTab.restore, 'Restore', Icons.restore),
-    (_ManageTab.mcu, 'Flash MCU', Icons.memory),
     (_ManageTab.wizard, 'Re-run wizard', Icons.refresh),
   ];
 
@@ -2145,26 +2141,6 @@ String _friendlyRestoreError(Object error) =>
     userFacingDiskOperationError(error);
 
 // ---------------------------------------------------------------------
-// Flash MCU tab — same honest stance.
-// ---------------------------------------------------------------------
-class _McuTab extends StatelessWidget {
-  const _McuTab();
-  @override
-  Widget build(BuildContext context) {
-    return const _ComingSoonPanel(
-      label: 'FLASH MCU',
-      body:
-          'Per-MCU reflashing (toolhead, Z, accelerometer boards) needs '
-          'a service abstraction Deckhand doesn\'t ship yet — DFU / CAN '
-          'enumeration plus klipper-build orchestration. The wizard '
-          'flashes the main board today; per-MCU flashing will arrive '
-          'when the service exists. Tracking this rather than mocking '
-          'fake rows.',
-    );
-  }
-}
-
-// ---------------------------------------------------------------------
 // Re-run wizard tab — re-enters at choose-path with state preserved.
 // ---------------------------------------------------------------------
 class _ReRunWizardTab extends StatelessWidget {
@@ -2224,57 +2200,6 @@ class _Panel extends StatelessWidget {
         borderRadius: BorderRadius.circular(DeckhandTokens.r3),
       ),
       child: child,
-    );
-  }
-}
-
-class _ComingSoonPanel extends StatelessWidget {
-  const _ComingSoonPanel({required this.label, required this.body});
-  final String label;
-  final String body;
-
-  @override
-  Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
-    return _Panel(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            children: [
-              _MonoLabel(label),
-              const SizedBox(width: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(
-                  color: tokens.ink2,
-                  border: Border.all(color: tokens.line),
-                  borderRadius: BorderRadius.circular(3),
-                ),
-                child: Text(
-                  'NOT YET WIRED',
-                  style: TextStyle(
-                    fontFamily: DeckhandTokens.fontMono,
-                    fontSize: 9,
-                    color: tokens.text3,
-                    letterSpacing: 0.1 * 9,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Text(
-            body,
-            style: TextStyle(
-              fontFamily: DeckhandTokens.fontSans,
-              fontSize: DeckhandTokens.tMd,
-              color: tokens.text2,
-              height: 1.5,
-            ),
-          ),
-        ],
-      ),
     );
   }
 }
