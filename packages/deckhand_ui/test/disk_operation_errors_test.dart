@@ -46,6 +46,17 @@ void main() {
       );
     });
 
+    test('hides spaced physical drive labels', () {
+      expect(
+        userFacingDiskOperationError('read PHYSICAL DRIVE 3 failed'),
+        'read Windows disk 3 failed',
+      );
+      expect(
+        hideRawDiskIds('Physical Drive 12 is busy'),
+        'Windows disk 12 is busy',
+      );
+    });
+
     test('strips generic exception type prefixes', () {
       expect(
         userFacingDiskOperationError(

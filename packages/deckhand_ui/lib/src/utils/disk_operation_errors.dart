@@ -1,5 +1,5 @@
 final _physicalDriveRe = RegExp(
-  r'(?:\\\\\.\\)?PHYSICALDRIVE(\d+)|PhysicalDrive(\d+)',
+  r'(?:\\\\\.\\)?PHYSICAL\s*DRIVE\s*(\d+)',
   caseSensitive: false,
 );
 final _volumeGuidRe = RegExp(
