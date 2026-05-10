@@ -55,7 +55,7 @@ void main() {
       'stock_keep': {'enabled': true, 'steps': stockKeepSteps ?? const []},
       'fresh_flash': {'enabled': true, 'steps': freshFlashSteps ?? const []},
     },
-    if (verifiers != null) 'verifiers': verifiers,
+    ...?(verifiers == null ? null : {'verifiers': verifiers}),
   };
 
   WizardController newController({
@@ -201,9 +201,9 @@ void main() {
         probedAt: DateTime.now(),
       );
 
-      final snapshot = WizardState(
+      const snapshot = WizardState(
         profileId: 'test-printer',
-        decisions: const {'flash.os': 'debian-bookworm'},
+        decisions: {'flash.os': 'debian-bookworm'},
         currentStep: 'progress',
         flow: WizardFlow.freshFlash,
         sshHost: '192.168.1.51',

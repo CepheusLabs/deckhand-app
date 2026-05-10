@@ -39,6 +39,7 @@ void main() {
         warnings.any((m) => m.contains('archive service not wired')),
         isTrue,
       );
+      expect(warnings.join('\n'), isNot(contains('your problem')));
       // No archive command should have been issued.
       expect(ssh.streamCommands, isEmpty);
     });

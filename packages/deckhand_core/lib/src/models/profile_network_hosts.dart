@@ -66,7 +66,7 @@ Iterable<Map<String, dynamic>> _stackComponents(StackConfig stack) sync* {
     if (component != null) yield component;
   }
   final choices = stack.webui?['choices'];
-  final webuiChoices = choices is List ? choices : const [];
+  final webuiChoices = choices is List ? choices : const <Object?>[];
   for (final choice in webuiChoices.whereType<Map>()) {
     yield _stringKeyMap(choice);
   }

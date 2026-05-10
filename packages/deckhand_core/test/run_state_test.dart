@@ -83,7 +83,7 @@ void main() {
     });
 
     test('drops malformed step fields instead of crashing', () {
-      final state = RunState.fromJson({
+      final state = RunState.fromJson(const {
         'schema': 'deckhand.run_state/1',
         'deckhand_version': 42,
         'profile_id': false,

@@ -85,6 +85,46 @@ void main() {
       },
     );
 
+    testWidgets('disk picker list failures use user-facing error copy', (
+      tester,
+    ) async {
+      final controller = stubWizardController(
+        profileJson: testProfileJson(
+          stockKeepSteps: [
+            {'id': 'pick_disk', 'kind': 'disk_picker'},
+          ],
+        ),
+      );
+      await controller.loadProfile('test-printer');
+      controller.setFlow(WizardFlow.stockKeep);
+      await controller.connectSsh(host: '127.0.0.1');
+
+      await tester.pumpWidget(
+        testHarness(
+          controller: controller,
+          child: const ProgressScreen(),
+          initialLocation: '/progress',
+          extraOverrides: [
+            flashServiceProvider.overrideWithValue(
+              _FailingListDisksFlash(
+                StateError(r'Get-Disk failed for \\.\PHYSICALDRIVE3'),
+              ),
+            ),
+          ],
+        ),
+      );
+      for (var i = 0; i < 10; i++) {
+        await tester.pump(const Duration(milliseconds: 50));
+      }
+
+      expect(find.text('Could not list disks'), findsOneWidget);
+      expect(
+        find.textContaining('Windows could not list storage devices.'),
+        findsOneWidget,
+      );
+      expect(find.textContaining('PHYSICALDRIVE3'), findsNothing);
+    });
+
     testWidgets('prompt step shows an AlertDialog with profile message', (
       tester,
     ) async {
@@ -820,6 +860,36 @@ void main() {
       expect(ok.onPressed, isNull);
     });
   });
+}
+
+class _FailingListDisksFlash implements FlashService {
+  const _FailingListDisksFlash(this.error);
+
+  final Object error;
+
+  @override
+  Future<List<DiskInfo>> listDisks() => Future.error(error);
+
+  @override
+  Future<FlashSafetyVerdict> safetyCheck({required String diskId}) async =>
+      FlashSafetyVerdict(diskId: diskId, allowed: true);
+
+  @override
+  Stream<FlashProgress> readImage({
+    required String diskId,
+    required String outputPath,
+  }) => const Stream.empty();
+
+  @override
+  Future<String> sha256(String path) async => '';
+
+  @override
+  Stream<FlashProgress> writeImage({
+    required String imagePath,
+    required String diskId,
+    required String confirmationToken,
+    bool verifyAfterWrite = true,
+  }) => const Stream.empty();
 }
 
 Widget _progressHandoffHarness(WizardController controller) {

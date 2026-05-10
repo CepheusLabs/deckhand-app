@@ -449,7 +449,7 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> {
       await _showFadedDialog<void>(
         child: AlertDialog(
           title: Text(t.progress.disk_picker_list_error_title),
-          content: Text('$e'),
+          content: Text(userFacingError(e)),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(context, rootNavigator: true).pop(),

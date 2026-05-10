@@ -629,10 +629,7 @@ Map<String, dynamic>? _stringKeyMap(Object? value) {
 
 List<Map<String, dynamic>> _stringKeyMapList(Object? value) {
   if (value is! List) return const [];
-  return [
-    for (final item in value)
-      if (_stringKeyMap(item) case final mapped?) mapped,
-  ];
+  return [for (final item in value) ?_stringKeyMap(item)];
 }
 
 class _ServiceAcc {

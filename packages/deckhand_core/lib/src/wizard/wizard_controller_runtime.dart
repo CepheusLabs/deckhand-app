@@ -449,7 +449,7 @@ Future<void> _runSnapshotArchiveImpl(
         stepId: _stringValue(step['id']) ?? 'snapshot_archive',
         message:
             'archive service not wired; skipping snapshot capture '
-            '(install will proceed but config backup is your problem)',
+            '(install will proceed without an automatic config backup)',
       ),
     );
     return;
