@@ -1,11 +1,11 @@
 module github.com/CepheusLabs/deckhand/sidecar
 
-go 1.22
+go 1.25.0
 
 require (
 	github.com/go-git/go-git/v5 v5.13.1
 	github.com/ulikunitz/xz v0.5.14
-	golang.org/x/sys v0.28.0
+	golang.org/x/sys v0.44.0
 )
 
 require (
