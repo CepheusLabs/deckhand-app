@@ -67,9 +67,8 @@ class _FirstBootSetupScreenState extends ConsumerState<FirstBootSetupScreen> {
     final pw = _password.text;
     final confirm = _confirm.text;
     final mismatch = confirm.isNotEmpty && pw != confirm;
-    final canContinue = _user.text.trim().isNotEmpty &&
-        pw.isNotEmpty &&
-        !mismatch;
+    final canContinue =
+        _user.text.trim().isNotEmpty && pw.isNotEmpty && !mismatch;
 
     return WizardScaffold(
       screenId: 'S250-provision-os',
@@ -165,8 +164,7 @@ class _FirstBootSetupScreenState extends ConsumerState<FirstBootSetupScreen> {
                       ),
                       decoration: InputDecoration(
                         border: const OutlineInputBorder(),
-                        errorText:
-                            mismatch ? 'Passwords don\'t match' : null,
+                        errorText: mismatch ? 'Passwords don\'t match' : null,
                       ),
                     ),
                   ),
@@ -260,8 +258,7 @@ class _FirstBootSetupScreenState extends ConsumerState<FirstBootSetupScreen> {
             ),
             const SizedBox(height: 18),
             Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               decoration: BoxDecoration(
                 color: tokens.ink2,
                 border: Border.all(color: tokens.line),
@@ -292,14 +289,23 @@ class _FirstBootSetupScreenState extends ConsumerState<FirstBootSetupScreen> {
       ),
       primaryAction: WizardAction(
         label: 'Create user and continue',
+        disabledReason: _disabledReason(
+          user: _user.text,
+          password: pw,
+          mismatch: mismatch,
+        ),
         onPressed: canContinue
             ? () async {
                 final controller = ref.read(wizardControllerProvider);
                 await controller.setDecision('first_boot.user', _user.text);
                 await controller.setDecision(
-                    'first_boot.password', _password.text);
+                  'first_boot.password',
+                  _password.text,
+                );
                 await controller.setDecision(
-                    'first_boot.hostname', _hostname.text);
+                  'first_boot.hostname',
+                  _hostname.text,
+                );
                 // Persist as empty when the user kept "Match this
                 // computer" so a downstream apply step reads "no
                 // override, use armbian-firstrun's default" rather
@@ -324,6 +330,17 @@ class _FirstBootSetupScreenState extends ConsumerState<FirstBootSetupScreen> {
         ),
       ],
     );
+  }
+
+  String? _disabledReason({
+    required String user,
+    required String password,
+    required bool mismatch,
+  }) {
+    if (user.trim().isEmpty) return 'Enter a username first.';
+    if (password.isEmpty) return 'Enter a password first.';
+    if (mismatch) return 'Make the two passwords match.';
+    return null;
   }
 }
 

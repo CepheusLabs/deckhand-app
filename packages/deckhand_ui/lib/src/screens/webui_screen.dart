@@ -171,6 +171,10 @@ class _WebuiScreenState extends ConsumerState<WebuiScreen> {
       ),
       primaryAction: WizardAction(
         label: t.common.action_continue,
+        disabledReason: _webuiDisabledReason(
+          canContinue: canContinue,
+          allowNone: allowNone,
+        ),
         onPressed: canContinue
             ? () async {
                 await ref
@@ -191,6 +195,15 @@ class _WebuiScreenState extends ConsumerState<WebuiScreen> {
         ),
       ],
     );
+  }
+
+  String? _webuiDisabledReason({
+    required bool canContinue,
+    required bool allowNone,
+  }) {
+    if (canContinue) return null;
+    if (allowNone) return 'Choose a web UI or select Neither.';
+    return 'Select at least one web UI first.';
   }
 
   /// Prefer a profile-supplied `description`. If absent, fall back to a

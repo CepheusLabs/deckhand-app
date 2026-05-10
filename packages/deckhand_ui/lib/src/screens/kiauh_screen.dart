@@ -104,6 +104,9 @@ class _KiauhScreenState extends ConsumerState<KiauhScreen> {
       ),
       primaryAction: WizardAction(
         label: t.common.action_continue,
+        disabledReason: _install == null
+            ? 'Choose whether to install KIAUH first.'
+            : null,
         onPressed: _install == null
             ? null
             : () async {

@@ -81,6 +81,7 @@ class _ChooseOsScreenState extends ConsumerState<ChooseOsScreen> {
       ),
       primaryAction: WizardAction(
         label: t.common.action_continue,
+        disabledReason: _choice == null ? 'Select an OS image first.' : null,
         onPressed: _choice == null
             ? null
             : () async {

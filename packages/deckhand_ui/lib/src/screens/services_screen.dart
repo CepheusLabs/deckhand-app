@@ -152,6 +152,9 @@ class _ServicesScreenState extends ConsumerState<ServicesScreen> {
       ),
       primaryAction: WizardAction(
         label: t.common.action_continue,
+        disabledReason: selected == null
+            ? 'Choose what to do with this service first.'
+            : null,
         onPressed: selected == null
             ? null
             : () {

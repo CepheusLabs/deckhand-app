@@ -90,6 +90,9 @@ class _ScreenChoiceScreenState extends ConsumerState<ScreenChoiceScreen> {
       ),
       primaryAction: WizardAction(
         label: t.common.action_continue,
+        disabledReason: _choice == null
+            ? 'Select a screen option first.'
+            : null,
         onPressed: _choice == null
             ? null
             : () async {

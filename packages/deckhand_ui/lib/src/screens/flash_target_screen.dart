@@ -105,6 +105,7 @@ class _FlashTargetScreenState extends ConsumerState<FlashTargetScreen> {
       ),
       primaryAction: WizardAction(
         label: 'Use this disk',
+        disabledReason: _flashTargetDisabledReason(disksAsync),
         onPressed: !selectedDiskIsUsable
             ? null
             : () async {
@@ -129,6 +130,15 @@ class _FlashTargetScreenState extends ConsumerState<FlashTargetScreen> {
         ),
       ],
     );
+  }
+
+  String? _flashTargetDisabledReason(AsyncValue<List<DiskInfo>> disksAsync) {
+    if (disksAsync.isLoading) return 'Wait for the disk scan to finish.';
+    if (disksAsync.hasError) {
+      return 'Resolve the disk scan error before continuing.';
+    }
+    if (_selected == null) return 'Select a removable eMMC disk first.';
+    return 'Select a removable eMMC disk; fixed system disks cannot be flashed.';
   }
 }
 

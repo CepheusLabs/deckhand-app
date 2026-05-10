@@ -653,6 +653,11 @@ class _ConnectScreenState extends ConsumerState<ConnectScreen> {
               label: _connecting
                   ? t.connect.action_connecting
                   : t.connect.action_connect,
+              disabledReason: _connecting
+                  ? 'Wait for the current connection attempt to finish.'
+                  : manualHost.isEmpty
+                  ? 'Enter the printer host or IP address first.'
+                  : null,
               onPressed: _connecting || manualHost.isEmpty
                   ? null
                   : () => _connect(manualHost),

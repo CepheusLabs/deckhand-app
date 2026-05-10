@@ -98,6 +98,9 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
       ),
       primaryAction: WizardAction(
         label: t.review.action_start,
+        disabledReason: _confirmed
+            ? null
+            : 'Confirm the install plan before starting.',
         onPressed: _confirmed ? () => context.go('/progress') : null,
         destructive: true,
       ),

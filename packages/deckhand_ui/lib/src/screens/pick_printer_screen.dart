@@ -100,6 +100,11 @@ class _PickPrinterScreenState extends ConsumerState<PickPrinterScreen> {
           body: body,
           primaryAction: WizardAction(
             label: primaryLabel,
+            disabledReason: selectedEntry == null
+                ? 'Select a printer profile first.'
+                : _loadingProfile
+                ? 'Wait for the profile to finish loading.'
+                : null,
             onPressed: selectedEntry == null || _loadingProfile
                 ? null
                 : _loadSelectedProfile,

@@ -216,6 +216,9 @@ class _SnapshotScreenState extends ConsumerState<SnapshotScreen> {
       ),
       primaryAction: WizardAction(
         label: 'Snapshot and continue',
+        disabledReason: !eMmcReady
+            ? 'Confirm that you have a full eMMC backup or accept the risk.'
+            : null,
         // Continue is gated on the eMMC-backup acknowledgement so
         // the user can't accidentally barrel through the only place
         // we ask them about their rollback path. Allowing advance
