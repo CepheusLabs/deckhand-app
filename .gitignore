@@ -24,6 +24,10 @@ sidecar/dist/
 !sidecar/dist/.gitkeep
 sidecar/cmd/deckhand-elevated-helper/rsrc_windows.syso
 
+# Python
+__pycache__/
+*.py[cod]
+
 # IDEs
 .idea/
 .vscode/

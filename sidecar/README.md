@@ -23,8 +23,9 @@ JSON-RPC 2.0 over stdin/stdout. One JSON object per line. See
 ## Build
 
 ```powershell
-cd D:\git\3dprinting\deckhand\sidecar
-go build -o ..\dist\deckhand-sidecar.exe ./cmd/deckhand-sidecar
+cd D:\git\3dprinting\installer\deckhand\sidecar
+go build -o dist\deckhand-sidecar.exe ./cmd/deckhand-sidecar
+go build -o dist\deckhand-elevated-helper.exe ./cmd/deckhand-elevated-helper
 ```
 
 For release builds the `.github/workflows/release.yml` pipeline
@@ -34,5 +35,7 @@ alongside the Flutter app.
 ## Elevation
 
 The sidecar runs unprivileged. Disk flashing is delegated to a separate
-`deckhand-elevated-helper` binary (not yet scaffolded) that Flutter
-launches under UAC / pkexec / osascript on demand.
+`deckhand-elevated-helper` binary that Flutter launches under UAC, pkexec,
+or osascript on demand. The helper owns raw block-device I/O and reports
+progress back through the event-file protocol used by the Dart process
+wrapper.
