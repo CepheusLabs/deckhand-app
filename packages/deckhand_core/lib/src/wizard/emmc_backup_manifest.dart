@@ -225,19 +225,19 @@ class EmmcBackupImageCandidate {
 }
 
 class EmmcBackupCatalogEntry {
-  const EmmcBackupCatalogEntry({
+  EmmcBackupCatalogEntry({
     required this.imagePath,
     required this.imageBytes,
     required this.createdAt,
     required this.profileId,
     required this.indexed,
     required this.fullSize,
-    required this.duplicatePaths,
+    required List<String> duplicatePaths,
     this.imageSha256,
     this.diskIdentity,
     this.manifest,
     this.candidate,
-  });
+  }) : duplicatePaths = List.unmodifiable(duplicatePaths);
 
   final String imagePath;
   final int imageBytes;
@@ -351,7 +351,7 @@ List<EmmcBackupCatalogEntry> buildEmmcBackupCatalog({
   }
 
   entries.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-  return entries;
+  return List.unmodifiable(entries);
 }
 
 class EmmcBackupOrganizeResult {

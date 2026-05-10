@@ -756,4 +756,37 @@ void main() {
     expect(catalog.last.fullSize, isTrue);
     expect(catalog.every((entry) => !entry.indexed), isTrue);
   });
+
+  test('catalog results and duplicate path lists are immutable snapshots', () {
+    final older = EmmcBackupManifest.create(
+      profileId: 'phrozen-arco',
+      imagePath: r'C:\Deckhand\old\emmc.img',
+      imageBytes: 4096,
+      imageSha256: 'f' * 64,
+      disk: disk,
+      deckhandVersion: 'dev',
+      createdAt: DateTime.utc(2026, 5, 4, 11),
+    );
+    final newer = EmmcBackupManifest.create(
+      profileId: 'phrozen-arco',
+      imagePath: r'C:\Deckhand\new\emmc.img',
+      imageBytes: 4096,
+      imageSha256: 'f' * 64,
+      disk: disk,
+      deckhandVersion: 'dev',
+      createdAt: DateTime.utc(2026, 5, 4, 12),
+    );
+
+    final catalog = buildEmmcBackupCatalog(
+      manifests: [older, newer],
+      candidates: const [],
+    );
+
+    expect(() => catalog.clear(), throwsUnsupportedError);
+    expect(
+      () => catalog.single.duplicatePaths.add(r'C:\Deckhand\third\emmc.img'),
+      throwsUnsupportedError,
+    );
+    expect(catalog.single.duplicatePaths, [older.imagePath]);
+  });
 }
