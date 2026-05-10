@@ -1087,6 +1087,61 @@ void main() {
       expect(events.last.phase, OsDownloadPhase.done);
     });
 
+    test(
+      'waits for sidecar result when progress announces done without sha',
+      () async {
+        final dest = _managedOsImageDest('progress-done-before-result.img');
+        addTearDown(() async {
+          await _deleteIfExists(dest);
+          await _deleteIfExists('$dest.deckhand-download.json');
+        });
+        final expected =
+            'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+        final sidecar = _FakeSidecar(
+          hash: expected,
+          streamEvents: [
+            const SidecarProgress(
+              SidecarNotification(
+                method: 'os.download.progress',
+                params: {
+                  'bytes_done': 1024,
+                  'bytes_total': 2048,
+                  'phase': 'extracting',
+                },
+              ),
+            ),
+            const SidecarProgress(
+              SidecarNotification(
+                method: 'os.download.progress',
+                params: {
+                  'bytes_done': 2048,
+                  'bytes_total': 2048,
+                  'phase': 'done',
+                },
+              ),
+            ),
+            SidecarResult({'sha256': expected, 'path': dest, 'reused': false}),
+          ],
+        );
+        final security = _AllowAllSecurity();
+        final svc = SidecarUpstreamService(sidecar: sidecar, security: security);
+
+        final events = await svc
+            .osDownload(
+              url: 'https://example.com/image.img.xz',
+              destPath: dest,
+              expectedSha256: expected,
+            )
+            .toList();
+
+        expect(events.map((e) => e.phase), [
+          OsDownloadPhase.extracting,
+          OsDownloadPhase.extracting,
+          OsDownloadPhase.done,
+        ]);
+      },
+    );
+
     test('rejects sidecar completion without a valid image sha256', () async {
       final dest = _managedOsImageDest('invalid-result-sha.img');
       addTearDown(() async {

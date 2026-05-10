@@ -336,6 +336,7 @@ class SidecarUpstreamService implements UpstreamService {
 
     var bytesSeen = 0;
     var completed = false;
+    var lastTransferPhase = OsDownloadPhase.downloading;
     try {
       await for (final progress
           in sidecar
@@ -347,8 +348,21 @@ class SidecarUpstreamService implements UpstreamService {
               .transform(_osDownloadTransformer)) {
         if (progress.phase == OsDownloadPhase.downloading) {
           recordDownloadStartIfNeeded();
+          if (progress.bytesDone > bytesSeen) bytesSeen = progress.bytesDone;
+          lastTransferPhase = progress.phase;
+        } else if (progress.phase != OsDownloadPhase.done) {
+          lastTransferPhase = progress.phase;
         }
-        if (progress.bytesDone > bytesSeen) bytesSeen = progress.bytesDone;
+        if (progress.phase == OsDownloadPhase.done &&
+            progress.sha256 == null &&
+            progress.path == null) {
+          yield OsDownloadProgress(
+            bytesDone: progress.bytesDone,
+            bytesTotal: progress.bytesTotal,
+            phase: lastTransferPhase,
+          );
+          continue;
+        }
         if (progress.phase == OsDownloadPhase.done) {
           final actualSha = _normalizedSha256(progress.sha256);
           if (actualSha == null) {
