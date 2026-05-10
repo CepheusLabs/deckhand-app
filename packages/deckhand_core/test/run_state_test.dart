@@ -117,6 +117,40 @@ void main() {
       expect(state.steps.single.exitCode, isNull);
       expect(state.steps.single.skipReason, isNull);
     });
+
+    test('returns immutable step and output snapshots', () {
+      final step = RunStateStep(
+        id: 'install_stack',
+        status: RunStateStatus.completed,
+        startedAt: DateTime.utc(2026, 4, 25),
+        inputHash: 'sha256:abc',
+      );
+      final appended = RunState.empty(
+        deckhandVersion: '1',
+        profileId: 'p',
+        profileCommit: 'c',
+      ).appending(step);
+
+      expect(() => appended.steps.add(step), throwsUnsupportedError);
+
+      final parsed = RunState.fromJson(const {
+        'schema': 'deckhand.run_state/1',
+        'steps': [
+          {
+            'id': 'install_stack',
+            'status': 'completed',
+            'input_hash': 'sha256:abc',
+            'output': {'path': '/tmp/out'},
+          },
+        ],
+      });
+
+      expect(() => parsed.steps.add(step), throwsUnsupportedError);
+      expect(
+        () => parsed.steps.single.output['path'] = '/tmp/changed',
+        throwsUnsupportedError,
+      );
+    });
   });
 
   group('canonicalInputBytes', () {

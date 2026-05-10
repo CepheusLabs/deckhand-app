@@ -56,7 +56,7 @@ class RunState {
       profileId: _jsonString(json['profile_id']) ?? '',
       profileCommit: _jsonString(json['profile_commit']) ?? '',
       startedAt: _jsonDate(json['started_at']) ?? DateTime.now().toUtc(),
-      steps: steps,
+      steps: List.unmodifiable(steps),
     );
   }
 
@@ -96,7 +96,7 @@ class RunState {
     profileId: profileId,
     profileCommit: profileCommit,
     startedAt: startedAt,
-    steps: [...steps, step],
+    steps: List.unmodifiable([...steps, step]),
   );
 
   /// Replace the most recent entry for [step.id] in place. Useful for
@@ -113,7 +113,7 @@ class RunState {
           profileId: profileId,
           profileCommit: profileCommit,
           startedAt: startedAt,
-          steps: next,
+          steps: List.unmodifiable(next),
         );
       }
     }
@@ -130,7 +130,7 @@ class RunState {
         startedAt: other.startedAt.isBefore(startedAt)
             ? other.startedAt
             : startedAt,
-        steps: other.steps,
+        steps: List.unmodifiable(other.steps),
       );
     }
     return RunState(
@@ -140,7 +140,7 @@ class RunState {
       startedAt: other.startedAt.isBefore(startedAt)
           ? other.startedAt
           : startedAt,
-      steps: [...other.steps, ...steps],
+      steps: List.unmodifiable([...other.steps, ...steps]),
     );
   }
 }
@@ -175,7 +175,7 @@ class RunStateStep {
       startedAt: _jsonDate(json['started_at']) ?? DateTime.now().toUtc(),
       finishedAt: _jsonDate(json['finished_at']),
       inputHash: _jsonString(json['input_hash']) ?? '',
-      output: output,
+      output: Map.unmodifiable(output),
       error: _jsonString(json['error']),
       exitCode: _jsonInt(json['exit_code']),
       skipReason: _jsonString(json['skip_reason']),
