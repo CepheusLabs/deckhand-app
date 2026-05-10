@@ -80,6 +80,14 @@ void main() {
     expect(s.allowedHosts, {'downloads.example.com', 'github.com'});
   });
 
+  test('allowedHosts returns a snapshot that callers cannot mutate', () {
+    final s = DeckhandSettings(path: '<memory>')
+      ..allowedHosts = {'downloads.example.com'};
+
+    expect(() => s.allowedHosts.add('github.com'), throwsUnsupportedError);
+    expect(s.allowedHosts, {'downloads.example.com'});
+  });
+
   test(
     'allowedHosts setter normalizes persisted blank and duplicate hosts',
     () async {

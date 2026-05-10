@@ -38,13 +38,15 @@ class DeckhandSettings {
   Set<String> get allowedHosts {
     final raw = _values['allowed_hosts'];
     if (raw is List) {
-      return raw
+      return Set.unmodifiable(
+        raw
           .whereType<String>()
           .map((host) => host.trim().toLowerCase())
           .where((host) => host.isNotEmpty)
-          .toSet();
+          .toSet(),
+      );
     }
-    return <String>{};
+    return const {};
   }
 
   set allowedHosts(Set<String> hosts) {
@@ -76,7 +78,7 @@ class DeckhandSettings {
         // rewrites the file with only the valid rows.
       }
     }
-    return out;
+    return List.unmodifiable(out);
   }
 
   set savedHosts(List<SavedHost> hosts) {
@@ -151,7 +153,7 @@ class DeckhandSettings {
       if (bSeen == null) return -1;
       return bSeen.compareTo(aSeen);
     });
-    return out;
+    return List.unmodifiable(out);
   }
 
   set managedPrinters(List<ManagedPrinter> printers) {

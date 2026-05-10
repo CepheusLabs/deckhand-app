@@ -59,6 +59,21 @@ void main() {
       expect(settings.savedHosts.single.user, 'root');
     });
 
+    test('returns saved host snapshots that callers cannot mutate', () {
+      final settings = DeckhandSettings(path: '<memory>');
+      settings.recordSavedHost(
+        const SavedHost(host: '192.168.1.50', port: 22, user: 'mks'),
+      );
+
+      expect(
+        () => settings.savedHosts.add(
+          const SavedHost(host: '192.168.1.51', port: 22, user: 'root'),
+        ),
+        throwsUnsupportedError,
+      );
+      expect(settings.savedHosts, hasLength(1));
+    });
+
     test('forgets saved hosts with normalized input', () {
       final settings = DeckhandSettings(path: '<memory>');
       settings.recordSavedHost(
@@ -337,6 +352,26 @@ void main() {
       registry.forgetManagedPrinter(printer.id);
 
       expect(registry.listManagedPrinters(), isEmpty);
+    });
+
+    test('returns managed printer snapshots that callers cannot mutate', () {
+      final settings = DeckhandSettings(path: '<memory>');
+      final registry = SettingsManagedPrinterRegistry(settings);
+      final printer = ManagedPrinter.fromConnection(
+        profileId: 'phrozen-arco',
+        displayName: 'Phrozen Arco',
+        host: '192.168.1.50',
+        port: 22,
+        user: 'mks',
+      );
+      registry.recordManagedPrinter(printer);
+
+      expect(() => settings.managedPrinters.clear(), throwsUnsupportedError);
+      expect(
+        () => registry.listManagedPrinters().remove(printer),
+        throwsUnsupportedError,
+      );
+      expect(settings.managedPrinters, hasLength(1));
     });
 
     test('does not record impossible managed printer rows', () {
