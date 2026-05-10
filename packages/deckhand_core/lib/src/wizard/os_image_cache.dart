@@ -79,7 +79,7 @@ Future<List<OsImageCacheEntry>> scanOsImageCache(String root) async {
     );
   }
   entries.sort((a, b) => b.lastTouchedAt.compareTo(a.lastTouchedAt));
-  return entries;
+  return List.unmodifiable(entries);
 }
 
 Future<void> deleteOsImageCacheEntry({

@@ -33,6 +33,7 @@ void main() {
     expect(entries.single.url, 'https://example.com/arco.img.xz');
     expect(entries.single.hasManifest, isTrue);
     expect(entries.single.hashMatchesManifest, isTrue);
+    expect(() => entries.add(entries.single), throwsUnsupportedError);
   });
 
   test('scanOsImageCache treats extracted xz manifests as verified', () async {
