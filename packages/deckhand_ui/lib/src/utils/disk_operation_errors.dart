@@ -46,6 +46,11 @@ String userFacingDiskOperationError(Object? error) {
     final disk = _friendlyDiskName(message) ?? 'the selected disk';
     return 'Windows rejected the raw disk write to $disk. Replug the USB adapter and retry; if it repeats, use a different eMMC reader or adapter.';
   }
+  if (lower.contains('cannot find the sector requested') &&
+      lower.contains('physicaldrive')) {
+    final disk = _friendlyDiskName(message) ?? 'the selected disk';
+    return 'Windows reported that $disk ended before the advertised size. Replug the USB adapter and retry; if it repeats, use a different eMMC reader or treat this backup as incomplete.';
+  }
   if (lower.contains('confirmation token was rejected')) {
     return 'Deckhand rejected the restore authorization token before launching the disk helper. Restart Deckhand and retry.';
   }

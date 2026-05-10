@@ -37,6 +37,15 @@ void main() {
       );
     });
 
+    test('explains adapter sector errors in user terms', () {
+      expect(
+        userFacingDiskOperationError(
+          r'ElevatedHelperException: read device after 7818182656 of 7818182656 bytes: read \\.\PHYSICALDRIVE3: The drive cannot find the sector requested.',
+        ),
+        'Windows reported that Windows disk 3 ended before the advertised size. Replug the USB adapter and retry; if it repeats, use a different eMMC reader or treat this backup as incomplete.',
+      );
+    });
+
     test('hides raw disk ids behind StateError messages', () {
       expect(
         userFacingDiskOperationError(
