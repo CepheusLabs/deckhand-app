@@ -33,7 +33,7 @@ String userFacingDiskOperationError(Object? error) {
     return 'Deckhand did not see the printer come online over SSH. Make sure the eMMC is installed, the printer is powered on, and the printer is on the network, then retry.';
   }
   if (lower.contains('elevated helper never started')) {
-    return 'Windows did not start Deckhand\'s disk helper. Deckhand cannot write raw disks until that helper launches with administrator rights. Start Deckhand as Administrator, then retry.';
+    return 'Windows did not start Deckhand\'s disk helper. Deckhand cannot write raw disks until the app is running with administrator rights. Relaunch Deckhand as Administrator; if UAC prompts are disabled, start it from an elevated Administrator terminal.';
   }
   if (lower.contains('elevated helper is not configured')) {
     return 'This Deckhand build is missing the elevated disk helper. Rebuild or reinstall the Windows release bundle, then retry.';

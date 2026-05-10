@@ -61,6 +61,15 @@ void main() {
       );
     });
 
+    test('explains helper launch failures without assuming UAC prompts', () {
+      expect(
+        userFacingDiskOperationError(
+          'ElevatedHelperException: elevated helper never started. The UAC prompt may have been suppressed.',
+        ),
+        'Windows did not start Deckhand\'s disk helper. Deckhand cannot write raw disks until the app is running with administrator rights. Relaunch Deckhand as Administrator; if UAC prompts are disabled, start it from an elevated Administrator terminal.',
+      );
+    });
+
     test('hides raw disk ids behind StateError messages', () {
       expect(
         userFacingDiskOperationError(
