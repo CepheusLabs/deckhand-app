@@ -187,7 +187,7 @@ void main() {
 
     expect(find.text('OS IMAGE CACHE'), findsOneWidget);
     expect(find.text('arco.img'), findsOneWidget);
-    expect(find.text('VERIFIED'), findsOneWidget);
+    expect(find.text('READY'), findsOneWidget);
     expect(find.textContaining('github.com'), findsOneWidget);
 
     await tester.ensureVisible(find.widgetWithText(OutlinedButton, 'Delete'));
@@ -306,7 +306,7 @@ void main() {
 
     expect(tester.takeException(), isNull);
     expect(find.text('OS IMAGE CACHE'), findsOneWidget);
-    expect(find.text('VERIFIED'), findsOneWidget);
+    expect(find.text('READY'), findsOneWidget);
   });
 
   testWidgets('SettingsScreen sanitizes OS image cache errors', (tester) async {

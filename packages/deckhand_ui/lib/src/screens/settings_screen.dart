@@ -1550,9 +1550,9 @@ class _ApprovedHostRow extends StatelessWidget {
 }
 
 enum _CacheStatus {
-  verified('VERIFIED'),
-  unindexed('UNINDEXED'),
-  mismatch('MISMATCH');
+  verified('READY'),
+  unindexed('NEEDS MANIFEST'),
+  mismatch('CHECK FAILED');
 
   const _CacheStatus(this.label);
   final String label;
