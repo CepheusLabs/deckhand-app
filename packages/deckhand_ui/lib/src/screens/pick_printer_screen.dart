@@ -207,13 +207,16 @@ class _Body extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final tokens = DeckhandTokens.of(context);
+    final registryLabel = registrySize == 1
+        ? '1 entry'
+        : '$registrySize entries';
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          children: [
-            SizedBox(
-              width: 320,
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final search = SizedBox(
+              width: constraints.maxWidth < 320 ? constraints.maxWidth : 320,
               child: TextField(
                 onChanged: onQuery,
                 decoration: InputDecoration(
@@ -221,20 +224,31 @@ class _Body extends StatelessWidget {
                   hintText: 'Search $registrySize profiles…',
                 ),
               ),
-            ),
-            const Spacer(),
-            Text(
-              'REGISTRY',
-              style: TextStyle(
-                fontFamily: DeckhandTokens.fontMono,
-                fontSize: DeckhandTokens.tXs,
-                color: tokens.text4,
-                letterSpacing: 0.04 * DeckhandTokens.tXs,
-              ),
-            ),
-            const SizedBox(width: 6),
-            IdTag('$registrySize entries'),
-          ],
+            );
+            final registryMeta = Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'REGISTRY',
+                  style: TextStyle(
+                    fontFamily: DeckhandTokens.fontMono,
+                    fontSize: DeckhandTokens.tXs,
+                    color: tokens.text4,
+                    letterSpacing: 0.04 * DeckhandTokens.tXs,
+                  ),
+                ),
+                const SizedBox(width: 6),
+                IdTag(registryLabel),
+              ],
+            );
+            if (constraints.maxWidth < 460) {
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [search, const SizedBox(height: 10), registryMeta],
+              );
+            }
+            return Row(children: [search, const Spacer(), registryMeta]);
+          },
         ),
         const SizedBox(height: 16),
         if (visible.isEmpty)
@@ -270,10 +284,12 @@ class _Body extends StatelessWidget {
           ),
         ],
         const SizedBox(height: 20),
-        Row(
+        Wrap(
+          crossAxisAlignment: WrapCrossAlignment.center,
+          spacing: 8,
+          runSpacing: 6,
           children: [
             Icon(Icons.menu_book_outlined, size: 14, color: tokens.text3),
-            const SizedBox(width: 8),
             Text(
               'My printer isn\'t here — ',
               style: TextStyle(
@@ -292,8 +308,9 @@ class _Body extends StatelessWidget {
               cursor: SystemMouseCursors.click,
               child: GestureDetector(
                 onTap: _openContributeLink,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
+                child: Wrap(
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: 4,
                   children: [
                     Text(
                       'contribute a profile',
@@ -305,7 +322,6 @@ class _Body extends StatelessWidget {
                         decorationColor: tokens.accent,
                       ),
                     ),
-                    const SizedBox(width: 4),
                     // Trailing arrow rendered as an Icon rather than
                     // U+2192 glyph — the unicode arrow is banned from
                     // the printer picker (regression guard from a

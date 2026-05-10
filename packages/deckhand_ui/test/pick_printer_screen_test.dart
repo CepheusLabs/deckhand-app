@@ -228,6 +228,49 @@ void main() {
       expect(find.text('Continue with Test Printer'), findsOneWidget);
     });
 
+    testWidgets('search header stays usable in a narrow window', (
+      tester,
+    ) async {
+      await tester.binding.setSurfaceSize(const Size(360, 700));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final controller = stubWizardController(profileJson: testProfileJson());
+      await controller.loadProfile('test-printer');
+
+      await tester.pumpWidget(
+        testHarness(
+          controller: controller,
+          child: const PickPrinterScreen(),
+          initialLocation: '/pick-printer',
+          extraOverrides: [
+            profileServiceProvider.overrideWithValue(
+              const _RegistryProfileService(
+                ProfileRegistry(
+                  entries: [
+                    ProfileRegistryEntry(
+                      id: 'test-printer',
+                      displayName: 'Test Printer',
+                      manufacturer: 'Acme',
+                      model: 'Robo',
+                      status: 'beta',
+                      directory: 'printers/test-printer',
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+
+      expect(tester.takeException(), isNull);
+      expect(find.text('REGISTRY'), findsOneWidget);
+      expect(find.text('1 entry'), findsOneWidget);
+      expect(find.byType(TextField), findsOneWidget);
+    });
+
     testWidgets('approves selected profile network hosts in one prompt', (
       tester,
     ) async {
