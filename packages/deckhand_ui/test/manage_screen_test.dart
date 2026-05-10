@@ -443,6 +443,56 @@ void main() {
     expect(find.textContaining('Generic STORAGE DEVICE'), findsWidgets);
   });
 
+  testWidgets('direct eMMC restore backup step fits narrow windows', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(420, 760));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    final disk = const DiskInfo(
+      id: 'PhysicalDrive3',
+      path: r'\\.\PHYSICALDRIVE3',
+      sizeBytes: 8 * 1024 * 1024,
+      bus: 'USB',
+      model: 'Generic STORAGE DEVICE',
+      removable: true,
+      partitions: [],
+    );
+    const sha =
+        'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+    final manifest = EmmcBackupManifest.create(
+      profileId: 'test-printer',
+      imagePath: r'C:\Deckhand\emmc-backups\rollback.img',
+      imageBytes: disk.sizeBytes,
+      imageSha256: sha,
+      disk: disk,
+      deckhandVersion: 'test',
+    );
+
+    final controller = stubWizardController(profileJson: testProfileJson());
+    await controller.loadProfile('test-printer');
+
+    await tester.pumpWidget(
+      testHarness(
+        controller: controller,
+        child: const EmmcRestoreScreen(),
+        initialLocation: '/emmc-restore',
+        extraOverrides: [
+          emmcBackupManifestsProvider.overrideWith((ref) async => [manifest]),
+          flashServiceProvider.overrideWithValue(
+            _RestoreFlash(disks: [disk], sha256Value: sha),
+          ),
+        ],
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('Restore an eMMC backup.'), findsOneWidget);
+    expect(find.widgetWithText(FilledButton, 'Continue to target'), findsOne);
+  });
+
   testWidgets('direct eMMC restore empty state stays in recovery flow', (
     tester,
   ) async {

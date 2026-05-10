@@ -1570,24 +1570,51 @@ class _RestoreStepStrip extends StatelessWidget {
         border: Border.all(color: tokens.line),
         borderRadius: BorderRadius.circular(DeckhandTokens.r2),
       ),
-      child: Row(
-        children: [
-          for (final item in _RestoreStep.values) ...[
-            _RestoreStepPill(
-              label: labels[item]!,
-              active: item == step,
-              done: _RestoreStep.values.indexOf(item) < current,
-            ),
-            if (item != _RestoreStep.values.last)
-              Expanded(
-                child: Container(
-                  margin: const EdgeInsets.symmetric(horizontal: 8),
-                  height: 1,
-                  color: tokens.rule,
-                ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          if (constraints.maxWidth < 420) {
+            return SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  for (final item in _RestoreStep.values) ...[
+                    _RestoreStepPill(
+                      label: labels[item]!,
+                      active: item == step,
+                      done: _RestoreStep.values.indexOf(item) < current,
+                    ),
+                    if (item != _RestoreStep.values.last)
+                      Container(
+                        width: 44,
+                        margin: const EdgeInsets.symmetric(horizontal: 8),
+                        height: 1,
+                        color: tokens.rule,
+                      ),
+                  ],
+                ],
               ),
-          ],
-        ],
+            );
+          }
+          return Row(
+            children: [
+              for (final item in _RestoreStep.values) ...[
+                _RestoreStepPill(
+                  label: labels[item]!,
+                  active: item == step,
+                  done: _RestoreStep.values.indexOf(item) < current,
+                ),
+                if (item != _RestoreStep.values.last)
+                  Expanded(
+                    child: Container(
+                      margin: const EdgeInsets.symmetric(horizontal: 8),
+                      height: 1,
+                      color: tokens.rule,
+                    ),
+                  ),
+              ],
+            ],
+          );
+        },
       ),
     );
   }
