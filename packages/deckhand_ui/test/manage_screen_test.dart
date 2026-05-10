@@ -1010,8 +1010,8 @@ void main() {
       findsOneWidget,
     );
     expect(find.textContaining(r'phrozen-arco\old\emmc.img'), findsOneWidget);
-    expect(find.textContaining('Indexed full-disk backup'), findsOneWidget);
-    expect(find.textContaining('Unindexed partial image'), findsOneWidget);
+    expect(find.textContaining('Verified full-disk backup'), findsOneWidget);
+    expect(find.textContaining('Partial image, not verified'), findsOneWidget);
   });
 
   testWidgets(
@@ -1072,8 +1072,8 @@ void main() {
       await tester.tap(find.widgetWithText(FilledButton, 'Continue to target'));
       await tester.pump();
 
-      expect(find.textContaining('Indexed full-disk backup'), findsOneWidget);
-      expect(find.textContaining('Unindexed partial image'), findsNothing);
+      expect(find.textContaining('Verified full-disk backup'), findsOneWidget);
+      expect(find.textContaining('Partial image, not verified'), findsNothing);
     },
   );
 
@@ -1134,9 +1134,9 @@ void main() {
       await tester.tap(find.widgetWithText(FilledButton, 'Continue to target'));
       await tester.pump();
 
-      expect(find.textContaining('8.0 MiB · Unindexed image'), findsOneWidget);
+      expect(find.textContaining('8.0 MiB · Not verified yet'), findsOneWidget);
       expect(
-        find.textContaining('4.0 MiB · Unindexed partial image'),
+        find.textContaining('4.0 MiB · Partial image, not verified'),
         findsNothing,
       );
     },
@@ -1188,7 +1188,7 @@ void main() {
 
     await tester.tap(find.widgetWithText(FilledButton, 'Continue to target'));
     await tester.pump();
-    expect(find.text('Unindexed image'), findsWidgets);
+    expect(find.textContaining('Not verified yet'), findsWidgets);
     final button = tester.widget<OutlinedButton>(
       find.widgetWithText(OutlinedButton, 'Verify and index'),
     );

@@ -2054,11 +2054,11 @@ String _restoreImageTitle(_RestoreImage image) {
       '${local.minute.toString().padLeft(2, '0')}';
   final source = image.indexed
       ? image.fullSize
-            ? 'Indexed full-disk backup'
-            : 'Indexed smaller image'
+            ? 'Verified full-disk backup'
+            : 'Verified smaller image'
       : image.fullSize
-      ? 'Unindexed image'
-      : 'Unindexed partial image';
+      ? 'Not verified yet'
+      : 'Partial image, not verified';
   final duplicates = image.duplicateCount == 0
       ? ''
       : ' · ${image.duplicateCount} duplicate hidden'
@@ -2074,9 +2074,20 @@ String _restoreImageSubtitle(_RestoreImage image) {
     final sha = image.manifestSha256.length >= 12
         ? image.manifestSha256.substring(0, 12)
         : image.manifestSha256;
-    return '$profile · sha256 $sha… · ${image.imagePath}';
+    return '$profile · verified sha256 $sha… · '
+        '${_restoreImagePathLabel(image.imagePath)}';
   }
-  return '$profile · unindexed image · ${image.imagePath}';
+  return '$profile · verify before restore · '
+      '${_restoreImagePathLabel(image.imagePath)}';
+}
+
+String _restoreImagePathLabel(String path) {
+  final parts = path
+      .split(RegExp(r'[\\/]'))
+      .where((part) => part.trim().isNotEmpty)
+      .toList(growable: false);
+  if (parts.length <= 3) return path;
+  return parts.skip(parts.length - 3).join(r'\');
 }
 
 String? _restoreImageDuplicateDetail(_RestoreImage image) {
