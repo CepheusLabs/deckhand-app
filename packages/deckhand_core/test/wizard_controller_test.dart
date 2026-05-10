@@ -3291,6 +3291,55 @@ void main() {
       },
     );
 
+    test(
+      'completed operational built-ins without a pre-check still rerun',
+      () async {
+        final existing =
+            RunState.empty(
+              deckhandVersion: 'unknown',
+              profileId: 'test-printer',
+              profileCommit: 'deadbeef',
+            ).appending(
+              RunStateStep(
+                id: 'mark',
+                status: RunStateStatus.completed,
+                startedAt: DateTime.utc(2026, 5, 6),
+                inputHash: canonicalInputHash({
+                  'kind': 'install_marker',
+                  'id': 'mark',
+                  'decisions': const <String, Object?>{},
+                }),
+              ),
+            );
+        final ssh = FakeSsh()
+          ..nextRun = SshCommandResult(
+            stdout: const JsonEncoder().convert(existing.toJson()),
+            stderr: '',
+            exitCode: 0,
+          );
+        final controller = newController(
+          profileJson: baseProfileJson(
+            stockKeepSteps: [
+              {'id': 'mark', 'kind': 'install_marker'},
+            ],
+          ),
+          ssh: ssh,
+        );
+        await controller.loadProfile('test-printer');
+        controller.setFlow(WizardFlow.stockKeep);
+        controller.setSession(
+          const SshSession(id: 'fake', host: 'h', port: 22, user: 'root'),
+        );
+
+        await controller.startExecution();
+
+        expect(
+          ssh.uploadCalls.any((u) => u.remote.contains('/tmp/deckhand-write-')),
+          isTrue,
+        );
+      },
+    );
+
     test('idempotency post-check failure fails the step', () async {
       final ssh = FakeSsh()
         ..responsesByContains['/tmp/post-check'] = const SshCommandResult(

@@ -254,15 +254,6 @@ Future<void> _prepareInterruptedStepForRestart(
   }
 }
 
-const _kindsWithBuiltInRunStateSkip = <String>{
-  'wait_for_ssh',
-  'os_download',
-  'verify',
-  'conditional',
-  'install_marker',
-  'snapshot_archive',
-};
-
 const _interactiveRunStateStepKinds = <String>{
   'prompt',
   'choose_one',
@@ -293,9 +284,7 @@ Future<bool> _runStateCanSkipCompletedStep(
     c._log(step, '[run-state] pre-check failed for $id; re-running');
     return false;
   }
-  if (_kindsWithBuiltInRunStateSkip.contains(kind) ||
-      _interactiveRunStateStepKinds.contains(kind) ||
-      _boolValue(step['safe_to_rerun'])) {
+  if (_interactiveRunStateStepKinds.contains(kind)) {
     return true;
   }
   c._emit(
