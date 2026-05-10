@@ -203,7 +203,7 @@ func openWindowsVolume(volumeName string) (windows.Handle, error) {
 func volumeContainsDisk(handle windows.Handle, diskNumber uint32) (bool, error) {
 	buf := make([]byte, volumeDiskExtentsHeaderBytes+diskExtentBytes*maxVolumeDiskExtents)
 	var bytesReturned uint32
-	err := windows.DeviceIoControl(
+	err := deviceIoControlFn(
 		handle,
 		ioctlVolumeGetVolumeExtents,
 		nil,
@@ -216,20 +216,39 @@ func volumeContainsDisk(handle windows.Handle, diskNumber uint32) (bool, error) 
 	if err != nil {
 		return false, err
 	}
+	return parseVolumeContainsDisk(buf, bytesReturned, diskNumber)
+}
+
+func parseVolumeContainsDisk(buf []byte, bytesReturned uint32, diskNumber uint32) (bool, error) {
 	if bytesReturned < volumeDiskExtentsHeaderBytes {
 		return false, fmt.Errorf("volume extents response too small")
 	}
+	if int(bytesReturned) > len(buf) {
+		return false, fmt.Errorf(
+			"volume extents response length %d exceeds buffer length %d",
+			bytesReturned,
+			len(buf),
+		)
+	}
 
 	count := binary.LittleEndian.Uint32(buf[0:4])
-	maxCount := uint32(maxVolumeDiskExtents)
-	if count > maxCount {
-		count = maxCount
+	if count > uint32(maxVolumeDiskExtents) {
+		return false, fmt.Errorf(
+			"volume extents response declares %d extents, exceeds supported maximum %d",
+			count,
+			maxVolumeDiskExtents,
+		)
+	}
+	requiredBytes := volumeDiskExtentsHeaderBytes + int(count)*diskExtentBytes
+	if requiredBytes > int(bytesReturned) {
+		return false, fmt.Errorf(
+			"volume extents response truncated: %d bytes for %d extents",
+			bytesReturned,
+			count,
+		)
 	}
 	for i := uint32(0); i < count; i++ {
 		offset := volumeDiskExtentsHeaderBytes + int(i)*diskExtentBytes
-		if offset+4 > int(bytesReturned) {
-			break
-		}
 		if binary.LittleEndian.Uint32(buf[offset:offset+4]) == diskNumber {
 			return true, nil
 		}

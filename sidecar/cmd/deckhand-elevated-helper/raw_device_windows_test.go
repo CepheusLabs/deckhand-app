@@ -3,6 +3,7 @@
 package main
 
 import (
+	"encoding/binary"
 	"errors"
 	"strings"
 	"testing"
@@ -218,6 +219,60 @@ func TestLockAndDismountVolumeFailsWhenDismountFails(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "dismount busy volume also failed") {
 		t.Fatalf("expected dismount failure, got %v", err)
 	}
+}
+
+func TestParseVolumeContainsDiskFindsMatchingExtent(t *testing.T) {
+	buf := volumeExtentsResponse(1, 8, 3, 12)
+
+	matches, err := parseVolumeContainsDisk(buf, uint32(len(buf)), 3)
+	if err != nil {
+		t.Fatalf("parseVolumeContainsDisk() error = %v", err)
+	}
+	if !matches {
+		t.Fatalf("parseVolumeContainsDisk() = false, want true")
+	}
+}
+
+func TestParseVolumeContainsDiskReturnsFalseWhenDiskIsAbsent(t *testing.T) {
+	buf := volumeExtentsResponse(1, 2)
+
+	matches, err := parseVolumeContainsDisk(buf, uint32(len(buf)), 3)
+	if err != nil {
+		t.Fatalf("parseVolumeContainsDisk() error = %v", err)
+	}
+	if matches {
+		t.Fatalf("parseVolumeContainsDisk() = true, want false")
+	}
+}
+
+func TestParseVolumeContainsDiskRejectsOversizedExtentList(t *testing.T) {
+	buf := make([]byte, volumeDiskExtentsHeaderBytes)
+	binary.LittleEndian.PutUint32(buf[0:4], uint32(maxVolumeDiskExtents+1))
+
+	matches, err := parseVolumeContainsDisk(buf, uint32(len(buf)), 3)
+	if err == nil || !strings.Contains(err.Error(), "exceeds supported maximum") {
+		t.Fatalf("expected oversized response error, got matches=%v err=%v", matches, err)
+	}
+}
+
+func TestParseVolumeContainsDiskRejectsTruncatedExtentList(t *testing.T) {
+	buf := volumeExtentsResponse(1, 2, 3)
+	truncatedBytesReturned := uint32(volumeDiskExtentsHeaderBytes + diskExtentBytes*2)
+
+	matches, err := parseVolumeContainsDisk(buf, truncatedBytesReturned, 3)
+	if err == nil || !strings.Contains(err.Error(), "truncated") {
+		t.Fatalf("expected truncated response error, got matches=%v err=%v", matches, err)
+	}
+}
+
+func volumeExtentsResponse(diskNumbers ...uint32) []byte {
+	buf := make([]byte, volumeDiskExtentsHeaderBytes+len(diskNumbers)*diskExtentBytes)
+	binary.LittleEndian.PutUint32(buf[0:4], uint32(len(diskNumbers)))
+	for i, diskNumber := range diskNumbers {
+		offset := volumeDiskExtentsHeaderBytes + i*diskExtentBytes
+		binary.LittleEndian.PutUint32(buf[offset:offset+4], diskNumber)
+	}
+	return buf
 }
 
 func stubWindowsVolumeOps(t *testing.T) func() {
