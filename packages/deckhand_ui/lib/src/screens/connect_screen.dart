@@ -1186,46 +1186,64 @@ class _TabbedBody extends StatelessWidget {
           decoration: BoxDecoration(
             border: Border(bottom: BorderSide(color: tokens.line)),
           ),
-          child: Row(
-            children: [
-              _TabButton(
-                label: 'Auto-discover',
-                icon: Icons.wifi,
-                active: activeTab == _ConnectTab.discover,
-                onTap: () => onTabChanged(_ConnectTab.discover),
-              ),
-              _TabButton(
-                label: 'Manual host',
-                icon: Icons.dns_outlined,
-                active: activeTab == _ConnectTab.manual,
-                onTap: () => onTabChanged(_ConnectTab.manual),
-              ),
-              _TabButton(
-                label: savedHostCount > 0 ? 'Saved ($savedHostCount)' : 'Saved',
-                icon: Icons.book_outlined,
-                active: activeTab == _ConnectTab.saved,
-                onTap: () => onTabChanged(_ConnectTab.saved),
-              ),
-              const Spacer(),
-              if (activeTab == _ConnectTab.discover)
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                  child: Row(
-                    children: [
-                      if (scanning)
-                        const Padding(
-                          padding: EdgeInsets.only(right: 8),
-                          child: DeckhandSpinner(strokeWidth: 1.5),
-                        ),
-                      TextButton.icon(
-                        icon: const Icon(Icons.refresh, size: 14),
-                        label: const Text('Refresh'),
-                        onPressed: onRescan,
-                      ),
-                    ],
-                  ),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final tabs = <Widget>[
+                _TabButton(
+                  label: 'Auto-discover',
+                  icon: Icons.wifi,
+                  active: activeTab == _ConnectTab.discover,
+                  onTap: () => onTabChanged(_ConnectTab.discover),
                 ),
-            ],
+                _TabButton(
+                  label: 'Manual host',
+                  icon: Icons.dns_outlined,
+                  active: activeTab == _ConnectTab.manual,
+                  onTap: () => onTabChanged(_ConnectTab.manual),
+                ),
+                _TabButton(
+                  label: savedHostCount > 0
+                      ? 'Saved ($savedHostCount)'
+                      : 'Saved',
+                  icon: Icons.book_outlined,
+                  active: activeTab == _ConnectTab.saved,
+                  onTap: () => onTabChanged(_ConnectTab.saved),
+                ),
+              ];
+              final refresh = activeTab == _ConnectTab.discover
+                  ? Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (scanning)
+                            const Padding(
+                              padding: EdgeInsets.only(right: 8),
+                              child: DeckhandSpinner(strokeWidth: 1.5),
+                            ),
+                          TextButton.icon(
+                            icon: const Icon(Icons.refresh, size: 14),
+                            label: const Text('Refresh'),
+                            onPressed: onRescan,
+                          ),
+                        ],
+                      ),
+                    )
+                  : null;
+              if (constraints.maxWidth < 620) {
+                return SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(children: [...tabs, if (refresh != null) refresh]),
+                );
+              }
+              return Row(
+                children: [
+                  ...tabs,
+                  const Spacer(),
+                  if (refresh != null) refresh,
+                ],
+              );
+            },
           ),
         ),
         const SizedBox(height: 16),
@@ -1477,28 +1495,36 @@ class _SavedRow extends StatelessWidget {
           children: [
             Icon(Icons.lock_outline, size: 16, color: tokens.text3),
             const SizedBox(width: 12),
-            Text(
-              '${host.user}@${host.host}'
-              '${host.port == 22 ? "" : ":${host.port}"}',
-              style: TextStyle(
-                fontFamily: DeckhandTokens.fontMono,
-                fontSize: DeckhandTokens.tMd,
-                color: tokens.text,
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '${host.user}@${host.host}'
+                    '${host.port == 22 ? "" : ":${host.port}"}',
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontFamily: DeckhandTokens.fontMono,
+                      fontSize: DeckhandTokens.tMd,
+                      color: tokens.text,
+                    ),
+                  ),
+                  if (host.lastUsed != null) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      'last used ${_relativeShort(host.lastUsed!)}',
+                      style: TextStyle(
+                        fontFamily: DeckhandTokens.fontMono,
+                        fontSize: 11,
+                        color: tokens.text4,
+                      ),
+                    ),
+                  ],
+                ],
               ),
             ),
-            const Spacer(),
-            if (host.lastUsed != null)
-              Padding(
-                padding: const EdgeInsets.only(right: 8),
-                child: Text(
-                  'last used ${_relativeShort(host.lastUsed!)}',
-                  style: TextStyle(
-                    fontFamily: DeckhandTokens.fontMono,
-                    fontSize: 11,
-                    color: tokens.text4,
-                  ),
-                ),
-              ),
+            const SizedBox(width: 8),
             IconButton(
               tooltip: 'Forget this host',
               icon: const Icon(Icons.close, size: 16),

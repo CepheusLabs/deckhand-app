@@ -80,6 +80,41 @@ void main() {
       expect(find.widgetWithText(FilledButton, 'Connect'), findsOneWidget);
     });
 
+    testWidgets('connect tabs and saved hosts fit narrow windows', (
+      tester,
+    ) async {
+      await tester.binding.setSurfaceSize(const Size(360, 720));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final controller = stubWizardController(profileJson: testProfileJson());
+      await controller.loadProfile('test-printer');
+      final settings = _RecordingSettings()
+        ..savedHosts = [
+          SavedHost(
+            host: 'very-long-printer-hostname-that-needs-wrapping.local',
+            port: 2200,
+            user: 'root',
+            lastUsed: DateTime(2026, 5, 4, 12),
+          ),
+        ];
+
+      await tester.pumpWidget(
+        testHarness(
+          controller: controller,
+          child: const ConnectScreen(),
+          initialLocation: '/connect',
+          extraOverrides: [
+            deckhandSettingsProvider.overrideWithValue(settings),
+          ],
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+
+      expect(tester.takeException(), isNull);
+      expect(find.text('Saved (1)'), findsOneWidget);
+      expect(find.textContaining('very-long-printer-hostname'), findsOneWidget);
+    });
+
     testWidgets(
       'discovered card detail uses "Printer found" (not "Moonraker")',
       (tester) async {
