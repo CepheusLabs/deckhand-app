@@ -42,18 +42,32 @@ func ReadImage(ctx context.Context, devicePath, outputPath string, note rpc.Noti
 		total = info.Size()
 	} else if n, err := src.Seek(0, io.SeekEnd); err == nil {
 		total = n
-		_, _ = src.Seek(0, io.SeekStart)
+		if _, err := src.Seek(0, io.SeekStart); err != nil {
+			return "", fmt.Errorf("rewind device: %w", err)
+		}
 	}
 
-	dst, err := os.OpenFile(outputPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	partPath := outputPath + ".part"
+	if _, err := os.Lstat(outputPath); err == nil {
+		return "", fmt.Errorf("output already exists: %s", outputPath)
+	} else if !os.IsNotExist(err) {
+		return "", fmt.Errorf("check output: %w", err)
+	}
+	if _, err := os.Lstat(partPath); err == nil {
+		return "", fmt.Errorf("partial output already exists: %s", partPath)
+	} else if !os.IsNotExist(err) {
+		return "", fmt.Errorf("check partial output: %w", err)
+	}
+
+	dst, err := os.OpenFile(partPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
-		return "", fmt.Errorf("create output: %w", err)
+		return "", fmt.Errorf("create partial output: %w", err)
 	}
 	completed := false
 	defer func() {
 		_ = dst.Close()
 		if !completed {
-			_ = os.Remove(outputPath)
+			_ = os.Remove(partPath)
 		}
 	}()
 
@@ -96,6 +110,12 @@ func ReadImage(ctx context.Context, devicePath, outputPath string, note rpc.Noti
 	if err := dst.Sync(); err != nil {
 		return "", fmt.Errorf("sync output: %w", err)
 	}
+	if err := dst.Close(); err != nil {
+		return "", fmt.Errorf("close output: %w", err)
+	}
+	if err := publishStagedOutput(partPath, outputPath); err != nil {
+		return "", err
+	}
 	completed = true
 	if note != nil {
 		note.Notify("progress", ReadProgress{
@@ -103,6 +123,25 @@ func ReadImage(ctx context.Context, devicePath, outputPath string, note rpc.Noti
 		})
 	}
 	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+func publishStagedOutput(partPath, outputPath string) error {
+	if _, err := os.Lstat(outputPath); err == nil {
+		return fmt.Errorf("output already exists before publish: %s", outputPath)
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("check output before publish: %w", err)
+	}
+
+	if err := os.Link(partPath, outputPath); err != nil {
+		if os.IsExist(err) {
+			return fmt.Errorf("output already exists before publish: %s", outputPath)
+		}
+		return fmt.Errorf("publish output: %w", err)
+	}
+	if err := os.Remove(partPath); err != nil {
+		return fmt.Errorf("remove partial output: %w", err)
+	}
+	return nil
 }
 
 func writeAll(dst io.Writer, p []byte) error {

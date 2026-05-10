@@ -36,6 +36,9 @@ func TestReadImageCopiesFileHashesAndNotifiesProgress(t *testing.T) {
 	if !bytes.Equal(gotBody, body) {
 		t.Fatalf("output bytes differ from source")
 	}
+	if _, err := os.Stat(output + ".part"); !os.IsNotExist(err) {
+		t.Fatalf("partial output should be gone, stat err = %v", err)
+	}
 	if len(note.events) == 0 {
 		t.Fatalf("expected progress notifications")
 	}
@@ -86,6 +89,33 @@ func TestReadImageRejectsExistingOutput(t *testing.T) {
 	}
 }
 
+func TestReadImageRejectsExistingPartialOutput(t *testing.T) {
+	root := t.TempDir()
+	source := filepath.Join(root, "source.img")
+	output := filepath.Join(root, "backup.img")
+	partial := output + ".part"
+	if err := os.WriteFile(source, []byte("source"), 0o600); err != nil {
+		t.Fatalf("write source: %v", err)
+	}
+	if err := os.WriteFile(partial, []byte("partial"), 0o600); err != nil {
+		t.Fatalf("write partial output: %v", err)
+	}
+
+	if _, err := ReadImage(context.Background(), source, output, nil); err == nil {
+		t.Fatalf("expected existing partial output to be rejected")
+	}
+	got, err := os.ReadFile(partial)
+	if err != nil {
+		t.Fatalf("read partial output: %v", err)
+	}
+	if string(got) != "partial" {
+		t.Fatalf("partial output was overwritten: %q", got)
+	}
+	if _, err := os.Stat(output); !os.IsNotExist(err) {
+		t.Fatalf("final output should not exist, stat err = %v", err)
+	}
+}
+
 func TestReadImageRemovesPartialOutputOnCancellation(t *testing.T) {
 	root := t.TempDir()
 	source := filepath.Join(root, "source.img")
@@ -101,6 +131,39 @@ func TestReadImageRemovesPartialOutputOnCancellation(t *testing.T) {
 	}
 	if _, err := os.Stat(output); !os.IsNotExist(err) {
 		t.Fatalf("partial output should be removed, stat err = %v", err)
+	}
+	if _, err := os.Stat(output + ".part"); !os.IsNotExist(err) {
+		t.Fatalf("partial output should be removed, stat err = %v", err)
+	}
+}
+
+func TestPublishStagedOutputDoesNotOverwriteExistingOutput(t *testing.T) {
+	root := t.TempDir()
+	output := filepath.Join(root, "backup.img")
+	partial := output + ".part"
+	if err := os.WriteFile(output, []byte("existing"), 0o600); err != nil {
+		t.Fatalf("write output: %v", err)
+	}
+	if err := os.WriteFile(partial, []byte("partial"), 0o600); err != nil {
+		t.Fatalf("write partial: %v", err)
+	}
+
+	if err := publishStagedOutput(partial, output); err == nil {
+		t.Fatalf("expected existing output to be rejected")
+	}
+	gotOutput, err := os.ReadFile(output)
+	if err != nil {
+		t.Fatalf("read output: %v", err)
+	}
+	if string(gotOutput) != "existing" {
+		t.Fatalf("output was overwritten: %q", gotOutput)
+	}
+	gotPartial, err := os.ReadFile(partial)
+	if err != nil {
+		t.Fatalf("read partial: %v", err)
+	}
+	if string(gotPartial) != "partial" {
+		t.Fatalf("partial was changed: %q", gotPartial)
 	}
 }
 
