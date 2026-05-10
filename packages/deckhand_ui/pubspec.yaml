@@ -11,7 +11,7 @@ dependencies:
     sdk: flutter
   deckhand_core:
     path: ../deckhand_core
-  flutter_riverpod: ^2.6.1
+  flutter_riverpod: ^3.3.1
   go_router: ^14.0.0
   path: ^1.9.0
   slang: ^4.0.0
