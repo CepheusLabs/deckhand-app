@@ -1712,35 +1712,52 @@ class _RestoreChoiceTile extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        title,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontFamily: DeckhandTokens.fontSans,
-                          fontSize: DeckhandTokens.tSm,
-                          fontWeight: FontWeight.w500,
-                          color: tokens.text,
+                      Tooltip(
+                        message: title,
+                        waitDuration: const Duration(milliseconds: 500),
+                        child: Text(
+                          title,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontFamily: DeckhandTokens.fontSans,
+                            fontSize: DeckhandTokens.tSm,
+                            fontWeight: FontWeight.w500,
+                            color: tokens.text,
+                          ),
                         ),
                       ),
                       const SizedBox(height: 2),
-                      Text(
-                        subtitle,
-                        style: TextStyle(
-                          fontFamily: DeckhandTokens.fontMono,
-                          fontSize: DeckhandTokens.tXs,
-                          color: tokens.text3,
-                          height: 1.35,
-                        ),
-                      ),
-                      if (detail != null) ...[
-                        const SizedBox(height: 6),
-                        Text(
-                          detail!,
+                      Tooltip(
+                        message: subtitle,
+                        waitDuration: const Duration(milliseconds: 500),
+                        child: Text(
+                          subtitle,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
                           style: TextStyle(
                             fontFamily: DeckhandTokens.fontMono,
                             fontSize: DeckhandTokens.tXs,
                             color: tokens.text3,
                             height: 1.35,
+                          ),
+                        ),
+                      ),
+                      if (detail != null) ...[
+                        const SizedBox(height: 6),
+                        Tooltip(
+                          message: detail!,
+                          waitDuration: const Duration(milliseconds: 500),
+                          child: Text(
+                            detail!,
+                            maxLines: 4,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontFamily: DeckhandTokens.fontMono,
+                              fontSize: DeckhandTokens.tXs,
+                              color: tokens.text3,
+                              height: 1.35,
+                            ),
                           ),
                         ),
                       ],

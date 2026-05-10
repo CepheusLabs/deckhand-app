@@ -408,7 +408,8 @@ void main() {
         'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
     final manifest = EmmcBackupManifest.create(
       profileId: 'test-printer',
-      imagePath: r'C:\Deckhand\emmc-backups\rollback.img',
+      imagePath:
+          r'C:\Users\eknof\AppData\Roaming\CepheusLabs\Deckhand\state\emmc-backups\test-printer\2026-05-04T23-02-59Z\emmc.img',
       imageBytes: disk.sizeBytes,
       imageSha256: sha,
       disk: disk,
