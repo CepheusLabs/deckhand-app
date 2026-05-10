@@ -94,11 +94,14 @@ void main() {
         ),
         'invalid managed printer port',
       );
+    });
+
+    test('explains Windows disk enumeration failures in user terms', () {
       expect(
         userFacingDiskOperationError(
           'SidecarError(-32603): Get-Disk failed: exit status 1',
         ),
-        'Get-Disk failed: exit status 1',
+        'Windows could not list storage devices. Reopen Deckhand as Administrator, then refresh disks; if it still fails, check that Windows Disk Management can open.',
       );
     });
   });
