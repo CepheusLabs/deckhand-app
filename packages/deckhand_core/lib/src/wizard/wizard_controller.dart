@@ -6,6 +6,7 @@ import 'dart:math';
 import 'package:meta/meta.dart';
 import 'package:path/path.dart' as p;
 
+import '../errors.dart';
 import '../models/printer_profile.dart';
 import '../services/discovery_service.dart';
 import '../services/elevated_helper_service.dart';
@@ -259,6 +260,12 @@ class WizardController {
       force: force,
     );
     final profile = await profiles.load(cache);
+    if (profile.status == ProfileStatus.stub) {
+      throw ProfileUnavailableException(
+        profileId: profile.id,
+        reason: 'it is marked as a stub',
+      );
+    }
     _profile = profile;
     _profileCache = cache;
     _state = preserveWizardState

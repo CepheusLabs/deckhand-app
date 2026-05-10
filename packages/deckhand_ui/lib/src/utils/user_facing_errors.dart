@@ -12,6 +12,9 @@ String userFacingError(Object? error) {
   if (error is ProfileFormatException) {
     return 'The printer profile is invalid: ${error.message}';
   }
+  if (error is DeckhandException) {
+    return error.userMessage;
+  }
   if (error is ResumeFailedException) {
     return 'The saved session could not be reopened. ${userFacingError(error.cause)}';
   }

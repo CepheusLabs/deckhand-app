@@ -95,6 +95,24 @@ void main() {
       expect(controller.state.decisions, isEmpty);
     });
 
+    test('loading a stub profile is blocked in the controller', () async {
+      final controller = newController(
+        profileJson: {...baseProfileJson(), 'status': 'stub'},
+      );
+
+      await expectLater(
+        controller.loadProfile('test-printer'),
+        throwsA(
+          isA<ProfileUnavailableException>()
+              .having((e) => e.profileId, 'profileId', 'test-printer')
+              .having((e) => e.reason, 'reason', contains('stub')),
+        ),
+      );
+
+      expect(controller.profile, isNull);
+      expect(controller.state.profileId, isEmpty);
+    });
+
     test('loading a profile resets transient runtime state', () async {
       final ssh = FakeSsh();
       final controller = newController(

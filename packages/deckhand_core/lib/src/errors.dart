@@ -152,6 +152,28 @@ class ProfileParseException extends DeckhandException {
   String get userTitle => 'Malformed printer profile';
 }
 
+class ProfileUnavailableException extends DeckhandException {
+  const ProfileUnavailableException({
+    required String profileId,
+    required String reason,
+  }) : _profileId = profileId,
+       _reason = reason,
+       super('Profile "$profileId" is not available: $reason');
+
+  final String _profileId;
+  final String _reason;
+
+  String get profileId => _profileId;
+  String get reason => _reason;
+
+  @override
+  String get userTitle => 'Printer profile is not ready';
+
+  @override
+  String get userMessage =>
+      'The $_profileId profile cannot be used for an install yet: $_reason.';
+}
+
 class UpstreamFetchException extends DeckhandException {
   const UpstreamFetchException(super.message, {super.cause});
   @override

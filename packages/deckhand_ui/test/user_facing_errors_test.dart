@@ -25,6 +25,21 @@ void main() {
     expect(message, isNot(contains('ProfileFormatException')));
   });
 
+  test('formats typed Deckhand errors without leaking exception type', () {
+    final message = userFacingError(
+      const ProfileUnavailableException(
+        profileId: 'phrozen-arco',
+        reason: 'it is marked as a stub',
+      ),
+    );
+
+    expect(
+      message,
+      'The phrozen-arco profile cannot be used for an install yet: it is marked as a stub.',
+    );
+    expect(message, isNot(contains('ProfileUnavailableException')));
+  });
+
   test('delegates disk write errors to the disk formatter', () {
     final message = userFacingError(
       r'StepExecutionException: write: write \\.\PHYSICALDRIVE3: The parameter is incorrect.',
