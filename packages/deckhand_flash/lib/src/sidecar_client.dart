@@ -214,7 +214,7 @@ class SidecarClient implements SidecarConnection {
       'method': method,
       'params': params,
     });
-    unawaited(_sendStreamingRequest(id, msg, controller, releaseOperation));
+    unawaited(_sendStreamingRequest(msg, completer));
 
     completer.future
         .then((res) async {
@@ -242,19 +242,15 @@ class SidecarClient implements SidecarConnection {
   }
 
   Future<void> _sendStreamingRequest(
-    String id,
     String msg,
-    StreamController<SidecarEvent> controller,
-    Future<void> Function() releaseOperation,
+    Completer<Map<String, dynamic>> completer,
   ) async {
     try {
       _writeLine(msg);
       await _flush();
     } on Object catch (e, st) {
-      await releaseOperation();
-      if (!controller.isClosed) {
-        controller.addError(e, st);
-        await controller.close();
+      if (!completer.isCompleted) {
+        completer.completeError(e, st);
       }
     }
   }
@@ -281,18 +277,21 @@ class SidecarClient implements SidecarConnection {
   /// instead of disappearing silently.
   @override
   Future<void> shutdown() async {
-    if (_process == null) return;
-    try {
-      await call('shutdown', const {}).timeout(const Duration(seconds: 2));
-    } on TimeoutException catch (e) {
-      _logger?.warn('sidecar shutdown RPC timed out: $e');
-    } on SidecarError catch (e) {
-      _logger?.warn('sidecar shutdown RPC errored: $e');
-    } catch (e, st) {
-      _logger?.warn('sidecar shutdown RPC failed: $e\n$st');
+    final process = _process;
+    if (process != null) {
+      try {
+        await call('shutdown', const {}).timeout(const Duration(seconds: 2));
+      } on TimeoutException catch (e) {
+        _logger?.warn('sidecar shutdown RPC timed out: $e');
+      } on SidecarError catch (e) {
+        _logger?.warn('sidecar shutdown RPC errored: $e');
+      } catch (e, st) {
+        _logger?.warn('sidecar shutdown RPC failed: $e\n$st');
+      }
     }
+    _failAll('sidecar shutdown');
     try {
-      _process?.kill();
+      process?.kill();
     } on Object catch (e, st) {
       _logger?.warn('sidecar kill() failed: $e\n$st');
     }
@@ -300,7 +299,9 @@ class SidecarClient implements SidecarConnection {
     _stdoutSub = null;
     await _stderrSub?.cancel();
     _stderrSub = null;
-    await _notificationsController.close();
+    if (!_notificationsController.isClosed) {
+      await _notificationsController.close();
+    }
     for (final c in _operationSubscribers.values) {
       await c.close();
     }

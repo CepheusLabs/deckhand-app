@@ -71,6 +71,35 @@ void main() {
       expect(client.operationSubscriberCountForTesting, 0);
     });
 
+    test(
+      'shutdown rejects in-flight calls and cleans up test clients',
+      () async {
+        final writes = <String>[];
+        final client = SidecarClient(binaryPath: '/does/not/exist');
+        client.startForTesting(writeLine: writes.add, flush: () async {});
+
+        final pending = client.call('ping', const {});
+        await Future<void>.delayed(Duration.zero);
+        expect(client.pendingRequestCountForTesting, 1);
+        final pendingExpectation = expectLater(
+          pending,
+          throwsA(
+            isA<SidecarError>().having(
+              (e) => e.message,
+              'message',
+              'sidecar shutdown',
+            ),
+          ),
+        );
+
+        await client.shutdown();
+
+        expect(writes, hasLength(1));
+        expect(client.pendingRequestCountForTesting, 0);
+        await pendingExpectation;
+      },
+    );
+
     test('callStreaming cancel sends jobs.cancel and releases state', () async {
       final writes = <String>[];
       final client = SidecarClient(binaryPath: '/does/not/exist');
