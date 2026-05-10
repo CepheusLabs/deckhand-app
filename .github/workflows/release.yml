@@ -461,7 +461,11 @@ jobs:
 
       - name: Install appimagetool
         run: |
-          wget -q https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage -O /tmp/appimagetool
+          set -euo pipefail
+          APPIMAGETOOL_VERSION="1.9.1"
+          APPIMAGETOOL_SHA256="ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0"
+          wget -q "https://github.com/AppImage/appimagetool/releases/download/${APPIMAGETOOL_VERSION}/appimagetool-x86_64.AppImage" -O /tmp/appimagetool
+          echo "${APPIMAGETOOL_SHA256}  /tmp/appimagetool" | sha256sum --check --status
           chmod +x /tmp/appimagetool
           sudo mv /tmp/appimagetool /usr/local/bin/appimagetool
 
