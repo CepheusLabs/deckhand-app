@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:deckhand_core/deckhand_core.dart';
 import 'package:deckhand_ui/src/providers.dart';
@@ -1260,6 +1261,90 @@ void main() {
     expect(find.text('Erase and restore eMMC?'), findsOneWidget);
   });
 
+  testWidgets('canceling an active restore is shown as canceled, not failed', (
+    tester,
+  ) async {
+    const sha =
+        '9999999999999999999999999999999999999999999999999999999999999999';
+    const disk = DiskInfo(
+      id: 'PhysicalDrive3',
+      path: r'\\.\PHYSICALDRIVE3',
+      sizeBytes: 4096,
+      bus: 'USB',
+      model: 'Generic STORAGE DEVICE',
+      removable: true,
+      partitions: [],
+    );
+    final tempDir = Directory.systemTemp.createTempSync(
+      'deckhand-restore-test-',
+    );
+    addTearDown(() => tempDir.deleteSync(recursive: true));
+    final imageFile = File('${tempDir.path}${Platform.pathSeparator}emmc.img');
+    imageFile.writeAsBytesSync(List<int>.filled(4096, 7));
+    final manifest = EmmcBackupManifest.create(
+      profileId: 'phrozen-arco',
+      imagePath: imageFile.path,
+      imageBytes: 4096,
+      imageSha256: sha,
+      disk: disk,
+      deckhandVersion: 'test',
+      createdAt: DateTime.utc(2026, 5, 4, 12),
+    );
+    final helper = _CancelableRestoreHelper();
+
+    final controller = stubWizardController(profileJson: testProfileJson());
+    await controller.loadProfile('test-printer');
+
+    await tester.pumpWidget(
+      testHarness(
+        controller: controller,
+        child: const EmmcRestoreScreen(),
+        initialLocation: '/emmc-restore',
+        extraOverrides: [
+          emmcBackupManifestsProvider.overrideWith((ref) async => [manifest]),
+          emmcBackupImageCandidatesProvider.overrideWith(
+            (ref) async => const [],
+          ),
+          flashServiceProvider.overrideWithValue(
+            _RestoreFlash(disks: [disk], sha256Value: sha),
+          ),
+          elevatedHelperServiceProvider.overrideWithValue(helper),
+        ],
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+
+    final continueButton = find.widgetWithText(
+      FilledButton,
+      'Continue to target',
+    );
+    await tester.ensureVisible(continueButton);
+    await tester.tap(continueButton);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+    final reviewButton = find.widgetWithText(FilledButton, 'Review restore');
+    await tester.ensureVisible(reviewButton);
+    await tester.tap(reviewButton);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+    final restoreButton = find.widgetWithText(FilledButton, 'Restore backup');
+    await tester.ensureVisible(restoreButton);
+    await tester.tap(restoreButton);
+    await tester.pump();
+    await tester.tap(find.widgetWithText(FilledButton, 'Restore image now'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+
+    final cancelButton = find.widgetWithText(OutlinedButton, 'Cancel restore');
+    await tester.ensureVisible(cancelButton);
+    await tester.tap(cancelButton);
+    await tester.pump();
+
+    expect(find.text('RESTORE CANCELED'), findsOneWidget);
+    expect(find.text('RESTORE STOPPED'), findsNothing);
+  });
+
   test('restore safety warning text hides raw disk identifiers', () {
     final message = formatRestoreSafetyWarnings(const [
       r'\\.\PHYSICALDRIVE3 has mounted volumes',
@@ -1373,4 +1458,40 @@ class _FailingRestoreFlash implements FlashService {
     required String confirmationToken,
     bool verifyAfterWrite = true,
   }) => const Stream.empty();
+}
+
+class _CancelableRestoreHelper implements ElevatedHelperService {
+  @override
+  Stream<FlashProgress> hashDevice({
+    required String diskId,
+    required String confirmationToken,
+    int totalBytes = 0,
+  }) => const Stream.empty();
+
+  @override
+  Stream<FlashProgress> readImage({
+    required String diskId,
+    required String outputPath,
+    required String confirmationToken,
+    int totalBytes = 0,
+    String? outputRoot,
+  }) => const Stream.empty();
+
+  @override
+  Stream<FlashProgress> writeImage({
+    required String imagePath,
+    required String diskId,
+    required String confirmationToken,
+    bool verifyAfterWrite = true,
+    String? expectedSha256,
+  }) {
+    return Stream<FlashProgress>.periodic(
+      const Duration(seconds: 1),
+      (_) => const FlashProgress(
+        bytesDone: 1024,
+        bytesTotal: 4096,
+        phase: FlashPhase.writing,
+      ),
+    );
+  }
 }

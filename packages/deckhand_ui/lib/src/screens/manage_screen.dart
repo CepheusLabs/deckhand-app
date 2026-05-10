@@ -17,6 +17,8 @@ import '../widgets/wizard_progress_bar.dart';
 import '../widgets/wizard_scaffold.dart';
 import 'manage_tuning_panel.dart';
 
+const _restoreCanceledMessage = 'Restore canceled.';
+
 /// Post-install printer management. Reached after a wizard run
 /// completes (or directly via `/manage`). The mockup design is a
 /// horizontal tab strip + per-tab body — analogous to a "manage
@@ -1471,7 +1473,7 @@ class _RestoreTabState extends ConsumerState<_RestoreTab> {
     setState(() {
       _checking = false;
       _progress = null;
-      _error = 'Restore canceled.';
+      _error = _restoreCanceledMessage;
     });
   }
 }
@@ -1939,8 +1941,11 @@ class _RestoreProgressPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     final tokens = DeckhandTokens.of(context);
     final p = progress;
-    final failed = error != null;
-    final title = failed
+    final canceled = error == _restoreCanceledMessage;
+    final failed = error != null && !canceled;
+    final title = canceled
+        ? 'RESTORE CANCELED'
+        : failed
         ? 'RESTORE STOPPED'
         : done
         ? 'RESTORE COMPLETE'
@@ -1952,6 +1957,8 @@ class _RestoreProgressPanel extends StatelessWidget {
         : p.fraction.clamp(0.0, 1.0).toDouble();
     final accent = failed
         ? tokens.bad
+        : canceled
+        ? tokens.text3
         : done
         ? tokens.ok
         : tokens.accent;
@@ -1965,6 +1972,8 @@ class _RestoreProgressPanel extends StatelessWidget {
               Icon(
                 failed
                     ? Icons.error_outline
+                    : canceled
+                    ? Icons.cancel_outlined
                     : done
                     ? Icons.check_circle_outline
                     : Icons.restore,
@@ -1988,12 +1997,14 @@ class _RestoreProgressPanel extends StatelessWidget {
           const SizedBox(height: 10),
           WizardProgressBar(
             fraction: done ? 1.0 : fraction,
-            animateStripes: !failed && !done,
+            animateStripes: !failed && !canceled && !done,
           ),
           const SizedBox(height: 8),
           Text(
             failed
                 ? error!
+                : canceled
+                ? _restoreCanceledMessage
                 : p == null
                 ? 'Preparing restore.'
                 : '${_formatBytes(p.bytesDone)} of '
