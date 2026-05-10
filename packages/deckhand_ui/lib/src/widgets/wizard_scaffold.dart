@@ -50,7 +50,6 @@ class WizardScaffold extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     // Keyboard shortcuts: Enter activates the primary action,
     // Esc activates the first "Back"-style secondary action.
     // Skipped entirely when neither is enabled so the shortcut
@@ -84,7 +83,7 @@ class WizardScaffold extends StatelessWidget {
       shortcuts: shortcuts,
       child: Actions(
         actions: actions,
-        child: Focus(autofocus: true, child: _buildScaffold(context, theme)),
+        child: Focus(autofocus: true, child: _buildScaffold(context)),
       ),
     );
   }
@@ -100,7 +99,7 @@ class WizardScaffold extends StatelessWidget {
     return null;
   }
 
-  Widget _buildScaffold(BuildContext context, ThemeData theme) {
+  Widget _buildScaffold(BuildContext context) {
     final tokens = DeckhandTokens.of(context);
     return Scaffold(
       // Each routed page paints its own opaque ink0 surface +
@@ -144,66 +143,105 @@ class WizardScaffold extends StatelessWidget {
                 child: Center(
                   child: ConstrainedBox(
                     constraints: BoxConstraints(maxWidth: maxContentWidth),
-                    child: Row(
-                      children: [
-                        for (final a in secondaryActions) ...[
-                          if (a.isBack)
-                            OutlinedButton.icon(
-                              onPressed: a.onPressed,
-                              icon: const Icon(Icons.arrow_back, size: 14),
-                              label: Text(a.label),
-                            )
-                          else
-                            TextButton(
-                              onPressed: a.onPressed,
-                              child: Text(a.label),
-                            ),
-                          const SizedBox(width: 8),
-                        ],
-                        if (primaryAction?.isBack == true) ...[
-                          OutlinedButton.icon(
-                            onPressed: primaryAction!.onPressed,
-                            icon: const Icon(Icons.arrow_back, size: 14),
-                            label: Text(primaryAction!.label),
-                          ),
-                          const SizedBox(width: 8),
-                        ],
-                        const Spacer(),
-                        if (primaryAction != null && !primaryAction!.isBack)
-                          // Destructive actions advertise themselves to
-                          // assistive tech so a screen-reader user hears
-                          // "flash disk, warning: destructive" before
-                          // activating the button.
-                          Semantics(
-                            button: true,
-                            enabled: primaryAction!.onPressed != null,
-                            label: primaryAction!.destructive
-                                ? '${primaryAction!.label}, destructive'
-                                : primaryAction!.label,
-                            child: ExcludeSemantics(
-                              child: FilledButton.icon(
-                                onPressed: primaryAction!.onPressed,
-                                style: primaryAction!.destructive
-                                    ? FilledButton.styleFrom(
-                                        backgroundColor:
-                                            theme.colorScheme.error,
-                                        foregroundColor:
-                                            theme.colorScheme.onError,
-                                      )
-                                    : null,
-                                icon: primaryAction!.destructive
-                                    ? const SizedBox.shrink()
-                                    : const Icon(Icons.arrow_forward, size: 14),
-                                label: Text(primaryAction!.label),
-                              ),
-                            ),
-                          ),
-                      ],
+                    child: _WizardFooterActionBar(
+                      primaryAction: primaryAction,
+                      secondaryActions: secondaryActions,
                     ),
                   ),
                 ),
               ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _WizardFooterActionBar extends StatelessWidget {
+  const _WizardFooterActionBar({
+    required this.primaryAction,
+    required this.secondaryActions,
+  });
+
+  final WizardAction? primaryAction;
+  final List<WizardAction> secondaryActions;
+
+  @override
+  Widget build(BuildContext context) {
+    final leading = <Widget>[
+      for (final action in secondaryActions) _secondaryButton(action),
+      if (primaryAction?.isBack == true) _backButton(primaryAction!),
+    ];
+    final primary = primaryAction;
+    final trailing = primary != null && !primary.isBack
+        ? _primaryButton(context, primary)
+        : null;
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth < 520) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              for (final button in leading) ...[
+                Align(alignment: Alignment.centerLeft, child: button),
+                const SizedBox(height: 8),
+              ],
+              if (trailing != null)
+                Align(alignment: Alignment.centerRight, child: trailing),
+            ],
+          );
+        }
+
+        return Row(
+          children: [
+            for (final button in leading) ...[button, const SizedBox(width: 8)],
+            const Spacer(),
+            if (trailing != null) trailing,
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _secondaryButton(WizardAction action) {
+    if (action.isBack) return _backButton(action);
+    return TextButton(
+      onPressed: action.onPressed,
+      child: Text(action.label, overflow: TextOverflow.ellipsis),
+    );
+  }
+
+  Widget _backButton(WizardAction action) {
+    return OutlinedButton.icon(
+      onPressed: action.onPressed,
+      icon: const Icon(Icons.arrow_back, size: 14),
+      label: Text(action.label, overflow: TextOverflow.ellipsis),
+    );
+  }
+
+  Widget _primaryButton(BuildContext context, WizardAction action) {
+    final theme = Theme.of(context);
+    // Destructive actions advertise themselves to assistive tech so a
+    // screen-reader user hears "flash disk, warning: destructive"
+    // before activating the button.
+    return Semantics(
+      button: true,
+      enabled: action.onPressed != null,
+      label: action.destructive ? '${action.label}, destructive' : action.label,
+      child: ExcludeSemantics(
+        child: FilledButton.icon(
+          onPressed: action.onPressed,
+          style: action.destructive
+              ? FilledButton.styleFrom(
+                  backgroundColor: theme.colorScheme.error,
+                  foregroundColor: theme.colorScheme.onError,
+                )
+              : null,
+          icon: action.destructive
+              ? const SizedBox.shrink()
+              : const Icon(Icons.arrow_forward, size: 14),
+          label: Text(action.label, overflow: TextOverflow.ellipsis),
         ),
       ),
     );

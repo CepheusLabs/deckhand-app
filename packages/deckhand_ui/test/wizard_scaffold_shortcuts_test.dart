@@ -157,4 +157,44 @@ void main() {
     await tester.pump();
     expect(cancel, 0, reason: 'no isBack flag means no Esc binding');
   });
+
+  testWidgets('footer actions do not overflow in a narrow window', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(360, 640));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          deckhandSettingsProvider.overrideWithValue(
+            DeckhandSettings(path: '<memory>'),
+          ),
+        ],
+        child: MaterialApp(
+          theme: DeckhandTheme.light(),
+          home: WizardScaffold(
+            title: 'Test',
+            body: const SizedBox.shrink(),
+            primaryAction: WizardAction(
+              label: 'Continue to selected restore target',
+              onPressed: () {},
+            ),
+            secondaryActions: [
+              WizardAction(
+                label: 'Back to backup selection',
+                onPressed: () {},
+                isBack: true,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('Back to backup selection'), findsOneWidget);
+    expect(find.text('Continue to selected restore target'), findsOneWidget);
+  });
 }
