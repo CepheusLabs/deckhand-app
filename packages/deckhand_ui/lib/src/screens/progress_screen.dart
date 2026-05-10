@@ -9,7 +9,7 @@ import '../i18n/translations.g.dart';
 import '../providers.dart';
 import '../theming/deckhand_tokens.dart';
 import '../utils/disk_display.dart';
-import '../utils/disk_operation_errors.dart';
+import '../utils/user_facing_errors.dart';
 import '../widgets/deckhand_prompt_card.dart';
 import '../widgets/host_approval_gate.dart';
 import '../widgets/profile_text.dart';
@@ -17,8 +17,7 @@ import '../widgets/progress_run_workspace.dart';
 import '../widgets/wizard_progress_bar.dart';
 import '../widgets/wizard_scaffold.dart';
 
-String progressRunErrorMessage(Object? error) =>
-    userFacingDiskOperationError(error);
+String progressRunErrorMessage(Object? error) => userFacingError(error);
 
 class ProgressScreen extends ConsumerStatefulWidget {
   const ProgressScreen({super.key});

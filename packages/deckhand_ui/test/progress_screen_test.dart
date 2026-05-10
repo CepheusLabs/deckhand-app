@@ -13,6 +13,18 @@ import 'package:go_router/go_router.dart';
 import 'helpers.dart';
 
 void main() {
+  test('progress errors use the shared user-facing formatter', () {
+    expect(
+      progressRunErrorMessage(
+        const HostNotApprovedException(
+          host: 'armbian.lv.auroradev.org',
+          reason: 'not approved',
+        ),
+      ),
+      'Network access to armbian.lv.auroradev.org was not approved. Retry and choose Allow, or approve it from Settings.',
+    );
+  });
+
   group('ProgressScreen', () {
     testWidgets('phase-aware title reads step kind from controller', (
       tester,
