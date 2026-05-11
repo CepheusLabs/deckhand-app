@@ -32,7 +32,7 @@ jobs:
     env:
       GITLEAKS_VERSION: 8.21.2
     steps:
-      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
           fetch-depth: 0
 
@@ -57,14 +57,14 @@ jobs:
         # SARIF upload step in that case rather than failing CI on a
         # missing-file error.
         if: always() && hashFiles('gitleaks.sarif') != ''
-        uses: github/codeql-action/upload-sarif@ce64ddcb0d8d890d2df4a9d1c04ff297367dea2a  # v3
+        uses: github/codeql-action/upload-sarif@68bde559dea0fdcac2102bfdf6230c5f70eb485e  # v3
         with:
           sarif_file: gitleaks.sarif
           category: gitleaks
 
       - name: Upload raw report
         if: failure() && hashFiles('gitleaks.sarif') != ''
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: gitleaks-report
           path: gitleaks.sarif
@@ -79,9 +79,9 @@ jobs:
     name: trivy
     runs-on: [self-hosted, linux]
     steps:
-      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
 
-      - uses: aquasecurity/trivy-action@6e7b7d1fd3e4fef0c5fa8cce1229c54b2c9bd0d8  # 0.24.0
+      - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25  # 0.36.0
         with:
           scan-type: fs
           scan-ref: .
@@ -92,14 +92,14 @@ jobs:
           exit-code: '0'  # don't fail the job — let Security tab route it
 
       - name: Upload SARIF
-        uses: github/codeql-action/upload-sarif@ce64ddcb0d8d890d2df4a9d1c04ff297367dea2a  # v3
+        uses: github/codeql-action/upload-sarif@68bde559dea0fdcac2102bfdf6230c5f70eb485e  # v3
         if: always()
         with:
           sarif_file: trivy-results.sarif
           category: trivy
 
       - name: Re-run and fail on CRITICAL
-        uses: aquasecurity/trivy-action@6e7b7d1fd3e4fef0c5fa8cce1229c54b2c9bd0d8  # 0.24.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25  # 0.36.0
         with:
           scan-type: fs
           scan-ref: .
@@ -116,14 +116,14 @@ jobs:
     name: gosec
     runs-on: [self-hosted, linux]
     steps:
-      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
 
       - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c  # v6
         with:
           go-version: "1.22"
           cache-dependency-path: sidecar/go.sum
 
-      - uses: securego/gosec@d4617f51baf75f4f809066386a4f9d27b3ac3e46  # v2.21.4
+      - uses: securego/gosec@4a3bd8af174872c778439083ded7adbf3747e770  # v2.26.1
         # `-no-fail` was hiding HIGH gosec findings from the CI gate.
         # Drop it so any HIGH triggers a workflow failure. SARIF still
         # uploads on `if: always()` below so the Security tab gets the
@@ -136,7 +136,7 @@ jobs:
           GOFLAGS: -C=sidecar
 
       - name: Upload SARIF
-        uses: github/codeql-action/upload-sarif@ce64ddcb0d8d890d2df4a9d1c04ff297367dea2a  # v3
+        uses: github/codeql-action/upload-sarif@68bde559dea0fdcac2102bfdf6230c5f70eb485e  # v3
         if: always()
         with:
           sarif_file: sidecar/gosec-results.sarif
@@ -152,7 +152,7 @@ jobs:
     if: github.event_name == 'schedule'
     runs-on: [self-hosted, linux]
     steps:
-      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
 
       - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c  # v6
         with:
@@ -173,7 +173,7 @@ jobs:
 
       - name: Upload fuzz corpus on failure
         if: failure()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: fuzz-corpus
           path: sidecar/**/testdata/fuzz/**
