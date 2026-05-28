@@ -1,0 +1,4 @@
+[submodule "shared/cepheus-build"]
+	path = shared/cepheus-build
+	url = https://github.com/CepheusLabs/cepheus-build.git
+	branch = main

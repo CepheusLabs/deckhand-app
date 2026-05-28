@@ -1,0 +1,42 @@
+name: shared-build
+
+on:
+  workflow_dispatch:
+    inputs:
+      targets:
+        description: Targets or groups to build with Cepheus Build.
+        required: true
+        default: all
+      runner-profile:
+        description: Runner profile for generated matrix rows.
+        required: true
+        type: choice
+        default: github-hosted
+        options:
+          - github-hosted
+          - self-hosted
+      planner-runner-json:
+        description: JSON runs-on value for the planning job.
+        required: true
+        default: '"ubuntu-latest"'
+      setup-buildroot-deps:
+        description: Install Buildroot Linux package dependencies.
+        required: true
+        type: boolean
+        default: true
+      buildroot-dir:
+        description: Optional Buildroot checkout path on the runner.
+        required: false
+        default: ''
+
+jobs:
+  build:
+    uses: CepheusLabs/cepheus-build/.github/workflows/app-build.yml@main
+    with:
+      product: deckhand
+      toolkit-ref: main
+      targets: ${{ inputs.targets }}
+      runner-profile: ${{ inputs.runner-profile }}
+      planner-runner-json: ${{ inputs.planner-runner-json }}
+      setup-buildroot-deps: ${{ inputs.setup-buildroot-deps }}
+      buildroot-dir: ${{ inputs.buildroot-dir }}
