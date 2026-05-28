@@ -3,8 +3,8 @@ name: Build macOS (self-hosted)
 # Lightweight macOS build that runs on the org's self-hosted runner.
 #
 # Why a separate workflow from `release.yml`:
-#   - `release.yml` runs on GitHub-hosted `macos-latest` so the
-#     org doesn't pay for runner uptime on every release.
+#   - `release.yml` is the full signed/notarized release lane and runs
+#     on the org's self-hosted release runners.
 #   - This workflow exists for fast iteration: build the Flutter
 #     macOS binary on your physical Mac, no signing / notarization
 #     / DMG packaging, just the .app bundle for smoke-testing.
