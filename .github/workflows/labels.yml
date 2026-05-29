@@ -7,9 +7,6 @@ name: Sync labels
 # dependabot.yml + the issue templates assume exists.
 
 on:
-  push:
-    branches: [main]
-    paths: ['.github/labels.yml', '.github/workflows/labels.yml']
   workflow_dispatch:
 
 permissions:

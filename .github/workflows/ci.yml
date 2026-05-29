@@ -1,16 +1,6 @@
 name: CI
 
 on:
-  push:
-    branches: [main]
-    paths-ignore:
-      - '.gitmodules'
-      - '.github/workflows/shared-build.yml'
-      - 'shared/cepheus-build'
-      - 'shared/cepheus-build/**'
-      - 'shared/printdeck-rust-contracts'
-      - 'shared/printdeck-rust-contracts/**'
-  pull_request:
   workflow_dispatch:
 
 permissions:

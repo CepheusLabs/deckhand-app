@@ -10,8 +10,6 @@ name: Release
 #                         ref, defaults to main)
 
 on:
-  push:
-    tags: ['v*']
   workflow_dispatch:
     inputs:
       ref:
