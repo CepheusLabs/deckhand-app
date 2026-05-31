@@ -17,8 +17,6 @@ name: HITL
 # point.
 
 on:
-  push:
-    tags: ['v*']
   schedule:
     # 06:00 UTC. Picks a quiet hour in every timezone so the rigs
     # aren't competing with maintainers manually probing them.

@@ -11,14 +11,14 @@ on:
         description: Runner profile for generated matrix rows.
         required: true
         type: choice
-        default: github-hosted
+        default: self-hosted
         options:
-          - github-hosted
           - self-hosted
+          - github-hosted
       planner-runner-json:
         description: JSON runs-on value for the planning job.
         required: true
-        default: '"ubuntu-latest"'
+        default: '["self-hosted","linux"]'
       setup-buildroot-deps:
         description: Install Buildroot Linux package dependencies.
         required: true
