@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:deckhand/main.dart' as app;
+import 'package:deckhand/telescope_integration.dart';
 import 'package:deckhand_core/deckhand_core.dart';
 import 'package:path/path.dart' as p;
 import 'package:flutter_test/flutter_test.dart';
@@ -62,6 +63,28 @@ void main() {
     expect(app.parsePreferredLocaleOverride('not-a-locale'), isNull);
     expect(app.parsePreferredLocaleOverride('en'), isNotNull);
     expect(app.parsePreferredLocaleOverride('es-MX'), isNotNull);
+  });
+
+  test('telescope integration is disabled by default', () {
+    final settings = DeckhandSettings(path: '<memory>');
+
+    final options = resolveDeckhandTelescopeOptions(settings);
+
+    expect(settings.telescopeOptIn, isFalse);
+    expect(options.enabled, isFalse);
+    expect(options.endpoint, isEmpty);
+  });
+
+  test('telescope integration requires opt-in and endpoint', () {
+    final settings = DeckhandSettings(path: '<memory>')..telescopeOptIn = true;
+
+    expect(resolveDeckhandTelescopeOptions(settings).enabled, isFalse);
+
+    settings.telescopeEndpoint = 'https://analytics.example/api/v1/pa';
+
+    final options = resolveDeckhandTelescopeOptions(settings);
+    expect(options.enabled, isTrue);
+    expect(options.endpoint, 'https://analytics.example/api/v1/pa');
   });
 
   test('startup failures are written to the startup crash log', () async {

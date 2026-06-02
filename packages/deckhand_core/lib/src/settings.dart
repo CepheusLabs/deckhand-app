@@ -40,10 +40,10 @@ class DeckhandSettings {
     if (raw is List) {
       return Set.unmodifiable(
         raw
-          .whereType<String>()
-          .map((host) => host.trim().toLowerCase())
-          .where((host) => host.isNotEmpty)
-          .toSet(),
+            .whereType<String>()
+            .map((host) => host.trim().toLowerCase())
+            .where((host) => host.isNotEmpty)
+            .toSet(),
       );
     }
     return const {};
@@ -282,6 +282,32 @@ class DeckhandSettings {
   }
 
   set developerMode(bool v) => _values['developer_mode'] = v;
+
+  /// Opt-in flag for Telescope product analytics. Default false: no analytics
+  /// client is constructed and no events are emitted unless the user or build
+  /// configuration explicitly enables it.
+  bool get telescopeOptIn {
+    final v = _values['telescope_opt_in'];
+    return v is bool ? v : false;
+  }
+
+  set telescopeOptIn(bool v) => _values['telescope_opt_in'] = v;
+
+  /// Optional Telescope ingest endpoint override. Empty/null means the app uses
+  /// its build-time default when [telescopeOptIn] is true.
+  String? get telescopeEndpoint {
+    final v = _values['telescope_endpoint'];
+    if (v is String && v.trim().isNotEmpty) return v.trim();
+    return null;
+  }
+
+  set telescopeEndpoint(String? v) {
+    if (v == null || v.trim().isEmpty) {
+      _values.remove('telescope_endpoint');
+    } else {
+      _values['telescope_endpoint'] = v.trim();
+    }
+  }
 
   /// When true, every flash run reads the disk back after writing and
   /// compares the SHA256 against the source image. Adds 30-90 seconds

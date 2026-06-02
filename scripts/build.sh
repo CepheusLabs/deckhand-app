@@ -28,10 +28,15 @@ DIST="$SIDECAR/dist"
 cd "$REPO"
 
 # --- Version: YY.M.D, build number: commit count ---
-VERSION=$(date +"%y.%-m.%-d" 2>/dev/null \
+# Prefer the stamp injected by cepheus-build (CBUILD_VERSION/CBUILD_BUILD_NUMBER),
+# so the .app embedded here matches the DMG/installer filename the packaging step
+# stamps from the same vars (and honors env overrides / GITHUB_RUN_NUMBER / the
+# UTC-vs-local midnight boundary that compute_stamp() handles). Fall back to a
+# local computation so this script still works when run standalone.
+VERSION="${CBUILD_VERSION:-$(date +"%y.%-m.%-d" 2>/dev/null \
   || date -j +"%y.%-m.%-d" 2>/dev/null \
-  || date +"%y.%m.%d")
-BUILD_NUMBER=$(git rev-list --count HEAD)
+  || date +"%y.%m.%d")}"
+BUILD_NUMBER="${CBUILD_BUILD_NUMBER:-$(git rev-list --count HEAD)}"
 FULL="$VERSION+$BUILD_NUMBER"
 
 echo "Deckhand build: $FULL"

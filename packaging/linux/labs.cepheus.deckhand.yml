@@ -1,0 +1,42 @@
+# Flatpak manifest for Deckhand.
+#
+# Packages the prebuilt Flutter Linux bundle (app/build/linux/x64/release/bundle)
+# together with Deckhand's two Go binaries (deckhand-sidecar and
+# deckhand-elevated-helper) into a Flatpak. build_flatpak.sh stages the bundle
+# and both binaries next to this manifest under "flatpak-stage/" and runs
+# flatpak-builder against it, so the build itself is offline.
+#
+# The freedesktop runtime gives us GTK3 + glibc; Flutter Linux apps need little
+# else. The two Go binaries are installed alongside the Flutter binary in
+# /app/lib/deckhand/ so the app finds them next to itself, exactly like the
+# AppImage / .deb / .rpm builds.
+app-id: labs.cepheus.deckhand
+runtime: org.freedesktop.Platform
+runtime-version: '23.08'
+sdk: org.freedesktop.Sdk
+command: deckhand
+finish-args:
+  - --share=ipc
+  - --socket=fallback-x11
+  - --socket=wayland
+  # Deckhand discovers + talks to printers over the network (mDNS / HTTP / SSH).
+  - --share=network
+  # The elevated helper opens raw block / serial devices when flashing firmware;
+  # --device=all is the conservative choice so device access never fails.
+  - --device=all
+  - --filesystem=home
+modules:
+  - name: deckhand
+    buildsystem: simple
+    build-commands:
+      - mkdir -p /app/lib/deckhand
+      - cp -r bundle/* /app/lib/deckhand/
+      - install -Dm755 deckhand-sidecar /app/lib/deckhand/deckhand-sidecar
+      - install -Dm755 deckhand-elevated-helper /app/lib/deckhand/deckhand-elevated-helper
+      - mkdir -p /app/bin
+      - ln -s /app/lib/deckhand/deckhand /app/bin/deckhand
+      - install -Dm644 labs.cepheus.deckhand.desktop /app/share/applications/labs.cepheus.deckhand.desktop
+      - install -Dm644 icon.png /app/share/icons/hicolor/256x256/apps/labs.cepheus.deckhand.png
+    sources:
+      - type: dir
+        path: flatpak-stage

@@ -17,6 +17,7 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:window_manager/window_manager.dart';
 
+import 'telescope_integration.dart';
 import 'window_geometry_observer.dart';
 
 const profileTrustKeyringAssetPath = 'app/assets/keyring.asc';
@@ -243,10 +244,15 @@ Future<void> main() async {
     final sentinelWriter = FlashSentinelWriter(
       directory: p.join(paths.stateDir, 'flash-sentinels'),
     );
+    final telescope = await createDeckhandTelescopeModule(
+      settings: settings,
+      deckhandVersion: build_info.deckhandVersion,
+    );
 
     runApp(
       ProviderScope(
         overrides: [
+          deckhandTelescopeProvider.overrideWithValue(telescope),
           deckhandSettingsProvider.overrideWithValue(settings),
           wizardStateStoreProvider.overrideWithValue(wizardStore),
           profileServiceProvider.overrideWithValue(
