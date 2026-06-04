@@ -18,6 +18,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:window_manager/window_manager.dart';
 
 import 'telescope_integration.dart';
+import 'deckhand_product_platform.dart';
 import 'window_geometry_observer.dart';
 
 const profileTrustKeyringAssetPath = 'app/assets/keyring.asc';
@@ -308,7 +309,7 @@ Future<void> main() async {
           child: WindowGeometryObserver(
             settings: settings,
             onError: persistenceErrorSink,
-            child: const WizardShell(),
+            child: const DeckhandProductPlatformBootstrap(child: WizardShell()),
           ),
         ),
       ),

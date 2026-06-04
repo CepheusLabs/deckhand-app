@@ -2,3 +2,6 @@
 	path = shared/cepheus-build
 	url = https://github.com/CepheusLabs/cepheus-build.git
 	branch = main
+[submodule "shared/printdeck/product_platform"]
+	path = shared/printdeck/product_platform
+	url = ../printdeck_product_platform.git

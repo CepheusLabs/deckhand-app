@@ -272,9 +272,47 @@ Future<void> _runFlashMcusImpl(
   WizardController c,
   Map<String, dynamic> step,
 ) async {
-  throw StepExecutionException(
-    'mcu flashing is not implemented by Deckhand yet',
-  );
+  final executor = c.transportExecutor;
+  if (executor == null) {
+    throw StepExecutionException(
+      'mcu flashing requires a browser transport, local agent, or desktop app',
+    );
+  }
+  final firmwareUrlRaw =
+      _stringValue(step['firmware_url']) ?? _stringValue(step['url']);
+  final firmwareUrl = firmwareUrlRaw == null
+      ? null
+      : Uri.tryParse(firmwareUrlRaw);
+  if (firmwareUrlRaw != null &&
+      (firmwareUrl == null ||
+          (firmwareUrl.scheme != 'https' && firmwareUrl.scheme != 'http'))) {
+    throw StepExecutionException('firmware_url must be http(s)');
+  }
+  final stepId = _stringValue(step['id']) ?? 'mcu_flash';
+  c._log(step, '[mcu] starting transport flash');
+  await for (final event in executor.executeStep(
+    step,
+    firmwareUrl: firmwareUrl,
+    fileName: _stringValue(step['file_name']),
+  )) {
+    final rawPercent = event.percent;
+    final percent = rawPercent == null
+        ? null
+        : rawPercent > 1
+        ? rawPercent / 100
+        : rawPercent;
+    c._emit(
+      StepProgress(
+        stepId: stepId,
+        percent: percent,
+        message: event.message ?? event.phase.name,
+      ),
+    );
+    if (event.phase == DeckhandTransportPhase.failed) {
+      throw StepExecutionException(event.message ?? 'mcu flash failed');
+    }
+  }
+  c._log(step, '[mcu] transport flash complete');
 }
 
 Future<void> _runOsDownloadImpl(

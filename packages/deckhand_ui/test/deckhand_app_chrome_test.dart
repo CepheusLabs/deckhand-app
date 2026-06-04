@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
+import 'package:printdeck_product_platform/printdeck_product_platform.dart';
 
 void main() {
   testWidgets('top bar exposes the printer registry', (tester) async {
@@ -46,6 +47,11 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    expect(find.byType(ProductShellFrame), findsOneWidget);
+    expect(find.text('Deckhand'), findsOneWidget);
+    expect(find.text('SIDECAR'), findsOneWidget);
+    expect(find.byTooltip('Settings'), findsOneWidget);
+    expect(find.byTooltip('Theme: system · click for light'), findsOneWidget);
     expect(find.widgetWithText(TextButton, 'Printers'), findsOneWidget);
 
     await tester.tap(find.widgetWithText(TextButton, 'Printers'));

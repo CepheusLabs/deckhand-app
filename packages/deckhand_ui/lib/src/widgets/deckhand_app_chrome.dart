@@ -2,6 +2,7 @@ import 'package:deckhand_core/deckhand_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:printdeck_product_platform/printdeck_product_platform.dart';
 
 import '../providers.dart';
 import '../theming/deckhand_tokens.dart';
@@ -41,36 +42,26 @@ class DeckhandAppChrome extends ConsumerWidget {
     final printerLabel = _printerLabel(wizard);
     final hostLabel = wizard?.sshHost;
 
-    // The chrome paints raw widgets (Container, Column, Text) without
-    // a Scaffold above them. Without an enclosing Material, Flutter's
-    // text painter falls back to the yellow-underline debug treatment
-    // — the canonical "you forgot Material" smell. Wrapping the whole
-    // chrome in a [Material] gives every descendant a proper
-    // DefaultTextStyle and ink-well surface.
-    return Material(
-      type: MaterialType.canvas,
-      color: tokens.ink0,
-      child: Column(
-        children: [
-          _TopBar(version: version, printerLabel: printerLabel),
-          // Routed content paints its own opaque background + grid
-          // via WizardScaffold. Keeping the chrome's outer surface
-          // plain means page transitions don't bleed through — each
-          // routing fade-in is visually self-contained.
-          Expanded(child: child),
-          DeckhandFootbar(
-            items: [
-              DeckhandFootbarItem(label: 'sidecar', value: version),
-              if (wizard != null && wizard.profileId.isNotEmpty)
-                DeckhandFootbarItem(label: 'profile', value: wizard.profileId),
-            ],
-            trailing: [
-              if (hostLabel != null)
-                DeckhandFootbarItem(label: 'host', value: hostLabel),
-            ],
-          ),
-        ],
-      ),
+    return ProductShellFrame.slotted(
+      backgroundColor: tokens.ink0,
+      wrapBodyInSelectionArea: false,
+      topBarBuilder: (context, shell) {
+        return _TopBar(version: version, printerLabel: printerLabel);
+      },
+      body: child,
+      bottomBarBuilder: (context, shell) {
+        return DeckhandFootbar(
+          items: [
+            DeckhandFootbarItem(label: 'sidecar', value: version),
+            if (wizard != null && wizard.profileId.isNotEmpty)
+              DeckhandFootbarItem(label: 'profile', value: wizard.profileId),
+          ],
+          trailing: [
+            if (hostLabel != null)
+              DeckhandFootbarItem(label: 'host', value: hostLabel),
+          ],
+        );
+      },
     );
   }
 

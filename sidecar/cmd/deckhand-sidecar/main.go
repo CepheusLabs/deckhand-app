@@ -16,11 +16,13 @@ import (
 	"log/slog"
 	"os"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/CepheusLabs/deckhand/sidecar/internal/doctor"
 	"github.com/CepheusLabs/deckhand/sidecar/internal/handlers"
 	"github.com/CepheusLabs/deckhand/sidecar/internal/host"
+	"github.com/CepheusLabs/deckhand/sidecar/internal/localagent"
 	"github.com/CepheusLabs/deckhand/sidecar/internal/logging"
 	"github.com/CepheusLabs/deckhand/sidecar/internal/rpc"
 )
@@ -32,6 +34,10 @@ const usageText = `deckhand-sidecar — Deckhand's local helper process
 
 Usage:
   deckhand-sidecar             Start the JSON-RPC 2.0 loop on stdin/stdout.
+  deckhand-sidecar agent [--addr 127.0.0.1:48765] [--token TOKEN]
+                               Start the local HTTP/SSE bridge for browser
+                               Deckhand. Token may also come from
+                               DECKHAND_AGENT_TOKEN.
   deckhand-sidecar doctor      Run a self-diagnostic and exit. Exit code
                                0 means healthy, 1 means a blocking issue
                                was found. Prints a human-readable report
@@ -71,6 +77,46 @@ func main() {
 	// terminal with no stdin would appear to hang.
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
+		case "agent":
+			fs := flag.NewFlagSet("agent", flag.ExitOnError)
+			addr := fs.String("addr", "127.0.0.1:48765", "local agent bind address")
+			token := fs.String("token", os.Getenv("DECKHAND_AGENT_TOKEN"), "bearer token required by browser clients")
+			allowOrigin := fs.String("allow-origin", "", "comma-separated CORS origins; default allows HTTPS origins plus localhost dev origins")
+			if err := fs.Parse(os.Args[2:]); err != nil {
+				fmt.Fprintf(os.Stderr, "[deckhand-sidecar] agent: %v\n", err)
+				os.Exit(2)
+			}
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			logger, closeLog, err := logging.Init(host.Current().Data)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "[deckhand-sidecar] log init failed: %v\n", err)
+				logger = slog.Default()
+				closeLog = func() error { return nil }
+			}
+			defer func() { _ = closeLog() }()
+			server := rpc.NewServer()
+			server.SetLogger(logger)
+			handlers.Register(server, cancel, Version)
+			logger.Info("local_agent.start",
+				"version", Version,
+				"os", runtime.GOOS,
+				"arch", runtime.GOARCH,
+				"pid", os.Getpid(),
+				"addr", *addr,
+			)
+			if strings.TrimSpace(*token) == "" {
+				logger.Warn("local_agent.no_token")
+			}
+			if err := localagent.Serve(ctx, *addr, server, localagent.Config{
+				Token:        *token,
+				AllowOrigins: splitComma(*allowOrigin),
+				Version:      Version,
+			}); err != nil && !errors.Is(err, context.Canceled) {
+				logger.Error("local_agent.serve_error", "error", err.Error())
+				os.Exit(1)
+			}
+			return
 		case "doctor":
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
@@ -300,4 +346,20 @@ func main() {
 		logger.Error("sidecar.serve_error", "error", err.Error())
 		os.Exit(1)
 	}
+}
+
+func splitComma(raw string) []string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			out = append(out, part)
+		}
+	}
+	return out
 }

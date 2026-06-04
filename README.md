@@ -37,6 +37,18 @@ Printer profiles (the per-printer definitions that drive Deckhand) live in
 a separate repo: [CepheusLabs/deckhand-profiles][builds]. See the
 [authoring guide][authoring] for how to add or modify a profile.
 
+## Development checks
+
+Use the shared product-app quality contract from the repo root:
+
+```bash
+scripts/quality.sh            # fmt + lint + test
+scripts/quality.sh test       # one phase; PowerShell users can run scripts/quality.ps1 test
+scripts/clean-dev-artifacts.sh # clean generated local artifacts
+```
+
+Cepheus Build exposes the same gate as `cepheus-build build -p deckhand quality`.
+
 ## What Deckhand does
 
 Given a Klipper-based 3D printer (Phrozen Arco, Sovol Zero, Sovol SV08 Max,

@@ -420,10 +420,7 @@ void _walkIdempotency(Map<String, dynamic> profile, List<LintFinding> out) {
   });
 }
 
-const _resumeStrategies = <String>{
-  'restart',
-  'cleanup_then_restart',
-};
+const _resumeStrategies = <String>{'restart', 'cleanup_then_restart'};
 
 void _validateIdempotencyBlock(
   Map<dynamic, dynamic> idem,
@@ -628,18 +625,66 @@ void _walkUnsupportedRuntimeFeatures(
           }
         }
       }
-      if (step['kind'] != 'flash_mcus') continue;
-      out.add(
-        LintFinding(
-          LintSeverity.error,
-          'flows.$flowName.steps[$i]',
-          'flash_mcus is not supported by Deckhand yet; keep this out '
-              'of tagged profiles until the MCU flash transport contract '
-              'exists',
-        ),
-      );
+      if (step['kind'] != 'flash_mcus' && step['kind'] != 'mcu_flash') {
+        continue;
+      }
+      final requirements = _transportRequirements(step);
+      if (requirements.isEmpty) {
+        out.add(
+          LintFinding(
+            LintSeverity.error,
+            'flows.$flowName.steps[$i].transport_requirements',
+            'MCU flash steps must declare explicit transport_requirements '
+                '(webusb.dfu, webserial.bootloader, webhid.report, '
+                'manual.uf2, local-agent, or desktop-app).',
+          ),
+        );
+        continue;
+      }
+      for (final requirement in requirements) {
+        if (_isSupportedTransportRequirement(requirement)) {
+          continue;
+        }
+        out.add(
+          LintFinding(
+            LintSeverity.error,
+            'flows.$flowName.steps[$i].transport_requirements',
+            'unsupported MCU flash transport requirement "$requirement"',
+          ),
+        );
+      }
     }
   });
+}
+
+List<String> _transportRequirements(Map<dynamic, dynamic> step) {
+  final raw = step['transport_requirements'] ?? step['transport_requirement'];
+  if (raw is String && raw.trim().isNotEmpty) {
+    return [raw.trim()];
+  }
+  if (raw is List) {
+    return [
+      for (final entry in raw)
+        if (entry is String && entry.trim().isNotEmpty) entry.trim(),
+    ];
+  }
+  return const [];
+}
+
+bool _isSupportedTransportRequirement(String value) {
+  final requirement = value.trim().toLowerCase();
+  return requirement == 'webusb.dfu' ||
+      requirement == 'webserial.bootloader' ||
+      requirement == 'webhid.report' ||
+      requirement == 'webhid.keyboard' ||
+      requirement == 'manual.uf2' ||
+      requirement == 'manual-download' ||
+      requirement == 'local-agent' ||
+      requirement == 'desktop-app' ||
+      requirement == 'raw_disk_write' ||
+      requirement == 'raw-disk-write' ||
+      requirement == 'ssh.lan' ||
+      requirement == 'moonraker.lan';
 }
 
 void _walkGitSources(Object? node, String path, List<LintFinding> out) {

@@ -216,7 +216,13 @@ void main() {
 
         final report = await runProfileLint(['--root', tmp.path]);
 
-        expect(report.hasErrors, isFalse);
+        expect(
+          report.hasErrors,
+          isFalse,
+          reason: report.results
+              .expand((r) => r.findings.map((f) => '${f.path}: ${f.message}'))
+              .join('\n'),
+        );
       },
     );
 
@@ -312,30 +318,26 @@ void main() {
       expect(messages, contains('profile-local path'));
     });
 
-    test('flags flash_mcus steps with explicit targets', () async {
-      _writeRegistry(tmp, ['mcu-flash']);
-      final profile =
-          '${_minimalValidProfile('mcu-flash')}'
-          '\nflows:\n'
-          '  stock_keep:\n'
-          '    enabled: true\n'
-          '    steps:\n'
-          '      - id: flash_mcus\n'
-          '        kind: flash_mcus\n'
-          '        safe_to_rerun: true\n'
-          '        which: [main]\n'
-          '\nmcus:\n'
-          '  - id: main\n'
-          '    chip: stm32f407xx\n';
-      _writeProfile(tmp, 'mcu-flash', profile);
-      final report = await runProfileLint(['--root', tmp.path]);
+    test(
+      'accepts flash_mcus steps with browser transport requirements',
+      () async {
+        _writeRegistry(tmp, ['mcu-flash']);
+        final profile =
+            '${_minimalValidProfile('mcu-flash')}'
+            '\nflows:\n'
+            '  stock_keep:\n'
+            '    enabled: true\n'
+            '    steps:\n'
+            '      - id: flash_mcus\n'
+            '        kind: flash_mcus\n'
+            '        safe_to_rerun: true\n'
+            '        transport_requirements: [webusb.dfu]\n';
+        _writeProfile(tmp, 'mcu-flash', profile);
+        final report = await runProfileLint(['--root', tmp.path]);
 
-      expect(report.hasErrors, isTrue);
-      final messages = report.results
-          .expand((r) => r.findings.map((f) => f.message))
-          .join('\n');
-      expect(messages, contains('flash_mcus'));
-    });
+        expect(report.hasErrors, isFalse);
+      },
+    );
 
     test('flags flash_mcus steps without explicit targets', () async {
       _writeRegistry(tmp, ['mcu-flash-empty']);
@@ -355,7 +357,29 @@ void main() {
       final messages = report.results
           .expand((r) => r.findings.map((f) => f.message))
           .join('\n');
-      expect(messages, contains('flash_mcus'));
+      expect(messages, contains('transport_requirements'));
+    });
+
+    test('flags unsupported flash_mcus transport requirements', () async {
+      _writeRegistry(tmp, ['mcu-flash-unsupported']);
+      final profile =
+          '${_minimalValidProfile('mcu-flash-unsupported')}'
+          '\nflows:\n'
+          '  stock_keep:\n'
+          '    enabled: true\n'
+          '    steps:\n'
+          '      - id: flash_mcus\n'
+          '        kind: flash_mcus\n'
+          '        safe_to_rerun: true\n'
+          '        transport_requirements: [browser.magic]\n';
+      _writeProfile(tmp, 'mcu-flash-unsupported', profile);
+      final report = await runProfileLint(['--root', tmp.path]);
+
+      expect(report.hasErrors, isTrue);
+      final messages = report.results
+          .expand((r) => r.findings.map((f) => f.message))
+          .join('\n');
+      expect(messages, contains('unsupported MCU flash transport'));
     });
   });
 
@@ -418,7 +442,13 @@ void main() {
       _writeRegistry(tmp, ['matched']);
       _writeProfile(tmp, 'matched', _minimalValidProfile('matched'));
       final report = await runProfileLint(['--root', tmp.path]);
-      expect(report.hasErrors, isFalse);
+      expect(
+        report.hasErrors,
+        isFalse,
+        reason: report.results
+            .expand((r) => r.findings.map((f) => '${f.path}: ${f.message}'))
+            .join('\n'),
+      );
     });
 
     test('--regenerate-registry rewrites registry from profile', () async {
@@ -465,7 +495,13 @@ void main() {
       _writeProfile(tmp, 'missing-idem', profile);
       final report = await runProfileLint(['--root', tmp.path]);
       // Lenient: warning only.
-      expect(report.hasErrors, isFalse);
+      expect(
+        report.hasErrors,
+        isFalse,
+        reason: report.results
+            .expand((r) => r.findings.map((f) => '${f.path}: ${f.message}'))
+            .join('\n'),
+      );
       final allMessages = report.results
           .expand((r) => r.findings.map((f) => f.message))
           .join('\n');

@@ -212,33 +212,10 @@ func (s *Server) Serve(ctx context.Context, in io.Reader, out io.Writer) error {
 		inflight.Add(1)
 		go func(req request, spec MethodSpec) {
 			defer inflight.Done()
-			defer releaseLimit()
 			opID := unquoteID(req.ID)
 			note := &methodNotifier{writer: w, operationID: opID}
-
-			// Only register the context in the job table if the request
-			// has a non-null id (JSON-RPC notifications have none, and
-			// there is no way to target them for cancellation anyway).
-			handlerCtx := ctx
-			var releaseJob func()
-			if opID != "" && opID != "null" {
-				var cancel context.CancelFunc
-				handlerCtx, cancel = context.WithCancel(ctx)
-				releaseJob = s.jobs.register(opID, cancel)
-				defer releaseJob()
-			}
-
-			s.logDispatch(req.Method, opID, req.Params)
-
-			defer func() {
-				if r := recover(); r != nil {
-					s.logHandlerError(req.Method, opID, fmt.Errorf("panic: %v", r))
-					w.writeResponse(errorResponse(req.ID, codeInternalError, "handler panic", nil))
-				}
-			}()
-			result, err := spec.Handler(handlerCtx, req.Params, note)
+			result, err := s.invokeRegistered(ctx, opID, req.Method, req.Params, note, releaseLimit)
 			if err != nil {
-				s.logHandlerError(req.Method, opID, err)
 				code, data := mapError(err)
 				w.writeResponse(errorResponse(req.ID, code, sanitizeErrorMessage(err.Error()), data))
 				return
@@ -253,6 +230,73 @@ func (s *Server) Serve(ctx context.Context, in io.Reader, out io.Writer) error {
 		return err
 	}
 	return scanner.Err()
+}
+
+// Invoke dispatches a registered JSON-RPC method without using the
+// line-delimited stdin/stdout transport. Local-agent HTTP bridges use this to
+// share the exact same handlers, cancellation registry, concurrency limits,
+// logging, and error mapping as the desktop app's sidecar IPC path.
+func (s *Server) Invoke(
+	ctx context.Context,
+	operationID string,
+	method string,
+	params json.RawMessage,
+	note Notifier,
+) (any, error) {
+	s.mu.RLock()
+	_, ok := s.methods[method]
+	s.mu.RUnlock()
+	if !ok {
+		return nil, NewError(codeMethodNotFound, "unknown method %q", method)
+	}
+	releaseLimit, ok := s.acquireLimit(method)
+	if !ok {
+		return nil, NewError(CodeGeneric, "concurrency limit exceeded for %s", method)
+	}
+	return s.invokeRegistered(ctx, operationID, method, params, note, releaseLimit)
+}
+
+func (s *Server) invokeRegistered(
+	ctx context.Context,
+	operationID string,
+	method string,
+	params json.RawMessage,
+	note Notifier,
+	releaseLimit func(),
+) (result any, err error) {
+	defer releaseLimit()
+	s.mu.RLock()
+	spec, ok := s.methods[method]
+	s.mu.RUnlock()
+	if !ok {
+		return nil, NewError(codeMethodNotFound, "unknown method %q", method)
+	}
+
+	// Only register the context in the job table if the request has a non-null
+	// id. JSON-RPC notifications have none, and there is no way to target them
+	// for cancellation anyway.
+	handlerCtx := ctx
+	var releaseJob func()
+	if operationID != "" && operationID != "null" {
+		var cancel context.CancelFunc
+		handlerCtx, cancel = context.WithCancel(ctx)
+		releaseJob = s.jobs.register(operationID, cancel)
+		defer releaseJob()
+	}
+
+	s.logDispatch(method, operationID, params)
+
+	defer func() {
+		if r := recover(); r != nil {
+			err = NewError(codeInternalError, "handler panic")
+			s.logHandlerError(method, operationID, fmt.Errorf("panic: %v", r))
+		}
+	}()
+	result, err = spec.Handler(handlerCtx, params, note)
+	if err != nil {
+		s.logHandlerError(method, operationID, err)
+	}
+	return result, err
 }
 
 func (s *Server) acquireLimit(method string) (func(), bool) {

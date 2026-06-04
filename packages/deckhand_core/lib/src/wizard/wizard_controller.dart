@@ -18,6 +18,7 @@ import '../services/security_service.dart';
 import '../services/ssh_service.dart';
 import '../services/upstream_service.dart';
 import '../shell/shell_quoting.dart';
+import '../web/flash_transports.dart';
 import 'dsl.dart';
 import 'pending_input.dart';
 import 'printer_state_probe.dart';
@@ -62,6 +63,7 @@ class WizardController {
     this.archive,
     this.snapshotsDir,
     this.osImagesDir,
+    this.transportExecutor,
     this.deckhandVersion = 'unknown',
   }) {
     _runStateStore = RunStateStore(ssh: ssh);
@@ -95,6 +97,11 @@ class WizardController {
   /// wiring sets this to the sidecar-managed persistent cache root.
   /// When null, os_download falls back to its legacy temp directory.
   final String? osImagesDir;
+
+  /// Optional browser/local-agent transport executor for MCU flashing steps.
+  /// Raw disk flashing still uses [elevatedHelper] because browsers cannot
+  /// safely enumerate or write block devices.
+  final DeckhandTransportExecutor? transportExecutor;
 
   /// Surfaced into the on-printer run-state file's
   /// `deckhand_version` field so a maintainer reading a debug
