@@ -4,15 +4,13 @@ import 'dart:io';
 import 'package:deckhand_core/deckhand_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:forge/forge.dart';
 import 'package:go_router/go_router.dart';
 
 import '../i18n/translations.g.dart';
 import '../providers.dart';
-import '../theming/deckhand_tokens.dart';
 import '../utils/user_facing_errors.dart';
-import '../widgets/deckhand_loading.dart';
 import '../widgets/profile_text.dart';
-import '../widgets/wizard_scaffold.dart';
 
 /// Stable identifier for the active settings tab. Used as the index
 /// state (no string keys threaded through the build); ordering here
@@ -255,11 +253,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           child: SingleChildScrollView(
             child: SelectableText(
               report.report,
-              style: const TextStyle(
-                fontFamily: DeckhandTokens.fontMono,
-                fontSize: DeckhandTokens.tSm,
-                height: 1.4,
-              ),
+              style: context.dataSmall.copyWith(height: 1.4),
             ),
           ),
         ),
@@ -302,11 +296,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
     final settings = ref.watch(deckhandSettingsProvider);
 
-    return WizardScaffold(
-      screenId: 'CFG-settings',
+    return ClWizardPageScaffold(
       title: t.settings.title,
       helperText:
           'Persistent across sessions; written to settings.json. '
@@ -318,14 +310,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             onSelect: (tab) => setState(() => _currentTab = tab),
             horizontal: constraints.maxWidth < 720,
           );
-          final panel = Container(
+          final panel = ClPanel(
             padding: const EdgeInsets.all(22),
-            decoration: BoxDecoration(
-              color: tokens.ink1,
-              border: Border.all(color: tokens.line),
-              borderRadius: BorderRadius.circular(DeckhandTokens.r3),
-            ),
-            child: _buildTabBody(context, tokens, settings),
+            body: _buildTabBody(context, settings),
           );
           if (constraints.maxWidth < 720) {
             return Column(
@@ -343,7 +330,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           );
         },
       ),
-      primaryAction: WizardAction(
+      primaryAction: ClWizardAction(
         label: t.common.action_back,
         // Pop returns to whichever screen pushed Settings (the
         // SettingsLinkButton uses context.push). On a deep-link or
@@ -355,30 +342,27 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     );
   }
 
-  Widget _buildTabBody(
-    BuildContext context,
-    DeckhandTokens tokens,
-    DeckhandSettings settings,
-  ) {
+  Widget _buildTabBody(BuildContext context, DeckhandSettings settings) {
     return switch (_currentTab) {
-      _SettingsTab.general => _generalBody(context, tokens),
-      _SettingsTab.connections => _connectionsBody(context, tokens),
-      _SettingsTab.profiles => _profilesBody(context, tokens, settings),
-      _SettingsTab.appearance => _appearanceBody(context, tokens, settings),
-      _SettingsTab.advanced => _advancedBody(context, tokens),
+      _SettingsTab.general => _generalBody(context),
+      _SettingsTab.connections => _connectionsBody(context),
+      _SettingsTab.profiles => _profilesBody(context, settings),
+      _SettingsTab.appearance => _appearanceBody(context, settings),
+      _SettingsTab.advanced => _advancedBody(context),
     };
   }
 
   // ---------------------------------------------------------------------
   // General — verify-after-write toggle + cache retention.
   // ---------------------------------------------------------------------
-  Widget _generalBody(BuildContext context, DeckhandTokens tokens) {
+  Widget _generalBody(BuildContext context) {
+    final brand = context.brandColors;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _preflightPanel(tokens),
+        _preflightPanel(context),
         const _SettingsDivider(),
-        _osImageCachePanel(tokens),
+        _osImageCachePanel(context),
         const _SettingsDivider(),
         _RowSwitch(
           title: 'Verify after flash',
@@ -395,23 +379,17 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         Text(
           'OS images and profile checkouts evict after this many days '
           'of disuse. 0 disables eviction (keep forever).',
-          style: TextStyle(
-            fontFamily: DeckhandTokens.fontSans,
-            fontSize: DeckhandTokens.tSm,
-            color: tokens.text3,
+          style: context.clBodySmall.copyWith(
+            color: brand.ink3,
             height: 1.45,
           ),
         ),
         const SizedBox(height: 10),
         SizedBox(
           width: 200,
-          child: TextField(
+          child: ClTextField(
             controller: _cacheRetentionController,
-            decoration: InputDecoration(
-              border: const OutlineInputBorder(),
-              errorText: _cacheRetentionError,
-              isDense: true,
-            ),
+            errorText: _cacheRetentionError,
             keyboardType: TextInputType.number,
             onChanged: (_) => setState(() => _cacheRetentionError = null),
           ),
@@ -419,17 +397,18 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         const SizedBox(height: 16),
         Align(
           alignment: Alignment.centerLeft,
-          child: FilledButton.icon(
-            icon: const Icon(Icons.save, size: 16),
-            label: const Text('Save general settings'),
+          child: ClButton(
+            icon: ClIcons.save,
             onPressed: _saveFlashSettings,
+            child: const Text('Save general settings'),
           ),
         ),
       ],
     );
   }
 
-  Widget _osImageCachePanel(DeckhandTokens tokens) {
+  Widget _osImageCachePanel(BuildContext context) {
+    final brand = context.brandColors;
     final cacheRoot = ref.watch(osImagesDirProvider);
     final cache = ref.watch(osImageCacheProvider);
     return Column(
@@ -446,18 +425,19 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 runSpacing: 4,
                 children: [
                   if (cacheRoot?.trim().isNotEmpty == true)
-                    TextButton.icon(
+                    ClButton(
+                      kind: ClButtonKind.text,
+                      size: ClButtonSize.sm,
                       onPressed: _clearOsImageCache,
-                      icon: const Icon(
-                        Icons.cleaning_services_outlined,
-                        size: 14,
-                      ),
-                      label: const Text('Clear cache'),
+                      icon: Icons.cleaning_services_outlined,
+                      child: const Text('Clear cache'),
                     ),
-                  TextButton.icon(
+                  ClButton(
+                    kind: ClButtonKind.text,
+                    size: ClButtonSize.sm,
                     onPressed: () => ref.invalidate(osImageCacheProvider),
-                    icon: const Icon(Icons.refresh, size: 14),
-                    label: const Text('Refresh'),
+                    icon: ClIcons.refresh,
+                    child: const Text('Refresh'),
                   ),
                 ],
               ),
@@ -469,10 +449,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           'Downloaded and verified OS images are reused across installs. '
           'Delete a cached image if you want Deckhand to fetch and verify '
           'a fresh copy.',
-          style: TextStyle(
-            fontFamily: DeckhandTokens.fontSans,
-            fontSize: DeckhandTokens.tSm,
-            color: tokens.text3,
+          style: context.clBodySmall.copyWith(
+            color: brand.ink3,
             height: 1.45,
           ),
         ),
@@ -484,38 +462,22 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         ),
         const SizedBox(height: 12),
         cache.when(
-          loading: () => const SizedBox(
-            height: 18,
-            width: 18,
-            child: DeckhandSpinner(size: 18, strokeWidth: 2),
-          ),
+          loading: () => const ClSpinner(size: 18, strokeWidth: 2),
           error: (error, _) => Text(
             'Could not read OS image cache: ${userFacingError(error)}',
-            style: TextStyle(
-              fontFamily: DeckhandTokens.fontSans,
-              fontSize: DeckhandTokens.tSm,
-              color: tokens.bad,
-            ),
+            style: context.clBodySmall.copyWith(color: brand.bad),
           ),
           data: (entries) {
             if (cacheRoot == null || cacheRoot.trim().isEmpty) {
               return Text(
                 'Cache details are unavailable until the app wires a cache root.',
-                style: TextStyle(
-                  fontFamily: DeckhandTokens.fontSans,
-                  fontSize: DeckhandTokens.tSm,
-                  color: tokens.text3,
-                ),
+                style: context.clBodySmall.copyWith(color: brand.ink3),
               );
             }
             if (entries.isEmpty) {
               return Text(
                 'No OS images are cached yet.',
-                style: TextStyle(
-                  fontFamily: DeckhandTokens.fontSans,
-                  fontSize: DeckhandTokens.tSm,
-                  color: tokens.text3,
-                ),
+                style: context.clBodySmall.copyWith(color: brand.ink3),
               );
             }
             final totalBytes = entries.fold<int>(
@@ -528,10 +490,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 Text(
                   '${entries.length} image${entries.length == 1 ? '' : 's'} '
                   'using ${_humanBytes(totalBytes)}',
-                  style: TextStyle(
-                    fontFamily: DeckhandTokens.fontSans,
-                    fontSize: DeckhandTokens.tSm,
-                    color: tokens.text2,
+                  style: context.clBodySmall.copyWith(
+                    color: brand.ink2,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
@@ -618,7 +578,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     }
   }
 
-  Widget _preflightPanel(DeckhandTokens tokens) {
+  Widget _preflightPanel(BuildContext context) {
+    final brand = context.brandColors;
     final report = _preflightReport;
     DoctorResult? firstIssue;
     if (report != null) {
@@ -638,10 +599,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           'Re-check sidecar runtime, helper availability, disk access, '
           'mDNS, and GitHub reachability after changing your machine or '
           'Deckhand build.',
-          style: TextStyle(
-            fontFamily: DeckhandTokens.fontSans,
-            fontSize: DeckhandTokens.tSm,
-            color: tokens.text3,
+          style: context.clBodySmall.copyWith(
+            color: brand.ink3,
             height: 1.45,
           ),
         ),
@@ -649,28 +608,22 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         if (_preflightError != null) ...[
           Text(
             'Preflight failed to run: $_preflightError',
-            style: TextStyle(color: tokens.bad),
+            style: context.clBodyMedium.copyWith(color: brand.bad),
           ),
           const SizedBox(height: 10),
         ] else if (report != null) ...[
           Text(
             _preflightSummary(report),
-            style: TextStyle(
-              fontFamily: DeckhandTokens.fontSans,
-              fontSize: DeckhandTokens.tMd,
+            style: context.clBodyMedium.copyWith(
               fontWeight: FontWeight.w700,
-              color: report.passed ? tokens.ok : tokens.bad,
+              color: report.passed ? brand.good : brand.bad,
             ),
           ),
           if (firstIssue != null) ...[
             const SizedBox(height: 4),
             Text(
               '${firstIssue.name}: ${firstIssue.detail}',
-              style: TextStyle(
-                fontFamily: DeckhandTokens.fontSans,
-                fontSize: DeckhandTokens.tSm,
-                color: tokens.text3,
-              ),
+              style: context.clBodySmall.copyWith(color: brand.ink3),
             ),
           ],
           const SizedBox(height: 10),
@@ -679,24 +632,22 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           spacing: 10,
           runSpacing: 10,
           children: [
-            FilledButton.icon(
+            ClButton(
               icon: _preflightRunning
-                  ? const SizedBox(
-                      width: 14,
-                      height: 14,
-                      child: DeckhandSpinner(size: 14, strokeWidth: 2),
-                    )
-                  : const Icon(Icons.health_and_safety_outlined, size: 16),
-              label: Text(
+                  ? null
+                  : Icons.health_and_safety_outlined,
+              loading: _preflightRunning,
+              onPressed: _preflightRunning ? null : _runPreflightNow,
+              child: Text(
                 _preflightRunning ? 'Running preflight...' : 'Run preflight',
               ),
-              onPressed: _preflightRunning ? null : _runPreflightNow,
             ),
             if (report != null)
-              OutlinedButton.icon(
-                icon: const Icon(Icons.article_outlined, size: 16),
-                label: const Text('View report'),
+              ClButton(
+                kind: ClButtonKind.outlined,
+                icon: Icons.article_outlined,
                 onPressed: _showPreflightReport,
+                child: const Text('View report'),
               ),
           ],
         ),
@@ -707,18 +658,15 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   // ---------------------------------------------------------------------
   // Connections — pinned SSH host fingerprints.
   // ---------------------------------------------------------------------
-  Widget _connectionsBody(BuildContext context, DeckhandTokens tokens) {
+  Widget _connectionsBody(BuildContext context) {
+    final brand = context.brandColors;
     return FutureBuilder<Map<String, String>>(
       future: _fingerprintsFuture,
       builder: (context, snap) {
         if (snap.connectionState != ConnectionState.done) {
           return const Padding(
             padding: EdgeInsets.symmetric(vertical: 8),
-            child: SizedBox(
-              height: 14,
-              width: 14,
-              child: DeckhandSpinner(size: 14, strokeWidth: 2),
-            ),
+            child: ClSpinner(size: 14, strokeWidth: 2),
           );
         }
         if (snap.hasError) {
@@ -733,10 +681,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             Text(
               'SSH host keys Deckhand silently trusts on the next '
               'connect. Forget any printer to force re-prompt.',
-              style: TextStyle(
-                fontFamily: DeckhandTokens.fontSans,
-                fontSize: DeckhandTokens.tSm,
-                color: tokens.text3,
+              style: context.clBodySmall.copyWith(
+                color: brand.ink3,
                 height: 1.45,
               ),
             ),
@@ -747,11 +693,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 child: Text(
                   'No printers pinned yet. The first SSH connect to a '
                   'new host will prompt to trust its fingerprint.',
-                  style: TextStyle(
-                    fontFamily: DeckhandTokens.fontSans,
-                    fontSize: DeckhandTokens.tSm,
-                    color: tokens.text3,
-                  ),
+                  style: context.clBodySmall.copyWith(color: brand.ink3),
                 ),
               )
             else
@@ -770,11 +712,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   // ---------------------------------------------------------------------
   // Profiles — local override directory vs. GitHub fetch.
   // ---------------------------------------------------------------------
-  Widget _profilesBody(
-    BuildContext context,
-    DeckhandTokens tokens,
-    DeckhandSettings settings,
-  ) {
+  Widget _profilesBody(BuildContext context, DeckhandSettings settings) {
+    final brand = context.brandColors;
     final activeDir = settings.localProfilesDir;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -784,18 +723,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             Icon(
               activeDir != null ? Icons.folder_open : Icons.cloud,
               size: 18,
-              color: tokens.accent,
+              color: brand.primary,
             ),
             const SizedBox(width: 8),
             Text(
               activeDir != null
                   ? t.settings.profiles_local_dir_active
                   : t.settings.profiles_local_dir_github,
-              style: TextStyle(
-                fontFamily: DeckhandTokens.fontSans,
-                fontSize: DeckhandTokens.tMd,
+              style: context.clBodyMedium.copyWith(
                 fontWeight: FontWeight.w500,
-                color: tokens.text,
+                color: brand.ink,
               ),
             ),
           ],
@@ -803,43 +740,37 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         const SizedBox(height: 8),
         Text(
           flattenProfileText(t.settings.profiles_local_dir_hint),
-          style: TextStyle(
-            fontFamily: DeckhandTokens.fontSans,
-            fontSize: DeckhandTokens.tSm,
-            color: tokens.text3,
+          style: context.clBodySmall.copyWith(
+            color: brand.ink3,
             height: 1.45,
           ),
         ),
         const SizedBox(height: 14),
         const _FieldLabel('LOCAL OVERRIDE DIRECTORY'),
         const SizedBox(height: 6),
-        TextField(
+        ClTextField(
           controller: _localDirController,
-          decoration: InputDecoration(
-            hintText: t.settings.profiles_local_dir_label,
-            border: const OutlineInputBorder(),
-            errorText: _localDirError,
-            isDense: true,
-            suffixIcon: _localDirController.text.isEmpty
-                ? null
-                : IconButton(
-                    icon: const Icon(Icons.clear),
-                    tooltip: t.settings.profiles_local_dir_clear,
-                    onPressed: () {
-                      _localDirController.clear();
-                      setState(() => _localDirError = null);
-                    },
-                  ),
-          ),
+          hintText: t.settings.profiles_local_dir_label,
+          errorText: _localDirError,
+          suffix: _localDirController.text.isEmpty
+              ? null
+              : IconButton(
+                  icon: const Icon(Icons.clear),
+                  tooltip: t.settings.profiles_local_dir_clear,
+                  onPressed: () {
+                    _localDirController.clear();
+                    setState(() => _localDirError = null);
+                  },
+                ),
           onChanged: (_) => setState(() => _localDirError = null),
         ),
         const SizedBox(height: 16),
         Align(
           alignment: Alignment.centerLeft,
-          child: FilledButton.icon(
-            icon: const Icon(Icons.save, size: 16),
-            label: const Text('Save profile source'),
+          child: ClButton(
+            icon: ClIcons.save,
             onPressed: _saveLocalDir,
+            child: const Text('Save profile source'),
           ),
         ),
       ],
@@ -849,11 +780,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   // ---------------------------------------------------------------------
   // Appearance — theme picker + UI locale.
   // ---------------------------------------------------------------------
-  Widget _appearanceBody(
-    BuildContext context,
-    DeckhandTokens tokens,
-    DeckhandSettings settings,
-  ) {
+  Widget _appearanceBody(BuildContext context, DeckhandSettings settings) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -900,7 +827,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   // ---------------------------------------------------------------------
   // Advanced — GitHub token + approved network hosts.
   // ---------------------------------------------------------------------
-  Widget _advancedBody(BuildContext context, DeckhandTokens tokens) {
+  Widget _advancedBody(BuildContext context) {
+    final brand = context.brandColors;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -922,63 +850,54 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           'Stored in the OS keychain — never written to disk in '
           'plaintext. A fine-grained token with public-repo read is '
           'enough.',
-          style: TextStyle(
-            fontFamily: DeckhandTokens.fontSans,
-            fontSize: DeckhandTokens.tSm,
-            color: tokens.text3,
+          style: context.clBodySmall.copyWith(
+            color: brand.ink3,
             height: 1.45,
           ),
         ),
         const SizedBox(height: 10),
-        TextField(
+        ClTextField(
           controller: _githubTokenController,
           obscureText: _githubTokenObscured,
           enabled: _githubTokenLoaded,
-          style: const TextStyle(fontFamily: DeckhandTokens.fontMono),
-          decoration: InputDecoration(
-            hintText: 'ghp_… (optional)',
-            border: const OutlineInputBorder(),
-            isDense: true,
-            suffixIcon: IconButton(
-              icon: Icon(
-                _githubTokenObscured ? Icons.visibility : Icons.visibility_off,
-                size: 18,
-              ),
-              tooltip: _githubTokenObscured ? 'Show' : 'Hide',
-              onPressed: () =>
-                  setState(() => _githubTokenObscured = !_githubTokenObscured),
+          monospace: true,
+          hintText: 'ghp_… (optional)',
+          suffix: IconButton(
+            icon: Icon(
+              _githubTokenObscured ? Icons.visibility : Icons.visibility_off,
+              size: 18,
             ),
+            tooltip: _githubTokenObscured ? 'Show' : 'Hide',
+            onPressed: () =>
+                setState(() => _githubTokenObscured = !_githubTokenObscured),
           ),
         ),
         if (_githubTokenStatus != null) ...[
           const SizedBox(height: 6),
           Text(
             _githubTokenStatus!,
-            style: TextStyle(
-              fontFamily: DeckhandTokens.fontMono,
-              fontSize: DeckhandTokens.tXs,
-              color: tokens.text4,
-            ),
+            style: context.dataTiny.copyWith(color: brand.ink4),
           ),
         ],
         const SizedBox(height: 12),
         Row(
           children: [
-            FilledButton.icon(
-              icon: const Icon(Icons.save, size: 16),
-              label: const Text('Save token'),
+            ClButton(
+              icon: ClIcons.save,
               onPressed: _githubTokenLoaded ? _saveGithubToken : null,
+              child: const Text('Save token'),
             ),
             const SizedBox(width: 8),
-            OutlinedButton.icon(
-              icon: const Icon(Icons.delete_outline, size: 16),
-              label: const Text('Clear'),
+            ClButton(
+              kind: ClButtonKind.outlined,
+              icon: Icons.delete_outline,
               onPressed: _githubTokenLoaded
                   ? () {
                       _githubTokenController.clear();
                       _saveGithubToken();
                     }
                   : null,
+              child: const Text('Clear'),
             ),
           ],
         ),
@@ -988,10 +907,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         Text(
           'Outbound destinations Deckhand may contact. Revoke a host '
           'to force a re-prompt on the next install.',
-          style: TextStyle(
-            fontFamily: DeckhandTokens.fontSans,
-            fontSize: DeckhandTokens.tSm,
-            color: tokens.text3,
+          style: context.clBodySmall.copyWith(
+            color: brand.ink3,
             height: 1.45,
           ),
         ),
@@ -1002,11 +919,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             if (snap.connectionState != ConnectionState.done) {
               return const Padding(
                 padding: EdgeInsets.symmetric(vertical: 8),
-                child: SizedBox(
-                  height: 14,
-                  width: 14,
-                  child: DeckhandSpinner(size: 14, strokeWidth: 2),
-                ),
+                child: ClSpinner(size: 14, strokeWidth: 2),
               );
             }
             if (snap.hasError) {
@@ -1020,18 +933,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   'No hosts approved yet. The first install run will '
                   'prompt for github.com and any image hosts the '
                   'profile declares.',
-                  style: TextStyle(
-                    fontFamily: DeckhandTokens.fontSans,
-                    fontSize: DeckhandTokens.tSm,
-                    color: tokens.text3,
-                  ),
+                  style: context.clBodySmall.copyWith(color: brand.ink3),
                 ),
               );
             }
             return Container(
               decoration: BoxDecoration(
-                border: Border.all(color: tokens.lineSoft),
-                borderRadius: BorderRadius.circular(DeckhandTokens.r2),
+                border: Border.all(color: brand.borderSubtle),
+                borderRadius: BorderRadius.circular(context.radii.sm),
               ),
               padding: const EdgeInsets.symmetric(vertical: 4),
               child: Column(
@@ -1079,21 +988,17 @@ class _TabRail extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
-    return Container(
+    return SizedBox(
       width: horizontal ? double.infinity : 200,
-      padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(
-        color: tokens.ink1,
-        border: Border.all(color: tokens.line),
-        borderRadius: BorderRadius.circular(DeckhandTokens.r3),
+      child: ClPanel(
+        padding: const EdgeInsets.all(4),
+        body: horizontal
+            ? SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(mainAxisSize: MainAxisSize.min, children: _buttons),
+              )
+            : Column(mainAxisSize: MainAxisSize.min, children: _buttons),
       ),
-      child: horizontal
-          ? SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(mainAxisSize: MainAxisSize.min, children: _buttons),
-            )
-          : Column(mainAxisSize: MainAxisSize.min, children: _buttons),
     );
   }
 
@@ -1123,27 +1028,25 @@ class _TabRailItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
+    final brand = context.brandColors;
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(DeckhandTokens.r2),
+      borderRadius: BorderRadius.circular(context.radii.sm),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
         decoration: BoxDecoration(
-          color: selected ? tokens.ink2 : Colors.transparent,
-          borderRadius: BorderRadius.circular(DeckhandTokens.r2),
+          color: selected ? brand.selectedBg : Colors.transparent,
+          borderRadius: BorderRadius.circular(context.radii.sm),
         ),
         child: Row(
           children: [
-            Icon(icon, size: 16, color: selected ? tokens.text : tokens.text3),
+            Icon(icon, size: 16, color: selected ? brand.ink : brand.ink3),
             const SizedBox(width: 8),
             Text(
               label,
-              style: TextStyle(
-                fontFamily: DeckhandTokens.fontSans,
-                fontSize: 13,
+              style: context.clBodySmall.copyWith(
                 fontWeight: selected ? FontWeight.w500 : FontWeight.w400,
-                color: selected ? tokens.text : tokens.text3,
+                color: selected ? brand.ink : brand.ink3,
               ),
             ),
           ],
@@ -1154,23 +1057,14 @@ class _TabRailItem extends StatelessWidget {
 }
 
 /// Mono uppercase field label used throughout the Settings tabs.
-/// Matches the design language's signature 10px tracking-out style.
+/// Matches the design language's signature mono tracking-out style.
 class _FieldLabel extends StatelessWidget {
   const _FieldLabel(this.text);
   final String text;
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
-    return Text(
-      text,
-      style: TextStyle(
-        fontFamily: DeckhandTokens.fontMono,
-        fontSize: 10,
-        letterSpacing: 0,
-        color: tokens.text4,
-      ),
-    );
+    return ClTechLabel(text);
   }
 }
 
@@ -1189,25 +1083,14 @@ class _MutedPath extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
-    return Container(
-      width: double.infinity,
+    final brand = context.brandColors;
+    return ClInsetBox(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-      decoration: BoxDecoration(
-        color: tokens.ink2,
-        border: Border.all(color: tokens.lineSoft),
-        borderRadius: BorderRadius.circular(DeckhandTokens.r2),
-      ),
       child: Text(
         text,
         maxLines: 2,
         overflow: TextOverflow.ellipsis,
-        style: TextStyle(
-          fontFamily: DeckhandTokens.fontMono,
-          fontSize: DeckhandTokens.tXs,
-          color: tokens.text3,
-          height: 1.35,
-        ),
+        style: context.dataTiny.copyWith(color: brand.ink3, height: 1.35),
       ),
     );
   }
@@ -1221,19 +1104,19 @@ class _OsImageCacheRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
+    final brand = context.brandColors;
     final status = _cacheStatus(entry);
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        border: Border.all(color: tokens.line),
-        borderRadius: BorderRadius.circular(DeckhandTokens.r2),
+        border: Border.all(color: brand.borderStrong),
+        borderRadius: BorderRadius.circular(context.radii.sm),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(Icons.image_outlined, size: 16, color: status.color(tokens)),
+          Icon(Icons.image_outlined, size: 16, color: status.color(brand)),
           const SizedBox(width: 10),
           Expanded(
             child: Column(
@@ -1248,11 +1131,9 @@ class _OsImageCacheRow extends StatelessWidget {
                       entry.fileName,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontFamily: DeckhandTokens.fontSans,
-                        fontSize: DeckhandTokens.tMd,
+                      style: context.clBodyMedium.copyWith(
                         fontWeight: FontWeight.w600,
-                        color: tokens.text,
+                        color: brand.ink,
                       ),
                     ),
                     _CacheStatusChip(status: status),
@@ -1265,10 +1146,8 @@ class _OsImageCacheRow extends StatelessWidget {
                     _cacheSource(entry),
                     'last used ${_shortDateTime(entry.lastTouchedAt)}',
                   ].join(' · '),
-                  style: TextStyle(
-                    fontFamily: DeckhandTokens.fontSans,
-                    fontSize: DeckhandTokens.tSm,
-                    color: tokens.text3,
+                  style: context.clBodySmall.copyWith(
+                    color: brand.ink3,
                     height: 1.35,
                   ),
                 ),
@@ -1276,11 +1155,7 @@ class _OsImageCacheRow extends StatelessWidget {
                   const SizedBox(height: 2),
                   Text(
                     'sha256 ${_shortSha(entry.actualSha256!)}',
-                    style: TextStyle(
-                      fontFamily: DeckhandTokens.fontMono,
-                      fontSize: DeckhandTokens.tXs,
-                      color: tokens.text4,
-                    ),
+                    style: context.dataTiny.copyWith(color: brand.ink4),
                   ),
                 ],
                 const SizedBox(height: 6),
@@ -1288,10 +1163,8 @@ class _OsImageCacheRow extends StatelessWidget {
                   entry.imagePath,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontFamily: DeckhandTokens.fontMono,
-                    fontSize: DeckhandTokens.tXs,
-                    color: tokens.text4,
+                  style: context.dataTiny.copyWith(
+                    color: brand.ink4,
                     height: 1.3,
                   ),
                 ),
@@ -1299,16 +1172,12 @@ class _OsImageCacheRow extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 12),
-          OutlinedButton.icon(
-            style: OutlinedButton.styleFrom(
-              foregroundColor: tokens.bad,
-              minimumSize: const Size(0, 32),
-              padding: const EdgeInsets.symmetric(horizontal: 10),
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            ),
+          ClButton(
+            kind: ClButtonKind.outlined,
+            size: ClButtonSize.sm,
             onPressed: onDelete,
-            icon: const Icon(Icons.delete_outline, size: 14),
-            label: const Text('Delete'),
+            icon: Icons.delete_outline,
+            child: const Text('Delete'),
           ),
         ],
       ),
@@ -1323,25 +1192,7 @@ class _CacheStatusChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
-    final color = status.color(tokens);
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.10),
-        border: Border.all(color: color.withValues(alpha: 0.35)),
-        borderRadius: BorderRadius.circular(DeckhandTokens.r2),
-      ),
-      child: Text(
-        status.label,
-        style: TextStyle(
-          fontFamily: DeckhandTokens.fontMono,
-          fontSize: 10,
-          color: color,
-          letterSpacing: 0,
-        ),
-      ),
-    );
+    return ClStatusChip(label: status.label, kind: status.kind, compact: true);
   }
 }
 
@@ -1362,7 +1213,7 @@ class _RowSwitch extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
+    final brand = context.brandColors;
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
@@ -1372,20 +1223,16 @@ class _RowSwitch extends StatelessWidget {
             children: [
               Text(
                 title,
-                style: TextStyle(
-                  fontFamily: DeckhandTokens.fontSans,
-                  fontSize: DeckhandTokens.tMd,
+                style: context.clBodyMedium.copyWith(
                   fontWeight: FontWeight.w500,
-                  color: tokens.text,
+                  color: brand.ink,
                 ),
               ),
               const SizedBox(height: 4),
               Text(
                 subtitle,
-                style: TextStyle(
-                  fontFamily: DeckhandTokens.fontSans,
-                  fontSize: DeckhandTokens.tSm,
-                  color: tokens.text3,
+                style: context.clBodySmall.copyWith(
+                  color: brand.ink3,
                   height: 1.45,
                 ),
               ),
@@ -1393,7 +1240,7 @@ class _RowSwitch extends StatelessWidget {
           ),
         ),
         const SizedBox(width: 16),
-        Switch(value: value, onChanged: onChanged),
+        ClToggle(value: value, onChanged: onChanged),
       ],
     );
   }
@@ -1415,48 +1262,34 @@ class _ConnectionRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
+    final brand = context.brandColors;
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         decoration: BoxDecoration(
-          border: Border.all(color: tokens.line),
-          borderRadius: BorderRadius.circular(DeckhandTokens.r2),
+          border: Border.all(color: brand.borderStrong),
+          borderRadius: BorderRadius.circular(context.radii.sm),
         ),
         child: Row(
           children: [
-            Icon(Icons.print_outlined, size: 16, color: tokens.text3),
+            Icon(Icons.print_outlined, size: 16, color: brand.ink3),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    host,
-                    style: const TextStyle(
-                      fontFamily: DeckhandTokens.fontMono,
-                      fontSize: DeckhandTokens.tMd,
-                    ),
-                  ),
+                  Text(host, style: context.dataSmall),
                   Text(
                     fingerprint,
-                    style: TextStyle(
-                      fontFamily: DeckhandTokens.fontMono,
-                      fontSize: DeckhandTokens.tXs,
-                      color: tokens.text4,
-                    ),
+                    style: context.dataTiny.copyWith(color: brand.ink4),
                   ),
                 ],
               ),
             ),
-            TextButton(
-              style: TextButton.styleFrom(
-                foregroundColor: tokens.bad,
-                minimumSize: const Size(0, 28),
-                padding: const EdgeInsets.symmetric(horizontal: 10),
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              ),
+            ClButton(
+              kind: ClButtonKind.text,
+              size: ClButtonSize.sm,
               onPressed: onForget,
               child: const Text('Forget'),
             ),
@@ -1474,32 +1307,12 @@ class _SecurityStoreError extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
-    return Container(
-      margin: const EdgeInsets.symmetric(vertical: 8),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: tokens.bad.withValues(alpha: 0.08),
-        border: Border.all(color: tokens.bad.withValues(alpha: 0.35)),
-        borderRadius: BorderRadius.circular(DeckhandTokens.r2),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(Icons.error_outline, size: 16, color: tokens.bad),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              'Secure storage error: $message',
-              style: TextStyle(
-                fontFamily: DeckhandTokens.fontSans,
-                fontSize: DeckhandTokens.tSm,
-                color: tokens.bad,
-                height: 1.4,
-              ),
-            ),
-          ),
-        ],
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: ClBanner(
+        kind: ClBannerKind.bad,
+        title: 'Secure storage error',
+        body: message,
       ),
     );
   }
@@ -1514,32 +1327,17 @@ class _ApprovedHostRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
+    final brand = context.brandColors;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       child: Row(
         children: [
-          Icon(Icons.check, size: 14, color: tokens.ok),
+          Icon(Icons.check, size: 14, color: brand.good),
           const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              host,
-              style: const TextStyle(
-                fontFamily: DeckhandTokens.fontMono,
-                fontSize: DeckhandTokens.tSm,
-              ),
-            ),
-          ),
-          TextButton(
-            style: TextButton.styleFrom(
-              minimumSize: const Size(0, 24),
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              textStyle: const TextStyle(
-                fontFamily: DeckhandTokens.fontSans,
-                fontSize: 11,
-              ),
-            ),
+          Expanded(child: Text(host, style: context.dataSmall)),
+          ClButton(
+            kind: ClButtonKind.text,
+            size: ClButtonSize.sm,
             onPressed: onRevoke,
             child: const Text('Revoke'),
           ),
@@ -1557,10 +1355,16 @@ enum _CacheStatus {
   const _CacheStatus(this.label);
   final String label;
 
-  Color color(DeckhandTokens tokens) => switch (this) {
-    _CacheStatus.verified => tokens.ok,
-    _CacheStatus.unindexed => tokens.warn,
-    _CacheStatus.mismatch => tokens.bad,
+  Color color(ClBrandColors brand) => switch (this) {
+    _CacheStatus.verified => brand.good,
+    _CacheStatus.unindexed => brand.warn,
+    _CacheStatus.mismatch => brand.bad,
+  };
+
+  ClChipKind get kind => switch (this) {
+    _CacheStatus.verified => ClChipKind.good,
+    _CacheStatus.unindexed => ClChipKind.warn,
+    _CacheStatus.mismatch => ClChipKind.bad,
   };
 }
 

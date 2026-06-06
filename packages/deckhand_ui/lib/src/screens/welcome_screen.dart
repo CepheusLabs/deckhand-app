@@ -1,17 +1,13 @@
 import 'package:deckhand_core/deckhand_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:forge/forge.dart';
 import 'package:go_router/go_router.dart';
 
 import '../providers.dart';
-import '../theming/deckhand_tokens.dart';
 import '../utils/managed_printer_actions.dart';
 import '../utils/user_facing_errors.dart';
-import '../widgets/deckhand_loading.dart';
-import '../widgets/id_tag.dart';
-import '../widgets/preflight_strip.dart';
 import '../widgets/resume_gate.dart';
-import '../widgets/wizard_scaffold.dart';
 
 /// S10 — Welcome. Two-panel layout from the Deckhand Design Language
 /// reference: NEW INSTALL on the left, RESUME on the right (the
@@ -33,11 +29,9 @@ class WelcomeScreen extends ConsumerWidget {
     final preflight = ref.watch(preflightReportProvider);
     final ready = !preflight.isLoading;
 
-    final tokens = DeckhandTokens.of(context);
     final saved = ref.watch(savedWizardSnapshotProvider).value;
 
-    return WizardScaffold(
-      screenId: 'S10-welcome',
+    return ClWizardPageScaffold(
       title: 'Flash, set up, and maintain Klipper-based printers.',
       helperText:
           'Local-only desktop tool. Nothing phones home; every operation '
@@ -46,7 +40,6 @@ class WelcomeScreen extends ConsumerWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _WelcomePanels(
-            tokens: tokens,
             ready: ready,
             saved: saved,
             onStart: () => context.go('/pick-printer'),
@@ -54,42 +47,84 @@ class WelcomeScreen extends ConsumerWidget {
           const SizedBox(height: 16),
           const _ManagedPrintersPanel(),
           const SizedBox(height: 16),
-          _MaintenancePanel(tokens: tokens),
+          const _MaintenancePanel(),
           const SizedBox(height: 18),
-          const PreflightStrip(),
+          const _PreflightStrip(),
         ],
       ),
     );
   }
 }
 
+/// Compact boot-time preflight readout. Reads the same
+/// [preflightReportProvider] future the welcome Start button gates on
+/// and renders a forge inline status strip summarizing the outcome.
+class _PreflightStrip extends ConsumerWidget {
+  const _PreflightStrip();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final async = ref.watch(preflightReportProvider);
+    final item = async.when(
+      loading: () => const ClInlineStatusStripItem(
+        label: 'preflight · running',
+      ),
+      error: (error, _) => ClInlineStatusStripItem(
+        label: 'preflight · error',
+        kind: ClStatusKind.bad,
+        semanticLabel: 'Preflight error: ${userFacingError(error)}',
+      ),
+      data: (report) {
+        final failures = report.failures.length;
+        if (failures > 0) {
+          return ClInlineStatusStripItem(
+            label:
+                'preflight · $failures issue${failures == 1 ? '' : 's'}',
+            kind: ClStatusKind.bad,
+          );
+        }
+        final warnings = report.warnings.length;
+        if (warnings > 0) {
+          return ClInlineStatusStripItem(
+            label:
+                'preflight · $warnings warning${warnings == 1 ? '' : 's'}',
+            kind: ClStatusKind.warn,
+          );
+        }
+        return const ClInlineStatusStripItem(
+          label: 'preflight · ready',
+          kind: ClStatusKind.ok,
+        );
+      },
+    );
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: ClInlineStatusStrip(items: [item]),
+    );
+  }
+}
+
 class _WelcomePanels extends StatelessWidget {
   const _WelcomePanels({
-    required this.tokens,
     required this.ready,
     required this.saved,
     required this.onStart,
   });
 
-  final DeckhandTokens tokens;
   final bool ready;
   final SavedWizardSnapshot? saved;
   final VoidCallback onStart;
 
   @override
   Widget build(BuildContext context) {
-    final newInstall = _NewInstallPanel(
-      tokens: tokens,
-      ready: ready,
-      onStart: onStart,
-    );
+    final newInstall = _NewInstallPanel(ready: ready, onStart: onStart);
     if (saved == null) {
       // No saved session: keep the layout symmetrical with the
       // mockup's grid by letting the NEW INSTALL panel claim the
       // full row, rather than centering an awkward half-width card.
       return newInstall;
     }
-    final resume = _ResumePanel(tokens: tokens, saved: saved!);
+    final resume = _ResumePanel(saved: saved!);
     return LayoutBuilder(
       builder: (context, constraints) {
         if (constraints.maxWidth < 720) {
@@ -120,37 +155,30 @@ class _WelcomePanels extends StatelessWidget {
 }
 
 class _NewInstallPanel extends StatelessWidget {
-  const _NewInstallPanel({
-    required this.tokens,
-    required this.ready,
-    required this.onStart,
-  });
+  const _NewInstallPanel({required this.ready, required this.onStart});
 
-  final DeckhandTokens tokens;
   final bool ready;
   final VoidCallback onStart;
 
   @override
   Widget build(BuildContext context) {
     return _PanelShell(
-      tokens: tokens,
       eyebrow: 'NEW INSTALL',
       headline: 'Set up a printer from scratch.',
       body:
           'Walks you through identification, connection, firmware choice, '
           'and install — one decision at a time.',
-      action: FilledButton.icon(
+      action: ClButton(
         onPressed: ready ? onStart : null,
-        icon: const Icon(Icons.arrow_forward, size: 14),
-        label: const Text('Start a new install'),
+        icon: ClIcons.chevronRight,
+        child: const Text('Start a new install'),
       ),
     );
   }
 }
 
 class _ResumePanel extends ConsumerStatefulWidget {
-  const _ResumePanel({required this.tokens, required this.saved});
-  final DeckhandTokens tokens;
+  const _ResumePanel({required this.saved});
   final SavedWizardSnapshot saved;
 
   @override
@@ -260,7 +288,6 @@ class _ResumePanelState extends ConsumerState<_ResumePanel> {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = widget.tokens;
     final state = widget.saved.state;
     final busy = _busyAction != null;
     final profileLabel = state.profileId.isEmpty
@@ -269,7 +296,6 @@ class _ResumePanelState extends ConsumerState<_ResumePanel> {
     final stepLabel = _stepIdTagLabel(state.currentStep);
     final ageLabel = _relativeTimeShort(widget.saved.savedAt);
     return _PanelShell(
-      tokens: tokens,
       eyebrow: 'RESUME',
       headline: 'You have one in-progress install.',
       body:
@@ -278,39 +304,34 @@ class _ResumePanelState extends ConsumerState<_ResumePanel> {
       extra: Wrap(
         spacing: 6,
         runSpacing: 6,
-        children: [IdTag(profileLabel), IdTag(stepLabel), IdTag(ageLabel)],
+        children: [
+          ClIdTag(profileLabel),
+          ClIdTag(stepLabel),
+          ClIdTag(ageLabel),
+        ],
       ),
       action: Wrap(
         spacing: 8,
         runSpacing: 8,
         children: [
-          TextButton(
+          ClButton(
+            kind: ClButtonKind.text,
             onPressed: busy ? null : _discard,
             child: const Text('Discard'),
           ),
-          if (state.profileId.isNotEmpty) ...[
-            OutlinedButton.icon(
+          if (state.profileId.isNotEmpty)
+            ClButton(
+              kind: ClButtonKind.ghost,
               onPressed: busy ? null : _manage,
-              icon: _busyAction == 'manage'
-                  ? const SizedBox(
-                      width: 12,
-                      height: 12,
-                      child: DeckhandSpinner(size: 12, strokeWidth: 1.5),
-                    )
-                  : const Icon(Icons.tune, size: 14),
-              label: Text(_busyAction == 'manage' ? 'Opening…' : 'Manage'),
+              icon: ClIcons.tune,
+              loading: _busyAction == 'manage',
+              child: const Text('Manage'),
             ),
-          ],
-          FilledButton.icon(
+          ClButton(
             onPressed: busy ? null : _resume,
-            icon: _busyAction == 'resume'
-                ? const SizedBox(
-                    width: 12,
-                    height: 12,
-                    child: DeckhandSpinner(size: 12, strokeWidth: 1.5),
-                  )
-                : const Icon(Icons.arrow_forward, size: 14),
-            label: Text(_busyAction == 'resume' ? 'Resuming…' : 'Resume'),
+            icon: ClIcons.chevronRight,
+            loading: _busyAction == 'resume',
+            child: const Text('Resume'),
           ),
         ],
       ),
@@ -355,14 +376,12 @@ class _ManagedPrintersPanelState extends ConsumerState<_ManagedPrintersPanel> {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
     final printers = ref
         .watch(managedPrinterRegistryProvider)
         .listManagedPrinters();
     final visiblePrinters = printers.take(4).toList();
     final hiddenCount = printers.length - visiblePrinters.length;
     return _PanelShell(
-      tokens: tokens,
       eyebrow: 'PRINTERS',
       headline: 'Manage known printers.',
       body: printers.isEmpty
@@ -389,17 +408,12 @@ class _ManagedPrintersPanelState extends ConsumerState<_ManagedPrintersPanel> {
                   ),
               ],
             ),
-      action: printers.isEmpty
-          ? OutlinedButton.icon(
-              onPressed: () => context.go('/printers'),
-              icon: const Icon(Icons.list_alt, size: 14),
-              label: const Text('Open printer manager'),
-            )
-          : OutlinedButton.icon(
-              onPressed: () => context.go('/printers'),
-              icon: const Icon(Icons.list_alt, size: 14),
-              label: const Text('Open printer manager'),
-            ),
+      action: ClButton(
+        kind: ClButtonKind.ghost,
+        onPressed: () => context.go('/printers'),
+        icon: ClIcons.list,
+        child: const Text('Open printer manager'),
+      ),
     );
   }
 }
@@ -412,37 +426,35 @@ class _ManagedPrinterOverflowRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
+    final brand = context.brandColors;
     final label = count == 1
         ? '1 more printer in manager'
         : '$count more printers in manager';
     return InkWell(
       onTap: onOpen,
-      borderRadius: BorderRadius.circular(DeckhandTokens.r2),
+      borderRadius: BorderRadius.circular(context.radii.sm),
       child: Container(
         margin: const EdgeInsets.only(bottom: 8),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         decoration: BoxDecoration(
-          color: tokens.ink2,
-          border: Border.all(color: tokens.line),
-          borderRadius: BorderRadius.circular(DeckhandTokens.r2),
+          color: brand.surface,
+          border: Border.all(color: brand.borderStrong),
+          borderRadius: BorderRadius.circular(context.radii.sm),
         ),
         child: Row(
           children: [
-            Icon(Icons.more_horiz, size: 16, color: tokens.text3),
+            Icon(Icons.more_horiz, size: 16, color: brand.ink3),
             const SizedBox(width: 10),
             Expanded(
               child: Text(
                 label,
-                style: TextStyle(
-                  fontFamily: DeckhandTokens.fontSans,
-                  fontSize: DeckhandTokens.tSm,
+                style: context.clBodySmall.copyWith(
                   fontWeight: FontWeight.w600,
-                  color: tokens.text,
+                  color: brand.ink,
                 ),
               ),
             ),
-            Icon(Icons.arrow_forward, size: 14, color: tokens.text3),
+            Icon(Icons.arrow_forward, size: 14, color: brand.ink3),
           ],
         ),
       ),
@@ -465,21 +477,21 @@ class _ManagedPrinterRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
+    final brand = context.brandColors;
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
-        color: tokens.ink2,
-        border: Border.all(color: tokens.line),
-        borderRadius: BorderRadius.circular(DeckhandTokens.r2),
+        color: brand.surface,
+        border: Border.all(color: brand.borderStrong),
+        borderRadius: BorderRadius.circular(context.radii.sm),
       ),
       child: Row(
         children: [
           Icon(
             Icons.precision_manufacturing_outlined,
             size: 16,
-            color: tokens.text3,
+            color: brand.ink3,
           ),
           const SizedBox(width: 10),
           Expanded(
@@ -489,11 +501,9 @@ class _ManagedPrinterRow extends StatelessWidget {
                 Text(
                   printer.displayName,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontFamily: DeckhandTokens.fontSans,
-                    fontSize: DeckhandTokens.tSm,
+                  style: context.clBodySmall.copyWith(
                     fontWeight: FontWeight.w600,
-                    color: tokens.text,
+                    color: brand.ink,
                   ),
                 ),
                 const SizedBox(height: 2),
@@ -501,11 +511,7 @@ class _ManagedPrinterRow extends StatelessWidget {
                   '${printer.user}@${printer.host}:${printer.port} · '
                   '${printer.profileId}',
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontFamily: DeckhandTokens.fontMono,
-                    fontSize: DeckhandTokens.tXs,
-                    color: tokens.text3,
-                  ),
+                  style: context.dataTiny,
                 ),
               ],
             ),
@@ -520,16 +526,12 @@ class _ManagedPrinterRow extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 4),
-          OutlinedButton.icon(
+          ClButton(
+            kind: ClButtonKind.ghost,
             onPressed: busy ? null : onManage,
-            icon: busy
-                ? const SizedBox(
-                    width: 12,
-                    height: 12,
-                    child: DeckhandSpinner(size: 12, strokeWidth: 1.5),
-                  )
-                : const Icon(Icons.tune, size: 14),
-            label: Text(busy ? 'Opening...' : 'Manage'),
+            icon: ClIcons.tune,
+            loading: busy,
+            child: const Text('Manage'),
           ),
         ],
       ),
@@ -538,36 +540,32 @@ class _ManagedPrinterRow extends StatelessWidget {
 }
 
 class _MaintenancePanel extends StatelessWidget {
-  const _MaintenancePanel({required this.tokens});
-
-  final DeckhandTokens tokens;
+  const _MaintenancePanel();
 
   @override
   Widget build(BuildContext context) {
     return _PanelShell(
-      tokens: tokens,
       eyebrow: 'RECOVERY',
       headline: 'Restore an eMMC backup.',
       body:
           'Writes a Deckhand full-disk backup image back to an attached '
           'eMMC adapter. Use this to roll back after a failed flash or '
           'when you need the printer returned to a known image.',
-      action: OutlinedButton.icon(
+      action: ClButton(
+        kind: ClButtonKind.ghost,
         onPressed: () => context.go('/emmc-restore'),
-        icon: const Icon(Icons.restore, size: 14),
-        label: const Text('Restore eMMC backup'),
+        icon: ClIcons.restore,
+        child: const Text('Restore eMMC backup'),
       ),
     );
   }
 }
 
-/// Shared chrome for the two welcome panels: small mono eyebrow,
-/// headline, muted body, optional middle slot (IdTag row), action
-/// row at the bottom. Mirrors the `panel` div in the mockup with
-/// padding 22 and gap 14.
+/// Shared chrome for the welcome panels: small mono eyebrow, headline,
+/// muted body, optional middle slot (IdTag row), action row at the
+/// bottom. Built on [ClPanel] with the design's padding 22 / gap 14.
 class _PanelShell extends StatelessWidget {
   const _PanelShell({
-    required this.tokens,
     required this.eyebrow,
     required this.headline,
     required this.body,
@@ -575,7 +573,6 @@ class _PanelShell extends StatelessWidget {
     this.extra,
   });
 
-  final DeckhandTokens tokens;
   final String eyebrow;
   final String headline;
   final String body;
@@ -584,58 +581,39 @@ class _PanelShell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      // minHeight (no maxHeight) keeps panels visually substantial
-      // when content is short. The inner Column sizes to content via
-      // mainAxisSize.min — without that, a Column inside an
-      // Expanded(Row) gets unbounded vertical constraints and any
-      // intrinsic-height pass (CrossAxisAlignment.stretch on the
-      // outer Row) crashes the render-tree assertion that surfaced
-      // the original "debugCheckForParentData" stack in tests.
+    final brand = context.brandColors;
+    return ConstrainedBox(
+      // minHeight (no maxHeight) keeps panels visually substantial when
+      // content is short. The inner Column sizes to content via
+      // mainAxisSize.min — without that, a Column inside an Expanded(Row)
+      // gets unbounded vertical constraints and any intrinsic-height pass
+      // (CrossAxisAlignment.stretch on the outer Row) crashes the
+      // render-tree assertion that surfaced the original
+      // "debugCheckForParentData" stack in tests.
       constraints: const BoxConstraints(minHeight: 200),
-      padding: const EdgeInsets.all(22),
-      decoration: BoxDecoration(
-        color: tokens.ink1,
-        border: Border.all(color: tokens.line),
-        borderRadius: BorderRadius.circular(DeckhandTokens.r3),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            eyebrow,
-            style: TextStyle(
-              fontFamily: DeckhandTokens.fontMono,
-              fontSize: 10,
-              color: tokens.text3,
-              letterSpacing: 0,
+      child: ClPanel(
+        padding: const EdgeInsets.all(22),
+        body: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ClEyebrowLabel(eyebrow),
+            const SizedBox(height: 14),
+            Text(
+              headline,
+              style: context.clTitleLarge.copyWith(
+                fontWeight: FontWeight.w500,
+                letterSpacing: 0,
+                color: brand.ink,
+              ),
             ),
-          ),
-          const SizedBox(height: 14),
-          Text(
-            headline,
-            style: TextStyle(
-              fontSize: 22,
-              fontWeight: FontWeight.w500,
-              letterSpacing: 0,
-              color: tokens.text,
-              height: 1.25,
-            ),
-          ),
-          const SizedBox(height: 14),
-          if (extra != null) ...[extra!, const SizedBox(height: 14)],
-          Text(
-            body,
-            style: TextStyle(
-              fontSize: DeckhandTokens.tSm,
-              color: tokens.text3,
-              height: 1.5,
-            ),
-          ),
-          const SizedBox(height: 18),
-          Align(alignment: Alignment.centerLeft, child: action),
-        ],
+            const SizedBox(height: 14),
+            if (extra != null) ...[extra!, const SizedBox(height: 14)],
+            Text(body, style: context.clBodySmall.copyWith(color: brand.ink3)),
+            const SizedBox(height: 18),
+            Align(alignment: Alignment.centerLeft, child: action),
+          ],
+        ),
       ),
     );
   }

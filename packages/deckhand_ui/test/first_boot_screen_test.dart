@@ -1,8 +1,8 @@
 import 'package:deckhand_core/deckhand_core.dart';
 import 'package:deckhand_ui/src/providers.dart';
 import 'package:deckhand_ui/src/screens/first_boot_screen.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:forge/forge.dart';
 
 import 'helpers.dart';
 
@@ -36,7 +36,7 @@ void main() {
       );
       await tester.pump();
 
-      await tester.tap(find.widgetWithText(FilledButton, 'Check for printer'));
+      await tester.tap(find.widgetWithText(ClButton, 'Check for printer'));
       await tester.pump();
       await tester.pump();
 
@@ -46,10 +46,10 @@ void main() {
         findsOneWidget,
       );
       expect(
-        find.widgetWithText(FilledButton, 'Retry SSH check'),
+        find.widgetWithText(ClButton, 'Retry SSH check'),
         findsOneWidget,
       );
-      expect(find.widgetWithText(TextButton, 'Choose printer'), findsOneWidget);
+      expect(find.widgetWithText(ClButton, 'Choose printer'), findsOneWidget);
     });
 
     testWidgets('poll errors do not leave the screen stuck waiting', (
@@ -80,17 +80,17 @@ void main() {
       );
       await tester.pump();
 
-      await tester.tap(find.widgetWithText(FilledButton, 'Check for printer'));
+      await tester.tap(find.widgetWithText(ClButton, 'Check for printer'));
       await tester.pump();
       await tester.pump();
 
       expect(find.text('No SSH response yet.'), findsOneWidget);
       expect(find.textContaining('Deckhand could not check SSH'), findsOne);
       expect(
-        find.widgetWithText(FilledButton, 'Retry SSH check'),
+        find.widgetWithText(ClButton, 'Retry SSH check'),
         findsOneWidget,
       );
-      expect(find.widgetWithText(FilledButton, 'Waiting…'), findsNothing);
+      expect(find.widgetWithText(ClButton, 'Waiting…'), findsNothing);
     });
   });
 }

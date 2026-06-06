@@ -1,16 +1,12 @@
 import 'package:deckhand_core/deckhand_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:forge/forge.dart';
 import 'package:go_router/go_router.dart';
 
 import '../i18n/translations.g.dart';
 import '../providers.dart';
-import '../theming/deckhand_tokens.dart';
 import '../utils/json_safety.dart';
-import '../widgets/dashed_divider.dart';
-import '../widgets/equal_height_grid.dart';
-import '../widgets/selection_card.dart';
-import '../widgets/wizard_scaffold.dart';
 
 class WebuiScreen extends ConsumerStatefulWidget {
   const WebuiScreen({super.key});
@@ -77,17 +73,22 @@ class _WebuiScreenState extends ConsumerState<WebuiScreen> {
     final hasSelection = _selected.isNotEmpty;
     final canContinue = hasSelection || (_neither && allowNone);
 
-    return WizardScaffold(
-      screenId: 'S105-webui',
+    return ClWizardPageScaffold(
       title: t.webui.title,
       helperText: t.webui.helper,
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           if (!canContinue)
-            _RequirementBanner(message: t.webui.requirement_missing),
+            ClBanner(
+              kind: ClBannerKind.warn,
+              title: t.webui.requirement_missing,
+            ),
           if (canContinue)
-            _RequirementBanner(message: t.webui.requirement_ok, ok: true),
+            ClBanner(
+              kind: ClBannerKind.good,
+              title: t.webui.requirement_ok,
+            ),
           const SizedBox(height: 16),
           LayoutBuilder(
             builder: (context, constraints) {
@@ -108,7 +109,7 @@ class _WebuiScreenState extends ConsumerState<WebuiScreen> {
                   : width >= 640
                   ? 2
                   : 1;
-              return EqualHeightGrid(
+              return ClEqualHeightGrid(
                 columns: cols,
                 children: [
                   for (final raw in choices)
@@ -169,7 +170,7 @@ class _WebuiScreenState extends ConsumerState<WebuiScreen> {
           ],
         ],
       ),
-      primaryAction: WizardAction(
+      primaryAction: ClWizardAction(
         label: t.common.action_continue,
         disabledReason: _webuiDisabledReason(
           canContinue: canContinue,
@@ -188,7 +189,7 @@ class _WebuiScreenState extends ConsumerState<WebuiScreen> {
             : null,
       ),
       secondaryActions: [
-        WizardAction(
+        ClWizardAction(
           label: t.common.action_back,
           onPressed: () => context.go('/firmware'),
           isBack: true,
@@ -224,51 +225,6 @@ List<Map<String, dynamic>> _webuiChoices(Map<dynamic, dynamic> webui) =>
       webui['choices'],
     ).where((choice) => jsonString(choice['id'])?.isNotEmpty == true).toList();
 
-/// Bordered banner above the grid that calls out the picking
-/// requirement. Doubles as a green "you're good to continue"
-/// reassurance once at least one card is selected (or "Neither" is
-/// checked when allow_none is set).
-class _RequirementBanner extends StatelessWidget {
-  const _RequirementBanner({required this.message, this.ok = false});
-  final String message;
-  final bool ok;
-
-  @override
-  Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
-    final color = ok ? tokens.ok : tokens.warn;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.08),
-        border: Border.all(color: color.withValues(alpha: 0.30)),
-        borderRadius: BorderRadius.circular(DeckhandTokens.r2),
-      ),
-      child: Row(
-        children: [
-          Icon(
-            ok ? Icons.check_circle_outline : Icons.info_outline,
-            size: 16,
-            color: color,
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              message,
-              style: TextStyle(
-                fontFamily: DeckhandTokens.fontSans,
-                fontSize: DeckhandTokens.tSm,
-                color: color,
-                height: 1.4,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 class _WebuiCard extends StatelessWidget {
   const _WebuiCard({
     required this.raw,
@@ -286,14 +242,14 @@ class _WebuiCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
+    final brand = context.brandColors;
     final id = jsonString(raw['id']) ?? '';
     final name = jsonString(raw['display_name']) ?? id;
     final port = raw['default_port'];
     final isInstalled = installed?.installed ?? false;
     final isActive = installed?.active ?? false;
 
-    return SelectionCard(
+    return ClSelectionCard(
       selected: selected,
       onTap: onTap,
       // Reserve room on the right edge so the SelectionCard's check
@@ -304,25 +260,24 @@ class _WebuiCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              Icon(Icons.visibility_outlined, size: 18, color: tokens.accent),
+              Icon(Icons.visibility_outlined, size: 18, color: brand.primary),
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
                   name,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontFamily: DeckhandTokens.fontSans,
-                    fontSize: DeckhandTokens.tLg,
+                  style: context.clTitleMedium.copyWith(
                     fontWeight: FontWeight.w500,
-                    color: tokens.text,
+                    color: brand.ink,
                   ),
                 ),
               ),
               if (isInstalled) ...[
                 const SizedBox(width: 8),
-                _MiniPill(
+                ClStatusChip(
                   label: isActive ? 'INSTALLED · RUNNING' : 'INSTALLED',
-                  color: isActive ? tokens.ok : tokens.info,
+                  kind: isActive ? ClChipKind.good : ClChipKind.info,
+                  compact: true,
                 ),
               ],
             ],
@@ -330,17 +285,15 @@ class _WebuiCard extends StatelessWidget {
           const SizedBox(height: 10),
           Text(
             descriptionBuilder(raw),
-            style: TextStyle(
-              fontFamily: DeckhandTokens.fontSans,
-              fontSize: DeckhandTokens.tSm,
+            style: context.clBodySmall.copyWith(
               height: 1.5,
-              color: tokens.text2,
+              color: brand.ink2,
             ),
           ),
           const SizedBox(height: 14),
           // Dashed divider matches the design source's
           // `border-top: 1px dashed var(--line)` on the card footer.
-          const DashedDivider(),
+          const ClDashedDivider(),
           const SizedBox(height: 10),
           _MetaRow(label: 'port', value: port == null ? '—' : port.toString()),
           if (raw['asset_pattern'] != null)
@@ -361,30 +314,19 @@ class _MetaRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
+    final brand = context.brandColors;
     return Padding(
       padding: const EdgeInsets.only(bottom: 2),
       child: Row(
         children: [
           SizedBox(
             width: 50,
-            child: Text(
-              label,
-              style: TextStyle(
-                fontFamily: DeckhandTokens.fontMono,
-                fontSize: 11,
-                color: tokens.text4,
-              ),
-            ),
+            child: Text(label, style: context.dataTiny),
           ),
           Expanded(
             child: Text(
               value,
-              style: TextStyle(
-                fontFamily: DeckhandTokens.fontMono,
-                fontSize: 11,
-                color: tokens.text3,
-              ),
+              style: context.dataTiny.copyWith(color: brand.ink3),
             ),
           ),
         ],
@@ -410,8 +352,8 @@ class _BothCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
-    return SelectionCard(
+    final brand = context.brandColors;
+    return ClSelectionCard(
       selected: selected,
       onTap: onTap,
       padding: const EdgeInsets.fromLTRB(16, 16, 40, 16),
@@ -420,16 +362,14 @@ class _BothCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              Icon(Icons.dynamic_feed_outlined, size: 18, color: tokens.accent),
+              Icon(Icons.dynamic_feed_outlined, size: 18, color: brand.primary),
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
                   'Both',
-                  style: TextStyle(
-                    fontFamily: DeckhandTokens.fontSans,
-                    fontSize: DeckhandTokens.tLg,
+                  style: context.clTitleMedium.copyWith(
                     fontWeight: FontWeight.w500,
-                    color: tokens.text,
+                    color: brand.ink,
                   ),
                 ),
               ),
@@ -439,46 +379,16 @@ class _BothCard extends StatelessWidget {
           Text(
             'Install both web UIs on their default ports. Open '
             'either from a browser; switch per session.',
-            style: TextStyle(
-              fontFamily: DeckhandTokens.fontSans,
-              fontSize: DeckhandTokens.tSm,
+            style: context.clBodySmall.copyWith(
               height: 1.5,
-              color: tokens.text2,
+              color: brand.ink2,
             ),
           ),
           const SizedBox(height: 14),
-          const DashedDivider(),
+          const ClDashedDivider(),
           const SizedBox(height: 10),
           _MetaRow(label: 'ports', value: ports),
         ],
-      ),
-    );
-  }
-}
-
-class _MiniPill extends StatelessWidget {
-  const _MiniPill({required this.label, required this.color});
-  final String label;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.10),
-        border: Border.all(color: color.withValues(alpha: 0.40)),
-        borderRadius: BorderRadius.circular(9),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(
-          fontFamily: DeckhandTokens.fontMono,
-          fontSize: 9,
-          color: color,
-          fontWeight: FontWeight.w600,
-          letterSpacing: 0,
-        ),
       ),
     );
   }
@@ -494,18 +404,12 @@ class _NeitherTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
+    final brand = context.brandColors;
     final body = Row(
       children: [
-        SizedBox(
-          width: 18,
-          height: 18,
-          child: Checkbox(
-            value: checked,
-            onChanged: (v) => onChanged(v ?? false),
-            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            visualDensity: VisualDensity.compact,
-          ),
+        ClCheckbox(
+          value: checked,
+          onChanged: (v) => onChanged(v),
         ),
         const SizedBox(width: 12),
         Expanded(
@@ -514,28 +418,18 @@ class _NeitherTile extends StatelessWidget {
               children: [
                 TextSpan(
                   text: 'Neither',
-                  style: TextStyle(
-                    fontFamily: DeckhandTokens.fontSans,
-                    fontSize: DeckhandTokens.tMd,
+                  style: context.clBodyMedium.copyWith(
                     fontWeight: FontWeight.w600,
-                    color: tokens.text,
+                    color: brand.ink,
                   ),
                 ),
                 TextSpan(
                   text: ' — I\'ll handle the web UI myself ',
-                  style: TextStyle(
-                    fontFamily: DeckhandTokens.fontSans,
-                    fontSize: DeckhandTokens.tMd,
-                    color: tokens.text2,
-                  ),
+                  style: context.clBodyMedium.copyWith(color: brand.ink2),
                 ),
                 TextSpan(
                   text: '(advanced)',
-                  style: TextStyle(
-                    fontFamily: DeckhandTokens.fontSans,
-                    fontSize: DeckhandTokens.tSm,
-                    color: tokens.text3,
-                  ),
+                  style: context.clBodySmall.copyWith(color: brand.ink3),
                 ),
               ],
             ),
@@ -548,19 +442,19 @@ class _NeitherTile extends StatelessWidget {
     // when checked keeps the "selected" affordance loud.
     return InkWell(
       onTap: () => onChanged(!checked),
-      borderRadius: BorderRadius.circular(DeckhandTokens.r3),
+      borderRadius: BorderRadius.circular(context.radii.md),
       child: checked
           ? Container(
               padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
               decoration: BoxDecoration(
-                color: tokens.ink2,
-                border: Border.all(color: tokens.accent, width: 1.5),
-                borderRadius: BorderRadius.circular(DeckhandTokens.r3),
+                color: brand.selectedBg,
+                border: Border.all(color: brand.primary, width: 1.5),
+                borderRadius: BorderRadius.circular(context.radii.md),
               ),
               child: body,
             )
-          : DashedBorderBox(
-              borderRadius: DeckhandTokens.r3,
+          : ClDashedBorderBox(
+              radius: context.radii.md,
               padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
               child: body,
             ),

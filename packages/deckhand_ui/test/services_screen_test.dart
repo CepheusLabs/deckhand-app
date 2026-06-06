@@ -1,7 +1,7 @@
 import 'package:deckhand_core/deckhand_core.dart';
 import 'package:deckhand_ui/src/screens/services_screen.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:forge/forge.dart';
 
 import 'helpers.dart';
 
@@ -61,7 +61,7 @@ void main() {
         expect(find.text('Question 1 / 2'), findsOneWidget);
 
         // Continue advances to the second question.
-        await tester.tap(find.widgetWithText(FilledButton, 'Continue'));
+        await tester.tap(find.widgetWithText(ClButton, 'Continue'));
         await tester.pump();
 
         expect(find.textContaining('Phrozen master'), findsNothing);

@@ -1,7 +1,7 @@
 import 'package:deckhand_core/deckhand_core.dart';
 import 'package:deckhand_ui/src/screens/webui_screen.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:forge/forge.dart';
 
 import 'helpers.dart';
 
@@ -47,9 +47,12 @@ void main() {
         ],
         defaults: const [],
       );
-      final continueBtn = find.widgetWithText(FilledButton, 'Continue');
+      // The wizard scaffold renders its primaryAction as a forge
+      // ClButton; a disabled action passes onPressed: null straight
+      // through, so the enabled-state assertion reads ClButton.onPressed.
+      final continueBtn = find.widgetWithText(ClButton, 'Continue');
       expect(continueBtn, findsOneWidget);
-      final btn = tester.widget<FilledButton>(continueBtn);
+      final btn = tester.widget<ClButton>(continueBtn);
       expect(btn.onPressed, isNull);
       // Error banner present when empty.
       expect(
@@ -67,8 +70,8 @@ void main() {
         ],
         defaults: const ['fluidd'],
       );
-      final continueBtn = find.widgetWithText(FilledButton, 'Continue');
-      final btn = tester.widget<FilledButton>(continueBtn);
+      final continueBtn = find.widgetWithText(ClButton, 'Continue');
+      final btn = tester.widget<ClButton>(continueBtn);
       expect(btn.onPressed, isNotNull);
     });
 
@@ -121,8 +124,8 @@ void main() {
       );
 
       expect(find.text('Fluidd'), findsOneWidget);
-      final continueBtn = find.widgetWithText(FilledButton, 'Continue');
-      final btn = tester.widget<FilledButton>(continueBtn);
+      final continueBtn = find.widgetWithText(ClButton, 'Continue');
+      final btn = tester.widget<ClButton>(continueBtn);
       expect(btn.onPressed, isNotNull);
     });
   });

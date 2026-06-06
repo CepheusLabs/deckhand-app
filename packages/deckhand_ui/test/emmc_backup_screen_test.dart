@@ -4,8 +4,8 @@ import 'dart:io';
 import 'package:deckhand_core/deckhand_core.dart';
 import 'package:deckhand_ui/src/providers.dart';
 import 'package:deckhand_ui/src/screens/emmc_backup_screen.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:forge/forge.dart';
 import 'package:path/path.dart' as p;
 
 import 'helpers.dart';
@@ -78,8 +78,11 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      final change = tester.widget<OutlinedButton>(
-        find.widgetWithText(OutlinedButton, 'Change…'),
+      // The destination picker's "Change…" affordance is a forge
+      // ClButton (outlined kind); a disabled button passes onPressed:
+      // null straight through, so the enabled assertion reads it here.
+      final change = tester.widget<ClButton>(
+        find.widgetWithText(ClButton, 'Change…'),
       );
       expect(change.onPressed, isNotNull);
     });
@@ -157,12 +160,15 @@ void main() {
       );
       await tester.pump();
 
-      final cancel = tester.widget<OutlinedButton>(
-        find.widgetWithText(OutlinedButton, 'Cancel'),
+      // 'Cancel' is the wizard scaffold's back-styled secondary action,
+      // rendered as a forge ClButton; while copying it carries the
+      // cancel callback rather than the navigate-back default.
+      final cancel = tester.widget<ClButton>(
+        find.widgetWithText(ClButton, 'Cancel'),
       );
       expect(cancel.onPressed, isNotNull);
 
-      await tester.tap(find.widgetWithText(OutlinedButton, 'Cancel'));
+      await tester.tap(find.widgetWithText(ClButton, 'Cancel'));
       await tester.pump(const Duration(milliseconds: 50));
       await tester.pump(const Duration(milliseconds: 750));
 
@@ -498,8 +504,11 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        final button = tester.widget<FilledButton>(
-          find.widgetWithText(FilledButton, 'Back up this disk'),
+        // The wizard scaffold renders its primaryAction ('Back up this
+        // disk') as a forge ClButton; a disabled action passes
+        // onPressed: null straight through, so the assertion reads it.
+        final button = tester.widget<ClButton>(
+          find.widgetWithText(ClButton, 'Back up this disk'),
         );
         expect(button.onPressed, isNull);
       },

@@ -1,14 +1,12 @@
 import 'package:deckhand_core/deckhand_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:forge/forge.dart';
 import 'package:go_router/go_router.dart';
 
 import '../i18n/translations.g.dart';
 import '../providers.dart';
-import '../theming/deckhand_tokens.dart';
 import '../utils/json_safety.dart';
-import '../widgets/deckhand_loading.dart';
-import '../widgets/wizard_scaffold.dart';
 
 /// Stock-OS leftover files the profile declares can be cleaned up.
 /// The probe tells us which ones actually exist on *this* printer; we
@@ -51,8 +49,7 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
       }
     }
 
-    return WizardScaffold(
-      screenId: 'S140-files-cleanup',
+    return ClWizardPageScaffold(
       title: 'Files to clean up.',
       helperText:
           'Vendor leftovers detected on the OS. Tick anything you want '
@@ -127,7 +124,7 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
             ),
         ],
       ),
-      primaryAction: WizardAction(
+      primaryAction: ClWizardAction(
         label: t.common.action_continue,
         onPressed: () async {
           for (final f in files) {
@@ -144,7 +141,7 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
         },
       ),
       secondaryActions: [
-        WizardAction(
+        ClWizardAction(
           label: t.common.action_back,
           onPressed: () => context.go('/services'),
           isBack: true,
@@ -170,12 +167,16 @@ class _Toolbar extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        OutlinedButton(
+        ClButton(
+          kind: ClButtonKind.outlined,
+          size: ClButtonSize.sm,
           onPressed: selectAllEnabled ? onSelectAll : null,
           child: const Text('Select all present'),
         ),
         const SizedBox(width: 8),
-        OutlinedButton(
+        ClButton(
+          kind: ClButtonKind.outlined,
+          size: ClButtonSize.sm,
           onPressed: clearEnabled ? onClear : null,
           child: const Text('Clear'),
         ),
@@ -199,28 +200,26 @@ class _FilesPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
+    final brand = context.brandColors;
     return Opacity(
       opacity: dimmed ? 0.55 : 1.0,
-      child: Container(
-        decoration: BoxDecoration(
-          color: tokens.ink1,
-          border: Border.all(color: tokens.line),
-          borderRadius: BorderRadius.circular(DeckhandTokens.r3),
-        ),
-        clipBehavior: Clip.antiAlias,
-        child: Column(
-          children: [
-            for (var i = 0; i < files.length; i++)
-              _FileRow(
-                file: files[i],
-                selected: isSelected(files[i].id),
-                isDefault: files[i].defaultAction == 'delete',
-                isLast: i == files.length - 1,
-                disabled: dimmed,
-                onToggle: () => onToggle(files[i].id),
-              ),
-          ],
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(context.radii.md),
+        child: ClPanel(
+          background: brand.bgAlt,
+          body: Column(
+            children: [
+              for (var i = 0; i < files.length; i++)
+                _FileRow(
+                  file: files[i],
+                  selected: isSelected(files[i].id),
+                  isDefault: files[i].defaultAction == 'delete',
+                  isLast: i == files.length - 1,
+                  disabled: dimmed,
+                  onToggle: () => onToggle(files[i].id),
+                ),
+            ],
+          ),
         ),
       ),
     );
@@ -246,7 +245,7 @@ class _FileRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
+    final brand = context.brandColors;
     final helper =
         jsonString(jsonStringKeyMap(file.raw['wizard'])?['helper_text']) ?? '';
     final paths = file.paths.join(', ');
@@ -257,7 +256,7 @@ class _FileRow extends StatelessWidget {
         decoration: BoxDecoration(
           border: isLast
               ? null
-              : Border(bottom: BorderSide(color: tokens.lineSoft)),
+              : Border(bottom: BorderSide(color: brand.borderSubtle)),
         ),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -279,32 +278,24 @@ class _FileRow extends StatelessWidget {
                 children: [
                   Text(
                     file.displayName,
-                    style: TextStyle(
-                      fontFamily: DeckhandTokens.fontSans,
-                      fontSize: DeckhandTokens.tMd,
+                    style: context.clBodyMedium.copyWith(
                       fontWeight: FontWeight.w500,
-                      color: tokens.text,
+                      color: brand.ink,
                     ),
                   ),
                   if (paths.isNotEmpty) ...[
                     const SizedBox(height: 4),
                     Text(
                       paths,
-                      style: TextStyle(
-                        fontFamily: DeckhandTokens.fontMono,
-                        fontSize: DeckhandTokens.tXs,
-                        color: tokens.text3,
-                      ),
+                      style: context.dataTiny.copyWith(color: brand.ink3),
                     ),
                   ],
                   if (helper.isNotEmpty) ...[
                     const SizedBox(height: 4),
                     Text(
                       helper,
-                      style: TextStyle(
-                        fontFamily: DeckhandTokens.fontSans,
-                        fontSize: DeckhandTokens.tXs,
-                        color: tokens.text4,
+                      style: context.clLabelSmall.copyWith(
+                        color: brand.ink4,
                         height: 1.4,
                       ),
                     ),
@@ -317,17 +308,15 @@ class _FileRow extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 1),
                 decoration: BoxDecoration(
-                  color: tokens.ink3,
-                  border: Border.all(color: tokens.line),
-                  borderRadius: BorderRadius.circular(9),
+                  color: brand.surface2,
+                  border: Border.all(color: brand.borderStrong),
+                  borderRadius: BorderRadius.circular(context.radii.lgPlus),
                 ),
                 child: Text(
                   'DEFAULT',
-                  style: TextStyle(
-                    fontFamily: DeckhandTokens.fontMono,
+                  style: context.labelTechnical.copyWith(
                     fontSize: 9,
-                    color: tokens.text2,
-                    fontWeight: FontWeight.w600,
+                    color: brand.ink2,
                     letterSpacing: 0,
                   ),
                 ),
@@ -347,28 +336,19 @@ class _SectionHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
+    final brand = context.brandColors;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
           label,
-          style: TextStyle(
-            fontFamily: DeckhandTokens.fontSans,
-            fontSize: DeckhandTokens.tMd,
+          style: context.clBodyMedium.copyWith(
             fontWeight: FontWeight.w600,
-            color: tokens.text2,
+            color: brand.ink2,
           ),
         ),
         const SizedBox(height: 2),
-        Text(
-          subtitle,
-          style: TextStyle(
-            fontFamily: DeckhandTokens.fontSans,
-            fontSize: DeckhandTokens.tSm,
-            color: tokens.text3,
-          ),
-        ),
+        Text(subtitle, style: context.clBodySmall.copyWith(color: brand.ink3)),
       ],
     );
   }
@@ -381,13 +361,13 @@ class _SummaryStrip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
+    final brand = context.brandColors;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        color: tokens.ink1,
-        border: Border.all(color: tokens.line),
-        borderRadius: BorderRadius.circular(DeckhandTokens.r2),
+        color: brand.bgAlt,
+        border: Border.all(color: brand.borderStrong),
+        borderRadius: BorderRadius.circular(context.radii.sm),
       ),
       child: Row(
         children: [
@@ -395,18 +375,14 @@ class _SummaryStrip extends StatelessWidget {
             width: 6,
             height: 6,
             decoration: BoxDecoration(
-              color: queuedCount > 0 ? tokens.ok : tokens.text4,
+              color: queuedCount > 0 ? brand.good : brand.ink4,
               shape: BoxShape.circle,
             ),
           ),
           const SizedBox(width: 8),
           Text(
             '$queuedCount of $totalPresent files queued for removal',
-            style: TextStyle(
-              fontFamily: DeckhandTokens.fontMono,
-              fontSize: DeckhandTokens.tXs,
-              color: tokens.text3,
-            ),
+            style: context.dataTiny.copyWith(color: brand.ink3),
           ),
         ],
       ),
@@ -420,26 +396,15 @@ class _EmptyNotice extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
-    return Container(
+    final brand = context.brandColors;
+    return ClPanel(
+      background: brand.bgAlt,
       padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: tokens.ink1,
-        border: Border.all(color: tokens.line),
-        borderRadius: BorderRadius.circular(DeckhandTokens.r3),
-      ),
-      child: Row(
+      body: Row(
         children: [
-          Icon(Icons.check_circle_outline, size: 18, color: tokens.ok),
+          Icon(Icons.check_circle_outline, size: 18, color: brand.good),
           const SizedBox(width: 10),
-          Text(
-            message,
-            style: TextStyle(
-              fontFamily: DeckhandTokens.fontSans,
-              fontSize: DeckhandTokens.tSm,
-              color: tokens.text2,
-            ),
-          ),
+          Text(message, style: context.clBodySmall.copyWith(color: brand.ink2)),
         ],
       ),
     );
@@ -451,26 +416,22 @@ class _ProbeLoadingBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
+    final brand = context.brandColors;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
-        color: tokens.info.withValues(alpha: 0.10),
-        border: Border.all(color: tokens.info.withValues(alpha: 0.35)),
-        borderRadius: BorderRadius.circular(DeckhandTokens.r2),
+        color: brand.primary.withValues(alpha: 0.10),
+        border: Border.all(color: brand.primary.withValues(alpha: 0.35)),
+        borderRadius: BorderRadius.circular(context.radii.sm),
       ),
       child: Row(
         children: [
-          DeckhandSpinner(size: 14, strokeWidth: 2, color: tokens.info),
+          ClSpinner(size: 14, strokeWidth: 2, color: brand.primary),
           const SizedBox(width: 10),
           Expanded(
             child: Text(
               'Probing this printer to see which files are actually present…',
-              style: TextStyle(
-                fontFamily: DeckhandTokens.fontSans,
-                fontSize: DeckhandTokens.tSm,
-                color: tokens.info,
-              ),
+              style: context.clBodySmall.copyWith(color: brand.primary),
             ),
           ),
         ],

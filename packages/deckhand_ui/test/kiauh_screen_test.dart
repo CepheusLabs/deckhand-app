@@ -1,7 +1,7 @@
 import 'package:deckhand_core/deckhand_core.dart';
 import 'package:deckhand_ui/src/screens/kiauh_screen.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:forge/forge.dart';
 
 import 'helpers.dart';
 
@@ -64,7 +64,7 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      await tester.tap(find.widgetWithText(FilledButton, 'Continue'));
+      await tester.tap(find.widgetWithText(ClButton, 'Continue'));
       await tester.pumpAndSettle();
 
       // default_install=true -> decision should be true.
@@ -98,8 +98,8 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Install KIAUH'), findsOneWidget);
-      final continueButton = tester.widget<FilledButton>(
-        find.widgetWithText(FilledButton, 'Continue'),
+      final continueButton = tester.widget<ClButton>(
+        find.widgetWithText(ClButton, 'Continue'),
       );
       expect(continueButton.onPressed, isNotNull);
     });

@@ -1,7 +1,8 @@
-import 'dart:convert';
-import 'dart:io';
+import 'package:forge_wizard/forge_wizard.dart';
 
 import 'wizard_flow.dart';
+
+export 'package:forge_wizard/forge_wizard.dart' show ForgeWizardConnection;
 
 const Object _copyWithUnset = Object();
 
@@ -10,78 +11,121 @@ const Object _copyWithUnset = Object();
 /// Deckhand should wait for over SSH.
 const firstBootReadyForSshWaitDecision = 'first_boot.ready_for_ssh_wait';
 
+/// Schema marker for the persisted wizard snapshot. Bumping the trailing
+/// version invalidates older on-disk files (they load as "no resume").
+const _wizardStateSchema = 'deckhand.wizard_state/1';
+
+/// Shared codec that maps the persisted JSON shape onto the
+/// app-neutral [ForgeWizardState] fields. Deckhand's `profileId` is the
+/// forge `subjectId`; the `flow` enum persists as the forge `flowId`
+/// string; the SSH triple is the forge `connection`. Kept module-level
+/// so both [WizardState.toJson]/[WizardState.fromJson] and
+/// [WizardStateStore] round-trip through exactly one schema definition.
+const _wizardStateCodec = ForgeWizardStateCodec(
+  schema: _wizardStateSchema,
+  subjectIdKey: 'profileId',
+  flowIdKey: 'flow',
+  connectionHostKey: 'sshHost',
+  connectionPortKey: 'sshPort',
+  connectionUserKey: 'sshUser',
+  defaultFlowId: 'none',
+);
+
+/// Lift an app-neutral [ForgeWizardState] (as produced by the forge
+/// codec / process) back into the Deckhand [WizardState] subtype. The
+/// only Deckhand-specific bit is decoding the `flowId` string into a
+/// [WizardFlow]; everything else is carried verbatim. Used as the
+/// `convert` callback for [ForgeWizardFlowProcess] / [ForgeWizardStateStore].
+WizardState wizardStateFromForge(ForgeWizardState state) {
+  if (state is WizardState) return state;
+  return WizardState(
+    profileId: state.subjectId,
+    decisions: state.decisions,
+    currentStep: state.currentStepId,
+    flow: _flowFromId(state.flowId),
+    sshHost: state.connection.host,
+    sshPort: state.connection.port,
+    sshUser: state.connection.user,
+  );
+}
+
+WizardFlow _flowFromId(String flowId) => WizardFlow.values.firstWhere(
+  (f) => f.name == flowId,
+  orElse: () => WizardFlow.none,
+);
+
 /// Immutable snapshot of the wizard at a point in time.
+///
+/// Built on the pure-Dart [ForgeWizardState] so `deckhand_core` shares
+/// the same flow/state/persistence engine as the Forge-family UI apps
+/// without pulling in Flutter. The Deckhand-named surface (`profileId`,
+/// `flow`, `currentStep`, the SSH triple) is layered on top as getters
+/// over the neutral base fields (`subjectId`, `flowId`, `currentStepId`,
+/// `connection`), so every existing call site keeps reading the names it
+/// always has.
 ///
 /// Only data the wizard owns goes here — no live SSH session, no
 /// confirmation tokens, no passwords. The reason: this object is
 /// the unit of resume persistence (see [WizardStateStore]), and
 /// secrets durably written to disk would let a thief restoring a
 /// prior session bypass authentication. The serializer therefore
-/// only round-trips the decision graph + nav cursor.
-class WizardState {
-  const WizardState({
-    required this.profileId,
-    required this.decisions,
-    required this.currentStep,
-    required this.flow,
-    this.sshHost,
-    this.sshPort,
-    this.sshUser,
-  });
+/// only round-trips the decision graph + nav cursor + SSH endpoint.
+class WizardState extends ForgeWizardState {
+  WizardState({
+    required String profileId,
+    required super.decisions,
+    required String currentStep,
+    required WizardFlow flow,
+    String? sshHost,
+    int? sshPort,
+    String? sshUser,
+  }) : super(
+         subjectId: profileId,
+         currentStepId: currentStep,
+         flowId: flow.name,
+         connection: ForgeWizardConnection(
+           host: sshHost,
+           port: sshPort,
+           user: sshUser,
+         ),
+       );
 
-  factory WizardState.initial() => const WizardState(
+  factory WizardState.initial() => WizardState(
     profileId: '',
-    decisions: {},
+    decisions: const {},
     currentStep: 'welcome',
     flow: WizardFlow.none,
   );
 
   /// Round-trip the wizard state to/from JSON so the app can persist
-  /// it between launches and resume after a crash.
+  /// it between launches and resume after a crash. Delegates to the
+  /// shared [ForgeWizardStateCodec] so the on-disk schema lives in one
+  /// place. A null decode (schema mismatch / malformed) degrades to
+  /// [WizardState.initial] — callers that need to distinguish "no valid
+  /// snapshot" go through [WizardStateStore.load], which returns null.
   factory WizardState.fromJson(Map<String, dynamic> json) {
-    final decisionsRaw = json['decisions'];
-    final decisions = <String, Object>{};
-    if (decisionsRaw is Map) {
-      decisionsRaw.forEach((k, v) {
-        final value = _immutableDecisionValue(v);
-        if (k is String && value != null) decisions[k] = value;
-      });
-    }
-    final flowRaw = _decodeOptionalString(json['flow']) ?? 'none';
-    final flow = WizardFlow.values.firstWhere(
-      (f) => f.name == flowRaw,
-      orElse: () => WizardFlow.none,
-    );
-    return WizardState(
-      profileId: _decodeRequiredString(json['profileId'], ''),
-      decisions: Map<String, Object>.unmodifiable(decisions),
-      currentStep: _decodeRequiredString(json['currentStep'], 'welcome'),
-      flow: flow,
-      sshHost: _decodeOptionalString(json['sshHost']),
-      sshPort: _decodePort(json['sshPort']),
-      sshUser: _decodeOptionalString(json['sshUser']),
-    );
+    final decoded = _wizardStateCodec.fromJson(json);
+    if (decoded == null) return WizardState.initial();
+    return wizardStateFromForge(decoded);
   }
 
-  final String profileId;
-  final Map<String, Object> decisions;
-  final String currentStep;
-  final WizardFlow flow;
-  final String? sshHost;
-  final int? sshPort;
-  final String? sshUser;
+  /// Deckhand-named view over the neutral [subjectId].
+  String get profileId => subjectId;
 
-  Map<String, dynamic> toJson() => <String, dynamic>{
-    'schema': 'deckhand.wizard_state/1',
-    'profileId': profileId,
-    'decisions': decisions,
-    'currentStep': currentStep,
-    'flow': flow.name,
-    if (sshHost != null) 'sshHost': sshHost,
-    if (sshPort != null) 'sshPort': sshPort,
-    if (sshUser != null) 'sshUser': sshUser,
-  };
+  /// Deckhand-named view over the neutral [currentStepId].
+  String get currentStep => currentStepId;
 
+  /// Decode the neutral [flowId] string into the Deckhand [WizardFlow]
+  /// enum. Unknown ids degrade to [WizardFlow.none].
+  WizardFlow get flow => _flowFromId(flowId);
+
+  String? get sshHost => connection.host;
+  int? get sshPort => connection.port;
+  String? get sshUser => connection.user;
+
+  Map<String, dynamic> toJson() => _wizardStateCodec.toJson(this);
+
+  @override
   WizardState copyWith({
     String? profileId,
     Map<String, Object>? decisions,
@@ -90,73 +134,36 @@ class WizardState {
     Object? sshHost = _copyWithUnset,
     Object? sshPort = _copyWithUnset,
     Object? sshUser = _copyWithUnset,
-  }) => WizardState(
-    profileId: profileId ?? this.profileId,
-    decisions: _immutableDecisionMap(decisions ?? this.decisions),
-    currentStep: currentStep ?? this.currentStep,
-    flow: flow ?? this.flow,
-    sshHost: identical(sshHost, _copyWithUnset)
-        ? this.sshHost
-        : sshHost as String?,
-    sshPort: identical(sshPort, _copyWithUnset)
-        ? this.sshPort
-        : sshPort as int?,
-    sshUser: identical(sshUser, _copyWithUnset)
-        ? this.sshUser
-        : sshUser as String?,
-  );
-}
-
-Map<String, Object> _immutableDecisionMap(Map<String, Object> decisions) {
-  final out = <String, Object>{};
-  for (final entry in decisions.entries) {
-    final value = _immutableDecisionValue(entry.value);
-    if (value != null) out[entry.key] = value;
-  }
-  return Map<String, Object>.unmodifiable(out);
-}
-
-Object? _immutableDecisionValue(Object? value) {
-  if (value == null) return null;
-  if (value is Map) {
-    final out = <String, Object>{};
-    for (final entry in value.entries) {
-      final key = entry.key;
-      final child = _immutableDecisionValue(entry.value);
-      if (key is String && child != null) out[key] = child;
-    }
-    return Map<String, Object>.unmodifiable(out);
-  }
-  if (value is List) {
-    return List<Object>.unmodifiable(
-      value.map(_immutableDecisionValue).whereType<Object>(),
+    // Present only to satisfy the base `copyWith` override contract;
+    // Deckhand call sites use the named fields above. When supplied
+    // (e.g. by ForgeWizardFlowProcess), it is honored verbatim.
+    String? subjectId,
+    String? currentStepId,
+    String? flowId,
+    Object? connection = _copyWithUnset,
+  }) {
+    final base = super.copyWith(
+      subjectId: profileId ?? subjectId,
+      decisions: decisions,
+      currentStepId: currentStep ?? currentStepId,
+      flowId: flow?.name ?? flowId,
+      connection: identical(connection, _copyWithUnset)
+          ? this.connection.copyWith(
+              host: sshHost,
+              port: sshPort,
+              user: sshUser,
+            )
+          : connection,
     );
+    return wizardStateFromForge(base);
   }
-  return value;
 }
 
-int? _decodePort(Object? raw) {
-  final port = raw is num ? raw.toInt() : null;
-  if (port == null || port < 1 || port > 65535) return null;
-  return port;
-}
-
-String _decodeRequiredString(Object? raw, String fallback) {
-  if (raw is! String) return fallback;
-  return raw.trim().isEmpty ? fallback : raw;
-}
-
-String? _decodeOptionalString(Object? raw) {
-  if (raw is! String) return null;
-  final value = raw.trim();
-  return value.isEmpty ? null : value;
-}
-
-/// On-disk persistence layer for [WizardState]. Writes are atomic
-/// (`<path>.tmp` → rename) so a crash mid-write leaves the last good
-/// snapshot intact. Resume loads are best-effort: corrupt or
-/// out-of-schema files are treated as "no resume" rather than hard
-/// errors — stale state is never a good reason to block the wizard.
+/// On-disk persistence layer for [WizardState]. A thin Deckhand-named
+/// adapter over the pure-Dart [ForgeWizardStateStore]: writes are atomic
+/// (`<path>.tmp` → rename) and coalesce-to-latest so a flurry of
+/// unawaited saves can't race the old state onto disk; resume loads are
+/// best-effort (corrupt / out-of-schema files load as "no resume").
 ///
 /// [errorSink] receives any persistence failure (full disk, locked
 /// file, etc.). The wizard does not surface a user-visible error
@@ -169,93 +176,30 @@ String? _decodeOptionalString(Object? raw) {
 /// [InMemoryWizardStateStore] (see below). Real File I/O against
 /// the simulated frame clock makes widget tests flaky.
 class WizardStateStore {
-  WizardStateStore({required this.path, this.errorSink});
+  WizardStateStore({required this.path, this.errorSink})
+    : _delegate = ForgeWizardStateStore<WizardState>(
+        path: path,
+        codec: _wizardStateCodec,
+        convert: wizardStateFromForge,
+        errorSink: errorSink,
+      );
+
+  WizardStateStore._fromDelegate(this._delegate, this.path, this.errorSink);
 
   final String path;
   final void Function(Object error, StackTrace stackTrace)? errorSink;
+  final ForgeWizardStateStore<WizardState> _delegate;
 
-  // Coalesce-to-latest scheduler. When save() is called repeatedly
-  // in quick succession — which the Riverpod provider does, once per
-  // controller event — we serialize the actual writes and drop
-  // intermediate states on the floor. Without this, two unawaited
-  // saves racing to `rename()` could end up with the older state
-  // winning, because completion order of unawaited Futures is not
-  // well-defined across platforms' FS implementations.
-  ({int revision, WizardState state})? _pending;
-  Future<void>? _inFlight;
-  int _revision = 0;
-
-  Future<WizardState?> load() async {
-    final file = File(path);
-    if (!await file.exists()) return null;
-    try {
-      final text = await file.readAsString();
-      final json = jsonDecode(text);
-      if (json is! Map<String, dynamic>) return null;
-      if (json['schema'] != 'deckhand.wizard_state/1') return null;
-      return WizardState.fromJson(json);
-    } catch (e, st) {
-      errorSink?.call(e, st);
-      return null;
-    }
-  }
+  Future<WizardState?> load() => _delegate.load();
 
   /// Schedule a save of [state]. Returns a future that completes when
   /// either this state or a later state that superseded it has been
   /// durably persisted. Safe to call unawaited — write errors are
   /// routed to [errorSink] rather than thrown back at the caller, so
   /// the wizard never blocks on a flaky disk.
-  Future<void> save(WizardState state) {
-    final revision = ++_revision;
-    _pending = (revision: revision, state: state);
-    return _inFlight ??= _drain();
-  }
+  Future<void> save(WizardState state) => _delegate.save(state);
 
-  Future<void> _drain() async {
-    try {
-      while (_pending != null) {
-        final snap = _pending!;
-        _pending = null;
-        if (snap.revision != _revision) continue;
-        try {
-          await _writeAtomically(snap.state);
-        } catch (e, st) {
-          errorSink?.call(e, st);
-        }
-      }
-    } finally {
-      _inFlight = null;
-    }
-  }
-
-  Future<void> _writeAtomically(WizardState state) async {
-    final file = File(path);
-    await file.parent.create(recursive: true);
-    final tmp = File('$path.tmp');
-    await tmp.writeAsString(
-      const JsonEncoder.withIndent('  ').convert(state.toJson()),
-    );
-    try {
-      await tmp.rename(path);
-    } on FileSystemException {
-      // Some filesystems (e.g. Windows when the target is locked)
-      // need an explicit delete before rename. Fall back once.
-      if (await file.exists()) await file.delete();
-      await tmp.rename(path);
-    }
-  }
-
-  Future<void> clear() async {
-    final clearRevision = ++_revision;
-    _pending = null;
-    final inFlight = _inFlight;
-    if (inFlight != null) await inFlight;
-    if (_revision != clearRevision) return;
-    final file = File(path);
-    if (await file.exists()) await file.delete();
-    final tmp = File('$path.tmp');
-    if (await tmp.exists()) await tmp.delete();
-  }
+  Future<void> clear() => _delegate.clear();
 }
 
 /// Synchronous-resolving WizardStateStore backed by a single
@@ -264,25 +208,19 @@ class WizardStateStore {
 /// the load/save futures complete on the next microtask, which the
 /// test harness's frame pump can drain deterministically.
 ///
-/// Extends [WizardStateStore] (rather than implementing) so it can
-/// satisfy the same type while overriding only the three public
-/// entry points. The base class's coalesce-scheduler is bypassed
-/// because there's nothing to race against in memory.
+/// Wraps [InMemoryForgeWizardStateStore] so it satisfies the same
+/// Deckhand [WizardStateStore] surface while sharing the forge engine's
+/// in-memory semantics.
 class InMemoryWizardStateStore extends WizardStateStore {
-  InMemoryWizardStateStore({super.errorSink}) : super(path: '<memory>');
-
-  WizardState? _state;
-
-  @override
-  Future<WizardState?> load() async => _state;
-
-  @override
-  Future<void> save(WizardState state) async {
-    _state = state;
-  }
-
-  @override
-  Future<void> clear() async {
-    _state = null;
-  }
+  InMemoryWizardStateStore({
+    void Function(Object error, StackTrace stackTrace)? errorSink,
+  }) : super._fromDelegate(
+         InMemoryForgeWizardStateStore<WizardState>(
+           codec: _wizardStateCodec,
+           convert: wizardStateFromForge,
+           errorSink: errorSink,
+         ),
+         '<memory>',
+         errorSink,
+       );
 }

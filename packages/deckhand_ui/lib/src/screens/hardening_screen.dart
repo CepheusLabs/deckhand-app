@@ -1,11 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:forge/forge.dart';
 import 'package:go_router/go_router.dart';
 
 import '../i18n/translations.g.dart';
 import '../providers.dart';
-import '../theming/deckhand_tokens.dart';
-import '../widgets/wizard_scaffold.dart';
 
 class HardeningScreen extends ConsumerStatefulWidget {
   const HardeningScreen({super.key});
@@ -35,19 +34,22 @@ class _HardeningScreenState extends ConsumerState<HardeningScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
-    return WizardScaffold(
-      screenId: 'S150-hardening',
+    final brand = context.brandColors;
+    return ClWizardPageScaffold(
       title: 'Optional hardening.',
       helperText:
           'All defaults off. Tick what makes sense for your network — '
           'each row explains the threat it mitigates and the cost of '
           'enabling it.',
+      preHeader: const ClPageHeader(
+        icon: Icons.shield_outlined,
+        title: 'Hardening',
+      ),
       body: Container(
         decoration: BoxDecoration(
-          color: tokens.ink1,
-          border: Border.all(color: tokens.line),
-          borderRadius: BorderRadius.circular(DeckhandTokens.r3),
+          color: brand.bgAlt,
+          border: Border.all(color: brand.borderStrong),
+          borderRadius: BorderRadius.circular(context.radii.md),
         ),
         clipBehavior: Clip.antiAlias,
         child: Column(
@@ -94,7 +96,7 @@ class _HardeningScreenState extends ConsumerState<HardeningScreen> {
           ],
         ),
       ),
-      primaryAction: WizardAction(
+      primaryAction: ClWizardAction(
         label: t.common.action_continue,
         onPressed: () async {
           final controller = ref.read(wizardControllerProvider);
@@ -115,7 +117,7 @@ class _HardeningScreenState extends ConsumerState<HardeningScreen> {
         },
       ),
       secondaryActions: [
-        WizardAction(
+        ClWizardAction(
           label: t.common.action_back,
           onPressed: () => context.go('/files'),
           isBack: true,
@@ -146,7 +148,7 @@ class _HardeningRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
+    final brand = context.brandColors;
     return Column(
       children: [
         InkWell(
@@ -156,7 +158,7 @@ class _HardeningRow extends StatelessWidget {
             decoration: BoxDecoration(
               border: (isLast && expanded == null)
                   ? null
-                  : Border(bottom: BorderSide(color: tokens.lineSoft)),
+                  : Border(bottom: BorderSide(color: brand.borderSubtle)),
             ),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -178,27 +180,23 @@ class _HardeningRow extends StatelessWidget {
                     children: [
                       Text(
                         title,
-                        style: TextStyle(
-                          fontFamily: DeckhandTokens.fontSans,
-                          fontSize: DeckhandTokens.tMd,
+                        style: context.clBodyMedium.copyWith(
                           fontWeight: FontWeight.w500,
-                          color: tokens.text,
+                          color: brand.ink,
                         ),
                       ),
                       const SizedBox(height: 4),
                       Text(
                         body,
-                        style: TextStyle(
-                          fontFamily: DeckhandTokens.fontSans,
-                          fontSize: DeckhandTokens.tSm,
-                          color: tokens.text3,
+                        style: context.clBodySmall.copyWith(
+                          color: brand.ink3,
                           height: 1.5,
                         ),
                       ),
                     ],
                   ),
                 ),
-                Icon(Icons.shield_outlined, size: 16, color: tokens.text4),
+                Icon(Icons.shield_outlined, size: 16, color: brand.ink4),
               ],
             ),
           ),
@@ -206,10 +204,10 @@ class _HardeningRow extends StatelessWidget {
         if (expanded != null)
           Container(
             decoration: BoxDecoration(
-              color: tokens.ink2,
+              color: brand.surface,
               border: isLast
                   ? null
-                  : Border(bottom: BorderSide(color: tokens.lineSoft)),
+                  : Border(bottom: BorderSide(color: brand.borderSubtle)),
             ),
             padding: const EdgeInsets.fromLTRB(42, 12, 14, 16),
             child: expanded!,
@@ -236,7 +234,6 @@ class _PasswordFields extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
     final pw = passwordController.text;
     final confirm = confirmController.text;
     final mismatch = confirm.isNotEmpty && pw != confirm;
@@ -292,16 +289,15 @@ class _PasswordFields extends StatelessWidget {
           },
         ),
         const SizedBox(height: 10),
-        _StrengthMeter(password: pw, tokens: tokens),
+        _StrengthMeter(password: pw),
       ],
     );
   }
 }
 
 class _StrengthMeter extends StatelessWidget {
-  const _StrengthMeter({required this.password, required this.tokens});
+  const _StrengthMeter({required this.password});
   final String password;
-  final DeckhandTokens tokens;
 
   int get _level {
     final n = password.length;
@@ -327,14 +323,15 @@ class _StrengthMeter extends StatelessWidget {
     }
   }
 
-  Color _color(int filled) {
-    if (filled <= 1) return tokens.bad;
-    if (filled <= 2) return tokens.warn;
-    return tokens.ok;
+  Color _color(ClBrandColors brand, int filled) {
+    if (filled <= 1) return brand.bad;
+    if (filled <= 2) return brand.warn;
+    return brand.good;
   }
 
   @override
   Widget build(BuildContext context) {
+    final brand = context.brandColors;
     return Row(
       children: [
         for (var i = 1; i <= 4; i++) ...[
@@ -342,8 +339,8 @@ class _StrengthMeter extends StatelessWidget {
             child: Container(
               height: 3,
               decoration: BoxDecoration(
-                color: _level >= i ? _color(_level) : tokens.ink3,
-                borderRadius: BorderRadius.circular(2),
+                color: _level >= i ? _color(brand, _level) : brand.surface2,
+                borderRadius: BorderRadius.circular(context.radii.xs),
               ),
             ),
           ),
@@ -354,10 +351,8 @@ class _StrengthMeter extends StatelessWidget {
           width: 96,
           child: Text(
             _label,
-            style: TextStyle(
-              fontFamily: DeckhandTokens.fontMono,
-              fontSize: 10,
-              color: tokens.text3,
+            style: context.labelTechnical.copyWith(
+              color: brand.ink3,
               letterSpacing: 0,
             ),
           ),

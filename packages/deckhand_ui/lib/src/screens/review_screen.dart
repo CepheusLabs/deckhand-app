@@ -1,14 +1,13 @@
 import 'package:deckhand_core/deckhand_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:forge/forge.dart';
 import 'package:go_router/go_router.dart';
 
 import '../i18n/translations.g.dart';
 import '../providers.dart';
-import '../theming/deckhand_tokens.dart';
 import '../utils/disk_operation_errors.dart';
 import '../utils/json_safety.dart';
-import '../widgets/wizard_scaffold.dart';
 
 /// Pre-run preview + final confirm. Lists every decision the user
 /// made AND every file path the flow is about to touch (from the
@@ -48,8 +47,7 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
 
     final decisions = _humanDecisions(controller.profile, state.decisions);
 
-    return WizardScaffold(
-      screenId: 'S800-review',
+    return ClWizardPageScaffold(
       title: t.review.title,
       helperText: t.review.helper,
       body: Column(
@@ -64,7 +62,7 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
           if (decisions.isNotEmpty) ...[
             _ReviewSection(
               title: t.review.your_decisions,
-              icon: Icons.tune,
+              icon: ClIcons.tune,
               defaultOpen: true,
               items: [for (final line in decisions) _decisionToItem(line)],
             ),
@@ -96,7 +94,7 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
           ),
         ],
       ),
-      primaryAction: WizardAction(
+      primaryAction: ClWizardAction(
         label: t.review.action_start,
         disabledReason: _confirmed
             ? null
@@ -105,7 +103,7 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
         destructive: true,
       ),
       secondaryActions: [
-        WizardAction(
+        ClWizardAction(
           label: t.common.action_back,
           onPressed: () => context.go('/hardening'),
           isBack: true,
@@ -450,7 +448,8 @@ class _Item {
 
 /// Collapsible section panel. Mirrors the design source's
 /// `<details>` blocks: header row with icon + title + mono "N items"
-/// count on the right, expanding into a list of `_Item` rows.
+/// count on the right, expanding into a list of `_Item` rows. Built on
+/// forge's [ClDisclosurePanel].
 class _ReviewSection extends StatelessWidget {
   const _ReviewSection({
     required this.title,
@@ -466,64 +465,25 @@ class _ReviewSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
-    return Container(
-      decoration: BoxDecoration(
-        color: tokens.ink1,
-        border: Border.all(color: tokens.line),
-        borderRadius: BorderRadius.circular(DeckhandTokens.r3),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: Theme(
-        data: Theme.of(context).copyWith(
-          dividerColor: Colors.transparent,
-          splashColor: Colors.transparent,
-        ),
-        child: ExpansionTile(
-          initiallyExpanded: defaultOpen,
-          tilePadding: const EdgeInsets.symmetric(horizontal: 14),
-          childrenPadding: EdgeInsets.zero,
-          collapsedShape: const RoundedRectangleBorder(),
-          shape: const RoundedRectangleBorder(),
-          leading: Icon(icon, size: 16, color: tokens.text3),
-          title: Row(
+    final brand = context.brandColors;
+    return ClDisclosurePanel(
+      title: title,
+      icon: icon,
+      count: '${items.length} item${items.length == 1 ? '' : 's'}',
+      initiallyExpanded: defaultOpen,
+      children: [
+        DecoratedBox(
+          decoration: BoxDecoration(
+            border: Border(top: BorderSide(color: brand.borderSubtle)),
+          ),
+          child: Column(
             children: [
-              Expanded(
-                child: Text(
-                  title,
-                  style: TextStyle(
-                    fontFamily: DeckhandTokens.fontSans,
-                    fontSize: DeckhandTokens.tMd,
-                    fontWeight: FontWeight.w500,
-                    color: tokens.text,
-                  ),
-                ),
-              ),
-              Text(
-                '${items.length} item${items.length == 1 ? '' : 's'}',
-                style: TextStyle(
-                  fontFamily: DeckhandTokens.fontMono,
-                  fontSize: 11,
-                  color: tokens.text4,
-                ),
-              ),
+              for (var i = 0; i < items.length; i++)
+                _ItemRow(item: items[i], isLast: i == items.length - 1),
             ],
           ),
-          children: [
-            Container(
-              decoration: BoxDecoration(
-                border: Border(top: BorderSide(color: tokens.lineSoft)),
-              ),
-              child: Column(
-                children: [
-                  for (var i = 0; i < items.length; i++)
-                    _ItemRow(item: items[i], isLast: i == items.length - 1),
-                ],
-              ),
-            ),
-          ],
         ),
-      ),
+      ],
     );
   }
 }
@@ -535,15 +495,15 @@ class _ItemRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
-    final color = item.subtle ? tokens.text4 : tokens.text;
-    final valueColor = item.subtle ? tokens.text4 : tokens.text3;
+    final brand = context.brandColors;
+    final color = item.subtle ? brand.ink4 : brand.ink;
+    final valueColor = item.subtle ? brand.ink4 : brand.ink3;
     return Container(
       padding: const EdgeInsets.fromLTRB(36, 8, 16, 8),
       decoration: BoxDecoration(
         border: isLast
             ? null
-            : Border(bottom: BorderSide(color: tokens.lineSoft)),
+            : Border(bottom: BorderSide(color: brand.borderSubtle)),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -552,9 +512,7 @@ class _ItemRow extends StatelessWidget {
             width: 220,
             child: Text(
               item.label,
-              style: TextStyle(
-                fontFamily: DeckhandTokens.fontSans,
-                fontSize: DeckhandTokens.tSm,
+              style: context.clBodySmall.copyWith(
                 fontWeight: item.subtle ? FontWeight.w400 : FontWeight.w500,
                 fontStyle: item.subtle ? FontStyle.italic : FontStyle.normal,
                 color: color,
@@ -565,9 +523,7 @@ class _ItemRow extends StatelessWidget {
             Expanded(
               child: Text(
                 item.value!,
-                style: TextStyle(
-                  fontFamily: DeckhandTokens.fontMono,
-                  fontSize: DeckhandTokens.tXs,
+                style: context.dataTiny.copyWith(
                   color: valueColor,
                   fontStyle: item.subtle ? FontStyle.italic : FontStyle.normal,
                 ),
@@ -593,15 +549,9 @@ class _HeaderStrip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
-    return Container(
+    return ClPanel(
       padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
-      decoration: BoxDecoration(
-        color: tokens.ink1,
-        border: Border.all(color: tokens.line),
-        borderRadius: BorderRadius.circular(DeckhandTokens.r3),
-      ),
-      child: Wrap(
+      body: Wrap(
         spacing: 24,
         runSpacing: 12,
         children: [
@@ -621,29 +571,14 @@ class _HeaderCell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
+    final brand = context.brandColors;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
-        Text(
-          label.toUpperCase(),
-          style: TextStyle(
-            fontFamily: DeckhandTokens.fontMono,
-            fontSize: 10,
-            color: tokens.text4,
-            letterSpacing: 0,
-          ),
-        ),
+        ClTechLabel(label),
         const SizedBox(height: 4),
-        Text(
-          value,
-          style: TextStyle(
-            fontFamily: DeckhandTokens.fontMono,
-            fontSize: DeckhandTokens.tMd,
-            color: tokens.text,
-          ),
-        ),
+        Text(value, style: context.dataSmall.copyWith(color: brand.ink)),
       ],
     );
   }
@@ -661,40 +596,32 @@ class _ConfirmTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
+    final brand = context.brandColors;
     return InkWell(
       onTap: () => onChanged(!checked),
-      borderRadius: BorderRadius.circular(DeckhandTokens.r3),
+      borderRadius: BorderRadius.circular(context.radii.md),
       child: Container(
         padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
         decoration: BoxDecoration(
-          color: checked ? tokens.accentSoft : tokens.ink1,
+          color: checked ? brand.selectedBg : brand.bgAlt,
           border: Border.all(
-            color: checked ? tokens.accent : tokens.line,
+            color: checked ? brand.primary : brand.borderStrong,
             width: checked ? 1.5 : 1,
           ),
-          borderRadius: BorderRadius.circular(DeckhandTokens.r3),
+          borderRadius: BorderRadius.circular(context.radii.md),
         ),
         child: Row(
           children: [
-            SizedBox(
-              width: 18,
-              height: 18,
-              child: Checkbox(
-                value: checked,
-                onChanged: (v) => onChanged(v ?? false),
-                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                visualDensity: VisualDensity.compact,
-              ),
+            ClCheckbox(
+              value: checked,
+              onChanged: (v) => onChanged(v),
             ),
             const SizedBox(width: 12),
             Expanded(
               child: Text(
                 label,
-                style: TextStyle(
-                  fontFamily: DeckhandTokens.fontSans,
-                  fontSize: DeckhandTokens.tMd,
-                  color: tokens.text,
+                style: context.clBodyMedium.copyWith(
+                  color: brand.ink,
                   height: 1.45,
                 ),
               ),
@@ -712,21 +639,12 @@ class _EmptyPlanCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
-    return Container(
+    final brand = context.brandColors;
+    return ClPanel(
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: tokens.ink1,
-        border: Border.all(color: tokens.line),
-        borderRadius: BorderRadius.circular(DeckhandTokens.r3),
-      ),
-      child: Text(
+      body: Text(
         message,
-        style: TextStyle(
-          fontFamily: DeckhandTokens.fontSans,
-          fontSize: DeckhandTokens.tSm,
-          color: tokens.text3,
-        ),
+        style: context.clBodySmall.copyWith(color: brand.ink3),
       ),
     );
   }

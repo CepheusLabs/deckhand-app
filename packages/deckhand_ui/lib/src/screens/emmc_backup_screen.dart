@@ -5,17 +5,13 @@ import 'package:deckhand_core/deckhand_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:forge/forge.dart';
 import 'package:go_router/go_router.dart';
 import 'package:path/path.dart' as p;
 
 import '../providers.dart';
-import '../theming/deckhand_tokens.dart';
 import '../utils/disk_display.dart';
 import '../utils/user_facing_errors.dart';
-import '../widgets/danger_card.dart';
-import '../widgets/deckhand_loading.dart';
-import '../widgets/wizard_progress_bar.dart';
-import '../widgets/wizard_scaffold.dart';
 
 const _backupRootMarker = '.deckhand-emmc-backups-root';
 const _backupCanceledMessage = 'Backup canceled.';
@@ -506,7 +502,6 @@ class _EmmcBackupScreenState extends ConsumerState<EmmcBackupScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
     final defaultDir = ref.watch(emmcBackupsDirProvider);
     final dir = _customDestDir ?? defaultDir;
     final copying = _progress != null && !_done && _error == null;
@@ -553,8 +548,7 @@ class _EmmcBackupScreenState extends ConsumerState<EmmcBackupScreen> {
     if (_error != null) {
       final pct = _failurePercent();
       final canceled = _error == _backupCanceledMessage;
-      return WizardScaffold(
-        screenId: 'S148-fail',
+      return ClWizardPageScaffold(
         title: canceled
             ? _backupCanceledMessage
             : (pct == null ? 'Backup failed.' : 'Backup failed at $pct%.'),
@@ -564,7 +558,6 @@ class _EmmcBackupScreenState extends ConsumerState<EmmcBackupScreen> {
                   'Reconnect the adapter and retry, or pick a different disk '
                   'if the issue keeps repeating.',
         body: _BackupFailedCard(
-          tokens: tokens,
           progress: _progress,
           error: _error!,
           onBackToPicker: () {
@@ -610,8 +603,7 @@ class _EmmcBackupScreenState extends ConsumerState<EmmcBackupScreen> {
       );
     }
 
-    return WizardScaffold(
-      screenId: 'S148-emmc-backup',
+    return ClWizardPageScaffold(
       title: 'Back up the eMMC now.',
       helperText:
           'Connect the printer\'s eMMC to your computer via a USB '
@@ -622,7 +614,6 @@ class _EmmcBackupScreenState extends ConsumerState<EmmcBackupScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _DestinationRow(
-            tokens: tokens,
             dir: dir,
             isCustom: _customDestDir != null,
             disabled: copying,
@@ -641,7 +632,6 @@ class _EmmcBackupScreenState extends ConsumerState<EmmcBackupScreen> {
               (existingManifest != null || existingCandidate != null)) ...[
             const SizedBox(height: 12),
             _ExistingBackupCard(
-              tokens: tokens,
               manifest: existingManifest,
               candidate: existingCandidate,
             ),
@@ -653,7 +643,6 @@ class _EmmcBackupScreenState extends ConsumerState<EmmcBackupScreen> {
           // still one click away via "Choose a different disk".
           if (_hasInheritedPick && !_showPicker) ...[
             _InheritedPickCard(
-              tokens: tokens,
               diskId: _selected ?? '',
               disksFuture: disksFuture,
               onChange: copying
@@ -675,7 +664,6 @@ class _EmmcBackupScreenState extends ConsumerState<EmmcBackupScreen> {
           if (_progress != null) ...[
             const SizedBox(height: 18),
             _ProgressCard(
-              tokens: tokens,
               progress: _progress!,
               done: _done,
               error: null,
@@ -689,13 +677,13 @@ class _EmmcBackupScreenState extends ConsumerState<EmmcBackupScreen> {
         ],
       ),
       primaryAction: _done
-          ? WizardAction(label: 'Continue', onPressed: _confirmAndReturn)
-          : WizardAction(
+          ? ClWizardAction(label: 'Continue', onPressed: _confirmAndReturn)
+          : ClWizardAction(
               label: copying ? 'Backing up…' : 'Back up this disk',
               onPressed: canStart ? _startBackup : null,
             ),
       secondaryActions: [
-        WizardAction(
+        ClWizardAction(
           label: _canceling ? 'Canceling…' : 'Cancel',
           isBack: true,
           onPressed: copying
@@ -735,31 +723,27 @@ class _EmmcBackupScreenState extends ConsumerState<EmmcBackupScreen> {
 }
 
 class _ExistingBackupCard extends StatelessWidget {
-  const _ExistingBackupCard({
-    required this.tokens,
-    required this.manifest,
-    required this.candidate,
-  });
+  const _ExistingBackupCard({required this.manifest, required this.candidate});
 
-  final DeckhandTokens tokens;
   final EmmcBackupManifest? manifest;
   final EmmcBackupImageCandidate? candidate;
 
   @override
   Widget build(BuildContext context) {
+    final brand = context.brandColors;
     final path = manifest?.imagePath ?? candidate?.imagePath ?? '';
     final indexed = manifest != null;
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: tokens.ok.withValues(alpha: 0.06),
-        border: Border.all(color: tokens.ok.withValues(alpha: 0.35)),
-        borderRadius: BorderRadius.circular(DeckhandTokens.r2),
+        color: brand.good.withValues(alpha: 0.06),
+        border: Border.all(color: brand.good.withValues(alpha: 0.35)),
+        borderRadius: BorderRadius.circular(context.radii.sm),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(Icons.check_circle_outline, size: 17, color: tokens.ok),
+          Icon(Icons.check_circle_outline, size: 17, color: brand.good),
           const SizedBox(width: 10),
           Expanded(
             child: Column(
@@ -769,11 +753,9 @@ class _ExistingBackupCard extends StatelessWidget {
                   indexed
                       ? 'Indexed backup already exists'
                       : 'Complete backup already exists',
-                  style: TextStyle(
-                    fontFamily: DeckhandTokens.fontSans,
-                    fontSize: DeckhandTokens.tSm,
+                  style: context.clBodySmall.copyWith(
                     fontWeight: FontWeight.w600,
-                    color: tokens.ok,
+                    color: brand.good,
                   ),
                 ),
                 const SizedBox(height: 3),
@@ -781,20 +763,17 @@ class _ExistingBackupCard extends StatelessWidget {
                   indexed
                       ? 'Deckhand found a manifest for this disk. You can still make another backup if you want a newer rollback point.'
                       : 'Deckhand found a full-size image for this disk. Verify it on the previous screen to index it as an exact rollback image.',
-                  style: TextStyle(
-                    fontFamily: DeckhandTokens.fontSans,
-                    fontSize: DeckhandTokens.tXs,
-                    color: tokens.text2,
+                  style: context.clLabelSmall.copyWith(
+                    color: brand.ink2,
                     height: 1.4,
                   ),
                 ),
                 const SizedBox(height: 5),
                 Text(
                   path,
-                  style: TextStyle(
-                    fontFamily: DeckhandTokens.fontMono,
+                  style: context.dataTiny.copyWith(
                     fontSize: 10,
-                    color: tokens.text3,
+                    color: brand.ink3,
                   ),
                 ),
               ],
@@ -823,93 +802,65 @@ class _DisksTable extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
-    return Container(
-      decoration: BoxDecoration(
-        color: tokens.ink1,
-        border: Border.all(color: tokens.line),
-        borderRadius: BorderRadius.circular(DeckhandTokens.r3),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: Column(
-        children: [
-          Container(
-            padding: const EdgeInsets.fromLTRB(14, 8, 8, 8),
-            decoration: BoxDecoration(
-              color: tokens.ink2,
-              border: Border(bottom: BorderSide(color: tokens.line)),
-            ),
-            child: Row(
-              children: [
-                Text(
-                  'REMOVABLE DISKS',
-                  style: TextStyle(
-                    fontFamily: DeckhandTokens.fontMono,
-                    fontSize: 10,
-                    color: tokens.text3,
-                    letterSpacing: 0,
-                  ),
-                ),
-                const Spacer(),
-                TextButton.icon(
-                  onPressed: disabled ? null : onRefresh,
-                  icon: const Icon(Icons.refresh, size: 14),
-                  label: const Text('Refresh'),
-                ),
-              ],
-            ),
+    final brand = context.brandColors;
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(context.radii.md),
+      child: ClPanel(
+        background: brand.bgAlt,
+        head: ClPanelLabelHead(
+          label: 'Removable disks',
+          trailing: ClButton(
+            kind: ClButtonKind.text,
+            size: ClButtonSize.sm,
+            icon: Icons.refresh,
+            onPressed: disabled ? null : onRefresh,
+            child: const Text('Refresh'),
           ),
-          FutureBuilder<List<DiskInfo>>(
-            future: disksFuture,
-            builder: (context, snap) {
-              if (snap.connectionState != ConnectionState.done) {
-                return const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 24),
-                  child: Center(
-                    child: DeckhandSpinner(size: 24, strokeWidth: 2),
-                  ),
-                );
-              }
-              if (snap.hasError) {
-                return Padding(
-                  padding: const EdgeInsets.all(20),
-                  child: Text(
-                    'Error listing disks: ${userFacingError(snap.error)}',
-                    style: TextStyle(color: tokens.bad),
-                  ),
-                );
-              }
-              final disks = (snap.data ?? const <DiskInfo>[])
-                  .where((d) => d.removable)
-                  .toList();
-              if (disks.isEmpty) {
-                return Padding(
-                  padding: const EdgeInsets.all(20),
-                  child: Text(
-                    'No removable disks reported. Plug in your USB-eMMC '
-                    'adapter and tap Refresh.',
-                    style: TextStyle(
-                      fontFamily: DeckhandTokens.fontSans,
-                      fontSize: DeckhandTokens.tSm,
-                      color: tokens.text3,
-                    ),
-                  ),
-                );
-              }
-              return Column(
-                children: [
-                  for (var i = 0; i < disks.length; i++)
-                    _DiskRow(
-                      disk: disks[i],
-                      isLast: i == disks.length - 1,
-                      selected: selected == disks[i].id,
-                      onTap: disabled ? null : () => onSelect(disks[i].id),
-                    ),
-                ],
+        ),
+        body: FutureBuilder<List<DiskInfo>>(
+          future: disksFuture,
+          builder: (context, snap) {
+            if (snap.connectionState != ConnectionState.done) {
+              return const Padding(
+                padding: EdgeInsets.symmetric(vertical: 24),
+                child: Center(child: ClSpinner(size: 24, strokeWidth: 2)),
               );
-            },
-          ),
-        ],
+            }
+            if (snap.hasError) {
+              return Padding(
+                padding: const EdgeInsets.all(20),
+                child: Text(
+                  'Error listing disks: ${userFacingError(snap.error)}',
+                  style: TextStyle(color: brand.bad),
+                ),
+              );
+            }
+            final disks = (snap.data ?? const <DiskInfo>[])
+                .where((d) => d.removable)
+                .toList();
+            if (disks.isEmpty) {
+              return Padding(
+                padding: const EdgeInsets.all(20),
+                child: Text(
+                  'No removable disks reported. Plug in your USB-eMMC '
+                  'adapter and tap Refresh.',
+                  style: context.clBodySmall.copyWith(color: brand.ink3),
+                ),
+              );
+            }
+            return Column(
+              children: [
+                for (var i = 0; i < disks.length; i++)
+                  _DiskRow(
+                    disk: disks[i],
+                    isLast: i == disks.length - 1,
+                    selected: selected == disks[i].id,
+                    onTap: disabled ? null : () => onSelect(disks[i].id),
+                  ),
+              ],
+            );
+          },
+        ),
       ),
     );
   }
@@ -929,7 +880,7 @@ class _DiskRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
+    final brand = context.brandColors;
     final mountpoints = disk.partitions
         .map((p) => p.mountpoint)
         .whereType<String>()
@@ -939,10 +890,10 @@ class _DiskRow extends StatelessWidget {
       onTap: onTap,
       child: Container(
         decoration: BoxDecoration(
-          color: selected ? tokens.ink2 : Colors.transparent,
+          color: selected ? brand.surface : Colors.transparent,
           border: isLast
               ? null
-              : Border(bottom: BorderSide(color: tokens.lineSoft)),
+              : Border(bottom: BorderSide(color: brand.borderSubtle)),
         ),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         child: Row(
@@ -956,7 +907,7 @@ class _DiskRow extends StatelessWidget {
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     border: Border.all(
-                      color: selected ? tokens.accent : tokens.rule,
+                      color: selected ? brand.primary : brand.borderStrong,
                       width: selected ? 5 : 1.5,
                     ),
                   ),
@@ -969,33 +920,21 @@ class _DiskRow extends StatelessWidget {
               child: Text(
                 diskDisplayName(disk),
                 overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontFamily: DeckhandTokens.fontMono,
-                  fontSize: DeckhandTokens.tSm,
-                  color: tokens.text,
-                ),
+                style: context.dataSmall.copyWith(color: brand.ink),
               ),
             ),
             Expanded(
               flex: 2,
               child: Text(
                 disk.bus.isEmpty ? '—' : disk.bus,
-                style: TextStyle(
-                  fontFamily: DeckhandTokens.fontMono,
-                  fontSize: DeckhandTokens.tSm,
-                  color: tokens.text2,
-                ),
+                style: context.dataSmall.copyWith(color: brand.ink2),
               ),
             ),
             Expanded(
               flex: 2,
               child: Text(
                 _formatSize(disk.sizeBytes),
-                style: TextStyle(
-                  fontFamily: DeckhandTokens.fontMono,
-                  fontSize: DeckhandTokens.tSm,
-                  color: tokens.text2,
-                ),
+                style: context.dataSmall.copyWith(color: brand.ink2),
               ),
             ),
             Expanded(
@@ -1003,11 +942,7 @@ class _DiskRow extends StatelessWidget {
               child: Text(
                 mountpoints.isEmpty ? '—' : mountpoints,
                 overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontFamily: DeckhandTokens.fontMono,
-                  fontSize: DeckhandTokens.tSm,
-                  color: tokens.text2,
-                ),
+                style: context.dataSmall.copyWith(color: brand.ink2),
               ),
             ),
           ],
@@ -1026,7 +961,6 @@ class _DiskRow extends StatelessWidget {
 
 class _ProgressCard extends StatelessWidget {
   const _ProgressCard({
-    required this.tokens,
     required this.progress,
     required this.done,
     required this.error,
@@ -1034,7 +968,6 @@ class _ProgressCard extends StatelessWidget {
     required this.diskLabel,
     required this.bytesPerSecond,
   });
-  final DeckhandTokens tokens;
   final FlashProgress progress;
   final bool done;
   final String? error;
@@ -1044,17 +977,14 @@ class _ProgressCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final brand = context.brandColors;
     final fraction = progress.bytesTotal == 0
         ? null
         : (progress.bytesDone / progress.bytesTotal).clamp(0.0, 1.0);
-    return Container(
+    return ClPanel(
+      background: brand.bgAlt,
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: tokens.ink1,
-        border: Border.all(color: tokens.line),
-        borderRadius: BorderRadius.circular(DeckhandTokens.r3),
-      ),
-      child: Column(
+      body: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
@@ -1068,13 +998,11 @@ class _ProgressCard extends StatelessWidget {
                 error != null
                     ? 'BACKUP FAILED'
                     : (done ? 'BACKUP COMPLETE' : 'COPYING DISK'),
-                style: TextStyle(
-                  fontFamily: DeckhandTokens.fontMono,
+                style: context.labelTechnical.copyWith(
                   fontSize: 10,
                   color: error != null
-                      ? tokens.bad
-                      : (done ? tokens.ok : tokens.text3),
-                  fontWeight: FontWeight.w600,
+                      ? brand.bad
+                      : (done ? brand.good : brand.ink3),
                   letterSpacing: 0,
                 ),
               ),
@@ -1082,24 +1010,21 @@ class _ProgressCard extends StatelessWidget {
               if (fraction != null)
                 Text(
                   '${(fraction * 100).toStringAsFixed(1)}%',
-                  style: TextStyle(
-                    fontFamily: DeckhandTokens.fontMono,
+                  style: context.dataTiny.copyWith(
                     fontSize: 10,
-                    color: tokens.text3,
+                    color: brand.ink3,
                   ),
                 ),
             ],
           ),
           const SizedBox(height: 10),
-          WizardProgressBar(fraction: done ? 1.0 : fraction),
+          ClProgressBar(value: done ? 1.0 : fraction),
           const SizedBox(height: 10),
           Text(
             error ??
                 (done ? 'Image written to $outputPath' : _progressDetail()),
-            style: TextStyle(
-              fontFamily: DeckhandTokens.fontMono,
-              fontSize: DeckhandTokens.tXs,
-              color: error != null ? tokens.bad : tokens.text3,
+            style: context.dataTiny.copyWith(
+              color: error != null ? brand.bad : brand.ink3,
               height: 1.5,
             ),
           ),
@@ -1174,36 +1099,26 @@ class _ProgressCard extends StatelessWidget {
 /// 7.28 GiB" instead of just the opaque device id.
 class _InheritedPickCard extends StatelessWidget {
   const _InheritedPickCard({
-    required this.tokens,
     required this.diskId,
     required this.disksFuture,
     required this.onChange,
   });
-  final DeckhandTokens tokens;
   final String diskId;
   final Future<List<DiskInfo>>? disksFuture;
   final VoidCallback? onChange;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: tokens.ink1,
-        border: Border.all(color: tokens.line),
-        borderRadius: BorderRadius.circular(DeckhandTokens.r3),
-      ),
+    final brand = context.brandColors;
+    return ClPanel(
+      background: brand.bgAlt,
       padding: const EdgeInsets.all(16),
-      child: Column(
+      body: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             "ABOUT TO BACK UP",
-            style: TextStyle(
-              fontFamily: DeckhandTokens.fontMono,
-              fontSize: 10,
-              color: tokens.text4,
-              letterSpacing: 0,
-            ),
+            style: context.dataTiny.copyWith(fontSize: 10, color: brand.ink4),
           ),
           const SizedBox(height: 8),
           FutureBuilder<List<DiskInfo>>(
@@ -1217,19 +1132,11 @@ class _InheritedPickCard extends StatelessWidget {
               if (snap.connectionState != ConnectionState.done) {
                 return Row(
                   children: [
-                    DeckhandSpinner(
-                      size: 12,
-                      strokeWidth: 1.5,
-                      color: tokens.text4,
-                    ),
+                    ClSpinner(size: 12, strokeWidth: 1.5, color: brand.ink4),
                     const SizedBox(width: 10),
                     Text(
                       'resolving disk…',
-                      style: TextStyle(
-                        fontFamily: DeckhandTokens.fontMono,
-                        fontSize: DeckhandTokens.tMd,
-                        color: tokens.text3,
-                      ),
+                      style: context.dataSmall.copyWith(color: brand.ink3),
                     ),
                   ],
                 );
@@ -1245,40 +1152,30 @@ class _InheritedPickCard extends StatelessWidget {
               if (match == null) {
                 return Text(
                   'Selected disk is no longer connected',
-                  style: TextStyle(
-                    fontFamily: DeckhandTokens.fontMono,
-                    fontSize: DeckhandTokens.tMd,
-                    color: tokens.warn,
-                  ),
+                  style: context.dataSmall.copyWith(color: brand.warn),
                 );
               }
               final label = diskDisplaySummary(match);
               return Text(
                 label,
-                style: TextStyle(
-                  fontFamily: DeckhandTokens.fontMono,
-                  fontSize: DeckhandTokens.tMd,
-                  color: tokens.text,
-                ),
+                style: context.dataSmall.copyWith(color: brand.ink),
               );
             },
           ),
           const SizedBox(height: 4),
           Text(
             "Inherited from the disk you picked on the previous screen.",
-            style: TextStyle(
-              fontFamily: DeckhandTokens.fontSans,
-              fontSize: DeckhandTokens.tXs,
-              color: tokens.text3,
-            ),
+            style: context.clLabelSmall.copyWith(color: brand.ink3),
           ),
           const SizedBox(height: 12),
           Row(
             children: [
-              TextButton.icon(
+              ClButton(
+                kind: ClButtonKind.text,
+                size: ClButtonSize.sm,
+                icon: Icons.edit_outlined,
                 onPressed: onChange,
-                icon: const Icon(Icons.edit_outlined, size: 14),
-                label: const Text("Choose a different disk"),
+                child: const Text("Choose a different disk"),
               ),
             ],
           ),
@@ -1294,7 +1191,6 @@ class _InheritedPickCard extends StatelessWidget {
 /// AppData location, since the image can run several GiB.
 class _DestinationRow extends StatelessWidget {
   const _DestinationRow({
-    required this.tokens,
     required this.dir,
     required this.isCustom,
     required this.disabled,
@@ -1302,7 +1198,6 @@ class _DestinationRow extends StatelessWidget {
     required this.onReset,
   });
 
-  final DeckhandTokens tokens;
   final String? dir;
   final bool isCustom;
   final bool disabled;
@@ -1311,13 +1206,14 @@ class _DestinationRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = dir == null ? tokens.warn : tokens.info;
+    final brand = context.brandColors;
+    final color = dir == null ? brand.warn : brand.primary;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.06),
         border: Border.all(color: color.withValues(alpha: 0.35)),
-        borderRadius: BorderRadius.circular(DeckhandTokens.r2),
+        borderRadius: BorderRadius.circular(context.radii.sm),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
@@ -1336,30 +1232,21 @@ class _DestinationRow extends StatelessWidget {
                   dir == null
                       ? 'Backup destination not configured'
                       : 'Image will be written to:',
-                  style: TextStyle(
-                    fontFamily: DeckhandTokens.fontSans,
-                    fontSize: DeckhandTokens.tXs,
-                    color: tokens.text3,
-                  ),
+                  style: context.clLabelSmall.copyWith(color: brand.ink3),
                 ),
                 if (dir != null) ...[
                   const SizedBox(height: 2),
                   Text(
                     dir!,
-                    style: TextStyle(
-                      fontFamily: DeckhandTokens.fontMono,
-                      fontSize: DeckhandTokens.tSm,
-                      color: tokens.text,
-                    ),
+                    style: context.dataSmall.copyWith(color: brand.ink),
                   ),
                   if (isCustom) ...[
                     const SizedBox(height: 2),
                     Text(
                       'custom destination · click "Use default" to revert',
-                      style: TextStyle(
-                        fontFamily: DeckhandTokens.fontMono,
+                      style: context.dataTiny.copyWith(
                         fontSize: 10,
-                        color: tokens.text4,
+                        color: brand.ink4,
                       ),
                     ),
                   ],
@@ -1369,16 +1256,20 @@ class _DestinationRow extends StatelessWidget {
           ),
           const SizedBox(width: 12),
           if (isCustom && onReset != null) ...[
-            TextButton(
+            ClButton(
+              kind: ClButtonKind.text,
+              size: ClButtonSize.sm,
               onPressed: disabled ? null : onReset,
               child: const Text('Use default'),
             ),
             const SizedBox(width: 4),
           ],
-          OutlinedButton.icon(
+          ClButton(
+            kind: ClButtonKind.outlined,
+            size: ClButtonSize.sm,
+            icon: Icons.folder_open,
             onPressed: disabled ? null : () => onPick(),
-            icon: const Icon(Icons.folder_open, size: 14),
-            label: const Text('Change…'),
+            child: const Text('Change…'),
           ),
         ],
       ),
@@ -1395,11 +1286,10 @@ class _DestinationRow extends StatelessWidget {
 ///  * LIKELY CAUSES bullet list (derived from the error keywords)
 ///  * Action row: Copy error · Back to disk picker · Retry
 ///
-/// Inherits [DangerCard] for the hash backdrop so the visual stays
+/// Renders on [ClDangerPanel] for the hash backdrop so the visual stays
 /// consistent with the flash-confirm danger surface.
 class _BackupFailedCard extends StatelessWidget {
   const _BackupFailedCard({
-    required this.tokens,
     required this.progress,
     required this.error,
     required this.onBackToPicker,
@@ -1407,7 +1297,6 @@ class _BackupFailedCard extends StatelessWidget {
     required this.onCopyError,
   });
 
-  final DeckhandTokens tokens;
   final FlashProgress? progress;
   final String error;
   final VoidCallback onBackToPicker;
@@ -1416,22 +1305,20 @@ class _BackupFailedCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final brand = context.brandColors;
     final causes = _likelyCauses(error);
-    return DangerCard(
+    return ClDangerPanel(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Icon(Icons.warning_amber_rounded, size: 16, color: tokens.bad),
+              Icon(Icons.warning_amber_rounded, size: 16, color: brand.bad),
               const SizedBox(width: 8),
               Text(
                 'RECOVERABLE · BACKUP INCOMPLETE',
-                style: TextStyle(
-                  fontFamily: DeckhandTokens.fontMono,
-                  fontSize: DeckhandTokens.tXs,
-                  color: tokens.bad,
-                  fontWeight: FontWeight.w600,
+                style: context.labelTechnical.copyWith(
+                  color: brand.bad,
                   letterSpacing: 0,
                 ),
               ),
@@ -1446,7 +1333,6 @@ class _BackupFailedCard extends StatelessWidget {
             children: [
               Expanded(
                 child: _StatBlock(
-                  tokens: tokens,
                   label: 'COPIED BEFORE FAIL',
                   value: _copiedLabel(progress),
                   bad: false,
@@ -1455,7 +1341,6 @@ class _BackupFailedCard extends StatelessWidget {
               const SizedBox(width: 14),
               Expanded(
                 child: _StatBlock(
-                  tokens: tokens,
                   label: 'ERROR',
                   value: _shortError(error),
                   bad: true,
@@ -1469,9 +1354,9 @@ class _BackupFailedCard extends StatelessWidget {
           // recognise the failure mode.
           Container(
             decoration: BoxDecoration(
-              color: tokens.ink2,
-              border: Border.all(color: tokens.line),
-              borderRadius: BorderRadius.circular(DeckhandTokens.r2),
+              color: brand.surface,
+              border: Border.all(color: brand.borderStrong),
+              borderRadius: BorderRadius.circular(context.radii.sm),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -1479,15 +1364,15 @@ class _BackupFailedCard extends StatelessWidget {
                 Container(
                   padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
                   decoration: BoxDecoration(
-                    border: Border(bottom: BorderSide(color: tokens.lineSoft)),
+                    border: Border(
+                      bottom: BorderSide(color: brand.borderSubtle),
+                    ),
                   ),
                   child: Text(
                     'LIKELY CAUSES',
-                    style: TextStyle(
-                      fontFamily: DeckhandTokens.fontMono,
+                    style: context.dataTiny.copyWith(
                       fontSize: 10,
-                      color: tokens.text3,
-                      letterSpacing: 0,
+                      color: brand.ink3,
                     ),
                   ),
                 ),
@@ -1508,7 +1393,7 @@ class _BackupFailedCard extends StatelessWidget {
                                   width: 4,
                                   height: 4,
                                   decoration: BoxDecoration(
-                                    color: tokens.text3,
+                                    color: brand.ink3,
                                     shape: BoxShape.circle,
                                   ),
                                 ),
@@ -1517,10 +1402,8 @@ class _BackupFailedCard extends StatelessWidget {
                               Expanded(
                                 child: Text(
                                   c,
-                                  style: TextStyle(
-                                    fontFamily: DeckhandTokens.fontSans,
-                                    fontSize: DeckhandTokens.tSm,
-                                    color: tokens.text2,
+                                  style: context.clBodySmall.copyWith(
+                                    color: brand.ink2,
                                     height: 1.5,
                                   ),
                                 ),
@@ -1545,20 +1428,25 @@ class _BackupFailedCard extends StatelessWidget {
             runSpacing: 8,
             alignment: WrapAlignment.end,
             children: [
-              OutlinedButton.icon(
-                icon: const Icon(Icons.copy, size: 14),
-                label: const Text('Copy error'),
+              ClButton(
+                kind: ClButtonKind.outlined,
+                size: ClButtonSize.sm,
+                icon: Icons.copy,
                 onPressed: onCopyError,
+                child: const Text('Copy error'),
               ),
-              OutlinedButton.icon(
-                icon: const Icon(Icons.arrow_back, size: 14),
-                label: const Text('Back to disk picker'),
+              ClButton(
+                kind: ClButtonKind.outlined,
+                size: ClButtonSize.sm,
+                icon: Icons.arrow_back,
                 onPressed: onBackToPicker,
+                child: const Text('Back to disk picker'),
               ),
-              FilledButton.icon(
-                icon: const Icon(Icons.refresh, size: 14),
-                label: const Text('Retry from 0%'),
+              ClButton(
+                size: ClButtonSize.sm,
+                icon: Icons.refresh,
                 onPressed: onRetry,
+                child: const Text('Retry from 0%'),
               ),
             ],
           ),
@@ -1663,32 +1551,26 @@ class _BackupFailedCard extends StatelessWidget {
 
 class _StatBlock extends StatelessWidget {
   const _StatBlock({
-    required this.tokens,
     required this.label,
     required this.value,
     required this.bad,
   });
-  final DeckhandTokens tokens;
   final String label;
   final String value;
   final bool bad;
 
   @override
   Widget build(BuildContext context) {
-    final bg = bad ? tokens.bad.withValues(alpha: 0.08) : tokens.ink2;
-    final border = bad ? tokens.bad.withValues(alpha: 0.4) : tokens.line;
-    final textColor = bad ? tokens.bad : tokens.text;
+    final brand = context.brandColors;
+    final bg = bad ? brand.bad.withValues(alpha: 0.08) : brand.surface;
+    final border = bad ? brand.bad.withValues(alpha: 0.4) : brand.borderStrong;
+    final textColor = bad ? brand.bad : brand.ink;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
           label,
-          style: TextStyle(
-            fontFamily: DeckhandTokens.fontMono,
-            fontSize: 10,
-            color: tokens.text4,
-            letterSpacing: 0,
-          ),
+          style: context.dataTiny.copyWith(fontSize: 10, color: brand.ink4),
         ),
         const SizedBox(height: 6),
         Container(
@@ -1697,16 +1579,11 @@ class _StatBlock extends StatelessWidget {
           decoration: BoxDecoration(
             color: bg,
             border: Border.all(color: border),
-            borderRadius: BorderRadius.circular(DeckhandTokens.r2),
+            borderRadius: BorderRadius.circular(context.radii.sm),
           ),
           child: SelectableText(
             value,
-            style: TextStyle(
-              fontFamily: DeckhandTokens.fontMono,
-              fontSize: DeckhandTokens.tSm,
-              color: textColor,
-              height: 1.4,
-            ),
+            style: context.dataSmall.copyWith(color: textColor, height: 1.4),
           ),
         ),
       ],

@@ -1,12 +1,16 @@
 import 'package:deckhand_core/deckhand_core.dart';
 import 'package:flutter/material.dart';
-
-import 'deckhand_loading.dart';
+import 'package:forge/forge.dart';
 
 /// Live "what just got fetched" panel for S900-progress. Subscribes
 /// to [SecurityService.egressEvents] and renders one row per request,
 /// updating in place as completion events arrive. See
 /// [docs/ARCHITECTURE.md] (egress visualization) for the design.
+///
+/// Rebuilt on forge primitives: in-flight rows show a [ClSpinner],
+/// state icons use [ClIcons], and every color/text style reads from
+/// [context.brandColors] / forge text styles instead of the Material
+/// [ColorScheme].
 class NetworkPanel extends StatelessWidget {
   const NetworkPanel({super.key, required this.events});
 
@@ -14,7 +18,7 @@ class NetworkPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final brand = context.brandColors;
     if (events.isEmpty) {
       return Center(
         child: Padding(
@@ -25,7 +29,7 @@ class NetworkPanel extends StatelessWidget {
             children: [
               Text(
                 'No host-side downloads in this run.',
-                style: theme.textTheme.bodyMedium,
+                style: context.clBodyMedium,
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 6),
@@ -34,7 +38,7 @@ class NetworkPanel extends StatelessWidget {
                 'when there is nothing to show. It only lists network work '
                 'Deckhand performs on this computer, such as profile '
                 'fetches, release metadata, and OS image downloads.',
-                style: theme.textTheme.bodySmall,
+                style: context.clBodySmall.copyWith(color: brand.ink3),
                 textAlign: TextAlign.center,
               ),
             ],
@@ -46,7 +50,7 @@ class NetworkPanel extends StatelessWidget {
       ..sort((a, b) => a.startedAt.compareTo(b.startedAt));
     return ListView.separated(
       itemCount: sorted.length,
-      separatorBuilder: (_, _) => const Divider(height: 1),
+      separatorBuilder: (_, _) => Divider(height: 1, color: brand.borderSubtle),
       itemBuilder: (_, i) => _EgressTile(event: sorted[i]),
     );
   }
@@ -59,35 +63,30 @@ class _EgressTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final brand = context.brandColors;
     final inflight = !event.isComplete;
     final color = event.error != null
-        ? theme.colorScheme.error
-        : (inflight ? theme.colorScheme.primary : theme.colorScheme.onSurface);
+        ? brand.bad
+        : (inflight ? brand.primary : brand.ink);
     return ExpansionTile(
       leading: inflight
           ? const SizedBox(
               width: 16,
               height: 16,
-              child: DeckhandSpinner(size: 16, strokeWidth: 2),
+              child: ClSpinner(size: 16, strokeWidth: 2),
             )
-          : Icon(
-              event.error != null
-                  ? Icons.cancel_outlined
-                  : Icons.check_circle_outline,
+          : ClIcon(
+              event.error != null ? ClIcons.error : ClIcons.success,
               size: 18,
               color: color,
             ),
-      title: Text(
-        event.host,
-        style: theme.textTheme.bodyMedium?.copyWith(color: color),
-      ),
+      title: Text(event.host, style: context.clBodyMedium.copyWith(color: color)),
       subtitle: Text(
         '${event.method}  •  ${event.operationLabel}'
         '${event.bytes != null ? "  •  ${_humanBytes(event.bytes!)}" : ""}'
         '${event.status != null ? "  •  HTTP ${event.status}" : ""}'
         '${event.error != null ? "  •  ${event.error}" : ""}',
-        style: theme.textTheme.bodySmall,
+        style: context.clBodySmall.copyWith(color: brand.ink3),
       ),
       childrenPadding: const EdgeInsets.fromLTRB(56, 0, 16, 12),
       children: [
@@ -95,7 +94,7 @@ class _EgressTile extends StatelessWidget {
           alignment: Alignment.centerLeft,
           child: SelectableText(
             event.url,
-            style: theme.textTheme.bodySmall?.copyWith(fontFamily: 'monospace'),
+            style: context.dataSmall.copyWith(color: brand.ink2),
           ),
         ),
         const SizedBox(height: 4),
@@ -104,7 +103,7 @@ class _EgressTile extends StatelessWidget {
           child: Text(
             'Started ${event.startedAt.toIso8601String()}'
             '${event.completedAt != null ? "\nCompleted ${event.completedAt!.toIso8601String()}" : ""}',
-            style: theme.textTheme.bodySmall,
+            style: context.dataTiny,
           ),
         ),
       ],

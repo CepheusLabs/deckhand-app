@@ -1,13 +1,11 @@
 import 'package:deckhand_core/deckhand_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:forge/forge.dart';
 import 'package:go_router/go_router.dart';
 
 import '../i18n/translations.g.dart';
 import '../providers.dart';
-import '../theming/deckhand_tokens.dart';
-import '../widgets/selection_card.dart';
-import '../widgets/wizard_scaffold.dart';
 
 class FirmwareScreen extends ConsumerStatefulWidget {
   const FirmwareScreen({super.key});
@@ -47,8 +45,7 @@ class _FirmwareScreenState extends ConsumerState<FirmwareScreen> {
     final profile = ref.watch(wizardControllerProvider).profile;
     final choices = profile?.firmware.choices ?? const [];
 
-    return WizardScaffold(
-      screenId: 'S100-firmware',
+    return ClWizardPageScaffold(
       title: t.firmware.title,
       helperText: t.firmware.helper,
       body: Column(
@@ -68,7 +65,7 @@ class _FirmwareScreenState extends ConsumerState<FirmwareScreen> {
           ],
         ],
       ),
-      primaryAction: WizardAction(
+      primaryAction: ClWizardAction(
         label: t.common.action_continue,
         disabledReason: _choice == null
             ? 'Select a firmware option first.'
@@ -83,7 +80,7 @@ class _FirmwareScreenState extends ConsumerState<FirmwareScreen> {
               },
       ),
       secondaryActions: [
-        WizardAction(
+        ClWizardAction(
           label: t.common.action_back,
           // Back-target depends on flow because Configure entry differs:
           // stock-keep arrives from /verify; fresh-flash arrives from
@@ -142,8 +139,8 @@ class _FirmwareCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
-    return SelectionCard(
+    final brand = context.brandColors;
+    return ClSelectionCard(
       selected: selected,
       onTap: onTap,
       // Reserve room on the right so the auto-rendered selected check
@@ -153,7 +150,7 @@ class _FirmwareCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Custom radio dot — Material's RadioListTile draws a
-          // radio that fights the SelectionCard's corner check. A
+          // radio that fights the ClSelectionCard's corner check. A
           // hand-painted dot in the accent color is enough to read
           // as "this is the selected radio" without the conflict.
           Padding(
@@ -164,7 +161,7 @@ class _FirmwareCard extends StatelessWidget {
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 border: Border.all(
-                  color: selected ? tokens.accent : tokens.rule,
+                  color: selected ? brand.primary : brand.borderStrong,
                   width: selected ? 5 : 1.5,
                 ),
               ),
@@ -191,20 +188,18 @@ class _FirmwareCard extends StatelessWidget {
                             child: Text(
                               displayName,
                               overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                fontFamily: DeckhandTokens.fontSans,
-                                fontSize: DeckhandTokens.tLg,
+                              style: context.clTitleLarge.copyWith(
                                 fontWeight: FontWeight.w500,
-                                color: tokens.text,
+                                color: brand.ink,
                               ),
                             ),
                           ),
                           if (recommended) ...[
                             const SizedBox(width: 10),
-                            // Plain Text rather than StatusPill so the
+                            // Plain Text rather than ClStatusChip so the
                             // tests that look up
                             // `find.text('Recommended')` keep working
-                            // — pills uppercase their label and the
+                            // — chips uppercase their label and the
                             // capitalization carries semantic meaning
                             // here (the profile-authored flag
                             // "recommended").
@@ -214,18 +209,18 @@ class _FirmwareCard extends StatelessWidget {
                                 vertical: 2,
                               ),
                               decoration: BoxDecoration(
-                                color: tokens.ok.withValues(alpha: 0.10),
+                                color: brand.good.withValues(alpha: 0.10),
                                 border: Border.all(
-                                  color: tokens.ok.withValues(alpha: 0.40),
+                                  color: brand.good.withValues(alpha: 0.40),
                                 ),
-                                borderRadius: BorderRadius.circular(9),
+                                borderRadius: BorderRadius.circular(
+                                  context.radii.lgPlus,
+                                ),
                               ),
                               child: Text(
                                 'Recommended',
-                                style: TextStyle(
-                                  fontFamily: DeckhandTokens.fontSans,
-                                  fontSize: DeckhandTokens.tXs,
-                                  color: tokens.ok,
+                                style: context.clLabelSmall.copyWith(
+                                  color: brand.good,
                                   fontWeight: FontWeight.w600,
                                 ),
                               ),
@@ -254,7 +249,7 @@ class _FirmwareCard extends StatelessWidget {
                       child: Icon(
                         Icons.info_outline,
                         size: 14,
-                        color: tokens.text4,
+                        color: brand.ink4,
                       ),
                     ),
                   ],
@@ -262,10 +257,8 @@ class _FirmwareCard extends StatelessWidget {
                 const SizedBox(height: 6),
                 Text(
                   description,
-                  style: TextStyle(
-                    fontFamily: DeckhandTokens.fontSans,
-                    fontSize: DeckhandTokens.tMd,
-                    color: tokens.text2,
+                  style: context.clBodyMedium.copyWith(
+                    color: brand.ink2,
                     height: 1.5,
                   ),
                 ),

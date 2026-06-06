@@ -31,7 +31,7 @@ void main() {
     });
 
     test('decisions + flow + host round-trip', () {
-      final s = const WizardState(
+      final s = WizardState(
         profileId: 'sovol-zero',
         decisions: {
           'firmware': 'kalico',
@@ -133,7 +133,7 @@ void main() {
     });
 
     test('copyWith can clear optional SSH fields', () {
-      const state = WizardState(
+      final state = WizardState(
         profileId: 'phrozen-arco',
         decisions: {},
         currentStep: 'connect',
@@ -163,7 +163,7 @@ void main() {
 
     test('save -> load round-trips', () async {
       final store = WizardStateStore(path: sessionPath);
-      final s = const WizardState(
+      final s = WizardState(
         profileId: 'phrozen-arco',
         decisions: {'probe.os_id': 'armbian'},
         currentStep: 's40-choose-path',
@@ -182,7 +182,7 @@ void main() {
       () async {
         final store = WizardStateStore(path: sessionPath);
         await store.save(
-          const WizardState(
+          WizardState(
             profileId: 'a',
             decisions: {},
             currentStep: 'x',
@@ -196,7 +196,7 @@ void main() {
         // A fresh save should still succeed (rename replaces the good
         // file; tmp gets reused).
         await store.save(
-          const WizardState(
+          WizardState(
             profileId: 'b',
             decisions: {},
             currentStep: 'y',
@@ -232,7 +232,7 @@ void main() {
     test('clear suppresses an unawaited pending save', () async {
       final store = WizardStateStore(path: sessionPath);
       final save = store.save(
-        const WizardState(
+        WizardState(
           profileId: 'phrozen-arco',
           decisions: {'flash.os': 'armbian-trixie-minimal'},
           currentStep: 'progress',
@@ -279,19 +279,19 @@ void main() {
       // only the final state wins regardless of how many intermediates
       // came through.
       final store = WizardStateStore(path: sessionPath);
-      const a = WizardState(
+      final a = WizardState(
         profileId: 'a',
         decisions: {},
         currentStep: 's1',
         flow: WizardFlow.none,
       );
-      const b = WizardState(
+      final b = WizardState(
         profileId: 'b',
         decisions: {},
         currentStep: 's2',
         flow: WizardFlow.none,
       );
-      const c = WizardState(
+      final c = WizardState(
         profileId: 'c',
         decisions: {},
         currentStep: 's3',

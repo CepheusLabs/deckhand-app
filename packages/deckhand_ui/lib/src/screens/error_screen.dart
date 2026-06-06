@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:forge/forge.dart';
 import 'package:go_router/go_router.dart';
-
-import '../widgets/wizard_scaffold.dart';
 
 class ErrorScreen extends StatelessWidget {
   const ErrorScreen({
@@ -16,21 +15,16 @@ class ErrorScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return WizardScaffold(
-      screenId: 'E-error',
+    return ClWizardPageScaffold(
       title: title,
       helperText: message,
-      body: Icon(
-        Icons.error_outline,
-        size: 64,
-        color: Theme.of(context).colorScheme.error,
-      ),
-      primaryAction: WizardAction(
+      body: Icon(Icons.error_outline, size: 64, color: context.brandColors.bad),
+      primaryAction: ClWizardAction(
         label: 'Start over',
         onPressed: () => context.go('/'),
       ),
       secondaryActions: [
-        if (onRetry != null) WizardAction(label: 'Retry', onPressed: onRetry),
+        if (onRetry != null) ClWizardAction(label: 'Retry', onPressed: onRetry),
       ],
     );
   }

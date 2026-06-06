@@ -5,6 +5,7 @@ import 'package:deckhand_ui/src/providers.dart';
 import 'package:deckhand_ui/src/screens/printers_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:forge/forge.dart';
 
 import 'helpers.dart';
 
@@ -54,7 +55,12 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('Printers'), findsOneWidget);
+      // The migrated screen surfaces the "Printers" heading twice by
+      // design: once in the ClPageHeader chrome (preHeader) and once in
+      // the ClWizardPageScaffold title. Assert both render, and pin the
+      // chrome title precisely.
+      expect(find.widgetWithText(ClPageHeader, 'Printers'), findsOneWidget);
+      expect(find.text('Printers'), findsNWidgets(2));
       expect(find.text('Test Printer'), findsOneWidget);
       expect(find.text('Second Printer'), findsOneWidget);
       expect(find.textContaining('root@192.168.1.50'), findsOneWidget);

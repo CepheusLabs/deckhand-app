@@ -1,15 +1,13 @@
 import 'package:deckhand_core/deckhand_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:forge/forge.dart';
 import 'package:go_router/go_router.dart';
 
 import '../i18n/translations.g.dart';
 import '../providers.dart';
-import '../theming/deckhand_tokens.dart';
 import '../utils/disk_display.dart';
 import '../utils/user_facing_errors.dart';
-import '../widgets/deckhand_loading.dart';
-import '../widgets/wizard_scaffold.dart';
 
 class FlashTargetScreen extends ConsumerStatefulWidget {
   const FlashTargetScreen({super.key});
@@ -32,7 +30,7 @@ class _FlashTargetScreenState extends ConsumerState<FlashTargetScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
+    final brand = context.brandColors;
     final disksAsync = ref.watch(disksProvider);
     final selectedDiskIsUsable =
         _selected != null &&
@@ -41,21 +39,24 @@ class _FlashTargetScreenState extends ConsumerState<FlashTargetScreen> {
         (disksAsync.valueOrNull ?? const <DiskInfo>[]).any(
           (disk) => disk.id == _selected && disk.removable,
         );
-    return WizardScaffold(
-      screenId: 'S200-flash-target',
+    return ClWizardPageScaffold(
       title: 'Pick the disk to flash.',
       helperText:
           'Connect the printer\'s eMMC to your computer via a USB '
           'adapter, then choose it below. Non-removable system disks are '
           'dimmed and unselectable so the host\'s boot drive can never '
           'be picked by accident.',
+      preHeader: const ClPageHeader(
+        icon: Icons.sd_storage_outlined,
+        title: 'Flash target',
+      ),
       body: Builder(
         builder: (context) {
           if (disksAsync.isLoading) {
             return const Padding(
               padding: EdgeInsets.symmetric(vertical: 32),
-              child: DeckhandLoadingBlock(
-                kind: DeckhandLoaderKind.emmcPins,
+              child: ClTechnicalLoadingBlock(
+                kind: ClTechnicalLoaderKind.emmcPins,
                 title: 'Scanning disks',
                 message:
                     'Deckhand is enumerating removable drives and blocking '
@@ -66,7 +67,7 @@ class _FlashTargetScreenState extends ConsumerState<FlashTargetScreen> {
           if (disksAsync.hasError) {
             return Text(
               'Error listing disks: ${userFacingError(disksAsync.error)}',
-              style: TextStyle(color: tokens.bad),
+              style: TextStyle(color: brand.bad),
             );
           }
           final disks = disksAsync.value ?? const <DiskInfo>[];
@@ -79,11 +80,7 @@ class _FlashTargetScreenState extends ConsumerState<FlashTargetScreen> {
                     child: Text(
                       '${disks.length} disk${disks.length == 1 ? '' : 's'} '
                       'enumerated',
-                      style: TextStyle(
-                        fontFamily: DeckhandTokens.fontMono,
-                        fontSize: DeckhandTokens.tXs,
-                        color: tokens.text3,
-                      ),
+                      style: context.dataTiny.copyWith(color: brand.ink3),
                     ),
                   ),
                   TextButton.icon(
@@ -103,7 +100,7 @@ class _FlashTargetScreenState extends ConsumerState<FlashTargetScreen> {
           );
         },
       ),
-      primaryAction: WizardAction(
+      primaryAction: ClWizardAction(
         label: 'Use this disk',
         disabledReason: _flashTargetDisabledReason(disksAsync),
         onPressed: !selectedDiskIsUsable
@@ -123,7 +120,7 @@ class _FlashTargetScreenState extends ConsumerState<FlashTargetScreen> {
               },
       ),
       secondaryActions: [
-        WizardAction(
+        ClWizardAction(
           label: t.common.action_back,
           onPressed: () => context.go('/choose-path'),
           isBack: true,
@@ -155,20 +152,20 @@ class _DisksTable extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
+    final brand = context.brandColors;
     return Container(
       decoration: BoxDecoration(
-        color: tokens.ink1,
-        border: Border.all(color: tokens.line),
-        borderRadius: BorderRadius.circular(DeckhandTokens.r3),
+        color: brand.bgAlt,
+        border: Border.all(color: brand.borderStrong),
+        borderRadius: BorderRadius.circular(context.radii.md),
       ),
       clipBehavior: Clip.antiAlias,
       child: Column(
         children: [
           Container(
             decoration: BoxDecoration(
-              color: tokens.ink2,
-              border: Border(bottom: BorderSide(color: tokens.line)),
+              color: brand.surface,
+              border: Border(bottom: BorderSide(color: brand.borderStrong)),
             ),
             padding: const EdgeInsets.fromLTRB(14, 8, 14, 8),
             child: const _RowLayout(
@@ -185,11 +182,7 @@ class _DisksTable extends StatelessWidget {
               padding: const EdgeInsets.symmetric(vertical: 24),
               child: Text(
                 'No disks reported. Connect an adapter and Refresh.',
-                style: TextStyle(
-                  fontFamily: DeckhandTokens.fontSans,
-                  fontSize: DeckhandTokens.tSm,
-                  color: tokens.text3,
-                ),
+                style: context.clBodySmall.copyWith(color: brand.ink3),
               ),
             )
           else
@@ -223,7 +216,7 @@ class _DiskRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
+    final brand = context.brandColors;
     final clickable = onTap != null;
     final dim = !_diskSelectable(disk);
     return MouseRegion(
@@ -234,14 +227,14 @@ class _DiskRow extends StatelessWidget {
           onTap: onTap,
           child: Container(
             decoration: BoxDecoration(
-              color: selected ? tokens.ink2 : Colors.transparent,
+              color: selected ? brand.surface : Colors.transparent,
               border: isLast
                   ? null
-                  : Border(bottom: BorderSide(color: tokens.lineSoft)),
+                  : Border(bottom: BorderSide(color: brand.borderSubtle)),
             ),
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
             child: _RowLayout(
-              radio: _RadioDot(selected: selected, tokens: tokens),
+              radio: _RadioDot(selected: selected),
               disk: Row(
                 children: [
                   Icon(
@@ -250,8 +243,8 @@ class _DiskRow extends StatelessWidget {
                         : Icons.warning_amber_outlined,
                     size: 16,
                     color: disk.interruptedFlash == null
-                        ? tokens.text3
-                        : tokens.bad,
+                        ? brand.ink3
+                        : brand.bad,
                   ),
                   const SizedBox(width: 8),
                   Expanded(
@@ -261,21 +254,15 @@ class _DiskRow extends StatelessWidget {
                         Text(
                           diskDisplayName(disk),
                           overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontFamily: DeckhandTokens.fontMono,
-                            fontSize: DeckhandTokens.tSm,
-                            color: tokens.text,
-                          ),
+                          style: context.dataSmall.copyWith(color: brand.ink),
                         ),
                         if (disk.interruptedFlash != null) ...[
                           const SizedBox(height: 3),
                           Text(
                             _interruptedFlashLabel(disk.interruptedFlash!),
                             overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontFamily: DeckhandTokens.fontSans,
-                              fontSize: DeckhandTokens.tXs,
-                              color: tokens.bad,
+                            style: context.clLabelSmall.copyWith(
+                              color: brand.bad,
                             ),
                           ),
                         ],
@@ -286,30 +273,18 @@ class _DiskRow extends StatelessWidget {
               ),
               bus: Text(
                 disk.bus.isEmpty ? '—' : disk.bus,
-                style: TextStyle(
-                  fontFamily: DeckhandTokens.fontMono,
-                  fontSize: DeckhandTokens.tSm,
-                  color: tokens.text2,
-                ),
+                style: context.dataSmall.copyWith(color: brand.ink2),
               ),
               size: Text(
                 _formatSize(disk.sizeBytes),
-                style: TextStyle(
-                  fontFamily: DeckhandTokens.fontMono,
-                  fontSize: DeckhandTokens.tSm,
-                  color: tokens.text2,
-                ),
+                style: context.dataSmall.copyWith(color: brand.ink2),
               ),
               parts: Text(
                 _partitionsLabel(disk),
                 overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontFamily: DeckhandTokens.fontMono,
-                  fontSize: DeckhandTokens.tSm,
-                  color: tokens.text2,
-                ),
+                style: context.dataSmall.copyWith(color: brand.ink2),
               ),
-              match: _MatchPill(disk: disk, tokens: tokens),
+              match: _MatchPill(disk: disk),
             ),
           ),
         ),
@@ -384,7 +359,10 @@ class _RowLayout extends StatelessWidget {
         Expanded(flex: 2, child: bus),
         Expanded(flex: 2, child: size),
         Expanded(flex: 2, child: parts),
-        SizedBox(width: 90, child: match),
+        // Wide enough for the longest forge ClStatusChip label
+        // ("INTERRUPTED") at its compact font; the prior 90px was sized
+        // for the deleted fontSize-9 mono pill and clipped the wider chip.
+        SizedBox(width: 132, child: match),
       ],
     );
   }
@@ -396,13 +374,11 @@ class _HeaderCell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
+    final brand = context.brandColors;
     return Text(
       label.toUpperCase(),
-      style: TextStyle(
-        fontFamily: DeckhandTokens.fontMono,
-        fontSize: 10,
-        color: tokens.text3,
+      style: context.labelTechnical.copyWith(
+        color: brand.ink3,
         letterSpacing: 0,
       ),
     );
@@ -410,12 +386,12 @@ class _HeaderCell extends StatelessWidget {
 }
 
 class _RadioDot extends StatelessWidget {
-  const _RadioDot({required this.selected, required this.tokens});
+  const _RadioDot({required this.selected});
   final bool selected;
-  final DeckhandTokens tokens;
 
   @override
   Widget build(BuildContext context) {
+    final brand = context.brandColors;
     return Center(
       child: Container(
         width: 14,
@@ -423,7 +399,7 @@ class _RadioDot extends StatelessWidget {
         decoration: BoxDecoration(
           shape: BoxShape.circle,
           border: Border.all(
-            color: selected ? tokens.accent : tokens.rule,
+            color: selected ? brand.primary : brand.borderStrong,
             width: selected ? 5 : 1.5,
           ),
         ),
@@ -433,41 +409,23 @@ class _RadioDot extends StatelessWidget {
 }
 
 class _MatchPill extends StatelessWidget {
-  const _MatchPill({required this.disk, required this.tokens});
+  const _MatchPill({required this.disk});
   final DiskInfo disk;
-  final DeckhandTokens tokens;
 
   @override
   Widget build(BuildContext context) {
-    final (label, color) = disk.interruptedFlash != null
-        ? ('interrupted', tokens.bad)
+    final (label, kind) = disk.interruptedFlash != null
+        ? ('interrupted', ClChipKind.bad)
         : disk.hasWindowsSystemRole
-        ? ('system', tokens.bad)
+        ? ('system', ClChipKind.bad)
         : disk.isWindowsWriteBlocked
-        ? ('blocked', tokens.bad)
+        ? ('blocked', ClChipKind.bad)
         : !disk.removable
-        ? ('system', tokens.bad)
-        : ('removable', tokens.ok);
+        ? ('system', ClChipKind.bad)
+        : ('removable', ClChipKind.good);
     return Align(
       alignment: Alignment.centerLeft,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-        decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.10),
-          border: Border.all(color: color.withValues(alpha: 0.40)),
-          borderRadius: BorderRadius.circular(9),
-        ),
-        child: Text(
-          label.toUpperCase(),
-          style: TextStyle(
-            fontFamily: DeckhandTokens.fontMono,
-            fontSize: 9,
-            color: color,
-            fontWeight: FontWeight.w600,
-            letterSpacing: 0,
-          ),
-        ),
-      ),
+      child: ClStatusChip(label: label.toUpperCase(), kind: kind, compact: true),
     );
   }
 }

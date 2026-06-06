@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:forge/forge.dart';
 
 import '../providers.dart';
 
@@ -7,6 +8,11 @@ import '../providers.dart';
 /// has dry-run mode enabled. The goal is to make it impossible to
 /// forget the setting is on — especially during long flows where a
 /// developer might switch tabs and come back expecting a real install.
+///
+/// Rebuilt on forge's [ClBanner] (warn kind) — keeps the explicit
+/// flask icon so screen readers and the existing visual contract stay
+/// intact, and wraps the whole thing in a labeled live region so
+/// assistive tech announces the state when dry-run is toggled.
 class DryRunBanner extends ConsumerWidget {
   const DryRunBanner({super.key});
 
@@ -15,35 +21,19 @@ class DryRunBanner extends ConsumerWidget {
     final settings = ref.watch(deckhandSettingsProvider);
     if (!settings.dryRun) return const SizedBox.shrink();
 
-    final theme = Theme.of(context);
     return Semantics(
       liveRegion: true,
       container: true,
-      label: 'Dry-run mode enabled. No destructive operations will be executed.',
-      child: ExcludeSemantics(
-        child: Material(
-          color: theme.colorScheme.tertiaryContainer,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: Row(
-              children: [
-                Icon(
-                  Icons.science_outlined,
-                  size: 18,
-                  color: theme.colorScheme.onTertiaryContainer,
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    'Dry-run mode — no disk writes or remote mutations will happen.',
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.onTertiaryContainer,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-              ],
-            ),
+      label:
+          'Dry-run mode enabled. No destructive operations will be executed.',
+      child: const ExcludeSemantics(
+        child: Padding(
+          padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: ClBanner(
+            kind: ClBannerKind.warn,
+            icon: Icons.science_outlined,
+            title:
+                'Dry-run mode — no disk writes or remote mutations will happen.',
           ),
         ),
       ),

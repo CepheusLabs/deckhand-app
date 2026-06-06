@@ -1,11 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:forge/forge.dart';
 import 'package:go_router/go_router.dart';
 
 import '../i18n/translations.g.dart';
 import '../providers.dart';
-import '../theming/deckhand_tokens.dart';
-import '../widgets/wizard_scaffold.dart';
 
 class FirstBootSetupScreen extends ConsumerStatefulWidget {
   const FirstBootSetupScreen({super.key});
@@ -63,15 +62,14 @@ class _FirstBootSetupScreenState extends ConsumerState<FirstBootSetupScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
+    final brand = context.brandColors;
     final pw = _password.text;
     final confirm = _confirm.text;
     final mismatch = confirm.isNotEmpty && pw != confirm;
     final canContinue =
         _user.text.trim().isNotEmpty && pw.isNotEmpty && !mismatch;
 
-    return WizardScaffold(
-      screenId: 'S250-provision-os',
+    return ClWizardPageScaffold(
       title: 'Provision the new OS.',
       helperText:
           'Creates the user Deckhand and Moonraker will run as, sets a '
@@ -79,12 +77,16 @@ class _FirstBootSetupScreenState extends ConsumerState<FirstBootSetupScreen> {
           'up cleanly on next boot. Defaults match the stock Phrozen '
           'convention so you can mix new-OS and stock-OS printers '
           'without credential churn.',
+      preHeader: const ClPageHeader(
+        icon: Icons.settings_suggest_outlined,
+        title: 'Provision OS',
+      ),
       body: Container(
         padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
-          color: tokens.ink1,
-          border: Border.all(color: tokens.line),
-          borderRadius: BorderRadius.circular(DeckhandTokens.r3),
+          color: brand.bgAlt,
+          border: Border.all(color: brand.borderStrong),
+          borderRadius: BorderRadius.circular(context.radii.md),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -98,11 +100,7 @@ class _FirstBootSetupScreenState extends ConsumerState<FirstBootSetupScreen> {
                     child: TextField(
                       controller: _user,
                       onChanged: (_) => setState(() {}),
-                      style: TextStyle(
-                        fontFamily: DeckhandTokens.fontMono,
-                        fontSize: DeckhandTokens.tMd,
-                        color: tokens.text,
-                      ),
+                      style: context.dataMedium.copyWith(color: brand.ink),
                       decoration: const InputDecoration(
                         border: OutlineInputBorder(),
                       ),
@@ -112,11 +110,7 @@ class _FirstBootSetupScreenState extends ConsumerState<FirstBootSetupScreen> {
                     label: 'HOSTNAME (optional)',
                     child: TextField(
                       controller: _hostname,
-                      style: TextStyle(
-                        fontFamily: DeckhandTokens.fontMono,
-                        fontSize: DeckhandTokens.tMd,
-                        color: tokens.text,
-                      ),
+                      style: context.dataMedium.copyWith(color: brand.ink),
                       decoration: const InputDecoration(
                         border: OutlineInputBorder(),
                         hintText: 'arco-bench',
@@ -129,11 +123,7 @@ class _FirstBootSetupScreenState extends ConsumerState<FirstBootSetupScreen> {
                       controller: _password,
                       obscureText: _passwordObscured,
                       onChanged: (_) => setState(() {}),
-                      style: TextStyle(
-                        fontFamily: DeckhandTokens.fontMono,
-                        fontSize: DeckhandTokens.tMd,
-                        color: tokens.text,
-                      ),
+                      style: context.dataMedium.copyWith(color: brand.ink),
                       decoration: InputDecoration(
                         border: const OutlineInputBorder(),
                         suffixIcon: IconButton(
@@ -157,11 +147,7 @@ class _FirstBootSetupScreenState extends ConsumerState<FirstBootSetupScreen> {
                       controller: _confirm,
                       obscureText: _passwordObscured,
                       onChanged: (_) => setState(() {}),
-                      style: TextStyle(
-                        fontFamily: DeckhandTokens.fontMono,
-                        fontSize: DeckhandTokens.tMd,
-                        color: tokens.text,
-                      ),
+                      style: context.dataMedium.copyWith(color: brand.ink),
                       decoration: InputDecoration(
                         border: const OutlineInputBorder(),
                         errorText: mismatch ? 'Passwords don\'t match' : null,
@@ -182,10 +168,8 @@ class _FirstBootSetupScreenState extends ConsumerState<FirstBootSetupScreen> {
                             value: value,
                             child: Text(
                               label,
-                              style: TextStyle(
-                                fontFamily: DeckhandTokens.fontMono,
-                                fontSize: DeckhandTokens.tMd,
-                                color: tokens.text,
+                              style: context.dataMedium.copyWith(
+                                color: brand.ink,
                               ),
                             ),
                           ),
@@ -209,10 +193,8 @@ class _FirstBootSetupScreenState extends ConsumerState<FirstBootSetupScreen> {
                             value: value,
                             child: Text(
                               label,
-                              style: TextStyle(
-                                fontFamily: DeckhandTokens.fontMono,
-                                fontSize: DeckhandTokens.tMd,
-                                color: tokens.text,
+                              style: context.dataMedium.copyWith(
+                                color: brand.ink,
                               ),
                             ),
                           ),
@@ -260,23 +242,21 @@ class _FirstBootSetupScreenState extends ConsumerState<FirstBootSetupScreen> {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               decoration: BoxDecoration(
-                color: tokens.ink2,
-                border: Border.all(color: tokens.line),
-                borderRadius: BorderRadius.circular(DeckhandTokens.r2),
+                color: brand.surface,
+                border: Border.all(color: brand.borderStrong),
+                borderRadius: BorderRadius.circular(context.radii.sm),
               ),
               child: Row(
                 children: [
-                  Icon(Icons.shield_outlined, size: 16, color: tokens.text3),
+                  Icon(Icons.shield_outlined, size: 16, color: brand.ink3),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
                       'Defaults match the Phrozen stock convention so you '
                       'can mix new-OS and stock-OS printers without '
                       'credential churn.',
-                      style: TextStyle(
-                        fontFamily: DeckhandTokens.fontSans,
-                        fontSize: DeckhandTokens.tSm,
-                        color: tokens.text2,
+                      style: context.clBodySmall.copyWith(
+                        color: brand.ink2,
                         height: 1.45,
                       ),
                     ),
@@ -287,7 +267,7 @@ class _FirstBootSetupScreenState extends ConsumerState<FirstBootSetupScreen> {
           ],
         ),
       ),
-      primaryAction: WizardAction(
+      primaryAction: ClWizardAction(
         label: 'Create user and continue',
         disabledReason: _disabledReason(
           user: _user.text,
@@ -323,7 +303,7 @@ class _FirstBootSetupScreenState extends ConsumerState<FirstBootSetupScreen> {
             : null,
       ),
       secondaryActions: [
-        WizardAction(
+        ClWizardAction(
           label: t.common.action_back,
           onPressed: () => context.go('/first-boot'),
           isBack: true,
@@ -351,16 +331,14 @@ class _LabeledField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
+    final brand = context.brandColors;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
           label,
-          style: TextStyle(
-            fontFamily: DeckhandTokens.fontMono,
-            fontSize: 10,
-            color: tokens.text4,
+          style: context.labelTechnical.copyWith(
+            color: brand.ink4,
             letterSpacing: 0,
           ),
         ),

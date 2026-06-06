@@ -2,11 +2,11 @@ import 'dart:ui' show AppExitResponse;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:forge/forge.dart';
 import 'package:go_router/go_router.dart';
 
 import '../providers.dart';
 import '../router.dart';
-import '../theming/deckhand_theme.dart';
 import '../widgets/resume_gate.dart';
 
 /// Top-level widget for the Deckhand desktop app. Wires GoRouter +
@@ -128,8 +128,16 @@ class _WizardShellState extends ConsumerState<WizardShell>
     final themeMode = ref.watch(themeModeProvider);
     return MaterialApp.router(
       title: 'Deckhand',
-      theme: DeckhandTheme.light(),
-      darkTheme: DeckhandTheme.dark(),
+      theme: buildClTheme(
+        brightness: Brightness.light,
+        density: ClDensity.compact,
+        accentPalette: ClAccentPalette.violet,
+      ),
+      darkTheme: buildClTheme(
+        brightness: Brightness.dark,
+        density: ClDensity.compact,
+        accentPalette: ClAccentPalette.violet,
+      ),
       themeMode: themeMode,
       routerConfig: _router,
       builder: (context, child) => ResumeGate(

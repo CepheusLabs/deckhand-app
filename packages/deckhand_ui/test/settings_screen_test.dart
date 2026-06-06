@@ -7,6 +7,7 @@ import 'package:deckhand_ui/src/providers.dart';
 import 'package:deckhand_ui/src/screens/settings_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:forge/forge.dart';
 import 'package:path/path.dart' as p;
 
 import 'helpers.dart';
@@ -41,7 +42,7 @@ void main() {
     );
 
     expect(find.text('Run preflight'), findsOneWidget);
-    await tester.tap(find.widgetWithText(FilledButton, 'Run preflight'));
+    await tester.tap(find.widgetWithText(ClButton, 'Run preflight'));
     await tester.pump();
     await tester.runAsync(() async {
       await Future<void>.delayed(const Duration(milliseconds: 50));
@@ -119,7 +120,7 @@ void main() {
       ),
     );
 
-    await tester.tap(find.widgetWithText(FilledButton, 'Run preflight'));
+    await tester.tap(find.widgetWithText(ClButton, 'Run preflight'));
     await tester.pump();
     await tester.runAsync(() async {
       await Future<void>.delayed(const Duration(milliseconds: 50));
@@ -190,9 +191,9 @@ void main() {
     expect(find.text('READY'), findsOneWidget);
     expect(find.textContaining('github.com'), findsOneWidget);
 
-    await tester.ensureVisible(find.widgetWithText(OutlinedButton, 'Delete'));
+    await tester.ensureVisible(find.widgetWithText(ClButton, 'Delete'));
     await tester.pump();
-    await tester.tap(find.widgetWithText(OutlinedButton, 'Delete'));
+    await tester.tap(find.widgetWithText(ClButton, 'Delete'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 250));
     await tester.tap(find.widgetWithText(FilledButton, 'Delete'));
@@ -280,8 +281,8 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 250));
 
-    await tester.ensureVisible(find.widgetWithText(TextButton, 'Clear cache'));
-    await tester.tap(find.widgetWithText(TextButton, 'Clear cache'));
+    await tester.ensureVisible(find.widgetWithText(ClButton, 'Clear cache'));
+    await tester.tap(find.widgetWithText(ClButton, 'Clear cache'));
     await tester.pump();
     expect(find.text('Clear OS image cache?'), findsOneWidget);
     await tester.tap(find.widgetWithText(FilledButton, 'Clear cache'));
@@ -390,11 +391,11 @@ void main() {
 
     await tester.tap(find.text('Advanced'));
     await tester.pump();
-    await tester.tap(find.byType(Switch));
+    await tester.tap(find.byType(ClToggle));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 250));
 
-    final toggle = tester.widget<Switch>(find.byType(Switch));
+    final toggle = tester.widget<ClToggle>(find.byType(ClToggle));
     expect(toggle.value, isFalse);
     expect(settings.developerMode, isFalse);
     expect(find.textContaining('Could not save developer mode'), findsOne);
@@ -425,14 +426,14 @@ void main() {
     await tester.pump();
 
     await tester.ensureVisible(find.text('Verify after flash'));
-    await tester.ensureVisible(find.byType(Switch));
-    await tester.tap(find.byType(Switch));
+    await tester.ensureVisible(find.byType(ClToggle));
+    await tester.tap(find.byType(ClToggle));
     await tester.enterText(find.byType(TextField).first, '7');
     await tester.ensureVisible(
-      find.widgetWithText(FilledButton, 'Save general settings'),
+      find.widgetWithText(ClButton, 'Save general settings'),
     );
     await tester.tap(
-      find.widgetWithText(FilledButton, 'Save general settings'),
+      find.widgetWithText(ClButton, 'Save general settings'),
     );
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 250));
@@ -464,9 +465,9 @@ void main() {
     await tester.pump();
     await tester.enterText(find.byType(TextField), '');
     await tester.ensureVisible(
-      find.widgetWithText(FilledButton, 'Save profile source'),
+      find.widgetWithText(ClButton, 'Save profile source'),
     );
-    await tester.tap(find.widgetWithText(FilledButton, 'Save profile source'));
+    await tester.tap(find.widgetWithText(ClButton, 'Save profile source'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 250));
 

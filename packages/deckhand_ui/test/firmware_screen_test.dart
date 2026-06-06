@@ -1,6 +1,6 @@
 import 'package:deckhand_ui/src/screens/firmware_screen.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:forge/forge.dart';
 
 import 'helpers.dart';
 
@@ -115,7 +115,7 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      await tester.tap(find.widgetWithText(FilledButton, 'Continue'));
+      await tester.tap(find.widgetWithText(ClButton, 'Continue'));
       await tester.pumpAndSettle();
       expect(controller.decision<String>('firmware'), 'kalico');
     });
@@ -157,7 +157,7 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      await tester.tap(find.widgetWithText(FilledButton, 'Continue'));
+      await tester.tap(find.widgetWithText(ClButton, 'Continue'));
       await tester.pumpAndSettle();
       expect(controller.decision<String>('firmware'), 'klipper');
     });

@@ -1,14 +1,17 @@
-import 'dart:html' as html;
-import 'dart:js_util' as js_util;
+import 'dart:js_interop';
+import 'dart:js_interop_unsafe';
 
 import 'transport_capabilities.dart';
 
 DeckhandTransportAvailability detectDeckhandWebTransports() {
-  final navigator = html.window.navigator;
+  final navigator = globalContext.getProperty<JSObject?>('navigator'.toJS);
+  if (navigator == null) {
+    return const DeckhandTransportAvailability(manualDownload: true);
+  }
   return DeckhandTransportAvailability(
-    webUsb: js_util.hasProperty(navigator, 'usb'),
-    webHid: js_util.hasProperty(navigator, 'hid'),
-    webSerial: js_util.hasProperty(navigator, 'serial'),
+    webUsb: navigator.has('usb'),
+    webHid: navigator.has('hid'),
+    webSerial: navigator.has('serial'),
     manualDownload: true,
   );
 }

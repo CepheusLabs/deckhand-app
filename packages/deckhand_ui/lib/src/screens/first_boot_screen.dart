@@ -4,13 +4,11 @@ import 'dart:math' as math;
 import 'package:deckhand_core/deckhand_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:forge/forge.dart';
 import 'package:go_router/go_router.dart';
 
 import '../providers.dart';
-import '../theming/deckhand_tokens.dart';
 import '../utils/user_facing_errors.dart';
-import '../widgets/deckhand_loading.dart';
-import '../widgets/wizard_scaffold.dart';
 
 class FirstBootScreen extends ConsumerStatefulWidget {
   const FirstBootScreen({super.key});
@@ -85,8 +83,7 @@ class _FirstBootScreenState extends ConsumerState<FirstBootScreen> {
   Widget build(BuildContext context) {
     final host = ref.watch(wizardControllerProvider).state.sshHost;
     final hasHost = host != null && host.trim().isNotEmpty;
-    return WizardScaffold(
-      screenId: 'S240-first-boot',
+    return ClWizardPageScaffold(
       title: 'Boot the printer.',
       helperText:
           'Put the flashed eMMC back in the printer, power it on, then '
@@ -125,7 +122,7 @@ class _FirstBootScreenState extends ConsumerState<FirstBootScreen> {
           );
         },
       ),
-      primaryAction: WizardAction(
+      primaryAction: ClWizardAction(
         label: _ready
             ? 'Continue'
             : (_waiting
@@ -141,11 +138,11 @@ class _FirstBootScreenState extends ConsumerState<FirstBootScreen> {
       ),
       secondaryActions: [
         if (_timedOut)
-          WizardAction(
+          ClWizardAction(
             label: 'Choose printer',
             onPressed: () => context.go('/connect'),
           ),
-        WizardAction(
+        ClWizardAction(
           label: 'Back',
           onPressed: () => context.go('/flash-confirm'),
           isBack: true,
@@ -162,7 +159,7 @@ class _StepsPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
+    final brand = context.brandColors;
     final steps = [
       'Unplug the USB adapter from your computer.',
       'Put the eMMC module back in the printer.',
@@ -172,24 +169,15 @@ class _StepsPanel extends StatelessWidget {
       else
         'Choose the printer once it appears on the network.',
     ];
-    return Container(
+    return ClPanel(
+      background: brand.bgAlt,
       padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
-      decoration: BoxDecoration(
-        color: tokens.ink1,
-        border: Border.all(color: tokens.line),
-        borderRadius: BorderRadius.circular(DeckhandTokens.r3),
-      ),
-      child: Column(
+      body: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             'STEPS',
-            style: TextStyle(
-              fontFamily: DeckhandTokens.fontMono,
-              fontSize: 10,
-              color: tokens.text4,
-              letterSpacing: 0,
-            ),
+            style: context.dataTiny.copyWith(fontSize: 10, color: brand.ink4),
           ),
           const SizedBox(height: 14),
           for (var i = 0; i < steps.length; i++)
@@ -202,18 +190,14 @@ class _StepsPanel extends StatelessWidget {
                     width: 24,
                     height: 24,
                     decoration: BoxDecoration(
-                      color: tokens.ink2,
-                      border: Border.all(color: tokens.line),
-                      borderRadius: BorderRadius.circular(DeckhandTokens.r2),
+                      color: brand.surface,
+                      border: Border.all(color: brand.borderStrong),
+                      borderRadius: BorderRadius.circular(context.radii.sm),
                     ),
                     alignment: Alignment.center,
                     child: Text(
                       '${i + 1}',
-                      style: TextStyle(
-                        fontFamily: DeckhandTokens.fontMono,
-                        fontSize: 11,
-                        color: tokens.text2,
-                      ),
+                      style: context.dataTiny.copyWith(color: brand.ink2),
                     ),
                   ),
                   const SizedBox(width: 14),
@@ -222,10 +206,8 @@ class _StepsPanel extends StatelessWidget {
                       padding: const EdgeInsets.only(top: 3),
                       child: Text(
                         steps[i],
-                        style: TextStyle(
-                          fontFamily: DeckhandTokens.fontSans,
-                          fontSize: DeckhandTokens.tMd,
-                          color: tokens.text2,
+                        style: context.clBodyMedium.copyWith(
+                          color: brand.ink2,
                           height: 1.5,
                         ),
                       ),
@@ -263,20 +245,16 @@ class _WaitingPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
+    final brand = context.brandColors;
     final remaining = timeout - elapsed;
     final remainingStr = remaining.isNegative
         ? '0s'
         : _shortDuration(remaining);
     final elapsedStr = _shortDuration(elapsed);
-    return Container(
+    return ClPanel(
+      background: brand.bgAlt,
       padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
-      decoration: BoxDecoration(
-        color: tokens.ink1,
-        border: Border.all(color: tokens.line),
-        borderRadius: BorderRadius.circular(DeckhandTokens.r3),
-      ),
-      child: Column(
+      body: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           // 80×80 framing ring around the spinner. Solid green when SSH
@@ -290,8 +268,8 @@ class _WaitingPanel extends StatelessWidget {
             child: CustomPaint(
               painter: _RingPainter(
                 color: ready
-                    ? tokens.ok
-                    : (timedOut ? tokens.warn : tokens.accent),
+                    ? brand.good
+                    : (timedOut ? brand.warn : brand.primary),
                 strokeWidth: 2,
                 dashed: !ready,
               ),
@@ -300,15 +278,15 @@ class _WaitingPanel extends StatelessWidget {
                     ? Icon(
                         Icons.check_circle_outline,
                         size: 36,
-                        color: tokens.ok,
+                        color: brand.good,
                       )
                     : (timedOut
                           ? Icon(
                               Icons.wifi_off_outlined,
                               size: 34,
-                              color: tokens.warn,
+                              color: brand.warn,
                             )
-                          : const DeckhandSpinner(size: 40, strokeWidth: 2)),
+                          : const ClSpinner(size: 40, strokeWidth: 2)),
               ),
             ),
           ),
@@ -323,10 +301,8 @@ class _WaitingPanel extends StatelessWidget {
                             : (hasHost
                                   ? 'Ready to poll'
                                   : 'Printer not selected'))),
-            style: TextStyle(
-              fontFamily: DeckhandTokens.fontMono,
-              fontSize: DeckhandTokens.tMd,
-              color: tokens.text,
+            style: context.dataSmall.copyWith(
+              color: brand.ink,
               fontWeight: FontWeight.w500,
             ),
           ),
@@ -335,11 +311,7 @@ class _WaitingPanel extends StatelessWidget {
             waiting
                 ? '${host ?? 'printer'}:22 · $elapsedStr elapsed · $remainingStr remaining'
                 : status,
-            style: TextStyle(
-              fontFamily: DeckhandTokens.fontMono,
-              fontSize: DeckhandTokens.tXs,
-              color: tokens.text4,
-            ),
+            style: context.dataTiny.copyWith(color: brand.ink4),
             textAlign: TextAlign.center,
           ),
           if (timedOut) ...[
@@ -348,19 +320,17 @@ class _WaitingPanel extends StatelessWidget {
               width: double.infinity,
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: tokens.warn.withValues(alpha: 0.06),
-                border: Border.all(color: tokens.warn.withValues(alpha: 0.35)),
-                borderRadius: BorderRadius.circular(DeckhandTokens.r2),
+                color: brand.warn.withValues(alpha: 0.06),
+                border: Border.all(color: brand.warn.withValues(alpha: 0.35)),
+                borderRadius: BorderRadius.circular(context.radii.sm),
               ),
               child: Text(
                 'Check that the eMMC is installed, the printer is powered on, '
                 'and the selected address is still correct. Then retry polling '
                 'or choose the printer again.',
-                style: TextStyle(
-                  fontFamily: DeckhandTokens.fontSans,
-                  fontSize: DeckhandTokens.tSm,
+                style: context.clBodySmall.copyWith(
                   height: 1.5,
-                  color: tokens.text2,
+                  color: brand.ink2,
                 ),
                 textAlign: TextAlign.center,
               ),

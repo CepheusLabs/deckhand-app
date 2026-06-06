@@ -2,14 +2,12 @@ import 'package:deckhand_core/deckhand_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:forge/forge.dart';
 import 'package:go_router/go_router.dart';
 
 import '../providers.dart';
-import '../theming/deckhand_tokens.dart';
 import '../utils/disk_display.dart';
 import '../utils/user_facing_errors.dart';
-import '../widgets/deckhand_loading.dart';
-import '../widgets/wizard_scaffold.dart';
 
 /// S220 — Last check before we wipe a disk.
 ///
@@ -81,11 +79,11 @@ class _FlashConfirmScreenState extends ConsumerState<FlashConfirmScreen> {
 
   Future<void> _confirmCommit(DiskInfo? disk) async {
     if (disk == null || !_isMatched(_expectedDiskName(disk))) return;
-    final tokens = DeckhandTokens.of(context);
+    final brand = context.brandColors;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        icon: Icon(Icons.warning_amber_rounded, color: tokens.bad),
+        icon: Icon(Icons.warning_amber_rounded, color: brand.bad),
         title: const Text('Confirm wipe and flash'),
         content: Text(
           'Deckhand will erase ${diskDisplayName(disk)} and write the '
@@ -98,7 +96,7 @@ class _FlashConfirmScreenState extends ConsumerState<FlashConfirmScreen> {
           ),
           FilledButton.icon(
             style: FilledButton.styleFrom(
-              backgroundColor: tokens.bad,
+              backgroundColor: brand.bad,
               foregroundColor: const Color(0xFFFCFCFC),
             ),
             onPressed: () => Navigator.of(dialogContext).pop(true),
@@ -175,13 +173,16 @@ class _FlashConfirmScreenState extends ConsumerState<FlashConfirmScreen> {
       },
       child: Focus(
         autofocus: true,
-        child: WizardScaffold(
-          screenId: 'S220-flash-confirm',
+        child: ClWizardPageScaffold(
           title: 'Last check before we wipe.',
           helperText:
               'This is the only screen with a destructive primary. We '
               'surface every fact you need so you don\'t second-guess '
               'the decision afterwards.',
+          preHeader: const ClPageHeader(
+            icon: Icons.local_fire_department,
+            title: 'Flash confirm',
+          ),
           body: loadingBody
               ? _FlashConfirmLoading(waitingForDisk: waitingForDisk)
               : blockingError != null
@@ -212,7 +213,7 @@ class _FlashConfirmScreenState extends ConsumerState<FlashConfirmScreen> {
                 ),
           secondaryActions: loadingBody || blockingError != null || missingDisk
               ? [
-                  WizardAction(
+                  ClWizardAction(
                     label: "Back, don't wipe",
                     isBack: true,
                     onPressed: () => context.go(
@@ -238,11 +239,9 @@ class _FlashConfirmLoading extends StatelessWidget {
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.only(top: 8),
-      child: DeckhandLoadingBlock(
-        kind: DeckhandLoaderKind.emmcPins,
-        title: waitingForDisk
-            ? 'Loading selected disk'
-            : 'Checking backup records',
+      child: ClTechnicalLoadingBlock(
+        kind: ClTechnicalLoaderKind.emmcPins,
+        title: waitingForDisk ? 'Loading selected disk' : 'Checking backup records',
         message: waitingForDisk
             ? 'Deckhand is re-enumerating disks before it shows the '
                   'destructive confirmation.'
@@ -266,28 +265,26 @@ class _FlashConfirmProblem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
+    final brand = context.brandColors;
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: tokens.ink1,
-        border: Border.all(color: tokens.bad.withValues(alpha: 0.45)),
-        borderRadius: BorderRadius.circular(DeckhandTokens.r3),
+        color: brand.bgAlt,
+        border: Border.all(color: brand.bad.withValues(alpha: 0.45)),
+        borderRadius: BorderRadius.circular(context.radii.md),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Icon(Icons.error_outline, size: 18, color: tokens.bad),
+              Icon(Icons.error_outline, size: 18, color: brand.bad),
               const SizedBox(width: 10),
               Text(
                 title,
-                style: TextStyle(
-                  fontFamily: DeckhandTokens.fontSans,
-                  fontSize: DeckhandTokens.tLg,
+                style: context.clTitleLarge.copyWith(
                   fontWeight: FontWeight.w500,
-                  color: tokens.text,
+                  color: brand.ink,
                 ),
               ),
             ],
@@ -295,10 +292,8 @@ class _FlashConfirmProblem extends StatelessWidget {
           const SizedBox(height: 8),
           Text(
             message,
-            style: TextStyle(
-              fontFamily: DeckhandTokens.fontSans,
-              fontSize: DeckhandTokens.tSm,
-              color: tokens.text3,
+            style: context.clBodySmall.copyWith(
+              color: brand.ink3,
               height: 1.45,
             ),
           ),
@@ -341,142 +336,41 @@ class _DangerBody extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
-    return Container(
-      // Mode-marker panel: tinted bg + red border + diagonal red
-      // hatch + corner-bracket viewfinder, matching the design's
-      // "you're in destructive mode" framing. The hatch + brackets
-      // sit BEHIND the content via a Stack — the prior session
-      // mistakenly thought the Stack was breaking child layout, but
-      // the real culprit was a non-uniform Border on the BackupCta
-      // (see _BackupCta).
-      margin: const EdgeInsets.only(top: 8),
-      padding: const EdgeInsets.fromLTRB(20, 22, 20, 24),
-      decoration: BoxDecoration(
-        color: Color.alphaBlend(
-          tokens.bad.withValues(alpha: 0.04),
-          tokens.ink0,
-        ),
-        border: Border.all(color: tokens.bad.withValues(alpha: 0.3)),
-        borderRadius: BorderRadius.circular(DeckhandTokens.r3),
-      ),
-      child: Stack(
-        children: [
-          Positioned.fill(
-            child: IgnorePointer(
-              child: CustomPaint(
-                painter: _HazardHatchPainter(
-                  color: tokens.bad.withValues(alpha: 0.06),
-                ),
-              ),
+    // Mode-marker panel: the forge ClDangerPanel supplies the tinted
+    // background + red border + diagonal hazard hatch that signals
+    // "you're in destructive mode" — replacing the screen's bespoke
+    // hatch painter and corner-bracket viewfinder.
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: ClDangerPanel(
+        padding: const EdgeInsets.fromLTRB(20, 22, 20, 24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _Banner(disk: disk),
+            const SizedBox(height: 18),
+            _BackupCta(
+              onTap: onBackup,
+              manifest: backupManifest,
+              candidate: backupCandidate,
             ),
-          ),
-          // Corner brackets — the "viewfinder" frame at the top of
-          // the panel that signals "you're in a different mode now."
-          Positioned(top: 14, left: 14, child: _CornerBracket(tokens, true)),
-          Positioned(top: 14, right: 14, child: _CornerBracket(tokens, false)),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              _Banner(disk: disk),
-              const SizedBox(height: 18),
-              _BackupCta(
-                onTap: onBackup,
-                manifest: backupManifest,
-                candidate: backupCandidate,
-              ),
-              const SizedBox(height: 18),
-              _DangerGrid(disk: disk, osId: osId),
-              const SizedBox(height: 18),
-              _SafeStrip(),
-              const SizedBox(height: 18),
-              _ConfirmBlock(
-                expected: expectedName,
-                typed: typed,
-                matched: matched,
-                onBack: onBack,
-                onWipe: onWipe,
-              ),
-            ],
-          ),
-        ],
+            const SizedBox(height: 18),
+            _DangerGrid(disk: disk, osId: osId),
+            const SizedBox(height: 18),
+            const _SafeStrip(),
+            const SizedBox(height: 18),
+            _ConfirmBlock(
+              expected: expectedName,
+              typed: typed,
+              matched: matched,
+              onBack: onBack,
+              onWipe: onWipe,
+            ),
+          ],
+        ),
       ),
     );
   }
-}
-
-/// Diagonal red hatch behind the danger panel. Painted instead of a
-/// repeating-linear-gradient so the alpha lines stay crisp at any
-/// pixel ratio — Flutter's gradient anti-aliasing on tight stripes
-/// can shimmer.
-class _HazardHatchPainter extends CustomPainter {
-  _HazardHatchPainter({required this.color});
-  final Color color;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = color
-      ..strokeWidth = 1
-      ..style = PaintingStyle.stroke;
-    const spacing = 12.0;
-    final span = size.width + size.height;
-    for (double offset = -span; offset < span; offset += spacing) {
-      canvas.drawLine(
-        Offset(offset, 0),
-        Offset(offset + size.height, size.height),
-        paint,
-      );
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _HazardHatchPainter old) => old.color != color;
-}
-
-class _CornerBracket extends StatelessWidget {
-  const _CornerBracket(this.tokens, this.isLeft);
-  final DeckhandTokens tokens;
-  final bool isLeft;
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: 28,
-      height: 28,
-      child: CustomPaint(
-        painter: _CornerBracketPainter(color: tokens.bad, leftSide: isLeft),
-      ),
-    );
-  }
-}
-
-class _CornerBracketPainter extends CustomPainter {
-  _CornerBracketPainter({required this.color, required this.leftSide});
-  final Color color;
-  final bool leftSide;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = color
-      ..strokeWidth = 2
-      ..style = PaintingStyle.stroke;
-    canvas.drawLine(const Offset(0, 0), Offset(size.width, 0), paint);
-    if (leftSide) {
-      canvas.drawLine(const Offset(0, 0), Offset(0, size.height), paint);
-    } else {
-      canvas.drawLine(
-        Offset(size.width, 0),
-        Offset(size.width, size.height),
-        paint,
-      );
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _CornerBracketPainter old) =>
-      old.color != color || old.leftSide != leftSide;
 }
 
 class _Banner extends StatelessWidget {
@@ -486,20 +380,18 @@ class _Banner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
+    final brand = context.brandColors;
     // Pre-blend tints with the panel's bg colour so the underlying
-    // diagonal hatch can't show through translucent fills. Using
-    // `alpha: 0.14` over a hatched parent is what made the icon and
-    // tag look like the hatch was passing through them.
+    // diagonal hatch can't show through translucent fills.
     final panelBg = Color.alphaBlend(
-      tokens.bad.withValues(alpha: 0.04),
-      tokens.ink0,
+      brand.bad.withValues(alpha: 0.04),
+      brand.bg,
     );
     final iconBg = Color.alphaBlend(
-      tokens.bad.withValues(alpha: 0.14),
+      brand.bad.withValues(alpha: 0.14),
       panelBg,
     );
-    final tagBg = Color.alphaBlend(tokens.bad.withValues(alpha: 0.08), panelBg);
+    final tagBg = Color.alphaBlend(brand.bad.withValues(alpha: 0.08), panelBg);
     final partitionCount = disk?.partitions.length;
     final destructionCopy = switch (partitionCount) {
       null =>
@@ -519,11 +411,11 @@ class _Banner extends StatelessWidget {
           height: 44,
           decoration: BoxDecoration(
             color: iconBg,
-            border: Border.all(color: tokens.bad.withValues(alpha: 0.5)),
+            border: Border.all(color: brand.bad.withValues(alpha: 0.5)),
             shape: BoxShape.circle,
           ),
           alignment: Alignment.center,
-          child: Icon(Icons.warning_amber_rounded, color: tokens.bad, size: 22),
+          child: Icon(Icons.warning_amber_rounded, color: brand.bad, size: 22),
         ),
         const SizedBox(width: 14),
         Expanded(
@@ -532,23 +424,17 @@ class _Banner extends StatelessWidget {
             children: [
               Text(
                 'Last check before we wipe.',
-                style: TextStyle(
-                  fontFamily: DeckhandTokens.fontSans,
-                  fontSize: 22,
+                style: context.clHeadlineSmall.copyWith(
                   fontWeight: FontWeight.w500,
                   letterSpacing: 0,
                   height: 1.2,
-                  color: tokens.text,
+                  color: brand.ink,
                 ),
               ),
               const SizedBox(height: 2),
               Text(
                 destructionCopy,
-                style: TextStyle(
-                  fontFamily: DeckhandTokens.fontSans,
-                  fontSize: 13,
-                  color: tokens.text3,
-                ),
+                style: context.clBodySmall.copyWith(color: brand.ink3),
               ),
             ],
           ),
@@ -558,16 +444,14 @@ class _Banner extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
           decoration: BoxDecoration(
             color: tagBg,
-            border: Border.all(color: tokens.bad.withValues(alpha: 0.5)),
-            borderRadius: BorderRadius.circular(3),
+            border: Border.all(color: brand.bad.withValues(alpha: 0.5)),
+            borderRadius: BorderRadius.circular(context.radii.xsPlus),
           ),
           child: Text(
             'DESTRUCTIVE',
-            style: TextStyle(
-              fontFamily: DeckhandTokens.fontMono,
-              fontSize: 10,
+            style: context.labelTechnical.copyWith(
+              color: brand.bad,
               letterSpacing: 0,
-              color: tokens.bad,
             ),
           ),
         ),
@@ -576,14 +460,10 @@ class _Banner extends StatelessWidget {
   }
 }
 
-/// Prominent backup status/escape-hatch card. The 3px accent rail
-/// used to be expressed via `Border(left: width: 3, top/right/bottom:
-/// width: 1)` combined with `borderRadius` — Flutter silently refuses
-/// to paint children when a rounded box has non-uniform border widths,
-/// which was the entire reason the CTA kept rendering as an empty
-/// tinted rectangle across three different wrapper rewrites. Now:
-/// uniform 1px border, with the rail as a sibling Container in an
-/// `IntrinsicHeight` Row that stretches to the row's height.
+/// Prominent backup status/escape-hatch card. The 3px accent rail is
+/// expressed as a sibling Container in an `IntrinsicHeight` Row that
+/// stretches to the row's height (uniform 1px border on the parent so
+/// Flutter still paints children inside the rounded box).
 class _BackupCta extends StatelessWidget {
   const _BackupCta({
     required this.onTap,
@@ -596,10 +476,10 @@ class _BackupCta extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
+    final brand = context.brandColors;
     final indexed = manifest != null;
     final hasBackup = manifest != null || candidate != null;
-    final accent = hasBackup ? tokens.ok : tokens.accent;
+    final accent = hasBackup ? brand.good : brand.primary;
     final path = manifest?.imagePath ?? candidate?.imagePath;
     final title = indexed
         ? 'Indexed backup already exists'
@@ -623,7 +503,7 @@ class _BackupCta extends StatelessWidget {
     final icon = hasBackup
         ? Icons.check_circle_outline
         : Icons.inventory_2_outlined;
-    final bg = Color.alphaBlend(accent.withValues(alpha: 0.08), tokens.ink0);
+    final bg = Color.alphaBlend(accent.withValues(alpha: 0.08), brand.bg);
     return MouseRegion(
       cursor: SystemMouseCursors.click,
       child: GestureDetector(
@@ -634,7 +514,7 @@ class _BackupCta extends StatelessWidget {
           decoration: BoxDecoration(
             color: bg,
             border: Border.all(color: accent.withValues(alpha: 0.45), width: 1),
-            borderRadius: BorderRadius.circular(DeckhandTokens.r3),
+            borderRadius: BorderRadius.circular(context.radii.md),
           ),
           child: IntrinsicHeight(
             child: Row(
@@ -673,12 +553,10 @@ class _BackupCta extends StatelessWidget {
                                     child: Text(
                                       title,
                                       overflow: TextOverflow.ellipsis,
-                                      style: TextStyle(
-                                        fontFamily: DeckhandTokens.fontSans,
-                                        fontSize: 14,
+                                      style: context.clTitleSmall.copyWith(
                                         fontWeight: FontWeight.w500,
                                         letterSpacing: 0,
-                                        color: tokens.text,
+                                        color: brand.ink,
                                       ),
                                     ),
                                   ),
@@ -690,15 +568,15 @@ class _BackupCta extends StatelessWidget {
                                     ),
                                     decoration: BoxDecoration(
                                       color: accent.withValues(alpha: 0.14),
-                                      borderRadius: BorderRadius.circular(3),
+                                      borderRadius: BorderRadius.circular(
+                                        context.radii.xsPlus,
+                                      ),
                                     ),
                                     child: Text(
                                       badge,
-                                      style: TextStyle(
-                                        fontFamily: DeckhandTokens.fontMono,
-                                        fontSize: 9,
-                                        letterSpacing: 0,
+                                      style: context.labelTechnical.copyWith(
                                         color: accent,
+                                        letterSpacing: 0,
                                       ),
                                     ),
                                   ),
@@ -707,10 +585,8 @@ class _BackupCta extends StatelessWidget {
                               const SizedBox(height: 4),
                               Text(
                                 body,
-                                style: TextStyle(
-                                  fontFamily: DeckhandTokens.fontSans,
-                                  fontSize: 12,
-                                  color: tokens.text3,
+                                style: context.clBodySmall.copyWith(
+                                  color: brand.ink3,
                                   height: 1.4,
                                 ),
                               ),
@@ -719,10 +595,8 @@ class _BackupCta extends StatelessWidget {
                                 Text(
                                   path,
                                   overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    fontFamily: DeckhandTokens.fontMono,
-                                    fontSize: 10,
-                                    color: tokens.text3,
+                                  style: context.dataTiny.copyWith(
+                                    color: brand.ink3,
                                   ),
                                 ),
                               ],
@@ -735,14 +609,12 @@ class _BackupCta extends StatelessWidget {
                             backgroundColor: accent,
                             foregroundColor: hasBackup
                                 ? const Color(0xFFFCFCFC)
-                                : tokens.accentFg,
+                                : brand.onPrimary,
                             padding: const EdgeInsets.symmetric(
                               horizontal: 14,
                               vertical: 10,
                             ),
-                            textStyle: const TextStyle(
-                              fontFamily: DeckhandTokens.fontMono,
-                              fontSize: 11,
+                            textStyle: context.labelTechnical.copyWith(
                               letterSpacing: 0,
                             ),
                           ),
@@ -776,10 +648,8 @@ class _DangerGrid extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, constraints) {
         // The mockup's 1.4fr / 1fr split collapses to a single column
-        // below 1100px. We don't reach 1100px in our 1080px content
-        // box (each panel sits in a Wrap-friendly column), so we
-        // stack at 720px — the breakpoint the rest of the design
-        // uses for "small wizard".
+        // below 1100px. We stack at 720px — the breakpoint the rest of
+        // the design uses for "small wizard".
         if (constraints.maxWidth < 720) {
           return Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -809,16 +679,16 @@ class _TargetCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
+    final brand = context.brandColors;
     return Container(
       padding: const EdgeInsets.fromLTRB(20, 18, 20, 18),
       decoration: BoxDecoration(
-        color: tokens.ink0,
-        border: Border.all(color: tokens.bad.withValues(alpha: 0.5), width: 2),
-        borderRadius: BorderRadius.circular(DeckhandTokens.r3),
+        color: brand.bg,
+        border: Border.all(color: brand.bad.withValues(alpha: 0.5), width: 2),
+        borderRadius: BorderRadius.circular(context.radii.md),
         boxShadow: [
           BoxShadow(
-            color: tokens.bad.withValues(alpha: 0.12),
+            color: brand.bad.withValues(alpha: 0.12),
             blurRadius: 24,
             offset: const Offset(0, 4),
           ),
@@ -829,50 +699,40 @@ class _TargetCard extends StatelessWidget {
         children: [
           Text(
             'TARGET DISK — WILL BE ERASED',
-            style: TextStyle(
-              fontFamily: DeckhandTokens.fontMono,
-              fontSize: 9,
+            style: context.labelTechnical.copyWith(
+              color: brand.bad,
               letterSpacing: 0,
-              color: tokens.bad,
             ),
           ),
           const SizedBox(height: 8),
           // Friendly name as the headline so it matches the
           // pick-disk + flash-target screens. The platform id (e.g.
           // PhysicalDrive3) is dev-facing jargon and goes below as a
-          // small caption — there if the user needs the unambiguous
-          // identifier for support, but not the thing they're asked
-          // to type.
+          // small caption.
           Text(
             _friendlyName(disk),
-            style: TextStyle(
-              fontFamily: DeckhandTokens.fontSans,
-              fontSize: 22,
+            style: context.clHeadlineSmall.copyWith(
               fontWeight: FontWeight.w500,
               letterSpacing: 0,
               height: 1.2,
-              color: tokens.text,
+              color: brand.ink,
             ),
           ),
           const SizedBox(height: 4),
           Text(
             _diskMeta(disk),
-            style: TextStyle(
-              fontFamily: DeckhandTokens.fontMono,
-              fontSize: 12,
+            style: context.dataSmall.copyWith(
+              color: brand.ink3,
               letterSpacing: 0,
-              color: tokens.text3,
             ),
           ),
           if (disk != null) ...[
             const SizedBox(height: 2),
             Text(
               diskTechnicalLabel(disk!),
-              style: TextStyle(
-                fontFamily: DeckhandTokens.fontMono,
-                fontSize: 10,
+              style: context.dataTiny.copyWith(
+                color: brand.ink4,
                 letterSpacing: 0,
-                color: tokens.text4,
               ),
             ),
           ],
@@ -881,7 +741,7 @@ class _TargetCard extends StatelessWidget {
             decoration: BoxDecoration(
               border: Border(
                 top: BorderSide(
-                  color: tokens.bad.withValues(alpha: 0.3),
+                  color: brand.bad.withValues(alpha: 0.3),
                   style: BorderStyle.solid,
                 ),
               ),
@@ -892,11 +752,9 @@ class _TargetCard extends StatelessWidget {
               children: [
                 Text(
                   _partitionsHeader(disk),
-                  style: TextStyle(
-                    fontFamily: DeckhandTokens.fontMono,
-                    fontSize: 9,
+                  style: context.labelTechnical.copyWith(
+                    color: brand.ink4,
                     letterSpacing: 0,
-                    color: tokens.text4,
                   ),
                 ),
                 const SizedBox(height: 6),
@@ -906,16 +764,11 @@ class _TargetCard extends StatelessWidget {
                     child: Text(
                       'partition list unavailable — full disk will be '
                       'overwritten',
-                      style: TextStyle(
-                        fontFamily: DeckhandTokens.fontMono,
-                        fontSize: 12,
-                        color: tokens.text3,
-                      ),
+                      style: context.dataSmall.copyWith(color: brand.ink3),
                     ),
                   )
                 else
-                  for (final p in disk!.partitions)
-                    _PartitionRow(part: p, tokens: tokens),
+                  for (final p in disk!.partitions) _PartitionRow(part: p),
               ],
             ),
           ),
@@ -953,47 +806,39 @@ class _TargetCard extends StatelessWidget {
 }
 
 class _PartitionRow extends StatelessWidget {
-  const _PartitionRow({required this.part, required this.tokens});
+  const _PartitionRow({required this.part});
   final PartitionInfo part;
-  final DeckhandTokens tokens;
 
   @override
   Widget build(BuildContext context) {
+    final brand = context.brandColors;
     final size = part.sizeBytes >= (1 << 30)
         ? '${(part.sizeBytes / (1 << 30)).toStringAsFixed(1)} GiB'
         : '${(part.sizeBytes / (1 << 20)).toStringAsFixed(0)} MiB';
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 5),
       decoration: BoxDecoration(
-        border: Border(bottom: BorderSide(color: tokens.lineSoft)),
+        border: Border(bottom: BorderSide(color: brand.borderSubtle)),
       ),
       child: Row(
         children: [
           SizedBox(
             width: 18,
-            child: Icon(Icons.close, size: 11, color: tokens.bad),
+            child: Icon(Icons.close, size: 11, color: brand.bad),
           ),
           const SizedBox(width: 10),
           SizedBox(
             width: 80,
             child: Text(
               part.mountpoint ?? 'p${part.index}',
-              style: TextStyle(
-                fontFamily: DeckhandTokens.fontMono,
-                fontSize: 12,
-                color: tokens.text,
-              ),
+              style: context.dataSmall.copyWith(color: brand.ink),
             ),
           ),
           const SizedBox(width: 10),
           Expanded(
             child: Text(
               part.filesystem.isEmpty ? '—' : part.filesystem,
-              style: TextStyle(
-                fontFamily: DeckhandTokens.fontMono,
-                fontSize: 11,
-                color: tokens.text4,
-              ),
+              style: context.dataTiny.copyWith(color: brand.ink4),
             ),
           ),
           SizedBox(
@@ -1001,11 +846,7 @@ class _PartitionRow extends StatelessWidget {
             child: Text(
               size,
               textAlign: TextAlign.right,
-              style: TextStyle(
-                fontFamily: DeckhandTokens.fontMono,
-                fontSize: 12,
-                color: tokens.text3,
-              ),
+              style: context.dataSmall.copyWith(color: brand.ink3),
             ),
           ),
         ],
@@ -1020,42 +861,35 @@ class _SourceCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
+    final brand = context.brandColors;
     return Container(
       padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
       decoration: BoxDecoration(
-        color: tokens.ink1,
-        border: Border.all(color: tokens.line),
-        borderRadius: BorderRadius.circular(DeckhandTokens.r3),
+        color: brand.bgAlt,
+        border: Border.all(color: brand.borderStrong),
+        borderRadius: BorderRadius.circular(context.radii.md),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             'SOURCE IMAGE',
-            style: TextStyle(
-              fontFamily: DeckhandTokens.fontMono,
-              fontSize: 9,
+            style: context.labelTechnical.copyWith(
+              color: brand.ink4,
               letterSpacing: 0,
-              color: tokens.text4,
             ),
           ),
           const SizedBox(height: 8),
           Text(
             osId ?? '<no image>',
-            style: TextStyle(
-              fontFamily: DeckhandTokens.fontMono,
+            style: context.dataSmall.copyWith(
+              color: brand.ink,
               fontSize: 14,
               letterSpacing: 0,
-              color: tokens.text,
             ),
           ),
           const SizedBox(height: 14),
           // A 2x2 readout of the operations the helper will perform.
-          // We don't yet plumb image size + sha through to this
-          // screen, so the right column is fixed copy describing the
-          // pipeline rather than fake numbers — honest and matches
-          // the V2 design's intent.
           GridView.count(
             crossAxisCount: 2,
             mainAxisSpacing: 10,
@@ -1083,29 +917,23 @@ class _SourceStat extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
+    final brand = context.brandColors;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
         Text(
           k,
-          style: TextStyle(
-            fontFamily: DeckhandTokens.fontMono,
-            fontSize: 9,
+          style: context.labelTechnical.copyWith(
+            color: brand.ink4,
             letterSpacing: 0,
-            color: tokens.text4,
           ),
         ),
         const SizedBox(height: 3),
         Text(
           v,
           overflow: TextOverflow.ellipsis,
-          style: TextStyle(
-            fontFamily: DeckhandTokens.fontMono,
-            fontSize: 12,
-            color: tokens.text2,
-          ),
+          style: context.dataSmall.copyWith(color: brand.ink2),
         ),
       ],
     );
@@ -1113,29 +941,29 @@ class _SourceStat extends StatelessWidget {
 }
 
 class _SafeStrip extends StatelessWidget {
+  const _SafeStrip();
+
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
+    final brand = context.brandColors;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
-        color: Color.alphaBlend(tokens.ok.withValues(alpha: 0.08), tokens.ink0),
-        border: Border.all(color: tokens.ok.withValues(alpha: 0.3)),
-        borderRadius: BorderRadius.circular(DeckhandTokens.r2),
+        color: Color.alphaBlend(brand.good.withValues(alpha: 0.08), brand.bg),
+        border: Border.all(color: brand.good.withValues(alpha: 0.3)),
+        borderRadius: BorderRadius.circular(context.radii.sm),
       ),
       child: Row(
         children: [
-          Icon(Icons.check, size: 14, color: tokens.ok),
+          Icon(Icons.check, size: 14, color: brand.good),
           const SizedBox(width: 10),
           Expanded(
             child: RichText(
               text: TextSpan(
-                style: TextStyle(
-                  fontFamily: DeckhandTokens.fontSans,
-                  fontSize: 13,
+                style: context.clBodySmall.copyWith(
                   color: Color.alphaBlend(
-                    tokens.ok.withValues(alpha: 0.8),
-                    tokens.text,
+                    brand.good.withValues(alpha: 0.8),
+                    brand.ink,
                   ),
                 ),
                 children: const [
@@ -1176,29 +1004,27 @@ class _ConfirmBlock extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
+    final brand = context.brandColors;
     return Container(
       padding: const EdgeInsets.fromLTRB(20, 18, 20, 18),
       decoration: BoxDecoration(
-        color: tokens.ink0,
+        color: brand.bg,
         border: Border.all(
           color: Color.alphaBlend(
-            tokens.bad.withValues(alpha: 0.25),
-            tokens.line,
+            brand.bad.withValues(alpha: 0.25),
+            brand.borderStrong,
           ),
         ),
-        borderRadius: BorderRadius.circular(DeckhandTokens.r3),
+        borderRadius: BorderRadius.circular(context.radii.md),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
             'TYPE THE DISK NAME TO ENABLE WIPE',
-            style: TextStyle(
-              fontFamily: DeckhandTokens.fontMono,
-              fontSize: 10,
+            style: context.labelTechnical.copyWith(
+              color: brand.ink4,
               letterSpacing: 0,
-              color: tokens.text4,
             ),
           ),
           const SizedBox(height: 8),
@@ -1208,11 +1034,10 @@ class _ConfirmBlock extends StatelessWidget {
               controller: typed,
               autocorrect: false,
               enableSuggestions: false,
-              style: TextStyle(
-                fontFamily: DeckhandTokens.fontMono,
+              style: context.dataSmall.copyWith(
+                color: brand.ink,
                 fontSize: 14,
                 letterSpacing: 0,
-                color: tokens.text,
               ),
               decoration: InputDecoration(
                 hintText: expected.isEmpty ? 'disk name' : expected,
@@ -1224,24 +1049,24 @@ class _ConfirmBlock extends StatelessWidget {
                 filled: true,
                 fillColor: matched
                     ? Color.alphaBlend(
-                        tokens.ok.withValues(alpha: 0.06),
-                        tokens.ink1,
+                        brand.good.withValues(alpha: 0.06),
+                        brand.bgAlt,
                       )
-                    : tokens.ink1,
+                    : brand.bgAlt,
                 border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(DeckhandTokens.r2),
-                  borderSide: BorderSide(color: tokens.line),
+                  borderRadius: BorderRadius.circular(context.radii.sm),
+                  borderSide: BorderSide(color: brand.borderStrong),
                 ),
                 enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(DeckhandTokens.r2),
+                  borderRadius: BorderRadius.circular(context.radii.sm),
                   borderSide: BorderSide(
-                    color: matched ? tokens.ok : tokens.line,
+                    color: matched ? brand.good : brand.borderStrong,
                   ),
                 ),
                 focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(DeckhandTokens.r2),
+                  borderRadius: BorderRadius.circular(context.radii.sm),
                   borderSide: BorderSide(
-                    color: matched ? tokens.ok : tokens.bad,
+                    color: matched ? brand.good : brand.bad,
                     width: 2,
                   ),
                 ),
@@ -1251,11 +1076,9 @@ class _ConfirmBlock extends StatelessWidget {
           const SizedBox(height: 6),
           Text(
             matched ? 'MATCH · WIPE ARMED' : 'EXPECTED: $expected',
-            style: TextStyle(
-              fontFamily: DeckhandTokens.fontMono,
-              fontSize: 11,
+            style: context.labelTechnical.copyWith(
+              color: matched ? brand.good : brand.ink4,
               letterSpacing: 0,
-              color: matched ? tokens.ok : tokens.text4,
             ),
           ),
           const SizedBox(height: 18),
@@ -1265,8 +1088,8 @@ class _ConfirmBlock extends StatelessWidget {
               border: Border(
                 top: BorderSide(
                   color: Color.alphaBlend(
-                    tokens.bad.withValues(alpha: 0.25),
-                    tokens.line,
+                    brand.bad.withValues(alpha: 0.25),
+                    brand.borderStrong,
                   ),
                 ),
               ),
@@ -1297,26 +1120,24 @@ class _WipeAndFlashButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
+    final brand = context.brandColors;
     return FilledButton.icon(
       style: FilledButton.styleFrom(
-        backgroundColor: tokens.bad,
+        backgroundColor: brand.bad,
         foregroundColor: const Color(0xFFFCFCFC),
-        disabledBackgroundColor: tokens.ink2,
-        disabledForegroundColor: tokens.text4,
+        disabledBackgroundColor: brand.surface,
+        disabledForegroundColor: brand.ink4,
         minimumSize: const Size(190, 40),
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(DeckhandTokens.r2),
-          side: BorderSide(color: matched ? tokens.bad : tokens.line),
+          borderRadius: BorderRadius.circular(context.radii.sm),
+          side: BorderSide(color: matched ? brand.bad : brand.borderStrong),
         ),
       ),
       onPressed: matched ? onPressed : null,
       icon: const Icon(Icons.local_fire_department, size: 15),
-      label: const Text(
+      label: Text(
         'Wipe and flash',
-        style: TextStyle(
-          fontFamily: DeckhandTokens.fontSans,
-          fontSize: 14,
+        style: context.clBodyMedium.copyWith(
           fontWeight: FontWeight.w600,
           letterSpacing: 0,
         ),

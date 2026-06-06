@@ -1,14 +1,14 @@
 import 'package:deckhand_core/deckhand_core.dart';
-import 'package:deckhand_ui/src/widgets/deckhand_loading.dart';
 import 'package:deckhand_ui/src/widgets/progress_run_workspace.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:forge/forge.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'helpers.dart';
 
 void main() {
-  testWidgets('active step uses the Deckhand spinner', (tester) async {
+  testWidgets('active step uses the forge spinner', (tester) async {
     final controller = stubWizardController(profileJson: testProfileJson());
     await controller.loadProfile('test-printer');
     await tester.pumpWidget(
@@ -36,8 +36,10 @@ void main() {
       ),
     );
 
-    expect(find.byType(DeckhandSpinner), findsOneWidget);
-    expect(find.byType(CircularProgressIndicator), findsNothing);
+    // The active row renders forge's ClSpinner (which wraps a Material
+    // CircularProgressIndicator internally — so we assert on the forge
+    // type, not the absence of CircularProgressIndicator).
+    expect(find.byType(ClSpinner), findsOneWidget);
   });
 
   testWidgets('active step exposes progress semantics', (tester) async {

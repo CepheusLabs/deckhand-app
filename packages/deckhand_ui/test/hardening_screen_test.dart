@@ -1,6 +1,7 @@
 import 'package:deckhand_ui/src/screens/hardening_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:forge/forge.dart';
 
 import 'helpers.dart';
 
@@ -26,7 +27,7 @@ void main() {
       // updating to match the new component.
       expect(find.byType(Checkbox), findsNWidgets(2));
       expect(find.byType(TextField), findsNothing);
-      expect(find.widgetWithText(FilledButton, 'Continue'), findsOneWidget);
+      expect(find.widgetWithText(ClButton, 'Continue'), findsOneWidget);
     });
 
     testWidgets('Continue records hardening decisions on the controller',
@@ -42,7 +43,7 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      await tester.tap(find.widgetWithText(FilledButton, 'Continue'));
+      await tester.tap(find.widgetWithText(ClButton, 'Continue'));
       await tester.pumpAndSettle();
 
       // Both hardening toggles default to false; assert they round-trip.

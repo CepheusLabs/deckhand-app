@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
-
-import '../theming/deckhand_tokens.dart';
+import 'package:forge/forge.dart';
 
 /// Bottom chrome strip — 24px tall, holds machine-shaped status
 /// columns ("SIDECAR 0.4.1", "PROFILE phrozen-arco@v0.4.1", etc).
@@ -10,7 +9,9 @@ import '../theming/deckhand_tokens.dart';
 /// live opposite the build slots.
 ///
 /// Pure presentation. Mono throughout — this strip is data, not body
-/// copy.
+/// copy. Rebuilt on forge tokens: the surface/border come from
+/// [context.brandColors] and the text uses forge's technical mono
+/// styles ([context.labelTechnical] / [context.dataTiny]).
 class DeckhandFootbar extends StatelessWidget {
   const DeckhandFootbar({
     super.key,
@@ -25,34 +26,26 @@ class DeckhandFootbar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
+    final brand = context.brandColors;
     return Container(
       height: height,
       decoration: BoxDecoration(
-        color: tokens.ink1,
-        border: Border(top: BorderSide(color: tokens.line)),
+        color: brand.bgAlt,
+        border: Border(top: BorderSide(color: brand.borderStrong)),
       ),
       padding: const EdgeInsets.symmetric(horizontal: 12),
-      child: DefaultTextStyle.merge(
-        style: TextStyle(
-          fontFamily: DeckhandTokens.fontMono,
-          fontSize: 10,
-          color: tokens.text3,
-          letterSpacing: 0,
-        ),
-        child: Row(
-          children: [
-            for (var i = 0; i < items.length; i++) ...[
-              _FootbarCell(item: items[i], tokens: tokens),
-              if (i < items.length - 1) _Sep(tokens: tokens),
-            ],
-            const Spacer(),
-            for (var i = 0; i < trailing.length; i++) ...[
-              if (i > 0) const SizedBox(width: 16),
-              _FootbarCell(item: trailing[i], tokens: tokens),
-            ],
+      child: Row(
+        children: [
+          for (var i = 0; i < items.length; i++) ...[
+            _FootbarCell(item: items[i]),
+            if (i < items.length - 1) const _Sep(),
           ],
-        ),
+          const Spacer(),
+          for (var i = 0; i < trailing.length; i++) ...[
+            if (i > 0) const SizedBox(width: 16),
+            _FootbarCell(item: trailing[i]),
+          ],
+        ],
       ),
     );
   }
@@ -65,52 +58,53 @@ class DeckhandFootbarItem {
 }
 
 class _FootbarCell extends StatelessWidget {
-  const _FootbarCell({required this.item, required this.tokens});
+  const _FootbarCell({required this.item});
   final DeckhandFootbarItem item;
-  final DeckhandTokens tokens;
 
   @override
   Widget build(BuildContext context) {
+    final brand = context.brandColors;
+    // labelTechnical/dataTiny carry the brand mono family + tabular
+    // figures; shrink to the 10px footbar scale and drop the technical
+    // label's letter-spacing so the strip stays dense.
+    final labelStyle = context.labelTechnical.copyWith(
+      fontSize: 10,
+      letterSpacing: 0,
+      color: brand.ink3,
+      height: 1,
+    );
+    final valueStyle = context.dataTiny.copyWith(
+      fontSize: 10,
+      color: brand.ink4,
+      height: 1,
+    );
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Text(
-          item.label.toUpperCase(),
-          style: TextStyle(
-            fontFamily: DeckhandTokens.fontMono,
-            fontSize: 10,
-            color: tokens.text3,
-            letterSpacing: 0,
-          ),
-        ),
+        Text(item.label.toUpperCase(), style: labelStyle),
         const SizedBox(width: 6),
-        Text(
-          item.value,
-          style: TextStyle(
-            fontFamily: DeckhandTokens.fontMono,
-            fontSize: 10,
-            color: tokens.text4,
-            letterSpacing: 0,
-          ),
-        ),
+        Text(item.value, style: valueStyle),
       ],
     );
   }
 }
 
 class _Sep extends StatelessWidget {
-  const _Sep({required this.tokens});
-  final DeckhandTokens tokens;
+  const _Sep();
 
   @override
   Widget build(BuildContext context) {
+    final brand = context.brandColors;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12),
-      child: Text('·', style: TextStyle(
-        color: tokens.text4,
-        fontFamily: DeckhandTokens.fontMono,
-        fontSize: 10,
-      )),
+      child: Text(
+        '·',
+        style: context.dataTiny.copyWith(
+          fontSize: 10,
+          color: brand.ink4,
+          height: 1,
+        ),
+      ),
     );
   }
 }

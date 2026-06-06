@@ -1,17 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:forge/forge.dart';
 import 'package:go_router/go_router.dart';
 import 'package:deckhand_core/deckhand_core.dart';
 
 import '../i18n/translations.g.dart';
 import '../providers.dart';
-import '../theming/deckhand_tokens.dart';
 import '../utils/json_safety.dart';
-import '../widgets/equal_height_grid.dart';
 import '../widgets/profile_text.dart';
-import '../widgets/selection_card.dart';
-import '../widgets/status_pill.dart';
-import '../widgets/wizard_scaffold.dart';
 
 class ScreenChoiceScreen extends ConsumerStatefulWidget {
   const ScreenChoiceScreen({super.key});
@@ -58,37 +54,31 @@ class _ScreenChoiceScreenState extends ConsumerState<ScreenChoiceScreen> {
       _choice = _defaultChoice(screens, probe);
     }
 
-    return WizardScaffold(
-      screenId: 'S110-screen-daemon',
+    return ClWizardPageScaffold(
       title: 'Choose the screen daemon.',
       helperText:
           'What runs on the printer\'s attached touchscreen. Options '
           'marked alpha are in development and not selectable; pick a '
           'stable choice for daily use.',
-      body: LayoutBuilder(
-        builder: (context, constraints) {
-          final w = constraints.maxWidth;
-          final cols = w >= 1080 ? 3 : (w >= 720 ? 2 : 1);
-          return EqualHeightGrid(
-            columns: cols,
-            children: [
-              for (final s in screens)
-                _ScreenCard(
-                  name: s.displayName ?? s.id,
-                  status: s.status ?? 'stub',
-                  notes: flattenProfileText(jsonString(s.raw['notes'])),
-                  selectable: _isSelectable(s),
-                  selected: _choice == s.id,
-                  installState: _installSummary(probe, s.id),
-                  onTap: _isSelectable(s)
-                      ? () => setState(() => _choice = s.id)
-                      : null,
-                ),
-            ],
-          );
-        },
+      body: ClEqualHeightGrid(
+        maxColumns: 3,
+        minColumnWidth: 320,
+        children: [
+          for (final s in screens)
+            _ScreenCard(
+              name: s.displayName ?? s.id,
+              status: s.status ?? 'stub',
+              notes: flattenProfileText(jsonString(s.raw['notes'])),
+              selectable: _isSelectable(s),
+              selected: _choice == s.id,
+              installState: _installSummary(probe, s.id),
+              onTap: _isSelectable(s)
+                  ? () => setState(() => _choice = s.id)
+                  : null,
+            ),
+        ],
       ),
-      primaryAction: WizardAction(
+      primaryAction: ClWizardAction(
         label: t.common.action_continue,
         disabledReason: _choice == null
             ? 'Select a screen option first.'
@@ -103,7 +93,7 @@ class _ScreenChoiceScreenState extends ConsumerState<ScreenChoiceScreen> {
               },
       ),
       secondaryActions: [
-        WizardAction(
+        ClWizardAction(
           label: t.common.action_back,
           onPressed: () => context.go('/kiauh'),
           isBack: true,
@@ -122,6 +112,17 @@ class _ScreenChoiceScreenState extends ConsumerState<ScreenChoiceScreen> {
     return null;
   }
 }
+
+/// Maps a profile `status` field (stable/beta/alpha/experimental/
+/// deprecated) to a forge chip kind. Mirrors the old
+/// `StatusPill.fromProfileStatus` color mapping.
+ClChipKind _profileStatusKind(String status) => switch (status) {
+  'stable' => ClChipKind.good,
+  'beta' => ClChipKind.info,
+  'alpha' => ClChipKind.accent,
+  'experimental' || 'deprecated' => ClChipKind.bad,
+  _ => ClChipKind.neutral,
+};
 
 class _ScreenCard extends StatelessWidget {
   const _ScreenCard({
@@ -144,10 +145,10 @@ class _ScreenCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
+    final brand = context.brandColors;
     return Opacity(
       opacity: selectable ? 1.0 : 0.45,
-      child: SelectionCard(
+      child: ClSelectionCard(
         selected: selected,
         onTap: onTap,
         padding: const EdgeInsets.fromLTRB(18, 16, 40, 16),
@@ -168,54 +169,35 @@ class _ScreenCard extends StatelessWidget {
                     // still ellipsize at the second-line edge.
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontFamily: DeckhandTokens.fontSans,
-                      fontSize: DeckhandTokens.tLg,
+                    style: context.clTitleMedium.copyWith(
                       fontWeight: FontWeight.w500,
-                      color: tokens.text,
+                      color: brand.ink,
                       height: 1.3,
                     ),
                   ),
                 ),
                 const SizedBox(width: 8),
-                StatusPill.fromProfileStatus(context, status),
+                ClStatusChip(label: status, kind: _profileStatusKind(status)),
               ],
             ),
             if (notes.isNotEmpty) ...[
               const SizedBox(height: 8),
               Text(
                 notes,
-                style: TextStyle(
-                  fontFamily: DeckhandTokens.fontSans,
-                  fontSize: DeckhandTokens.tSm,
-                  color: tokens.text2,
+                style: context.clBodySmall.copyWith(
+                  color: brand.ink2,
                   height: 1.5,
                 ),
               ),
             ],
             if (installState != null) ...[
               const SizedBox(height: 10),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                decoration: BoxDecoration(
-                  color: (installState == 'running' ? tokens.ok : tokens.info)
-                      .withValues(alpha: 0.10),
-                  border: Border.all(
-                    color: (installState == 'running' ? tokens.ok : tokens.info)
-                        .withValues(alpha: 0.40),
-                  ),
-                  borderRadius: BorderRadius.circular(9),
-                ),
-                child: Text(
-                  installState!.toUpperCase(),
-                  style: TextStyle(
-                    fontFamily: DeckhandTokens.fontMono,
-                    fontSize: 9,
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: 0,
-                    color: installState == 'running' ? tokens.ok : tokens.info,
-                  ),
-                ),
+              ClStatusChip(
+                label: installState!.toUpperCase(),
+                kind: installState == 'running'
+                    ? ClChipKind.good
+                    : ClChipKind.info,
+                compact: true,
               ),
             ],
           ],

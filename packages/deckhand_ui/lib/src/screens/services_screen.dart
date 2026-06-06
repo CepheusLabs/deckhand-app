@@ -1,14 +1,13 @@
 import 'package:deckhand_core/deckhand_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:forge/forge.dart';
 import 'package:go_router/go_router.dart';
 
 import '../i18n/translations.g.dart';
 import '../providers.dart';
-import '../theming/deckhand_tokens.dart';
 import '../utils/json_safety.dart';
 import '../widgets/profile_text.dart';
-import '../widgets/wizard_scaffold.dart';
 
 /// One-question-at-a-time service prompts. The design source treats
 /// each stock-OS service as its own wizard question — `Question 2 of
@@ -77,19 +76,18 @@ class _ServicesScreenState extends ConsumerState<ServicesScreen> {
     final probe = controller.printerState;
 
     if (queue.isEmpty) {
-      return WizardScaffold(
-        screenId: 'S120-services',
+      return ClWizardPageScaffold(
         title: 'Stock services',
         helperText:
             'This profile has nothing to ask about. Continue to keep '
             'moving through the wizard.',
         body: const SizedBox.shrink(),
-        primaryAction: WizardAction(
+        primaryAction: ClWizardAction(
           label: t.common.action_continue,
           onPressed: () => context.go('/files'),
         ),
         secondaryActions: [
-          WizardAction(
+          ClWizardAction(
             label: t.common.action_back,
             onPressed: () => context.go('/screen-choice'),
             isBack: true,
@@ -108,8 +106,7 @@ class _ServicesScreenState extends ConsumerState<ServicesScreen> {
     final decisionKey = 'service.${current.id}';
     final selected = controller.decision<String>(decisionKey);
 
-    return WizardScaffold(
-      screenId: 'S120-services',
+    return ClWizardPageScaffold(
       title: question == null
           ? 'What should we do with ${current.displayName}?'
           : flattenProfileText(question),
@@ -150,7 +147,7 @@ class _ServicesScreenState extends ConsumerState<ServicesScreen> {
           _QuestionProgress(current: clampedIdx + 1, total: queue.length),
         ],
       ),
-      primaryAction: WizardAction(
+      primaryAction: ClWizardAction(
         label: t.common.action_continue,
         disabledReason: selected == null
             ? 'Choose what to do with this service first.'
@@ -166,7 +163,7 @@ class _ServicesScreenState extends ConsumerState<ServicesScreen> {
               },
       ),
       secondaryActions: [
-        WizardAction(
+        ClWizardAction(
           label: t.common.action_back,
           onPressed: () {
             if (clampedIdx > 0) {
@@ -201,15 +198,9 @@ class _OptionsPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
-    return Container(
+    return ClPanel(
       padding: const EdgeInsets.all(8),
-      decoration: BoxDecoration(
-        color: tokens.ink1,
-        border: Border.all(color: tokens.line),
-        borderRadius: BorderRadius.circular(DeckhandTokens.r3),
-      ),
-      child: Column(
+      body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -219,7 +210,7 @@ class _OptionsPanel extends StatelessWidget {
               label: jsonString(raw['label']) ?? jsonString(raw['id'])!,
               description: jsonString(raw['description']),
               isRecommended: raw['recommended'] == true,
-              selected: selected == jsonString(raw['id']),
+              groupValue: selected,
               onTap: () => onChoose(jsonString(raw['id'])!),
             ),
         ],
@@ -234,7 +225,7 @@ class _OptionRow extends StatelessWidget {
     required this.label,
     required this.description,
     required this.isRecommended,
-    required this.selected,
+    required this.groupValue,
     required this.onTap,
   });
 
@@ -242,36 +233,31 @@ class _OptionRow extends StatelessWidget {
   final String label;
   final String? description;
   final bool isRecommended;
-  final bool selected;
+  final String? groupValue;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
+    final brand = context.brandColors;
+    final selected = groupValue == id;
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(DeckhandTokens.r2),
+      borderRadius: BorderRadius.circular(context.radii.sm),
       child: Container(
         padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
         decoration: BoxDecoration(
-          color: selected ? tokens.ink2 : Colors.transparent,
-          borderRadius: BorderRadius.circular(DeckhandTokens.r2),
+          color: selected ? brand.selectedBg : Colors.transparent,
+          borderRadius: BorderRadius.circular(context.radii.sm),
         ),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Padding(
               padding: const EdgeInsets.only(top: 2),
-              child: Container(
-                width: 14,
-                height: 14,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: selected ? tokens.accent : tokens.rule,
-                    width: selected ? 4 : 1.5,
-                  ),
-                ),
+              child: ClRadio<String>(
+                value: id,
+                groupValue: groupValue,
+                onChanged: (_) => onTap(),
               ),
             ),
             const SizedBox(width: 12),
@@ -283,36 +269,17 @@ class _OptionRow extends StatelessWidget {
                     children: [
                       Text(
                         label,
-                        style: TextStyle(
-                          fontFamily: DeckhandTokens.fontSans,
-                          fontSize: DeckhandTokens.tMd,
+                        style: context.clBodyMedium.copyWith(
                           fontWeight: FontWeight.w500,
-                          color: tokens.text,
+                          color: brand.ink,
                         ),
                       ),
                       if (isRecommended) ...[
                         const SizedBox(width: 8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 7,
-                            vertical: 1,
-                          ),
-                          decoration: BoxDecoration(
-                            color: tokens.ok.withValues(alpha: 0.10),
-                            border: Border.all(
-                              color: tokens.ok.withValues(alpha: 0.40),
-                            ),
-                            borderRadius: BorderRadius.circular(9),
-                          ),
-                          child: Text(
-                            'recommended',
-                            style: TextStyle(
-                              fontFamily: DeckhandTokens.fontSans,
-                              fontSize: DeckhandTokens.tXs,
-                              color: tokens.ok,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
+                        const ClStatusChip(
+                          label: 'recommended',
+                          kind: ClChipKind.good,
+                          compact: true,
                         ),
                       ],
                     ],
@@ -322,10 +289,8 @@ class _OptionRow extends StatelessWidget {
                     const SizedBox(height: 3),
                     Text(
                       flattenProfileText(description),
-                      style: TextStyle(
-                        fontFamily: DeckhandTokens.fontSans,
-                        fontSize: DeckhandTokens.tSm,
-                        color: tokens.text3,
+                      style: context.clBodySmall.copyWith(
+                        color: brand.ink3,
                         height: 1.45,
                       ),
                     ),
@@ -350,7 +315,7 @@ class _ExplainerPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
+    final brand = context.brandColors;
     final raw = service.raw;
     final wiz = jsonStringKeyMap(raw['wizard']) ?? const {};
     final blurb =
@@ -359,50 +324,33 @@ class _ExplainerPanel extends StatelessWidget {
     final binary = jsonString(raw['binary']);
     final config = jsonString(raw['config_path']);
 
-    return Container(
+    return ClPanel(
       padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: tokens.ink1,
-        border: Border.all(color: tokens.line),
-        borderRadius: BorderRadius.circular(DeckhandTokens.r3),
-      ),
-      child: Column(
+      body: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'WHAT THIS SERVICE DOES',
-            style: TextStyle(
-              fontFamily: DeckhandTokens.fontMono,
-              fontSize: 10,
-              color: tokens.text4,
-              letterSpacing: 0,
-            ),
-          ),
+          const ClTechLabel('What this service does'),
           const SizedBox(height: 10),
           Row(
             children: [
               Expanded(
                 child: Text(
                   service.displayName,
-                  style: TextStyle(
-                    fontFamily: DeckhandTokens.fontSans,
-                    fontSize: DeckhandTokens.tLg,
+                  style: context.clTitleMedium.copyWith(
                     fontWeight: FontWeight.w500,
-                    color: tokens.text,
+                    color: brand.ink,
                   ),
                 ),
               ),
-              if (state != null) _StateChip(state: state!, tokens: tokens),
+              if (state != null) _StateChip(state: state!),
             ],
           ),
           if (blurb.isNotEmpty) ...[
             const SizedBox(height: 8),
             Text(
               flattenProfileText(blurb),
-              style: TextStyle(
-                fontFamily: DeckhandTokens.fontSans,
-                fontSize: DeckhandTokens.tSm,
-                color: tokens.text2,
+              style: context.clBodySmall.copyWith(
+                color: brand.ink2,
                 height: 1.55,
               ),
             ),
@@ -420,23 +368,12 @@ class _ExplainerPanel extends StatelessWidget {
                   children: [
                     SizedBox(
                       width: 60,
-                      child: Text(
-                        entry.$1,
-                        style: TextStyle(
-                          fontFamily: DeckhandTokens.fontMono,
-                          fontSize: 11,
-                          color: tokens.text4,
-                        ),
-                      ),
+                      child: Text(entry.$1, style: context.dataTiny),
                     ),
                     Expanded(
                       child: Text(
                         entry.$2,
-                        style: TextStyle(
-                          fontFamily: DeckhandTokens.fontMono,
-                          fontSize: 11,
-                          color: tokens.text3,
-                        ),
+                        style: context.dataTiny.copyWith(color: brand.ink3),
                       ),
                     ),
                   ],
@@ -450,40 +387,24 @@ class _ExplainerPanel extends StatelessWidget {
 }
 
 class _StateChip extends StatelessWidget {
-  const _StateChip({required this.state, required this.tokens});
+  const _StateChip({required this.state});
   final ServiceRuntimeState state;
-  final DeckhandTokens tokens;
 
   @override
   Widget build(BuildContext context) {
-    final (label, color) = _summarize();
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.10),
-        border: Border.all(color: color.withValues(alpha: 0.40)),
-        borderRadius: BorderRadius.circular(9),
-      ),
-      child: Text(
-        label.toUpperCase(),
-        style: TextStyle(
-          fontFamily: DeckhandTokens.fontMono,
-          fontSize: 9,
-          color: color,
-          fontWeight: FontWeight.w600,
-          letterSpacing: 0,
-        ),
-      ),
-    );
+    final (label, kind) = _summarize();
+    return ClStatusChip(label: label.toUpperCase(), kind: kind, compact: true);
   }
 
-  (String, Color) _summarize() {
+  (String, ClChipKind) _summarize() {
     if (state.unitActive || state.processRunning) {
-      return ('running', tokens.ok);
+      return ('running', ClChipKind.good);
     }
-    if (state.unitExists) return ('installed · stopped', tokens.info);
-    if (state.launcherScriptExists) return ('launcher present', tokens.info);
-    return ('not detected', tokens.text4);
+    if (state.unitExists) return ('installed · stopped', ClChipKind.info);
+    if (state.launcherScriptExists) {
+      return ('launcher present', ClChipKind.info);
+    }
+    return ('not detected', ClChipKind.neutral);
   }
 }
 
@@ -494,30 +415,16 @@ class _QuestionProgress extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
+    final brand = context.brandColors;
     return Row(
       children: [
         Text(
           'Question $current / $total',
-          style: TextStyle(
-            fontFamily: DeckhandTokens.fontMono,
-            fontSize: DeckhandTokens.tXs,
-            color: tokens.text3,
-          ),
+          style: context.dataTiny.copyWith(color: brand.ink3),
         ),
         const SizedBox(width: 12),
         Expanded(
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(2),
-            child: SizedBox(
-              height: 2,
-              child: LinearProgressIndicator(
-                value: total == 0 ? 0 : current / total,
-                backgroundColor: tokens.ink2,
-                color: tokens.accent,
-              ),
-            ),
-          ),
+          child: ClProgressBar(value: total == 0 ? 0 : current / total),
         ),
       ],
     );

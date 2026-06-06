@@ -1,13 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:forge/forge.dart';
 import 'package:go_router/go_router.dart';
 
 import '../i18n/translations.g.dart';
 import '../providers.dart';
-import '../theming/deckhand_tokens.dart';
 import '../utils/json_safety.dart';
-import '../widgets/selection_card.dart';
-import '../widgets/wizard_scaffold.dart';
 
 class KiauhScreen extends ConsumerStatefulWidget {
   const KiauhScreen({super.key});
@@ -40,10 +38,13 @@ class _KiauhScreenState extends ConsumerState<KiauhScreen> {
     final repo = jsonString(kiauh['repo'])?.trim();
     _install ??= alreadyInstalled ? false : defaultInstall;
 
-    return WizardScaffold(
-      screenId: 'S107-kiauh',
+    return ClWizardPageScaffold(
       title: 'Install KIAUH for ongoing maintenance?',
       helperText: explainer,
+      preHeader: const ClPageHeader(
+        icon: Icons.terminal,
+        title: 'KIAUH',
+      ),
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -102,7 +103,7 @@ class _KiauhScreenState extends ConsumerState<KiauhScreen> {
           ],
         ],
       ),
-      primaryAction: WizardAction(
+      primaryAction: ClWizardAction(
         label: t.common.action_continue,
         disabledReason: _install == null
             ? 'Choose whether to install KIAUH first.'
@@ -117,7 +118,7 @@ class _KiauhScreenState extends ConsumerState<KiauhScreen> {
               },
       ),
       secondaryActions: [
-        WizardAction(
+        ClWizardAction(
           label: t.common.action_back,
           onPressed: () => context.go('/webui'),
           isBack: true,
@@ -133,31 +134,28 @@ class _AlreadyInstalledNotice extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
+    final brand = context.brandColors;
+    final info = brand.statusIdle;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
-        color: tokens.info.withValues(alpha: 0.10),
-        border: Border.all(color: tokens.info.withValues(alpha: 0.35)),
-        borderRadius: BorderRadius.circular(DeckhandTokens.r2),
+        color: info.withValues(alpha: 0.10),
+        border: Border.all(color: info.withValues(alpha: 0.35)),
+        borderRadius: BorderRadius.circular(context.radii.sm),
       ),
       child: Row(
         children: [
-          Icon(Icons.check_circle_outline, size: 16, color: tokens.info),
+          Icon(Icons.check_circle_outline, size: 16, color: info),
           const SizedBox(width: 8),
           Expanded(
             child: RichText(
               text: TextSpan(
-                style: TextStyle(
-                  fontFamily: DeckhandTokens.fontSans,
-                  fontSize: DeckhandTokens.tSm,
-                  color: tokens.info,
-                ),
+                style: context.clBodySmall.copyWith(color: info),
                 children: [
                   const TextSpan(text: 'KIAUH already installed at '),
                   TextSpan(
                     text: path,
-                    style: const TextStyle(fontFamily: DeckhandTokens.fontMono),
+                    style: context.dataSmall.copyWith(color: info),
                   ),
                   const TextSpan(text: '. Default is to skip.'),
                 ],
@@ -188,8 +186,8 @@ class _KiauhCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
-    return SelectionCard(
+    final brand = context.brandColors;
+    return ClSelectionCard(
       selected: selected,
       onTap: onTap,
       padding: const EdgeInsets.fromLTRB(20, 18, 40, 18),
@@ -198,57 +196,33 @@ class _KiauhCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              Icon(icon, size: 18, color: tokens.accent),
+              Icon(icon, size: 18, color: brand.primary),
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
                   title,
-                  style: TextStyle(
-                    fontFamily: DeckhandTokens.fontSans,
-                    fontSize: DeckhandTokens.tLg,
+                  style: context.clTitleSmall.copyWith(
                     fontWeight: FontWeight.w500,
-                    color: tokens.text,
+                    color: brand.ink,
                   ),
                 ),
               ),
-              if (recommended) _RecommendedPill(),
+              if (recommended)
+                const ClStatusChip(
+                  label: 'Recommended',
+                  kind: ClChipKind.good,
+                ),
             ],
           ),
           const SizedBox(height: 8),
           Text(
             body,
-            style: TextStyle(
-              fontFamily: DeckhandTokens.fontSans,
-              fontSize: DeckhandTokens.tSm,
-              color: tokens.text2,
+            style: context.clBodySmall.copyWith(
+              color: brand.ink2,
               height: 1.55,
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _RecommendedPill extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-      decoration: BoxDecoration(
-        color: tokens.ok.withValues(alpha: 0.10),
-        border: Border.all(color: tokens.ok.withValues(alpha: 0.40)),
-        borderRadius: BorderRadius.circular(9),
-      ),
-      child: Text(
-        'Recommended',
-        style: TextStyle(
-          fontFamily: DeckhandTokens.fontSans,
-          fontSize: DeckhandTokens.tXs,
-          color: tokens.ok,
-          fontWeight: FontWeight.w600,
-        ),
       ),
     );
   }
@@ -260,23 +234,21 @@ class _WhatItDoes extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
+    final brand = context.brandColors;
     return Container(
       decoration: BoxDecoration(
-        color: tokens.ink1,
-        border: Border.all(color: tokens.line),
-        borderRadius: BorderRadius.circular(DeckhandTokens.r3),
+        color: brand.bgAlt,
+        border: Border.all(color: brand.borderStrong),
+        borderRadius: BorderRadius.circular(context.radii.md),
       ),
       child: ExpansionTile(
         tilePadding: const EdgeInsets.symmetric(horizontal: 16),
         childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
         title: Text(
           'What KIAUH does for you',
-          style: TextStyle(
-            fontFamily: DeckhandTokens.fontSans,
-            fontSize: DeckhandTokens.tMd,
+          style: context.clBodyMedium.copyWith(
             fontWeight: FontWeight.w500,
-            color: tokens.text,
+            color: brand.ink,
           ),
         ),
         children: [
@@ -292,7 +264,7 @@ class _WhatItDoes extends StatelessWidget {
                       width: 4,
                       height: 4,
                       decoration: BoxDecoration(
-                        color: tokens.text4,
+                        color: brand.ink4,
                         shape: BoxShape.circle,
                       ),
                     ),
@@ -301,10 +273,8 @@ class _WhatItDoes extends StatelessWidget {
                   Expanded(
                     child: Text(
                       ex,
-                      style: TextStyle(
-                        fontFamily: DeckhandTokens.fontSans,
-                        fontSize: DeckhandTokens.tSm,
-                        color: tokens.text2,
+                      style: context.clBodySmall.copyWith(
+                        color: brand.ink2,
                         height: 1.6,
                       ),
                     ),

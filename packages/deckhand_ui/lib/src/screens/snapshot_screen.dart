@@ -3,13 +3,11 @@ import 'dart:async';
 import 'package:deckhand_core/deckhand_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:forge/forge.dart';
 import 'package:go_router/go_router.dart';
 
 import '../providers.dart';
-import '../theming/deckhand_tokens.dart';
 import '../utils/user_facing_errors.dart';
-import '../widgets/deckhand_loading.dart';
-import '../widgets/wizard_scaffold.dart';
 
 /// S145-snapshot — capture the user's hand-edited config before Flow A
 /// rewrites it. See docs/WIZARD-FLOW.md (S145-snapshot) for the spec.
@@ -133,8 +131,7 @@ class _SnapshotScreenState extends ConsumerState<SnapshotScreen> {
       return sum + (sizes[p.path] ?? 0);
     });
 
-    return WizardScaffold(
-      screenId: 'S145-snapshot',
+    return ClWizardPageScaffold(
       title: 'Save your current configuration.',
       helperText:
           'We\'ll archive these directories before the install rewrites '
@@ -214,7 +211,7 @@ class _SnapshotScreenState extends ConsumerState<SnapshotScreen> {
           ),
         ],
       ),
-      primaryAction: WizardAction(
+      primaryAction: ClWizardAction(
         label: 'Snapshot and continue',
         disabledReason: !eMmcReady
             ? 'Confirm that you have a full eMMC backup or accept the risk.'
@@ -237,7 +234,7 @@ class _SnapshotScreenState extends ConsumerState<SnapshotScreen> {
               },
       ),
       secondaryActions: [
-        WizardAction(
+        ClWizardAction(
           label: 'Back',
           isBack: true,
           onPressed: () => context.go('/files'),
@@ -524,47 +521,10 @@ class _ProbeErrorCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: tokens.bad.withValues(alpha: 0.06),
-        border: Border.all(color: tokens.bad.withValues(alpha: 0.4)),
-        borderRadius: BorderRadius.circular(DeckhandTokens.r3),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(Icons.error_outline, size: 18, color: tokens.bad),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Could not probe sizes',
-                  style: TextStyle(
-                    fontFamily: DeckhandTokens.fontSans,
-                    fontSize: DeckhandTokens.tMd,
-                    fontWeight: FontWeight.w600,
-                    color: tokens.bad,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  userFacingError(error),
-                  style: TextStyle(
-                    fontFamily: DeckhandTokens.fontSans,
-                    fontSize: DeckhandTokens.tSm,
-                    color: tokens.bad,
-                    height: 1.5,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
+    return ClBanner(
+      kind: ClBannerKind.bad,
+      title: 'Could not probe sizes',
+      body: userFacingError(error),
     );
   }
 }
@@ -574,17 +534,12 @@ class _EmptyPathsCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
-    return Container(
+    final brand = context.brandColors;
+    return ClPanel(
       padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: tokens.ink1,
-        border: Border.all(color: tokens.line),
-        borderRadius: BorderRadius.circular(DeckhandTokens.r3),
-      ),
-      child: Row(
+      body: Row(
         children: [
-          Icon(Icons.inbox_outlined, size: 18, color: tokens.text3),
+          Icon(Icons.inbox_outlined, size: 18, color: brand.ink3),
           const SizedBox(width: 12),
           Expanded(
             child: Text(
@@ -592,10 +547,8 @@ class _EmptyPathsCard extends StatelessWidget {
               'Continue if there\'s nothing custom to preserve, or back '
               'out and use the Manage view\'s Backup tab for a full '
               'eMMC dump.',
-              style: TextStyle(
-                fontFamily: DeckhandTokens.fontSans,
-                fontSize: DeckhandTokens.tSm,
-                color: tokens.text2,
+              style: context.clBodySmall.copyWith(
+                color: brand.ink2,
                 height: 1.5,
               ),
             ),
@@ -623,46 +576,17 @@ class _PathsPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
-    return Container(
-      decoration: BoxDecoration(
-        color: tokens.ink1,
-        border: Border.all(color: tokens.line),
-        borderRadius: BorderRadius.circular(DeckhandTokens.r3),
+    return ClPanel(
+      head: ClPanelLabelHead(
+        label: 'Paths',
+        trailing: Text(
+          '${selected.length}/${paths.length} selected',
+          style: context.dataTiny,
+        ),
       ),
-      clipBehavior: Clip.antiAlias,
-      child: Column(
+      body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Container(
-            decoration: BoxDecoration(
-              color: tokens.ink2,
-              border: Border(bottom: BorderSide(color: tokens.line)),
-            ),
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            child: Row(
-              children: [
-                Text(
-                  'PATHS',
-                  style: TextStyle(
-                    fontFamily: DeckhandTokens.fontMono,
-                    fontSize: 10,
-                    color: tokens.text3,
-                    letterSpacing: 0,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  '· ${selected.length}/${paths.length} selected',
-                  style: TextStyle(
-                    fontFamily: DeckhandTokens.fontMono,
-                    fontSize: 10,
-                    color: tokens.text4,
-                  ),
-                ),
-              ],
-            ),
-          ),
           for (var i = 0; i < paths.length; i++)
             _PathRow(
               path: paths[i],
@@ -703,7 +627,7 @@ class _PathRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
+    final brand = context.brandColors;
     return Opacity(
       opacity: missing ? 0.55 : 1.0,
       child: InkWell(
@@ -713,20 +637,14 @@ class _PathRow extends StatelessWidget {
           decoration: BoxDecoration(
             border: isLast
                 ? null
-                : Border(bottom: BorderSide(color: tokens.lineSoft)),
+                : Border(bottom: BorderSide(color: brand.borderSubtle)),
           ),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              SizedBox(
-                width: 14,
-                height: 14,
-                child: Checkbox(
-                  value: selected && !missing,
-                  onChanged: missing ? null : (v) => onToggle(v ?? false),
-                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  visualDensity: VisualDensity.compact,
-                ),
+              ClCheckbox(
+                value: selected && !missing,
+                onChanged: missing ? null : (v) => onToggle(v),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -735,30 +653,22 @@ class _PathRow extends StatelessWidget {
                   children: [
                     Text(
                       path.displayName,
-                      style: TextStyle(
-                        fontFamily: DeckhandTokens.fontSans,
-                        fontSize: DeckhandTokens.tMd,
+                      style: context.clBodyMedium.copyWith(
                         fontWeight: FontWeight.w500,
-                        color: tokens.text,
+                        color: brand.ink,
                       ),
                     ),
                     const SizedBox(height: 2),
                     Text(
                       path.path,
-                      style: TextStyle(
-                        fontFamily: DeckhandTokens.fontMono,
-                        fontSize: DeckhandTokens.tXs,
-                        color: tokens.text3,
-                      ),
+                      style: context.dataTiny.copyWith(color: brand.ink3),
                     ),
                     if (path.helperText != null) ...[
                       const SizedBox(height: 2),
                       Text(
                         path.helperText!,
-                        style: TextStyle(
-                          fontFamily: DeckhandTokens.fontSans,
-                          fontSize: DeckhandTokens.tXs,
-                          color: tokens.text4,
+                        style: context.clLabelSmall.copyWith(
+                          color: brand.ink4,
                           height: 1.4,
                         ),
                       ),
@@ -775,7 +685,6 @@ class _PathRow extends StatelessWidget {
                     probing: probing,
                     missing: missing,
                     sizeBytes: size,
-                    tokens: tokens,
                   ),
                 ),
               ),
@@ -792,40 +701,29 @@ class _SizeCell extends StatelessWidget {
     required this.probing,
     required this.missing,
     required this.sizeBytes,
-    required this.tokens,
   });
   final bool probing;
   final bool missing;
   final int? sizeBytes;
-  final DeckhandTokens tokens;
 
   @override
   Widget build(BuildContext context) {
+    final brand = context.brandColors;
     if (probing) {
-      return SizedBox(
-        width: 12,
-        height: 12,
-        child: DeckhandSpinner(size: 12, strokeWidth: 1.5, color: tokens.text4),
-      );
+      return ClSpinner(size: 12, strokeWidth: 1.5, color: brand.ink4);
     }
     if (missing) {
       return Text(
         'not found',
-        style: TextStyle(
-          fontFamily: DeckhandTokens.fontMono,
-          fontSize: DeckhandTokens.tXs,
-          color: tokens.text4,
+        style: context.dataTiny.copyWith(
+          color: brand.ink4,
           fontStyle: FontStyle.italic,
         ),
       );
     }
     return Text(
       sizeBytes == null ? '—' : _humanBytes(sizeBytes!),
-      style: TextStyle(
-        fontFamily: DeckhandTokens.fontMono,
-        fontSize: DeckhandTokens.tXs,
-        color: tokens.text3,
-      ),
+      style: context.dataTiny.copyWith(color: brand.ink3),
     );
   }
 }
@@ -847,88 +745,57 @@ class _StrategyPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
-    return Container(
+    final brand = context.brandColors;
+    return ClPanel(
       padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: tokens.ink1,
-        border: Border.all(color: tokens.line),
-        borderRadius: BorderRadius.circular(DeckhandTokens.r3),
-      ),
-      child: Column(
+      body: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'RESTORE STRATEGY',
-            style: TextStyle(
-              fontFamily: DeckhandTokens.fontMono,
-              fontSize: 10,
-              color: tokens.text4,
-              letterSpacing: 0,
-            ),
-          ),
+          const ClTechLabel('Restore strategy'),
           const SizedBox(height: 12),
-          RadioGroup<String>(
-            groupValue: strategy,
-            onChanged: onChange,
-            child: Column(
-              children: [
-                _StrategyOption(
-                  value: 'side_by_side',
-                  selected: strategy == 'side_by_side',
-                  isDefault: true,
-                  title: 'Save as a separate backup',
-                  body:
-                      'Your old files land in a backup folder next to the '
-                      'new install (e.g. ~/printer_data.stock-2026-05-01). '
-                      'New install starts clean — copy back any tweaks you '
-                      'want by hand. Safest option.',
-                ),
-                const SizedBox(height: 10),
-                _StrategyOption(
-                  value: 'auto_merge',
-                  selected: strategy == 'auto_merge',
-                  isDefault: false,
-                  title: 'Merge into the new install',
-                  body:
-                      'Anything that exists only in your old files gets '
-                      'pulled into the new install automatically. Files '
-                      'that conflict with the new install fall back to '
-                      'the backup folder for you to review manually.',
-                ),
-              ],
-            ),
+          Column(
+            children: [
+              _StrategyOption(
+                value: 'side_by_side',
+                groupValue: strategy,
+                onChanged: onChange,
+                isDefault: true,
+                title: 'Save as a separate backup',
+                body:
+                    'Your old files land in a backup folder next to the '
+                    'new install (e.g. ~/printer_data.stock-2026-05-01). '
+                    'New install starts clean — copy back any tweaks you '
+                    'want by hand. Safest option.',
+              ),
+              const SizedBox(height: 10),
+              _StrategyOption(
+                value: 'auto_merge',
+                groupValue: strategy,
+                onChanged: onChange,
+                isDefault: false,
+                title: 'Merge into the new install',
+                body:
+                    'Anything that exists only in your old files gets '
+                    'pulled into the new install automatically. Files '
+                    'that conflict with the new install fall back to '
+                    'the backup folder for you to review manually.',
+              ),
+            ],
           ),
           const SizedBox(height: 18),
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: tokens.ink2,
-              border: Border.all(color: tokens.line),
-              borderRadius: BorderRadius.circular(DeckhandTokens.r2),
-            ),
+          ClInsetBox(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  'ESTIMATED ARCHIVE',
-                  style: TextStyle(
-                    fontFamily: DeckhandTokens.fontMono,
-                    fontSize: 10,
-                    color: tokens.text4,
-                    letterSpacing: 0,
-                  ),
-                ),
+                const ClTechLabel('Estimated archive'),
                 const SizedBox(height: 6),
                 Text(
                   probing
                       ? '…'
                       : (probedAt == null ? '—' : _humanBytes(estimatedBytes)),
-                  style: TextStyle(
-                    fontFamily: DeckhandTokens.fontMono,
-                    fontSize: DeckhandTokens.tXl,
+                  style: context.dataMedium.copyWith(
                     fontWeight: FontWeight.w500,
-                    color: tokens.text,
+                    color: brand.ink,
                   ),
                 ),
                 const SizedBox(height: 2),
@@ -938,11 +805,7 @@ class _StrategyPanel extends StatelessWidget {
                       : (probedAt == null
                             ? 'du -sk · not available'
                             : 'du -sk · cached ${_ago(probedAt!)}'),
-                  style: TextStyle(
-                    fontFamily: DeckhandTokens.fontMono,
-                    fontSize: 10,
-                    color: tokens.text4,
-                  ),
+                  style: context.dataTiny.copyWith(color: brand.ink4),
                 ),
               ],
             ),
@@ -963,95 +826,84 @@ class _StrategyPanel extends StatelessWidget {
 class _StrategyOption extends StatelessWidget {
   const _StrategyOption({
     required this.value,
-    required this.selected,
+    required this.groupValue,
+    required this.onChanged,
     required this.isDefault,
     required this.title,
     required this.body,
   });
 
   final String value;
-  final bool selected;
+  final String groupValue;
+  final ValueChanged<String?> onChanged;
   final bool isDefault;
   final String title;
   final String body;
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
-    return Container(
-      decoration: BoxDecoration(
-        color: selected ? tokens.ink2 : Colors.transparent,
-        border: Border.all(color: selected ? tokens.accent : tokens.line),
-        borderRadius: BorderRadius.circular(DeckhandTokens.r2),
-      ),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.only(top: 2),
-            child: Radio<String>(
-              value: value,
-              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              visualDensity: VisualDensity.compact,
-            ),
+    final brand = context.brandColors;
+    final selected = groupValue == value;
+    return InkWell(
+      onTap: () => onChanged(value),
+      borderRadius: BorderRadius.circular(context.radii.sm),
+      child: Container(
+        decoration: BoxDecoration(
+          color: selected ? brand.selectedBg : Colors.transparent,
+          border: Border.all(
+            color: selected ? brand.primary : brand.borderStrong,
           ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Text(
-                      title,
-                      style: TextStyle(
-                        fontFamily: DeckhandTokens.fontSans,
-                        fontSize: DeckhandTokens.tMd,
-                        fontWeight: FontWeight.w500,
-                        color: tokens.text,
-                      ),
-                    ),
-                    if (isDefault) ...[
-                      const SizedBox(width: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 7,
-                          vertical: 1,
-                        ),
-                        decoration: BoxDecoration(
-                          color: tokens.ink3,
-                          border: Border.all(color: tokens.line),
-                          borderRadius: BorderRadius.circular(9),
-                        ),
-                        child: Text(
-                          'DEFAULT',
-                          style: TextStyle(
-                            fontFamily: DeckhandTokens.fontMono,
-                            fontSize: 9,
-                            color: tokens.text2,
-                            fontWeight: FontWeight.w600,
-                            letterSpacing: 0,
-                          ),
+          borderRadius: BorderRadius.circular(context.radii.sm),
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: ClRadio<String>(
+                value: value,
+                groupValue: groupValue,
+                onChanged: onChanged,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Text(
+                        title,
+                        style: context.clBodyMedium.copyWith(
+                          fontWeight: FontWeight.w500,
+                          color: brand.ink,
                         ),
                       ),
+                      if (isDefault) ...[
+                        const SizedBox(width: 8),
+                        const ClStatusChip(
+                          label: 'DEFAULT',
+                          kind: ClChipKind.neutral,
+                          compact: true,
+                        ),
+                      ],
                     ],
-                  ],
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  body,
-                  style: TextStyle(
-                    fontFamily: DeckhandTokens.fontSans,
-                    fontSize: DeckhandTokens.tSm,
-                    color: tokens.text3,
-                    height: 1.45,
                   ),
-                ),
-              ],
+                  const SizedBox(height: 4),
+                  Text(
+                    body,
+                    style: context.clBodySmall.copyWith(
+                      color: brand.ink3,
+                      height: 1.45,
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -1071,7 +923,6 @@ String _humanBytes(int bytes) {
 
 class _BackupVerificationStatus extends StatelessWidget {
   const _BackupVerificationStatus({
-    required this.tokens,
     required this.matchingBackup,
     required this.matchingCandidate,
     required this.verifiedBackup,
@@ -1081,7 +932,6 @@ class _BackupVerificationStatus extends StatelessWidget {
     required this.onVerify,
   });
 
-  final DeckhandTokens tokens;
   final EmmcBackupManifest? matchingBackup;
   final EmmcBackupImageCandidate? matchingCandidate;
   final EmmcBackupManifest? verifiedBackup;
@@ -1092,17 +942,18 @@ class _BackupVerificationStatus extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final brand = context.brandColors;
     final verified = verifiedBackup != null;
     final color = error != null
-        ? tokens.bad
-        : (verified ? tokens.ok : tokens.info);
+        ? brand.bad
+        : (verified ? brand.good : brand.primary);
     final message = _message();
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.06),
         border: Border.all(color: color.withValues(alpha: 0.28)),
-        borderRadius: BorderRadius.circular(DeckhandTokens.r2),
+        borderRadius: BorderRadius.circular(context.radii.sm),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1118,10 +969,8 @@ class _BackupVerificationStatus extends StatelessWidget {
           Expanded(
             child: Text(
               message,
-              style: TextStyle(
-                fontFamily: DeckhandTokens.fontSans,
-                fontSize: DeckhandTokens.tXs,
-                color: error != null ? tokens.bad : tokens.text2,
+              style: context.clLabelSmall.copyWith(
+                color: error != null ? brand.bad : brand.ink2,
                 height: 1.4,
               ),
             ),
@@ -1129,10 +978,12 @@ class _BackupVerificationStatus extends StatelessWidget {
           if ((matchingBackup != null || matchingCandidate != null) &&
               !verified) ...[
             const SizedBox(width: 12),
-            OutlinedButton.icon(
+            ClButton(
+              kind: ClButtonKind.outlined,
+              size: ClButtonSize.sm,
               onPressed: onVerify,
-              icon: const Icon(Icons.fingerprint, size: 14),
-              label: const Text('Verify exact match'),
+              icon: Icons.fingerprint,
+              child: const Text('Verify exact match'),
             ),
           ],
         ],
@@ -1206,8 +1057,8 @@ class _FullEmmcBackupBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
-    final color = acknowledged ? tokens.ok : tokens.warn;
+    final brand = context.brandColors;
+    final color = acknowledged ? brand.good : brand.warn;
     final verifying =
         verifyProgress != null && verifyProgress!.phase != FlashPhase.done;
     final verified = verifiedBackup != null;
@@ -1216,29 +1067,22 @@ class _FullEmmcBackupBanner extends StatelessWidget {
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.06),
         border: Border.all(color: color.withValues(alpha: 0.40)),
-        borderRadius: BorderRadius.circular(DeckhandTokens.r3),
+        borderRadius: BorderRadius.circular(context.radii.md),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           InkWell(
             onTap: verified ? null : () => onChanged(!acknowledged),
-            borderRadius: BorderRadius.circular(DeckhandTokens.r2),
+            borderRadius: BorderRadius.circular(context.radii.sm),
             child: Padding(
               padding: const EdgeInsets.symmetric(vertical: 2),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: Checkbox(
-                      value: acknowledged,
-                      onChanged: verified ? null : (v) => onChanged(v ?? false),
-                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      visualDensity: VisualDensity.compact,
-                      activeColor: tokens.ok,
-                    ),
+                  ClCheckbox(
+                    value: acknowledged,
+                    onChanged: verified ? null : (v) => onChanged(v),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
@@ -1248,9 +1092,7 @@ class _FullEmmcBackupBanner extends StatelessWidget {
                         Text(
                           'I have a full eMMC image backup '
                           '(or accept the risk).',
-                          style: TextStyle(
-                            fontFamily: DeckhandTokens.fontSans,
-                            fontSize: DeckhandTokens.tMd,
+                          style: context.clBodyMedium.copyWith(
                             fontWeight: FontWeight.w600,
                             color: color,
                           ),
@@ -1261,10 +1103,8 @@ class _FullEmmcBackupBanner extends StatelessWidget {
                           'config, but it can\'t restore a bricked '
                           'install. The only safe rollback is a `dd` '
                           'image of the eMMC taken via a USB adapter.',
-                          style: TextStyle(
-                            fontFamily: DeckhandTokens.fontSans,
-                            fontSize: DeckhandTokens.tSm,
-                            color: tokens.text2,
+                          style: context.clBodySmall.copyWith(
+                            color: brand.ink2,
                             height: 1.5,
                           ),
                         ),
@@ -1285,7 +1125,6 @@ class _FullEmmcBackupBanner extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.only(left: 30),
               child: _BackupVerificationStatus(
-                tokens: tokens,
                 matchingBackup: matchingBackup,
                 matchingCandidate: matchingCandidate,
                 verifiedBackup: verifiedBackup,
@@ -1301,10 +1140,12 @@ class _FullEmmcBackupBanner extends StatelessWidget {
             padding: const EdgeInsets.only(left: 30),
             child: Row(
               children: [
-                OutlinedButton.icon(
+                ClButton(
+                  kind: ClButtonKind.outlined,
+                  size: ClButtonSize.sm,
                   onPressed: () => context.go('/emmc-backup'),
-                  icon: const Icon(Icons.save_alt, size: 14),
-                  label: const Text('Back up the eMMC now'),
+                  icon: Icons.save_alt,
+                  child: const Text('Back up the eMMC now'),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -1312,10 +1153,8 @@ class _FullEmmcBackupBanner extends StatelessWidget {
                     'Plug in a USB-eMMC adapter, pick the disk, and '
                     'Deckhand will dd the image for you. Returns here '
                     'when finished.',
-                    style: TextStyle(
-                      fontFamily: DeckhandTokens.fontSans,
-                      fontSize: DeckhandTokens.tXs,
-                      color: tokens.text3,
+                    style: context.clLabelSmall.copyWith(
+                      color: brand.ink3,
                       height: 1.4,
                     ),
                   ),

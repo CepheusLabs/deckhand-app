@@ -7,6 +7,7 @@ import 'package:deckhand_ui/src/screens/flash_confirm_screen.dart';
 import 'package:deckhand_ui/src/screens/flash_target_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:forge/forge.dart';
 
 import 'helpers.dart';
 
@@ -15,6 +16,13 @@ void main() {
     testWidgets('FlashTargetScreen only records a removable disk selection', (
       tester,
     ) async {
+      // The flash-target disk table is desktop wizard chrome: its fixed-width
+      // match column (forge ClStatusChip) needs room alongside the flexible
+      // columns. Pump at a desktop surface so the row lays out as designed
+      // instead of overflowing at the 800px test default.
+      await tester.binding.setSurfaceSize(const Size(1200, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
       final controller = stubWizardController(profileJson: _profileJson());
       await controller.loadProfile('test-printer');
 
@@ -35,15 +43,15 @@ void main() {
 
       await tester.tap(find.text('Host NVMe'));
       await tester.pump();
-      var useDisk = tester.widget<FilledButton>(
-        find.widgetWithText(FilledButton, 'Use this disk'),
+      var useDisk = tester.widget<ClButton>(
+        find.widgetWithText(ClButton, 'Use this disk'),
       );
       expect(useDisk.onPressed, isNull);
 
       await tester.tap(find.text('Printer eMMC'));
       await tester.pump();
-      useDisk = tester.widget<FilledButton>(
-        find.widgetWithText(FilledButton, 'Use this disk'),
+      useDisk = tester.widget<ClButton>(
+        find.widgetWithText(ClButton, 'Use this disk'),
       );
       expect(useDisk.onPressed, isNotNull);
 

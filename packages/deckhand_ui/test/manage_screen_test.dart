@@ -6,8 +6,8 @@ import 'package:deckhand_core/deckhand_core.dart';
 import 'package:deckhand_ui/src/providers.dart';
 import 'package:deckhand_ui/src/router.dart';
 import 'package:deckhand_ui/src/screens/manage_screen.dart';
-import 'package:deckhand_ui/src/theming/deckhand_theme.dart';
 import 'package:flutter/material.dart';
+import 'package:forge/forge.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -175,9 +175,9 @@ void main() {
     addTearDown(() => tester.binding.setSurfaceSize(null));
     final controller = stubWizardController(profileJson: testProfileJson());
     await controller.restore(
-      const WizardState(
+      WizardState(
         profileId: 'test-printer',
-        decisions: {},
+        decisions: const {},
         currentStep: 'manage',
         flow: WizardFlow.none,
         sshHost: '192.168.1.51',
@@ -225,9 +225,9 @@ void main() {
     addTearDown(() => tester.binding.setSurfaceSize(null));
     final controller = stubWizardController(profileJson: testProfileJson());
     await controller.restore(
-      const WizardState(
+      WizardState(
         profileId: 'test-printer',
-        decisions: {},
+        decisions: const {},
         currentStep: 'manage',
         flow: WizardFlow.none,
         sshHost: '192.168.1.50',
@@ -249,9 +249,9 @@ void main() {
     expect(find.text('printer-192.168.1.50'), findsOneWidget);
 
     await controller.restore(
-      const WizardState(
+      WizardState(
         profileId: 'test-printer',
-        decisions: {},
+        decisions: const {},
         currentStep: 'manage',
         flow: WizardFlow.none,
         sshHost: '192.168.1.51',
@@ -307,8 +307,14 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.widgetWithText(OutlinedButton, 'Back'), findsOneWidget);
-    expect(find.widgetWithText(FilledButton, 'Back'), findsNothing);
+    // The forge footer renders Back as a ghost ClButton in the leading
+    // (left-side) action group, carrying the back arrow icon. A forward or
+    // destructive CTA would instead use the chevron-right icon, so the icon
+    // proves this is the back affordance rather than a primary action.
+    final backButton = find.widgetWithText(ClButton, 'Back');
+    expect(backButton, findsOneWidget);
+    expect(tester.widget<ClButton>(backButton).icon, ClIcons.back);
+    expect(tester.widget<ClButton>(backButton).kind, ClButtonKind.ghost);
   });
 
   testWidgets('manage screen does not show the unwired MCU flash tab', (
@@ -384,13 +390,13 @@ void main() {
     await tester.pump();
     expect(find.text('BACKUP IMAGE'), findsOneWidget);
 
-    await tester.tap(find.widgetWithText(FilledButton, 'Continue to target'));
+    await tester.tap(find.widgetWithText(ClButton, 'Continue to target'));
     await tester.pump();
     await tester.pump();
     expect(find.text('TARGET EMMC'), findsOneWidget);
     expect(find.textContaining('Generic STORAGE DEVICE'), findsWidgets);
-    final button = tester.widget<FilledButton>(
-      find.widgetWithText(FilledButton, 'Review restore'),
+    final button = tester.widget<ClButton>(
+      find.widgetWithText(ClButton, 'Review restore'),
     );
     expect(button.onPressed, isNotNull);
   });
@@ -449,7 +455,7 @@ void main() {
     await tester.pump();
 
     final continueButton = find.widgetWithText(
-      FilledButton,
+      ClButton,
       'Continue to target',
     );
     expect(continueButton, findsOneWidget);
@@ -502,9 +508,9 @@ void main() {
 
     expect(find.text('Restore an eMMC backup.'), findsOneWidget);
     expect(find.text('BACKUP IMAGE'), findsOneWidget);
-    expect(find.widgetWithText(OutlinedButton, 'Back'), findsOneWidget);
+    expect(find.widgetWithText(ClButton, 'Back'), findsOneWidget);
     expect(find.text('Done'), findsNothing);
-    await tester.tap(find.widgetWithText(FilledButton, 'Continue to target'));
+    await tester.tap(find.widgetWithText(ClButton, 'Continue to target'));
     await tester.pump();
     expect(find.textContaining('Generic STORAGE DEVICE'), findsWidgets);
   });
@@ -570,7 +576,7 @@ void main() {
       isTrue,
     );
 
-    await tester.tap(find.widgetWithText(FilledButton, 'Continue to target'));
+    await tester.tap(find.widgetWithText(ClButton, 'Continue to target'));
     await tester.pump();
 
     final diskSemantics = tester.getSemantics(
@@ -698,7 +704,7 @@ void main() {
 
     expect(tester.takeException(), isNull);
     expect(find.text('Restore an eMMC backup.'), findsOneWidget);
-    expect(find.widgetWithText(FilledButton, 'Continue to target'), findsOne);
+    expect(find.widgetWithText(ClButton, 'Continue to target'), findsOne);
   });
 
   testWidgets('direct eMMC restore empty state stays in recovery flow', (
@@ -846,7 +852,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 250));
 
     expect(find.textContaining('restore.img'), findsOneWidget);
-    await tester.tap(find.widgetWithText(FilledButton, 'Continue to target'));
+    await tester.tap(find.widgetWithText(ClButton, 'Continue to target'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 250));
 
@@ -885,8 +891,16 @@ void main() {
         ],
         child: MaterialApp.router(
           routerConfig: router,
-          theme: DeckhandTheme.light(),
-          darkTheme: DeckhandTheme.dark(),
+          theme: buildClTheme(
+            brightness: Brightness.light,
+            density: ClDensity.compact,
+            accentPalette: ClAccentPalette.violet,
+          ),
+          darkTheme: buildClTheme(
+            brightness: Brightness.dark,
+            density: ClDensity.compact,
+            accentPalette: ClAccentPalette.violet,
+          ),
         ),
       ),
     );
@@ -961,13 +975,13 @@ void main() {
     expect(find.textContaining('deckhand-cli-backup.img'), findsOneWidget);
     expect(find.textContaining('Not verified yet'), findsWidgets);
 
-    await tester.tap(find.widgetWithText(FilledButton, 'Continue to target'));
+    await tester.tap(find.widgetWithText(ClButton, 'Continue to target'));
     await tester.pump();
     await tester.pump();
     expect(find.textContaining('Generic STORAGE DEVICE'), findsWidgets);
     expect(find.text('Verification needed'), findsOneWidget);
-    final button = tester.widget<FilledButton>(
-      find.widgetWithText(FilledButton, 'Review restore'),
+    final button = tester.widget<ClButton>(
+      find.widgetWithText(ClButton, 'Review restore'),
     );
     expect(button.onPressed, isNotNull);
   });
@@ -1022,12 +1036,12 @@ void main() {
 
     expect(find.textContaining('restore-smaller.img'), findsOneWidget);
 
-    await tester.tap(find.widgetWithText(FilledButton, 'Continue to target'));
+    await tester.tap(find.widgetWithText(ClButton, 'Continue to target'));
     await tester.pump();
     await tester.pump();
     expect(find.textContaining('Generic STORAGE DEVICE'), findsWidgets);
-    final button = tester.widget<FilledButton>(
-      find.widgetWithText(FilledButton, 'Review restore'),
+    final button = tester.widget<ClButton>(
+      find.widgetWithText(ClButton, 'Review restore'),
     );
     expect(button.onPressed, isNotNull);
   });
@@ -1089,7 +1103,7 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 250));
 
-    await tester.tap(find.widgetWithText(FilledButton, 'Continue to target'));
+    await tester.tap(find.widgetWithText(ClButton, 'Continue to target'));
     await tester.pump();
 
     expect(find.text('TARGET EMMC'), findsOneWidget);
@@ -1155,7 +1169,7 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 250));
 
-    await tester.tap(find.widgetWithText(FilledButton, 'Continue to target'));
+    await tester.tap(find.widgetWithText(ClButton, 'Continue to target'));
     await tester.pump();
 
     expect(find.text('TARGET EMMC'), findsOneWidget);
@@ -1220,7 +1234,7 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 250));
 
-    await tester.tap(find.widgetWithText(FilledButton, 'Continue to target'));
+    await tester.tap(find.widgetWithText(ClButton, 'Continue to target'));
     await tester.pump();
 
     expect(find.textContaining('Generic STORAGE DEVICE'), findsWidgets);
@@ -1276,7 +1290,7 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 250));
 
-    await tester.tap(find.widgetWithText(FilledButton, 'Continue to target'));
+    await tester.tap(find.widgetWithText(ClButton, 'Continue to target'));
     await tester.pump();
     await tester.pump();
 
@@ -1285,8 +1299,8 @@ void main() {
       find.textContaining('Generic STORAGE DEVICE USB Device'),
       findsWidgets,
     );
-    final button = tester.widget<FilledButton>(
-      find.widgetWithText(FilledButton, 'Review restore'),
+    final button = tester.widget<ClButton>(
+      find.widgetWithText(ClButton, 'Review restore'),
     );
     expect(button.onPressed, isNotNull);
   });
@@ -1499,7 +1513,7 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 250));
 
-      await tester.tap(find.widgetWithText(FilledButton, 'Continue to target'));
+      await tester.tap(find.widgetWithText(ClButton, 'Continue to target'));
       await tester.pump();
 
       expect(find.textContaining('Verified full-disk backup'), findsOneWidget);
@@ -1561,7 +1575,7 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 250));
 
-      await tester.tap(find.widgetWithText(FilledButton, 'Continue to target'));
+      await tester.tap(find.widgetWithText(ClButton, 'Continue to target'));
       await tester.pump();
 
       expect(find.textContaining('8.0 MiB · Not verified yet'), findsOneWidget);
@@ -1616,7 +1630,7 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 250));
 
-    await tester.tap(find.widgetWithText(FilledButton, 'Continue to target'));
+    await tester.tap(find.widgetWithText(ClButton, 'Continue to target'));
     await tester.pump();
     expect(find.textContaining('Not verified yet'), findsWidgets);
     final button = tester.widget<OutlinedButton>(
@@ -1674,12 +1688,12 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 250));
 
-    await tester.tap(find.widgetWithText(FilledButton, 'Continue to target'));
+    await tester.tap(find.widgetWithText(ClButton, 'Continue to target'));
     await tester.pump();
     await tester.pump();
     expect(find.text('TARGET EMMC'), findsOneWidget);
 
-    await tester.tap(find.widgetWithText(FilledButton, 'Review restore'));
+    await tester.tap(find.widgetWithText(ClButton, 'Review restore'));
     await tester.pump();
     await tester.pump();
     expect(find.text('RESTORE CONFIRMATION'), findsOneWidget);
@@ -1687,7 +1701,7 @@ void main() {
     expect(find.text('TARGET SIZE'), findsOneWidget);
     expect(find.text('SHA-256'), findsOneWidget);
 
-    await tester.tap(find.widgetWithText(FilledButton, 'Restore backup'));
+    await tester.tap(find.widgetWithText(ClButton, 'Restore backup'));
     await tester.pump();
     expect(find.text('Erase and restore eMMC?'), findsOneWidget);
     expect(find.textContaining('Backup size: 4.0 KiB'), findsOneWidget);
@@ -1750,19 +1764,19 @@ void main() {
     await tester.pump(const Duration(milliseconds: 250));
 
     final continueButton = find.widgetWithText(
-      FilledButton,
+      ClButton,
       'Continue to target',
     );
     await tester.ensureVisible(continueButton);
     await tester.tap(continueButton);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 250));
-    final reviewButton = find.widgetWithText(FilledButton, 'Review restore');
+    final reviewButton = find.widgetWithText(ClButton, 'Review restore');
     await tester.ensureVisible(reviewButton);
     await tester.tap(reviewButton);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 250));
-    final restoreButton = find.widgetWithText(FilledButton, 'Restore backup');
+    final restoreButton = find.widgetWithText(ClButton, 'Restore backup');
     await tester.ensureVisible(restoreButton);
     await tester.tap(restoreButton);
     await tester.pump();

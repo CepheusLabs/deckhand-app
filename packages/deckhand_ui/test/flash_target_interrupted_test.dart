@@ -3,6 +3,7 @@ import 'package:deckhand_ui/src/providers.dart';
 import 'package:deckhand_ui/src/screens/flash_target_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:forge/forge.dart';
 
 import 'helpers.dart';
 
@@ -10,6 +11,13 @@ void main() {
   testWidgets('surfaces interrupted flash state on matching disk', (
     tester,
   ) async {
+    // The flash-target disk table is desktop wizard chrome: its fixed-width
+    // match column (forge ClStatusChip) needs room alongside the flexible
+    // columns. Pump at a desktop surface so the row lays out as designed
+    // instead of overflowing at the 800px test default.
+    await tester.binding.setSurfaceSize(const Size(1200, 900));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
     final controller = stubWizardController(profileJson: testProfileJson());
     await controller.loadProfile('test-printer');
     final flash = _FlashServiceWithDisks([
@@ -47,8 +55,8 @@ void main() {
 
     await tester.tap(find.text('Generic STORAGE DEVICE'));
     await tester.pumpAndSettle();
-    final primary = tester.widget<FilledButton>(
-      find.widgetWithText(FilledButton, 'Use this disk'),
+    final primary = tester.widget<ClButton>(
+      find.widgetWithText(ClButton, 'Use this disk'),
     );
     expect(primary.onPressed, isNotNull);
   });

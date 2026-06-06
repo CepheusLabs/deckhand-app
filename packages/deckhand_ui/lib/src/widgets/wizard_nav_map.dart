@@ -1,6 +1,5 @@
 import 'package:deckhand_core/deckhand_core.dart';
-
-import 'deckhand_wizard_stepper.dart';
+import 'package:forge/forge.dart';
 
 /// Shared map between the wizard's S-IDs (`S15`, `S40`, …), the
 /// router routes, and the design-language phase grouping.
@@ -8,6 +7,10 @@ import 'deckhand_wizard_stepper.dart';
 /// Both [DeckhandStepper] (top of every screen) and the sidenav
 /// reach into this so the two stay in sync — change a phase here and
 /// both surfaces pick it up.
+///
+/// Phases are emitted as forge [ClWizardPhaseDef]s so the data flows
+/// straight into [ClWizardPhaseStepper] without an intermediate
+/// adapter type.
 class WizardNavMap {
   WizardNavMap._();
 
@@ -19,13 +22,13 @@ class WizardNavMap {
   /// never visits `S20`/`S30` (there's no working OS to SSH into).
   /// `S20`/`S30` stay in Entry for the stock-keep flow; they're
   /// filtered out per-flow by `_stepIdsForPhase` in the chrome.
-  static const phases = <WizardPhase>[
-    WizardPhase(
+  static const phases = <ClWizardPhaseDef>[
+    ClWizardPhaseDef(
       id: 'entry',
       label: 'Entry',
       stepIds: ['S10', 'S15', 'S40', 'S20', 'S30'],
     ),
-    WizardPhase(
+    ClWizardPhaseDef(
       id: 'configure',
       label: 'Configure',
       stepIds: [
@@ -39,17 +42,17 @@ class WizardNavMap {
         'S150',
       ],
     ),
-    WizardPhase(
+    ClWizardPhaseDef(
       id: 'flash',
       label: 'Flash',
       stepIds: ['S200', 'S210', 'S220', 'S230', 'S240', 'S250'],
     ),
-    WizardPhase(
+    ClWizardPhaseDef(
       id: 'install',
       label: 'Install',
       stepIds: ['S800', 'S900'],
     ),
-    WizardPhase(
+    ClWizardPhaseDef(
       id: 'done',
       label: 'Done',
       stepIds: ['S910'],
@@ -118,9 +121,9 @@ class WizardNavMap {
   /// ahead." Each phase's `stepIds` is also filtered to only those
   /// visible in [orderForFlow] so a fresh-flash never displays
   /// stock-only steps like Vendor Services / Files cleanup.
-  static List<WizardPhase> phasesForFlow(WizardFlow flow) {
+  static List<ClWizardPhaseDef> phasesForFlow(WizardFlow flow) {
     final visible = orderForFlow(flow).toSet();
-    WizardPhase filter(WizardPhase p) => WizardPhase(
+    ClWizardPhaseDef filter(ClWizardPhaseDef p) => ClWizardPhaseDef(
           id: p.id,
           label: p.label,
           stepIds: p.stepIds.where(visible.contains).toList(growable: false),

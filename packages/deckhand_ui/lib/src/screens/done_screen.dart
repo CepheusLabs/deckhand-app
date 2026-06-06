@@ -2,13 +2,12 @@ import 'package:deckhand_core/deckhand_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:forge/forge.dart';
 import 'package:go_router/go_router.dart';
 
 import '../i18n/translations.g.dart';
 import '../providers.dart';
-import '../theming/deckhand_tokens.dart';
 import '../utils/json_safety.dart';
-import '../widgets/wizard_scaffold.dart';
 
 class DoneScreen extends ConsumerWidget {
   const DoneScreen({super.key});
@@ -27,8 +26,7 @@ class DoneScreen extends ConsumerWidget {
     final hasKiauh = state.decisions['kiauh'] == 'install';
     final hasSnapshot = snapshotSummary != null;
 
-    return WizardScaffold(
-      screenId: 'S910-done',
+    return ClWizardPageScaffold(
       title: t.done.title,
       body: _DoneBody(
         printerLabel: printerLabel,
@@ -42,12 +40,12 @@ class DoneScreen extends ConsumerWidget {
         hasSnapshot: hasSnapshot,
         webuiTips: _buildWebuiTips(profile, state),
       ),
-      primaryAction: WizardAction(
+      primaryAction: ClWizardAction(
         label: t.done.action_another,
         onPressed: () => context.go('/'),
       ),
       secondaryActions: [
-        WizardAction(
+        ClWizardAction(
           label: 'Manage this printer',
           onPressed: () => context.go('/manage'),
         ),
@@ -232,20 +230,20 @@ class _Hero extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
+    final brand = context.brandColors;
     final headline = firmwareDisplay == null
         ? printerLabel
         : 'Your $printerLabel is running $firmwareDisplay.';
     return Container(
       padding: const EdgeInsets.fromLTRB(32, 36, 32, 32),
       decoration: BoxDecoration(
-        color: tokens.ink1,
-        border: Border.all(color: tokens.line),
-        borderRadius: BorderRadius.circular(DeckhandTokens.r3),
+        color: brand.bgAlt,
+        border: Border.all(color: brand.borderStrong),
+        borderRadius: BorderRadius.circular(context.radii.md),
         gradient: RadialGradient(
           center: const Alignment(0.9, -0.9),
           radius: 1.4,
-          colors: [tokens.accentSoft, Colors.transparent],
+          colors: [brand.selectedBg, Colors.transparent],
         ),
       ),
       child: Column(
@@ -256,16 +254,14 @@ class _Hero extends StatelessWidget {
               Icon(
                 Icons.check_circle_outline,
                 size: 18,
-                color: tokens.ok,
+                color: brand.good,
                 semanticLabel: a11yLabel,
               ),
               const SizedBox(width: 8),
               Text(
                 'RUN COMPLETED',
-                style: TextStyle(
-                  fontFamily: DeckhandTokens.fontMono,
-                  fontSize: DeckhandTokens.tXs,
-                  color: tokens.ok,
+                style: context.labelTechnical.copyWith(
+                  color: brand.good,
                   letterSpacing: 0,
                 ),
               ),
@@ -274,12 +270,10 @@ class _Hero extends StatelessWidget {
           const SizedBox(height: 12),
           Text(
             headline,
-            style: TextStyle(
-              fontFamily: DeckhandTokens.fontSans,
-              fontSize: DeckhandTokens.t3Xl,
+            style: context.clHeadlineMedium.copyWith(
               fontWeight: FontWeight.w500,
               letterSpacing: 0,
-              color: tokens.text,
+              color: brand.ink,
               height: 1.15,
             ),
           ),
@@ -288,10 +282,8 @@ class _Hero extends StatelessWidget {
             constraints: const BoxConstraints(maxWidth: 640),
             child: Text(
               helper,
-              style: TextStyle(
-                fontFamily: DeckhandTokens.fontSans,
-                fontSize: DeckhandTokens.tMd,
-                color: tokens.text3,
+              style: context.clBodyMedium.copyWith(
+                color: brand.ink3,
                 height: 1.5,
               ),
             ),
@@ -368,39 +360,32 @@ class _Stat extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
+    final brand = context.brandColors;
+    final valueStyle = mono
+        ? context.dataSmall.copyWith(
+            fontWeight: FontWeight.w500,
+            color: brand.ink,
+          )
+        : context.clTitleLarge.copyWith(
+            fontWeight: FontWeight.w500,
+            color: brand.ink,
+          );
     return Container(
       padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
       decoration: BoxDecoration(
-        color: tokens.ink2,
-        border: Border.all(color: tokens.line),
-        borderRadius: BorderRadius.circular(DeckhandTokens.r2),
+        color: brand.surface,
+        border: Border.all(color: brand.borderStrong),
+        borderRadius: BorderRadius.circular(context.radii.sm),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             label.toUpperCase(),
-            style: TextStyle(
-              fontFamily: DeckhandTokens.fontMono,
-              fontSize: 10,
-              color: tokens.text4,
-              letterSpacing: 0,
-            ),
+            style: context.dataTiny.copyWith(fontSize: 10, color: brand.ink4),
           ),
           const SizedBox(height: 4),
-          Text(
-            value,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontFamily: mono
-                  ? DeckhandTokens.fontMono
-                  : DeckhandTokens.fontSans,
-              fontSize: mono ? DeckhandTokens.tMd : DeckhandTokens.tLg,
-              fontWeight: FontWeight.w500,
-              color: tokens.text,
-            ),
-          ),
+          Text(value, overflow: TextOverflow.ellipsis, style: valueStyle),
         ],
       ),
     );
@@ -424,9 +409,10 @@ class _HeroActions extends StatelessWidget {
       runSpacing: 8,
       children: [
         if (mainsailUrl != null)
-          OutlinedButton.icon(
-            icon: const Icon(Icons.open_in_browser, size: 14),
-            label: const Text('Copy Mainsail URL'),
+          ClButton(
+            kind: ClButtonKind.outlined,
+            size: ClButtonSize.sm,
+            icon: Icons.open_in_browser,
             // Browser-launch from a flutter desktop app would mean
             // adding url_launcher; manage_screen already pioneered the
             // clipboard-copy pattern so we follow it here for
@@ -434,16 +420,19 @@ class _HeroActions extends StatelessWidget {
             // snackbar receipt — one paste away from the browser.
             onPressed: () =>
                 _copyToClipboard(context, mainsailUrl!, 'Mainsail URL copied'),
+            child: const Text('Copy Mainsail URL'),
           ),
         if (sshHost != null)
-          OutlinedButton.icon(
-            icon: const Icon(Icons.terminal, size: 14),
-            label: const Text('Copy SSH command'),
+          ClButton(
+            kind: ClButtonKind.outlined,
+            size: ClButtonSize.sm,
+            icon: Icons.terminal,
             onPressed: () => _copyToClipboard(
               context,
               'ssh $sshUser@$sshHost',
               'SSH command copied',
             ),
+            child: const Text('Copy SSH command'),
           ),
       ],
     );
@@ -535,29 +524,23 @@ class _FooterPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
-    return Container(
+    final brand = context.brandColors;
+    return ClPanel(
+      background: brand.bgAlt,
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: tokens.ink1,
-        border: Border.all(color: tokens.line),
-        borderRadius: BorderRadius.circular(DeckhandTokens.r3),
-      ),
-      child: Column(
+      body: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Icon(icon, size: 16, color: tokens.text2),
+              Icon(icon, size: 16, color: brand.ink2),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
                   title,
-                  style: TextStyle(
-                    fontFamily: DeckhandTokens.fontSans,
-                    fontSize: DeckhandTokens.tMd,
+                  style: context.clBodyMedium.copyWith(
                     fontWeight: FontWeight.w600,
-                    color: tokens.text,
+                    color: brand.ink,
                   ),
                 ),
               ),
@@ -566,12 +549,7 @@ class _FooterPanel extends StatelessWidget {
           const SizedBox(height: 8),
           Text(
             body,
-            style: TextStyle(
-              fontFamily: DeckhandTokens.fontSans,
-              fontSize: DeckhandTokens.tSm,
-              color: tokens.text3,
-              height: 1.5,
-            ),
+            style: context.clBodySmall.copyWith(color: brand.ink3, height: 1.5),
           ),
         ],
       ),

@@ -1,17 +1,14 @@
 import 'package:deckhand_core/deckhand_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:forge/forge.dart';
 import 'package:go_router/go_router.dart';
 
 import '../i18n/translations.g.dart';
 import '../providers.dart';
-import '../theming/deckhand_tokens.dart';
 import '../utils/json_safety.dart';
 import '../utils/user_facing_errors.dart';
-import '../widgets/deckhand_loading.dart';
 import '../widgets/profile_text.dart';
-import '../widgets/status_pill.dart';
-import '../widgets/wizard_scaffold.dart';
 
 class VerifyScreen extends ConsumerStatefulWidget {
   const VerifyScreen({super.key});
@@ -89,7 +86,7 @@ class _VerifyScreenState extends ConsumerState<VerifyScreen> {
           child: SingleChildScrollView(
             child: SelectableText(
               content ?? t.verify.preview_unreadable,
-              style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+              style: context.dataSmall,
             ),
           ),
         ),
@@ -192,8 +189,7 @@ class _VerifyScreenState extends ConsumerState<VerifyScreen> {
     }
     final backups = relevantBackups;
 
-    return WizardScaffold(
-      screenId: 'S30-verify',
+    return ClWizardPageScaffold(
       title: t.verify.title,
       helperText: t.verify.helper,
       body: Column(
@@ -346,7 +342,7 @@ class _VerifyScreenState extends ConsumerState<VerifyScreen> {
             ),
         ],
       ),
-      primaryAction: WizardAction(
+      primaryAction: ClWizardAction(
         label: t.verify.action_continue,
         // Choose-path now happens BEFORE Connect/Verify, so this
         // step exits straight into the configure phase. Pre-warm the
@@ -360,7 +356,7 @@ class _VerifyScreenState extends ConsumerState<VerifyScreen> {
         },
       ),
       secondaryActions: [
-        WizardAction(
+        ClWizardAction(
           label: t.common.action_back,
           onPressed: () => context.go('/connect'),
           isBack: true,
@@ -550,12 +546,7 @@ class _BackupTile extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    backup.originalPath,
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      fontFamily: 'monospace',
-                    ),
-                  ),
+                  Text(backup.originalPath, style: context.dataSmall),
                   if (metaBits.isNotEmpty)
                     Text(
                       metaBits.join(' * '),
@@ -593,11 +584,7 @@ class _BackupTile extends StatelessWidget {
             FilledButton.tonalIcon(
               onPressed: busy ? null : onRestore,
               icon: restoring
-                  ? const SizedBox(
-                      width: 12,
-                      height: 12,
-                      child: DeckhandSpinner(size: 12, strokeWidth: 2),
-                    )
+                  ? const ClSpinner(size: 12, strokeWidth: 2)
                   : const Icon(Icons.restore, size: 16),
               label: Text(
                 restoring
@@ -640,53 +627,24 @@ class _ProbesPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
     final requiredCount = detections.where((d) => d.required).length;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Container(
-          decoration: BoxDecoration(
-            color: tokens.ink1,
-            border: Border.all(color: tokens.line),
-            borderRadius: BorderRadius.circular(DeckhandTokens.r3),
+        ClPanel(
+          // Panel head: "PROBES · N DEFINED" — mirrors the mockup's
+          // "PROBES · 5 / 5 RESPONDED" affordance, scaled to "this
+          // is what we'll check" since we don't yet have live
+          // results to show.
+          head: ClPanelLabelHead(
+            label: 'Probes · ${detections.length} defined',
+            trailing: Text(
+              '$requiredCount required',
+              style: context.dataTiny,
+            ),
           ),
-          clipBehavior: Clip.antiAlias,
-          child: Column(
+          body: Column(
             children: [
-              // Panel head: "PROBES · N DEFINED" — mirrors the mockup's
-              // "PROBES · 5 / 5 RESPONDED" affordance, scaled to "this
-              // is what we'll check" since we don't yet have live
-              // results to show.
-              Container(
-                padding: const EdgeInsets.fromLTRB(14, 8, 14, 8),
-                decoration: BoxDecoration(
-                  color: tokens.ink2,
-                  border: Border(bottom: BorderSide(color: tokens.line)),
-                ),
-                child: Row(
-                  children: [
-                    Text(
-                      'PROBES · ${detections.length} DEFINED',
-                      style: TextStyle(
-                        fontFamily: DeckhandTokens.fontMono,
-                        fontSize: 10,
-                        color: tokens.text3,
-                        letterSpacing: 0,
-                      ),
-                    ),
-                    const Spacer(),
-                    Text(
-                      '$requiredCount required',
-                      style: TextStyle(
-                        fontFamily: DeckhandTokens.fontMono,
-                        fontSize: 10,
-                        color: tokens.text4,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
               for (var i = 0; i < detections.length; i++)
                 _ProbeRow(
                   rule: detections[i],
@@ -711,39 +669,13 @@ class _ProbesPanel extends StatelessWidget {
         // Footer reassurance banner. The mockup uses a green strip
         // when all required probes pass; we don't have outcomes here
         // so phrase it forward-looking ("ready to run").
-        Container(
-          padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-          decoration: BoxDecoration(
-            color: tokens.ok.withValues(alpha: 0.06),
-            border: Border.all(color: tokens.ok.withValues(alpha: 0.3)),
-            borderRadius: BorderRadius.circular(DeckhandTokens.r2),
-          ),
-          child: Row(
-            children: [
-              Icon(Icons.check_circle_outline, size: 16, color: tokens.ok),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text.rich(
-                  TextSpan(
-                    style: TextStyle(
-                      fontFamily: DeckhandTokens.fontSans,
-                      fontSize: DeckhandTokens.tSm,
-                      color: tokens.text2,
-                    ),
-                    children: [
-                      const TextSpan(text: 'Probes ready. '),
-                      TextSpan(
-                        text: vendor == null
-                            ? 'Continue to run them against the live SSH session.'
-                            : 'These checks confirm this is a $vendor printer.',
-                        style: TextStyle(color: tokens.text3),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ),
+        ClBanner(
+          kind: ClBannerKind.good,
+          icon: Icons.check_circle_outline,
+          title: 'Probes ready.',
+          body: vendor == null
+              ? 'Continue to run them against the live SSH session.'
+              : 'These checks confirm this is a $vendor printer.',
         ),
       ],
     );
@@ -801,14 +733,14 @@ class _ProbeRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
-    final iconColor = rule.required ? tokens.accent : tokens.text4;
+    final brand = context.brandColors;
+    final iconColor = rule.required ? brand.primary : brand.ink4;
     return Container(
       padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
       decoration: BoxDecoration(
         border: isLast
             ? null
-            : Border(bottom: BorderSide(color: tokens.lineSoft)),
+            : Border(bottom: BorderSide(color: brand.borderSubtle)),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -831,20 +763,18 @@ class _ProbeRow extends StatelessWidget {
                     Flexible(
                       child: Text(
                         title,
-                        style: TextStyle(
-                          fontFamily: DeckhandTokens.fontSans,
-                          fontSize: DeckhandTokens.tMd,
-                          color: tokens.text,
+                        style: context.clBodyMedium.copyWith(
+                          color: brand.ink,
                           fontWeight: FontWeight.w500,
                         ),
                       ),
                     ),
                     if (!rule.required) ...[
                       const SizedBox(width: 8),
-                      StatusPill(
+                      const ClStatusChip(
                         label: 'optional',
-                        color: tokens.text3,
-                        noDot: true,
+                        kind: ClChipKind.neutral,
+                        compact: true,
                       ),
                     ],
                   ],
@@ -852,20 +782,14 @@ class _ProbeRow extends StatelessWidget {
                 const SizedBox(height: 4),
                 Text(
                   '\$ $command',
-                  style: TextStyle(
-                    fontFamily: DeckhandTokens.fontMono,
-                    fontSize: DeckhandTokens.tXs,
-                    color: tokens.text4,
-                  ),
+                  style: context.dataTiny.copyWith(color: brand.ink4),
                 ),
                 if (detail.isNotEmpty) ...[
                   const SizedBox(height: 4),
                   Text(
                     detail,
-                    style: TextStyle(
-                      fontFamily: DeckhandTokens.fontSans,
-                      fontSize: DeckhandTokens.tSm,
-                      color: tokens.text3,
+                    style: context.clBodySmall.copyWith(
+                      color: brand.ink3,
                       height: 1.4,
                     ),
                   ),

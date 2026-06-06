@@ -5,6 +5,7 @@ import 'package:deckhand_ui/src/providers.dart';
 import 'package:deckhand_ui/src/screens/connect_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:forge/forge.dart';
 
 import 'helpers.dart';
 
@@ -69,15 +70,17 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 200));
 
-      expect(find.widgetWithText(FilledButton, 'Connect'), findsNothing);
+      // The manual-connect footer is a ClWizardPageScaffold primaryAction,
+      // rendered as a ClButton — and only present on the Manual host tab.
+      expect(find.widgetWithText(ClButton, 'Connect'), findsNothing);
 
       await tester.tap(find.text('Saved'));
       await tester.pump();
-      expect(find.widgetWithText(FilledButton, 'Connect'), findsNothing);
+      expect(find.widgetWithText(ClButton, 'Connect'), findsNothing);
 
       await tester.tap(find.text('Manual host'));
       await tester.pump();
-      expect(find.widgetWithText(FilledButton, 'Connect'), findsOneWidget);
+      expect(find.widgetWithText(ClButton, 'Connect'), findsOneWidget);
     });
 
     testWidgets('connect tabs and saved hosts fit narrow windows', (

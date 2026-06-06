@@ -2,8 +2,8 @@ import 'dart:async';
 
 import 'package:deckhand_core/deckhand_core.dart';
 import 'package:deckhand_ui/src/providers.dart';
-import 'package:deckhand_ui/src/theming/deckhand_theme.dart';
 import 'package:flutter/material.dart';
+import 'package:forge/forge.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -67,15 +67,22 @@ Widget testHarness({
       // resolves overrides in source order, last write wins).
       ...extraOverrides,
     ],
-    // Use the Deckhand theme so widgets that reach for the
-    // [DeckhandTokens] extension (StatusPill, IdTag, TickRule,
-    // chrome) find it. Without this, those widgets assert at build
-    // time. Light theme picked arbitrarily — both ship the same
-    // extension instance.
+    // Pump through the forge theme so widgets that read forge tokens
+    // (context.brandColors, context.density, forge text styles) find
+    // the wired ThemeExtensions. Without this, those getters fall back
+    // to dark defaults. Matches the app's wizard_shell wiring.
     child: MaterialApp.router(
       routerConfig: router,
-      theme: DeckhandTheme.light(),
-      darkTheme: DeckhandTheme.dark(),
+      theme: buildClTheme(
+        brightness: Brightness.light,
+        density: ClDensity.compact,
+        accentPalette: ClAccentPalette.violet,
+      ),
+      darkTheme: buildClTheme(
+        brightness: Brightness.dark,
+        density: ClDensity.compact,
+        accentPalette: ClAccentPalette.violet,
+      ),
     ),
   );
 }
@@ -133,15 +140,22 @@ Widget testHarnessWithSettings({
       ...overrideForController(controller),
       deckhandSettingsProvider.overrideWithValue(settings),
     ],
-    // Use the Deckhand theme so widgets that reach for the
-    // [DeckhandTokens] extension (StatusPill, IdTag, TickRule,
-    // chrome) find it. Without this, those widgets assert at build
-    // time. Light theme picked arbitrarily — both ship the same
-    // extension instance.
+    // Pump through the forge theme so widgets that read forge tokens
+    // (context.brandColors, context.density, forge text styles) find
+    // the wired ThemeExtensions. Without this, those getters fall back
+    // to dark defaults. Matches the app's wizard_shell wiring.
     child: MaterialApp.router(
       routerConfig: router,
-      theme: DeckhandTheme.light(),
-      darkTheme: DeckhandTheme.dark(),
+      theme: buildClTheme(
+        brightness: Brightness.light,
+        density: ClDensity.compact,
+        accentPalette: ClAccentPalette.violet,
+      ),
+      darkTheme: buildClTheme(
+        brightness: Brightness.dark,
+        density: ClDensity.compact,
+        accentPalette: ClAccentPalette.violet,
+      ),
     ),
   );
 }

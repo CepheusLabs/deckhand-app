@@ -1,14 +1,11 @@
 import 'package:deckhand_core/deckhand_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:forge/forge.dart';
 import 'package:go_router/go_router.dart';
 
 import '../providers.dart';
-import '../theming/deckhand_tokens.dart';
 import '../utils/managed_printer_actions.dart';
-import '../widgets/deckhand_loading.dart';
-import '../widgets/id_tag.dart';
-import '../widgets/wizard_scaffold.dart';
 
 class PrintersScreen extends ConsumerStatefulWidget {
   const PrintersScreen({super.key});
@@ -60,11 +57,14 @@ class _PrintersScreenState extends ConsumerState<PrintersScreen> {
     final visiblePrinters = searchQuery.isEmpty
         ? printers
         : printers.where((p) => _matchesPrinterSearch(p, searchQuery)).toList();
-    return WizardScaffold(
-      screenId: 'MGR-printers',
+    return ClWizardPageScaffold(
       title: 'Printers',
       helperText:
           'Saved printers Deckhand can reopen for manage, backup, restore, and maintenance work.',
+      preHeader: const ClPageHeader(
+        icon: Icons.precision_manufacturing_outlined,
+        title: 'Printers',
+      ),
       body: _PrintersPanel(
         allCount: printers.length,
         searchController: _searchController,
@@ -76,12 +76,12 @@ class _PrintersScreenState extends ConsumerState<PrintersScreen> {
         onManage: _manage,
         onForget: _forget,
       ),
-      primaryAction: WizardAction(
+      primaryAction: ClWizardAction(
         label: 'Add a printer',
         onPressed: () => context.go('/pick-printer'),
       ),
       secondaryActions: [
-        WizardAction(
+        ClWizardAction(
           label: 'Back',
           isBack: true,
           onPressed: () => context.go('/'),
@@ -116,23 +116,23 @@ class _PrintersPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
+    final brand = context.brandColors;
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(22),
       decoration: BoxDecoration(
-        color: tokens.ink1,
-        border: Border.all(color: tokens.line),
-        borderRadius: BorderRadius.circular(DeckhandTokens.r3),
+        color: brand.bgAlt,
+        border: Border.all(color: brand.borderStrong),
+        borderRadius: BorderRadius.circular(context.radii.md),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              _Eyebrow('KNOWN PRINTERS', color: tokens.text3),
+              const ClTechLabel('KNOWN PRINTERS'),
               const Spacer(),
-              IdTag(
+              ClIdTag(
                 searchQuery.isEmpty
                     ? '$allCount saved'
                     : '${visiblePrinters.length} of $allCount shown',
@@ -152,9 +152,9 @@ class _PrintersPanel extends StatelessWidget {
             const SizedBox(height: 16),
           ],
           if (printers.isEmpty)
-            _EmptyPrinters(tokens: tokens)
+            const _EmptyPrinters()
           else if (visiblePrinters.isEmpty)
-            _NoMatchingPrinters(tokens: tokens, query: searchQuery)
+            _NoMatchingPrinters(query: searchQuery)
           else
             Column(
               children: [
@@ -174,32 +174,29 @@ class _PrintersPanel extends StatelessWidget {
 }
 
 class _NoMatchingPrinters extends StatelessWidget {
-  const _NoMatchingPrinters({required this.tokens, required this.query});
+  const _NoMatchingPrinters({required this.query});
 
-  final DeckhandTokens tokens;
   final String query;
 
   @override
   Widget build(BuildContext context) {
+    final brand = context.brandColors;
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
       decoration: BoxDecoration(
-        color: tokens.ink2,
-        border: Border.all(color: tokens.line),
-        borderRadius: BorderRadius.circular(DeckhandTokens.r2),
+        color: brand.surface,
+        border: Border.all(color: brand.borderStrong),
+        borderRadius: BorderRadius.circular(context.radii.sm),
       ),
       child: Row(
         children: [
-          Icon(Icons.search_off, size: 18, color: tokens.text3),
+          Icon(Icons.search_off, size: 18, color: brand.ink3),
           const SizedBox(width: 12),
           Expanded(
             child: Text(
               'No saved printers match "$query".',
-              style: TextStyle(
-                fontSize: DeckhandTokens.tSm,
-                color: tokens.text3,
-              ),
+              style: context.clBodySmall.copyWith(color: brand.ink3),
             ),
           ),
         ],
@@ -209,26 +206,25 @@ class _NoMatchingPrinters extends StatelessWidget {
 }
 
 class _EmptyPrinters extends StatelessWidget {
-  const _EmptyPrinters({required this.tokens});
-
-  final DeckhandTokens tokens;
+  const _EmptyPrinters();
 
   @override
   Widget build(BuildContext context) {
+    final brand = context.brandColors;
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
       decoration: BoxDecoration(
-        color: tokens.ink2,
-        border: Border.all(color: tokens.line),
-        borderRadius: BorderRadius.circular(DeckhandTokens.r2),
+        color: brand.surface,
+        border: Border.all(color: brand.borderStrong),
+        borderRadius: BorderRadius.circular(context.radii.sm),
       ),
       child: Row(
         children: [
           Icon(
             Icons.precision_manufacturing_outlined,
             size: 18,
-            color: tokens.text3,
+            color: brand.ink3,
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -237,20 +233,15 @@ class _EmptyPrinters extends StatelessWidget {
               children: [
                 Text(
                   'No printers saved yet.',
-                  style: TextStyle(
-                    fontFamily: DeckhandTokens.fontSans,
-                    fontSize: DeckhandTokens.tMd,
+                  style: context.clBodyMedium.copyWith(
                     fontWeight: FontWeight.w600,
-                    color: tokens.text,
+                    color: brand.ink,
                   ),
                 ),
                 const SizedBox(height: 4),
                 Text(
                   'Connect to a printer once and it will appear here.',
-                  style: TextStyle(
-                    fontSize: DeckhandTokens.tSm,
-                    color: tokens.text3,
-                  ),
+                  style: context.clBodySmall.copyWith(color: brand.ink3),
                 ),
               ],
             ),
@@ -276,21 +267,21 @@ class _PrinterRegistryRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
+    final brand = context.brandColors;
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: tokens.ink2,
-        border: Border.all(color: tokens.line),
-        borderRadius: BorderRadius.circular(DeckhandTokens.r2),
+        color: brand.surface,
+        border: Border.all(color: brand.borderStrong),
+        borderRadius: BorderRadius.circular(context.radii.sm),
       ),
       child: Row(
         children: [
           Icon(
             Icons.precision_manufacturing_outlined,
             size: 18,
-            color: tokens.accent,
+            color: brand.primary,
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -300,11 +291,9 @@ class _PrinterRegistryRow extends StatelessWidget {
                 Text(
                   printer.displayName,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontFamily: DeckhandTokens.fontSans,
-                    fontSize: DeckhandTokens.tMd,
+                  style: context.clBodyMedium.copyWith(
                     fontWeight: FontWeight.w600,
-                    color: tokens.text,
+                    color: brand.ink,
                     height: 1.25,
                   ),
                 ),
@@ -314,10 +303,10 @@ class _PrinterRegistryRow extends StatelessWidget {
                   runSpacing: 6,
                   crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
-                    IdTag(_connectionLabel(printer)),
-                    IdTag(printer.profileId),
+                    ClIdTag(_connectionLabel(printer)),
+                    ClIdTag(printer.profileId),
                     if (printer.lastSeen != null)
-                      IdTag('seen ${_shortDate(printer.lastSeen!)}'),
+                      ClIdTag('seen ${_shortDate(printer.lastSeen!)}'),
                   ],
                 ),
               ],
@@ -339,33 +328,12 @@ class _PrinterRegistryRow extends StatelessWidget {
                 ? const SizedBox(
                     width: 12,
                     height: 12,
-                    child: DeckhandSpinner(size: 12, strokeWidth: 1.5),
+                    child: ClSpinner(size: 12, strokeWidth: 1.5),
                   )
                 : const Icon(Icons.tune, size: 14),
             label: Text(busy ? 'Opening...' : 'Manage'),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _Eyebrow extends StatelessWidget {
-  const _Eyebrow(this.text, {required this.color});
-
-  final String text;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return Text(
-      text,
-      style: TextStyle(
-        fontFamily: DeckhandTokens.fontMono,
-        fontSize: 10,
-        fontWeight: FontWeight.w600,
-        color: color,
-        letterSpacing: 0,
       ),
     );
   }

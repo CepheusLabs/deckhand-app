@@ -1,15 +1,13 @@
-import 'package:flutter/material.dart';
 import 'package:deckhand_core/deckhand_core.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:forge/forge.dart';
 
 import '../i18n/translations.g.dart';
 import '../providers.dart';
-import '../theming/deckhand_tokens.dart';
-import 'deckhand_loading.dart';
-import 'deckhand_panel.dart';
+import '../utils/disk_operation_errors.dart';
 import 'network_panel.dart';
-import 'wizard_log_view.dart';
 
 class RunStep {
   const RunStep({required this.id, required this.kind});
@@ -21,6 +19,9 @@ enum RunStepStatus { queued, active, done, warning, failed }
 
 enum RunBannerSeverity { success, warning, error }
 
+/// Result banner shown above the run workspace. Rebuilt on forge's
+/// [ClBanner]; the Deckhand [RunBannerSeverity] maps onto the forge
+/// [ClBannerKind] semantics.
 class RunBanner extends StatelessWidget {
   const RunBanner({
     super.key,
@@ -35,65 +36,25 @@ class RunBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
-    final color = switch (severity) {
-      RunBannerSeverity.success => tokens.ok,
-      RunBannerSeverity.warning => tokens.warn,
-      RunBannerSeverity.error => tokens.bad,
+    final kind = switch (severity) {
+      RunBannerSeverity.success => ClBannerKind.good,
+      RunBannerSeverity.warning => ClBannerKind.warn,
+      RunBannerSeverity.error => ClBannerKind.bad,
     };
-    final bg = color.withValues(alpha: 0.08);
-    return Container(
-      width: double.infinity,
-      decoration: BoxDecoration(
-        color: bg,
-        border: Border.all(color: color.withValues(alpha: 0.45)),
-        borderRadius: BorderRadius.circular(DeckhandTokens.r3),
-      ),
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(
-            switch (severity) {
-              RunBannerSeverity.success => Icons.check_circle_outline,
-              RunBannerSeverity.warning => Icons.warning_amber_outlined,
-              RunBannerSeverity.error => Icons.error_outline,
-            },
-            color: color,
-            size: 20,
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: TextStyle(
-                    fontFamily: DeckhandTokens.fontSans,
-                    fontSize: DeckhandTokens.tMd,
-                    fontWeight: FontWeight.w700,
-                    color: tokens.text,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                SelectableText(
-                  message,
-                  style: TextStyle(
-                    fontFamily: DeckhandTokens.fontSans,
-                    fontSize: DeckhandTokens.tSm,
-                    color: tokens.text2,
-                    height: 1.45,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
+    return ClBanner(kind: kind, title: title, body: message);
   }
 }
+
+/// Maps the wizard's [WizardLogMode] preference onto the log rendering:
+/// `user` shows friendly, translated copy; `developer` shows the raw
+/// controller log lines.
+enum WizardLogMode { user, developer }
+
+/// Formats the session log for the clipboard. Kept as Deckhand domain
+/// logic (the controller emits `[ok]`/`[fail]`/`> starting …` lines and
+/// this turns them into a fixed-width, human-readable transcript).
+String formatWizardLogForClipboard(List<String> lines, WizardLogMode mode) =>
+    _LogLineParser.formatForClipboard(lines, mode);
 
 class ProgressRunWorkspace extends StatelessWidget {
   const ProgressRunWorkspace({
@@ -137,223 +98,39 @@ class ProgressRunWorkspace extends StatelessWidget {
   }
 }
 
-class _StepRail extends StatefulWidget {
+/// Adapts Deckhand's [RunStep] list + [statusFor] callback onto forge's
+/// [ClOperationStepRail], which owns the rail chrome, summary,
+/// active-step autoscroll, and row states.
+class _StepRail extends StatelessWidget {
   const _StepRail({required this.steps, required this.statusFor});
 
   final List<RunStep> steps;
   final RunStepStatus Function(RunStep step) statusFor;
 
   @override
-  State<_StepRail> createState() => _StepRailState();
-}
-
-class _StepRailState extends State<_StepRail> {
-  final _controller = ScrollController();
-  final _rowKeys = <String, GlobalKey>{};
-
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _showActiveStep());
-  }
-
-  @override
-  void didUpdateWidget(covariant _StepRail oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    WidgetsBinding.instance.addPostFrameCallback((_) => _showActiveStep());
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  void _showActiveStep() {
-    if (!_controller.hasClients) return;
-    final activeIndex = widget.steps.indexWhere(
-      (step) => widget.statusFor(step) == RunStepStatus.active,
-    );
-    if (activeIndex < 0) return;
-    final activeStep = widget.steps[activeIndex];
-    final activeContext = _rowKeys[activeStep.id]?.currentContext;
-    if (activeContext != null) {
-      Scrollable.ensureVisible(
-        activeContext,
-        alignment: 0.5,
-        duration: Duration.zero,
-      );
-      return;
-    }
-    const rowExtent = 58.0;
-    final target = (activeIndex * rowExtent).clamp(
-      0.0,
-      _controller.position.maxScrollExtent,
-    );
-    if ((target - _controller.offset).abs() < 1) return;
-    _controller.jumpTo(target);
-  }
-
-  @override
   Widget build(BuildContext context) {
-    final stepIds = widget.steps.map((step) => step.id).toSet();
-    _rowKeys.removeWhere((id, _) => !stepIds.contains(id));
-    final done = widget.steps
-        .where((s) => widget.statusFor(s) == RunStepStatus.done)
-        .length;
-    final active = widget.steps
-        .where((s) => widget.statusFor(s) == RunStepStatus.active)
-        .length;
-    final failed = widget.steps
-        .where((s) => widget.statusFor(s) == RunStepStatus.failed)
-        .length;
-    final summary = failed > 0
-        ? '$done done · $failed failed'
-        : '$done done · $active active · ${widget.steps.length - done - active} queued';
-    return DeckhandPanel.flush(
-      head: DeckhandPanelHead(
-        label: 'Steps',
-        trailing: Text(summary, style: _panelMetaStyle(context)),
-      ),
-      child: widget.steps.isEmpty
-          ? const _StepRailEmpty()
-          : ListView.separated(
-              controller: _controller,
-              padding: EdgeInsets.zero,
-              itemCount: widget.steps.length,
-              separatorBuilder: (_, _) => const Divider(height: 1),
-              itemBuilder: (context, i) {
-                final step = widget.steps[i];
-                return KeyedSubtree(
-                  key: _rowKeys.putIfAbsent(step.id, GlobalKey.new),
-                  child: _StepRow(
-                    step: step,
-                    index: i + 1,
-                    status: widget.statusFor(step),
-                  ),
-                );
-              },
-            ),
-    );
-  }
-}
-
-class _StepRailEmpty extends StatelessWidget {
-  const _StepRailEmpty();
-
-  @override
-  Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
-    return Center(
-      child: Text(
-        'No queued steps',
-        style: TextStyle(
-          fontFamily: DeckhandTokens.fontSans,
-          fontSize: DeckhandTokens.tSm,
-          color: tokens.text3,
-        ),
-      ),
-    );
-  }
-}
-
-class _StepRow extends StatelessWidget {
-  const _StepRow({
-    required this.step,
-    required this.index,
-    required this.status,
-  });
-
-  final RunStep step;
-  final int index;
-  final RunStepStatus status;
-
-  @override
-  Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
-    final color = _statusColor(tokens);
-    return Container(
-      color: status == RunStepStatus.active
-          ? tokens.accent.withValues(alpha: 0.07)
-          : Colors.transparent,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-      child: Row(
-        children: [
-          SizedBox(
-            width: 26,
-            child: _StepStatusIcon(status: status, color: color),
+    return ClOperationStepRail(
+      fillParent: true,
+      steps: [
+        for (var i = 0; i < steps.length; i++)
+          ClOperationStep(
+            id: steps[i].id,
+            title: runStepTitle(steps[i].id),
+            subtitle: '${(i + 1).toString().padLeft(2, '0')} · '
+                '${_kindTitle(steps[i].kind)}',
+            status: _railStatus(statusFor(steps[i])),
           ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  runStepTitle(step.id),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontFamily: DeckhandTokens.fontSans,
-                    fontSize: DeckhandTokens.tSm,
-                    fontWeight: status == RunStepStatus.active
-                        ? FontWeight.w700
-                        : FontWeight.w500,
-                    color: tokens.text,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  '${index.toString().padLeft(2, '0')} · ${_kindTitle(step.kind)}',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontFamily: DeckhandTokens.fontMono,
-                    fontSize: 10,
-                    color: tokens.text4,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
+      ],
     );
   }
 
-  Color _statusColor(DeckhandTokens tokens) => switch (status) {
-    RunStepStatus.done => tokens.ok,
-    RunStepStatus.warning => tokens.warn,
-    RunStepStatus.failed => tokens.bad,
-    RunStepStatus.active => tokens.accent,
-    RunStepStatus.queued => tokens.text4,
+  ClOperationStepStatus _railStatus(RunStepStatus status) => switch (status) {
+    RunStepStatus.queued => ClOperationStepStatus.queued,
+    RunStepStatus.active => ClOperationStepStatus.active,
+    RunStepStatus.done => ClOperationStepStatus.done,
+    RunStepStatus.warning => ClOperationStepStatus.warning,
+    RunStepStatus.failed => ClOperationStepStatus.failed,
   };
-}
-
-class _StepStatusIcon extends StatelessWidget {
-  const _StepStatusIcon({required this.status, required this.color});
-
-  final RunStepStatus status;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    if (status == RunStepStatus.active) {
-      return Semantics(
-        container: true,
-        label: 'Active step',
-        value: 'In progress',
-        child: DeckhandSpinner(size: 16, strokeWidth: 2, color: color),
-      );
-    }
-    final icon = switch (status) {
-      RunStepStatus.done => Icons.check,
-      RunStepStatus.warning => Icons.priority_high,
-      RunStepStatus.failed => Icons.close,
-      RunStepStatus.active => Icons.more_horiz,
-      RunStepStatus.queued => Icons.circle_outlined,
-    };
-    return Icon(icon, size: 16, color: color);
-  }
 }
 
 class _LogNetworkPane extends ConsumerWidget {
@@ -364,35 +141,37 @@ class _LogNetworkPane extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final tokens = DeckhandTokens.of(context);
     final developerMode = ref.watch(deckhandSettingsProvider).developerMode;
     final logMode = developerMode
         ? WizardLogMode.developer
         : WizardLogMode.user;
     final showNetworkTab = developerMode || networkEvents.isNotEmpty;
     final tabs = [
-      _PaneTab(label: 'Log', icon: Icons.terminal, countLabel: 'live'),
+      _PaneTab(label: 'Log', icon: ClIcons.terminal, countLabel: 'live'),
       if (showNetworkTab)
         _PaneTab(
           label: 'Downloads',
-          icon: Icons.cloud_download_outlined,
+          icon: ClIcons.cloudDownload,
           countLabel: '${networkEvents.length}',
         ),
     ];
     final views = [
       Semantics(
         label: t.progress.semantics_log_label,
-        child: WizardLogView(lines: log, mode: logMode),
+        child: ClLogView(
+          entries: _LogLineParser.toEntries(log, logMode),
+          emptyMessage: 'Waiting for the first log line...',
+        ),
       ),
       if (showNetworkTab) NetworkPanel(events: networkEvents),
     ];
     return DefaultTabController(
       length: tabs.length,
-      child: DeckhandPanel.flush(
-        child: Column(
+      child: ClPanel(
+        fillParent: true,
+        body: Column(
           children: [
             _PaneTabs(
-              tokens: tokens,
               trailingLabel: 'session.log · ${log.length} lines',
               onCopyLog: log.isEmpty
                   ? null
@@ -430,26 +209,25 @@ class _PaneTab {
 
 class _PaneTabs extends StatelessWidget {
   const _PaneTabs({
-    required this.tokens,
     required this.tabs,
     required this.trailingLabel,
     required this.onCopyLog,
   });
-  final DeckhandTokens tokens;
   final List<_PaneTab> tabs;
   final String trailingLabel;
   final VoidCallback? onCopyLog;
 
   @override
   Widget build(BuildContext context) {
+    final brand = context.brandColors;
     final controller = DefaultTabController.of(context);
     return AnimatedBuilder(
       animation: controller,
       builder: (context, _) {
         return Container(
           decoration: BoxDecoration(
-            color: tokens.ink2,
-            border: Border(bottom: BorderSide(color: tokens.line)),
+            color: brand.surface,
+            border: Border(bottom: BorderSide(color: brand.borderStrong)),
           ),
           child: LayoutBuilder(
             builder: (context, constraints) {
@@ -466,7 +244,6 @@ class _PaneTabs extends StatelessWidget {
                             _PaneTabCell(
                               tab: tabs[i],
                               isActive: controller.index == i,
-                              tokens: tokens,
                               onTap: () => controller.animateTo(i),
                             ),
                         ],
@@ -475,9 +252,9 @@ class _PaneTabs extends StatelessWidget {
                   ),
                   IconButton(
                     tooltip: 'Copy log',
-                    icon: const Icon(Icons.content_copy, size: 14),
-                    color: tokens.text3,
-                    disabledColor: tokens.text4.withValues(alpha: 0.5),
+                    icon: const ClIcon(ClIcons.copy, size: 14),
+                    color: brand.ink3,
+                    disabledColor: brand.ink4.withValues(alpha: 0.5),
                     onPressed: onCopyLog,
                   ),
                   if (showTrailing)
@@ -489,11 +266,7 @@ class _PaneTabs extends StatelessWidget {
                           trailingLabel,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontFamily: DeckhandTokens.fontMono,
-                            fontSize: 10,
-                            color: tokens.text4,
-                          ),
+                          style: context.dataTiny,
                         ),
                       ),
                     ),
@@ -511,61 +284,56 @@ class _PaneTabCell extends StatelessWidget {
   const _PaneTabCell({
     required this.tab,
     required this.isActive,
-    required this.tokens,
     required this.onTap,
   });
   final _PaneTab tab;
   final bool isActive;
-  final DeckhandTokens tokens;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
+    final brand = context.brandColors;
     return InkWell(
       onTap: onTap,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
         decoration: BoxDecoration(
-          color: isActive ? tokens.ink1 : Colors.transparent,
+          color: isActive ? brand.bgAlt : Colors.transparent,
           border: Border(
             top: BorderSide(
-              color: isActive ? tokens.accent : Colors.transparent,
+              color: isActive ? brand.primary : Colors.transparent,
               width: 2,
             ),
-            right: BorderSide(color: tokens.line),
+            right: BorderSide(color: brand.borderStrong),
           ),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
+            ClIcon(
               tab.icon,
               size: 14,
-              color: isActive ? tokens.text : tokens.text3,
+              color: isActive ? brand.ink : brand.ink3,
             ),
             const SizedBox(width: 8),
             Text(
               tab.label,
-              style: TextStyle(
-                fontFamily: DeckhandTokens.fontSans,
-                fontSize: DeckhandTokens.tSm,
-                color: isActive ? tokens.text : tokens.text3,
+              style: context.clBodySmall.copyWith(
+                color: isActive ? brand.ink : brand.ink3,
               ),
             ),
             const SizedBox(width: 8),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
               decoration: BoxDecoration(
-                color: isActive ? tokens.accent : tokens.ink3,
-                borderRadius: BorderRadius.circular(8),
+                color: isActive ? brand.primary : brand.surface3,
+                borderRadius: BorderRadius.circular(context.radii.lg),
               ),
               child: Text(
                 tab.countLabel,
-                style: TextStyle(
-                  fontFamily: DeckhandTokens.fontMono,
+                style: context.dataTiny.copyWith(
                   fontSize: 9,
-                  color: isActive ? tokens.accentFg : tokens.text2,
-                  letterSpacing: 0,
+                  color: isActive ? brand.onPrimary : brand.ink2,
                 ),
               ),
             ),
@@ -638,11 +406,341 @@ String _kindTitle(String kind) {
   return kind.replaceAll('_', ' ');
 }
 
-TextStyle _panelMetaStyle(BuildContext context) {
-  final tokens = DeckhandTokens.of(context);
-  return TextStyle(
-    fontFamily: DeckhandTokens.fontMono,
-    fontSize: 10,
-    color: tokens.text4,
+/// Parses raw controller log lines into [ClLogEntry] rows (time gutter +
+/// tag + message + tone) and into a fixed-width clipboard transcript.
+///
+/// This is Deckhand domain logic: it understands the controller's
+/// `[ok]`/`[fail]`/`[warn]`/`> starting …`/`[source] …` line grammar and
+/// rewrites it into either raw developer text or friendly user copy.
+/// [ClLogView] only renders the resulting rows.
+class _LogLineParser {
+  const _LogLineParser._();
+
+  static const _clipboardMessageWidth = 96;
+  static const _clipboardContinuationIndent = 19;
+
+  /// Build the [ClLogEntry] list rendered by [ClLogView]. Each line gets a
+  /// synthesized monotonic time marker so the gutter has visual rhythm
+  /// (the controller does not emit timestamps yet).
+  static List<ClLogEntry> toEntries(List<String> lines, WizardLogMode mode) {
+    return [
+      for (var i = 0; i < lines.length; i++)
+        _entry(_ordinalLabel(i), _parse(lines[i], mode)),
+    ];
+  }
+
+  static ClLogEntry _entry(String time, _Parsed parsed) => ClLogEntry(
+    time: time,
+    tag: parsed.tag,
+    message: parsed.msg,
+    tone: _tone(parsed.kind),
   );
+
+  static ClLogTone _tone(_LogKind kind) => switch (kind) {
+    _LogKind.ok => ClLogTone.success,
+    _LogKind.fail => ClLogTone.danger,
+    _LogKind.warn => ClLogTone.warning,
+    _LogKind.exec => ClLogTone.accent,
+    _LogKind.info => ClLogTone.info,
+    _LogKind.input => ClLogTone.input,
+    _LogKind.dim => ClLogTone.muted,
+  };
+
+  static String formatForClipboard(List<String> lines, WizardLogMode mode) {
+    return [
+      'Deckhand session log (${mode == WizardLogMode.developer ? 'developer' : 'standard'})',
+      'TIME       TAG     MESSAGE',
+      '---------  ------  ----------------------------------------',
+      for (var i = 0; i < lines.length; i++)
+        ..._formatClipboardLines(i, _parse(lines[i], mode)),
+    ].join('\n');
+  }
+
+  static List<String> _formatClipboardLines(int ordinal, _Parsed parsed) {
+    final chunks = _wrapClipboardMessage(
+      parsed.msg,
+      width: _clipboardMessageWidth,
+    );
+    final prefix = _formatClipboardPrefix(ordinal, parsed);
+    if (chunks.isEmpty) return [prefix];
+    return [
+      '$prefix${chunks.first}',
+      for (final chunk in chunks.skip(1))
+        '${' ' * _clipboardContinuationIndent}$chunk',
+    ];
+  }
+
+  static String _formatClipboardPrefix(int ordinal, _Parsed parsed) =>
+      '${_ordinalLabel(ordinal).padRight(9)}  ${parsed.tag.padRight(6)}  ';
+
+  static List<String> _wrapClipboardMessage(
+    String message, {
+    required int width,
+  }) {
+    final normalized = message.trim().replaceAll(RegExp(r'\s+'), ' ');
+    if (normalized.isEmpty) return const [];
+    final lines = <String>[];
+    var current = '';
+    for (final token in normalized.split(' ')) {
+      var remaining = token;
+      while (remaining.length > width) {
+        if (current.isNotEmpty) {
+          lines.add(current);
+          current = '';
+        }
+        lines.add(remaining.substring(0, width));
+        remaining = remaining.substring(width);
+      }
+      if (remaining.isEmpty) continue;
+      if (current.isEmpty) {
+        current = remaining;
+      } else if (current.length + 1 + remaining.length <= width) {
+        current = '$current $remaining';
+      } else {
+        lines.add(current);
+        current = remaining;
+      }
+    }
+    if (current.isNotEmpty) lines.add(current);
+    return lines;
+  }
+
+  /// Synthesize a `mm:ss.frac`-shaped marker from the line index.
+  static String _ordinalLabel(int n) {
+    final m = (n ~/ 60).toString().padLeft(2, '0');
+    final s = (n % 60).toString().padLeft(2, '0');
+    return '$m:$s.${(n * 17 % 1000).toString().padLeft(3, '0')}';
+  }
+
+  static _Parsed _parse(String raw, WizardLogMode mode) {
+    final parsed = _parseDeveloper(raw);
+    if (mode == WizardLogMode.developer) return parsed;
+    return _Parsed(parsed.kind, parsed.tag, _friendlyMessage(raw, parsed));
+  }
+
+  static _Parsed _parseDeveloper(String raw) {
+    if (raw.startsWith('[ok] ')) {
+      return _Parsed(_LogKind.ok, 'OK', raw.substring(5));
+    }
+    if (raw.startsWith('[fail] ')) {
+      return _Parsed(_LogKind.fail, 'FAIL', raw.substring(7));
+    }
+    if (raw.startsWith('[warn] ')) {
+      return _Parsed(_LogKind.warn, 'WARN', raw.substring(7));
+    }
+    if (raw.startsWith('> starting ')) {
+      return _Parsed(_LogKind.exec, 'STEP', raw.substring(2));
+    }
+    if (raw.startsWith('> ')) {
+      return _Parsed(_LogKind.info, 'EXEC', raw.substring(2));
+    }
+    final bracket = RegExp(r'^\[([a-z0-9_-]+)\]\s*(.*)$').firstMatch(raw);
+    if (bracket != null) {
+      final source = bracket.group(1)!;
+      final message = bracket.group(2)!;
+      return _Parsed(_kindForSource(source), _tagForSource(source), message);
+    }
+    return _Parsed(_LogKind.dim, '...', raw);
+  }
+
+  static String _friendlyMessage(String raw, _Parsed parsed) {
+    if (raw.startsWith('> starting ')) {
+      return _friendlyStepAction(raw.substring('> starting '.length));
+    }
+    if (raw.startsWith('[ok] ')) {
+      return 'Finished ${_friendlyStepName(raw.substring(5))}';
+    }
+    if (raw.startsWith('[fail] ')) {
+      return 'Stopped during ${_friendlyFailure(raw.substring(7))}';
+    }
+    if (raw.startsWith('[warn] ')) {
+      return _friendlyWarning(raw.substring(7));
+    }
+    final bracket = RegExp(r'^\[([a-z0-9_-]+)\]\s*(.*)$').firstMatch(raw);
+    if (bracket == null) return parsed.msg;
+    final source = bracket.group(1)!;
+    final message = bracket.group(2)!;
+    return switch (source) {
+      'input' => _friendlyInput(message),
+      'os' => _friendlyOs(message),
+      'flash' => _friendlyFlash(message),
+      'run-state' => _friendlyRunState(message),
+      _ => message,
+    };
+  }
+
+  static String _friendlyInput(String message) {
+    const prefix = 'using existing decision: ';
+    if (message.startsWith(prefix)) {
+      return 'Using saved answer: ${_friendlyValue(message.substring(prefix.length))}';
+    }
+    return message;
+  }
+
+  static String _friendlyOs(String message) {
+    if (message.startsWith('preparing ')) {
+      return 'Preparing the OS image download and checking the local cache';
+    }
+    if (message.startsWith('using cached image ')) {
+      return 'Using the cached OS image';
+    }
+    if (message.startsWith('ready at ')) {
+      return 'OS image is ready';
+    }
+    return message;
+  }
+
+  static String _friendlyFlash(String message) {
+    final write = RegExp(
+      r'^writing\s+(.+)\s+->\s+(.+?)\s+\(verify=(true|false)\)$',
+    ).firstMatch(message);
+    if (write != null) {
+      final target = _friendlyValue(write.group(2)!);
+      final verify = write.group(3) == 'true';
+      return verify
+          ? 'Writing the OS image to $target, then verifying it'
+          : 'Writing the OS image to $target';
+    }
+    if (message == 'done') return 'Flash complete';
+    if (message.startsWith('safety warning acknowledged: ')) {
+      return 'Safety warning acknowledged';
+    }
+    return message;
+  }
+
+  static String _friendlyRunState(String message) {
+    final skip = RegExp(
+      r'^skipping\s+([^;]+);\s+already completed$',
+    ).firstMatch(message);
+    if (skip != null) {
+      return 'Already completed: ${_friendlyStepName(skip.group(1)!)}';
+    }
+    return message;
+  }
+
+  static String _friendlyWarning(String message) {
+    final dash = message.indexOf(' - ');
+    if (dash <= 0) return _friendlyError(message);
+    return '${_friendlyStepName(message.substring(0, dash))}: '
+        '${_friendlyError(message.substring(dash + 3))}';
+  }
+
+  static String _friendlyFailure(String message) {
+    final dash = message.indexOf(' - ');
+    if (dash <= 0) return _friendlyStepName(message);
+    return '${_friendlyStepName(message.substring(0, dash))}: '
+        '${_friendlyError(message.substring(dash + 3))}';
+  }
+
+  static String _friendlyStepAction(String stepId) {
+    return switch (stepId) {
+      'choose_os_image' => 'Choose the OS image',
+      'choose_target_disk' => 'Check the selected disk',
+      'download_os' => 'Prepare the OS image',
+      'flash_disk' => 'Write the OS image',
+      'flash_done_prompt' => 'Confirm the flash completed',
+      'wait_for_ssh' => 'Wait for the printer to come online',
+      'first_boot_setup' => 'Run first-boot setup',
+      'install_firmware' => 'Install firmware',
+      'install_stack' => 'Install Klipper services',
+      'link_extras' => 'Install profile extras',
+      'install_screen' => 'Install the screen package',
+      'flash_mcus' => 'Flash printer MCUs',
+      'apply_services' => 'Clean up stock services',
+      'apply_files' => 'Clean up stock files',
+      'snapshot_paths' => 'Back up stock files',
+      'write_file' => 'Write config',
+      'install_marker' => 'Mark printer as managed',
+      'verify' => 'Verify install',
+      'script' => 'Run setup script',
+      'ssh_commands' => 'Run remote commands',
+      'conditional' => 'Evaluate condition',
+      _ => _titleCaseIdentifier(stepId),
+    };
+  }
+
+  static String _friendlyStepName(String stepId) => _friendlyStepAction(stepId);
+
+  static String _friendlyValue(String value) {
+    final trimmed = value.trim();
+    final physicalDrive = _friendlyPhysicalDrive(trimmed);
+    if (physicalDrive != null) return physicalDrive;
+    if (_looksLikePath(trimmed)) return trimmed;
+    if (!trimmed.contains('-') && !trimmed.contains('_')) return trimmed;
+    return _titleCaseIdentifier(trimmed);
+  }
+
+  static String _friendlyError(String message) {
+    return userFacingDiskOperationError(message);
+  }
+
+  static String? _friendlyPhysicalDrive(String value) {
+    final match = _windowsPhysicalDriveRe.firstMatch(value);
+    if (match == null || match.group(0) != value) return null;
+    return 'Windows disk ${match.group(1)!}';
+  }
+
+  static String _titleCaseIdentifier(String value) {
+    final words = value
+        .replaceAll(RegExp(r'[_-]+'), ' ')
+        .trim()
+        .split(RegExp(r'\s+'))
+        .where((word) => word.isNotEmpty);
+    return words
+        .map(
+          (word) => word.length == 1
+              ? word.toUpperCase()
+              : '${word[0].toUpperCase()}${word.substring(1)}',
+        )
+        .join(' ');
+  }
+
+  static bool _looksLikePath(String value) =>
+      value.contains(r'\') ||
+      value.contains('/') ||
+      RegExp(r'^[A-Za-z]:').hasMatch(value);
+
+  static _LogKind _kindForSource(String source) {
+    return switch (source) {
+      'input' => _LogKind.input,
+      'run-state' => _LogKind.dim,
+      'flash' ||
+      'os' ||
+      'firmware' ||
+      'stack' ||
+      'ssh' ||
+      'script' => _LogKind.info,
+      'snapshot' ||
+      'snapshot_archive' ||
+      'services' ||
+      'files' => _LogKind.info,
+      _ => _LogKind.dim,
+    };
+  }
+
+  static String _tagForSource(String source) {
+    return switch (source) {
+      'input' => 'INPUT',
+      'run-state' => 'STATE',
+      'os' => 'OS',
+      'ssh' => 'SSH',
+      'firmware' => 'FW',
+      'snapshot_archive' => 'SNAP',
+      _ => source.replaceAll('-', '_').toUpperCase(),
+    };
+  }
+}
+
+enum _LogKind { ok, fail, warn, exec, info, input, dim }
+
+final RegExp _windowsPhysicalDriveRe = RegExp(
+  r'(?:\\\\\.\\)?physical\s*drive\s*([0-9]+)',
+  caseSensitive: false,
+);
+
+class _Parsed {
+  _Parsed(this.kind, this.tag, this.msg);
+  final _LogKind kind;
+  final String tag;
+  final String msg;
 }

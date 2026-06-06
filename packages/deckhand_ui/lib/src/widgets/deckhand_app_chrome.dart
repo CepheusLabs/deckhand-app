@@ -1,33 +1,31 @@
 import 'package:deckhand_core/deckhand_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:forge/forge.dart';
 import 'package:go_router/go_router.dart';
 import 'package:printdeck_product_platform/printdeck_product_platform.dart';
 
 import '../providers.dart';
-import '../theming/deckhand_tokens.dart';
 import 'deckhand_footbar.dart';
 import 'deckhand_logo.dart';
-import 'settings_link_button.dart';
-import 'theme_toggle_button.dart';
 
 /// App-level chrome wrapper — frames every routed screen with a
-/// slim top bar (brand + global affordances) and the bottom footbar
-/// (run metadata). Inserted via a [ShellRoute] in
+/// slim command bar (brand + nav + global affordances) and the bottom
+/// footbar (run metadata). Inserted via a [ShellRoute] in
 /// [buildDeckhandRouter] so [GoRouterState.of] resolves below it.
 ///
 /// The wizard's primary navigation lives in the top stepper
-/// ([DeckhandStepper] inside [WizardScaffold]) — the chrome itself
-/// carries no step list. A wide left rail expressing the same
-/// hierarchy as the stepper read as the "real" nav and confused
-/// the user, and slimming it to brand-only left an empty 220px
-/// gutter that looked broken. A short top bar fits both jobs:
-/// brand on the left, global affordances (Settings + theme) on
-/// the right, then the screen content fills the rest.
+/// ([DeckhandStepper] inside the screen scaffolds) — the chrome itself
+/// carries only the cross-cutting nav (Printers / Manage). A wide left
+/// rail expressing the same hierarchy as the stepper read as the
+/// "real" nav and confused the user, and slimming it to brand-only
+/// left an empty 220px gutter that looked broken. A short command bar
+/// fits both jobs: brand on the left, cross-cutting nav in the middle,
+/// global affordances (Settings + theme) on the right.
 ///
 /// Wires:
-///  * Wizard state → printer label (top bar subtitle), host (footbar).
-///  * Sidecar version → top bar + footbar.
+///  * Wizard state → printer label (command bar subtitle), host (footbar).
+///  * Sidecar version → footbar.
 class DeckhandAppChrome extends ConsumerWidget {
   const DeckhandAppChrome({super.key, required this.child});
 
@@ -35,7 +33,7 @@ class DeckhandAppChrome extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final tokens = DeckhandTokens.of(context);
+    final brand = context.brandColors;
     final wizard = ref.watch(wizardStateProvider).valueOrNull;
     final version = ref.watch(deckhandVersionProvider);
 
@@ -43,10 +41,10 @@ class DeckhandAppChrome extends ConsumerWidget {
     final hostLabel = wizard?.sshHost;
 
     return ProductShellFrame.slotted(
-      backgroundColor: tokens.ink0,
+      backgroundColor: brand.bg,
       wrapBodyInSelectionArea: false,
       topBarBuilder: (context, shell) {
-        return _TopBar(version: version, printerLabel: printerLabel);
+        return _CommandBar(printerLabel: printerLabel);
       },
       body: child,
       bottomBarBuilder: (context, shell) {
@@ -72,93 +70,66 @@ class DeckhandAppChrome extends ConsumerWidget {
   }
 }
 
-/// Slim top bar (~44px). Brand on the left, global affordances
-/// on the right. Replaces the old left rail. Stays put across
-/// every routed screen so a user always has Settings and the
-/// theme toggle one click away.
-class _TopBar extends StatelessWidget {
-  const _TopBar({required this.version, required this.printerLabel});
+/// The forge [ClCommandBar] wired to Deckhand's brand mark, nav, and
+/// global affordances. Stays put across every routed screen so a user
+/// always has Settings and the theme toggle one click away.
+class _CommandBar extends ConsumerWidget {
+  const _CommandBar({required this.printerLabel});
 
-  final String version;
   final String? printerLabel;
 
   @override
-  Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
-    return Container(
-      height: 44,
-      decoration: BoxDecoration(
-        color: tokens.ink1,
-        border: Border(bottom: BorderSide(color: tokens.line)),
-      ),
-      padding: const EdgeInsets.symmetric(horizontal: 14),
-      child: Row(
-        children: [
-          const DeckhandLogo(size: 18),
-          const SizedBox(width: 10),
-          Text(
-            'Deckhand',
-            style: TextStyle(
-              fontFamily: DeckhandTokens.fontSans,
-              fontSize: DeckhandTokens.tMd,
-              fontWeight: FontWeight.w600,
-              letterSpacing: 0,
-              color: tokens.text,
-            ),
+  Widget build(BuildContext context, WidgetRef ref) {
+    final brand = context.brandColors;
+    // Resolve the active location so the nav pills can light up. The
+    // command bar lives below the ShellRoute, so GoRouterState resolves
+    // here; degrade gracefully if it ever renders without a router
+    // ancestor (e.g. an isolated widget test).
+    String location;
+    try {
+      location = GoRouterState.of(context).uri.path;
+    } catch (_) {
+      location = '';
+    }
+    final mode = ref.watch(themeModeProvider);
+
+    return ClCommandBar(
+      leading: const DeckhandLogo(size: 18),
+      title: 'Deckhand',
+      subtitle: printerLabel,
+      nav: [
+        ClNavPill(
+          label: 'Printers',
+          icon: Icons.precision_manufacturing_outlined,
+          selected: location.startsWith('/printers'),
+          onPressed: () => context.go('/printers'),
+        ),
+        if (printerLabel != null)
+          ClNavPill(
+            label: 'Manage',
+            icon: Icons.tune,
+            selected: location.startsWith('/manage'),
+            onPressed: () => context.go('/manage'),
           ),
-          const SizedBox(width: 8),
-          Text(
-            'v$version',
-            style: TextStyle(
-              fontFamily: DeckhandTokens.fontMono,
-              fontSize: 10,
-              color: tokens.text4,
-              letterSpacing: 0,
-            ),
+      ],
+      actions: [
+        Tooltip(
+          message: 'Settings',
+          child: IconButton(
+            // push (not go) so the prior wizard route stays on the stack
+            // and the Settings screen's Back button can pop back to it.
+            onPressed: () => context.push('/settings'),
+            icon: Icon(Icons.settings_outlined, size: 18, color: brand.ink2),
+            visualDensity: VisualDensity.compact,
+            splashRadius: 18,
           ),
-          if (printerLabel != null) ...[
-            const SizedBox(width: 14),
-            Container(width: 1, height: 16, color: tokens.lineSoft),
-            const SizedBox(width: 14),
-            // ConstrainedBox (rather than Flexible) so the label
-            // takes only its intrinsic width — Flexible's default
-            // flex=1 split the leftover space 50/50 with the Spacer
-            // below it, pinning Settings/Theme to the middle of the
-            // bar instead of the right edge whenever a label was set.
-            ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 320),
-              child: Text(
-                printerLabel!,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontFamily: DeckhandTokens.fontMono,
-                  fontSize: DeckhandTokens.tXs,
-                  color: tokens.text3,
-                  letterSpacing: 0,
-                ),
-              ),
-            ),
-          ],
-          const Spacer(),
-          TextButton.icon(
-            icon: const Icon(Icons.precision_manufacturing_outlined, size: 14),
-            label: const Text('Printers'),
-            onPressed: () => context.go('/printers'),
-          ),
-          const SizedBox(width: 4),
-          if (printerLabel != null) ...[
-            TextButton.icon(
-              icon: const Icon(Icons.tune, size: 14),
-              label: const Text('Manage'),
-              onPressed: () => context.go('/manage'),
-            ),
-            const SizedBox(width: 4),
-          ],
-          const SettingsLinkButton(),
-          const SizedBox(width: 4),
-          const ThemeToggleButton(),
-        ],
-      ),
+        ),
+        ClThemeToggle(
+          value: mode,
+          onChanged: (m) => ref.read(themeModeProvider.notifier).set(m),
+          size: ClThemeToggleSize.sm,
+        ),
+      ],
     );
   }
 }

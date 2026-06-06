@@ -201,7 +201,7 @@ void main() {
         probedAt: DateTime.now(),
       );
 
-      const snapshot = WizardState(
+      final snapshot = WizardState(
         profileId: 'test-printer',
         decisions: {'flash.os': 'debian-bookworm'},
         currentStep: 'progress',

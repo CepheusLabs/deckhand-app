@@ -1,8 +1,8 @@
 import 'package:deckhand_core/deckhand_core.dart';
 import 'package:deckhand_ui/src/providers.dart';
 import 'package:deckhand_ui/src/screens/snapshot_screen.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:forge/forge.dart';
 
 import 'helpers.dart';
 
@@ -152,8 +152,8 @@ void main() {
 
       expect(find.textContaining('Matching eMMC backup found'), findsOneWidget);
       expect(find.text('Verify exact match'), findsOneWidget);
-      var primary = tester.widget<FilledButton>(
-        find.widgetWithText(FilledButton, 'Snapshot and continue'),
+      var primary = tester.widget<ClButton>(
+        find.widgetWithText(ClButton, 'Snapshot and continue'),
       );
       expect(primary.onPressed, isNull);
 
@@ -163,8 +163,8 @@ void main() {
       await tester.pump();
 
       expect(find.textContaining('Exact eMMC backup verified'), findsOneWidget);
-      primary = tester.widget<FilledButton>(
-        find.widgetWithText(FilledButton, 'Snapshot and continue'),
+      primary = tester.widget<ClButton>(
+        find.widgetWithText(ClButton, 'Snapshot and continue'),
       );
       expect(primary.onPressed, isNotNull);
       expect(helper.hashCalls, 1);

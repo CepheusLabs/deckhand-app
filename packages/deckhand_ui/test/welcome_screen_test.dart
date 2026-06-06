@@ -5,6 +5,7 @@ import 'package:deckhand_ui/src/providers.dart';
 import 'package:deckhand_ui/src/screens/welcome_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:forge/forge.dart';
 
 import 'helpers.dart';
 
@@ -30,13 +31,13 @@ void main() {
       expect(find.text('PRINTERS'), findsOneWidget);
       expect(find.text('Manage known printers.'), findsOneWidget);
       expect(
-        find.widgetWithText(OutlinedButton, 'Open printer manager'),
+        find.widgetWithText(ClButton, 'Open printer manager'),
         findsOneWidget,
       );
       expect(find.text('RECOVERY'), findsOneWidget);
       expect(find.text('Restore an eMMC backup.'), findsOneWidget);
       expect(
-        find.widgetWithText(OutlinedButton, 'Restore eMMC backup'),
+        find.widgetWithText(ClButton, 'Restore eMMC backup'),
         findsOneWidget,
       );
 
@@ -62,9 +63,9 @@ void main() {
       // resolves.
       final store = InMemoryWizardStateStore();
       await store.save(
-        const WizardState(
+        WizardState(
           profileId: 'phrozen-arco',
-          decisions: {'firmware': 'kalico'},
+          decisions: const {'firmware': 'kalico'},
           currentStep: 'choose-path',
           flow: WizardFlow.stockKeep,
         ),
@@ -98,10 +99,12 @@ void main() {
       expect(find.text('phrozen-arco'), findsOneWidget);
       expect(find.text('S40 · choose-path'), findsOneWidget);
 
-      // Resume + Discard actions are present and enabled.
-      expect(find.widgetWithText(FilledButton, 'Resume'), findsOneWidget);
-      expect(find.widgetWithText(OutlinedButton, 'Manage'), findsOneWidget);
-      expect(find.widgetWithText(TextButton, 'Discard'), findsOneWidget);
+      // Resume + Discard actions are present and enabled. The forge
+      // panel renders all three as ClButton (primary / ghost / text);
+      // the destructive confirm is in the dialog, not on the panel.
+      expect(find.widgetWithText(ClButton, 'Resume'), findsOneWidget);
+      expect(find.widgetWithText(ClButton, 'Manage'), findsOneWidget);
+      expect(find.widgetWithText(ClButton, 'Discard'), findsOneWidget);
     });
 
     testWidgets('resume panels stack without overflow in a narrow window', (
@@ -112,9 +115,9 @@ void main() {
 
       final store = InMemoryWizardStateStore();
       await store.save(
-        const WizardState(
+        WizardState(
           profileId: 'phrozen-arco',
-          decisions: {'firmware': 'kalico'},
+          decisions: const {'firmware': 'kalico'},
           currentStep: 'choose-path',
           flow: WizardFlow.stockKeep,
         ),
@@ -148,9 +151,9 @@ void main() {
 
       final store = _FailingClearWizardStateStore();
       await store.save(
-        const WizardState(
+        WizardState(
           profileId: 'phrozen-arco',
-          decisions: {},
+          decisions: const {},
           currentStep: 'choose-path',
           flow: WizardFlow.stockKeep,
         ),
@@ -170,7 +173,9 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 50));
 
-      final discardButton = find.widgetWithText(TextButton, 'Discard');
+      // Panel action is a forge ClButton; the dialog confirm below is
+      // still a raw Material FilledButton (forge dialog actions).
+      final discardButton = find.widgetWithText(ClButton, 'Discard');
       await tester.ensureVisible(discardButton);
       await tester.tap(discardButton);
       await tester.pumpAndSettle();
@@ -222,7 +227,7 @@ void main() {
       expect(find.text('Test Printer'), findsOneWidget);
       expect(find.textContaining('192.168.1.50'), findsOneWidget);
 
-      await tester.tap(find.widgetWithText(OutlinedButton, 'Manage').first);
+      await tester.tap(find.widgetWithText(ClButton, 'Manage').first);
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 100));
 

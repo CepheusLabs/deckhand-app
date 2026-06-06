@@ -4,17 +4,13 @@ import 'package:deckhand_core/deckhand_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:forge/forge.dart';
 import 'package:go_router/go_router.dart';
 
 import '../i18n/translations.g.dart';
 import '../providers.dart';
-import '../theming/deckhand_tokens.dart';
 import '../utils/user_facing_errors.dart';
-import '../widgets/deckhand_loading.dart';
 import '../widgets/host_approval_gate.dart';
-import '../widgets/id_tag.dart';
-import '../widgets/status_pill.dart';
-import '../widgets/wizard_scaffold.dart';
 
 class PickPrinterScreen extends ConsumerStatefulWidget {
   const PickPrinterScreen({super.key});
@@ -51,7 +47,7 @@ class _PickPrinterScreenState extends ConsumerState<PickPrinterScreen> {
         Widget body;
         ProfileRegistryEntry? selectedEntry;
         if (snap.connectionState != ConnectionState.done) {
-          body = const DeckhandLoadingBlock(
+          body = const ClTechnicalLoadingBlock(
             title: 'Loading printer profiles',
             message:
                 'Deckhand is loading the approved profile registry before '
@@ -90,15 +86,18 @@ class _PickPrinterScreenState extends ConsumerState<PickPrinterScreen> {
         final primaryLabel = selectedEntry == null
             ? t.common.action_continue
             : 'Continue with ${selectedEntry.displayName}';
-        return WizardScaffold(
-          screenId: 'S15-pick-printer',
+        return ClWizardPageScaffold(
           title: 'Which printer are you setting up?',
           helperText:
               'Pick a profile from the registry. Everything downstream — '
               'credentials, approved network hosts, services to remove — is driven '
               'by what you choose.',
+          preHeader: const ClPageHeader(
+            icon: Icons.devices_other_outlined,
+            title: 'Pick printer',
+          ),
           body: body,
-          primaryAction: WizardAction(
+          primaryAction: ClWizardAction(
             label: primaryLabel,
             disabledReason: selectedEntry == null
                 ? 'Select a printer profile first.'
@@ -110,7 +109,7 @@ class _PickPrinterScreenState extends ConsumerState<PickPrinterScreen> {
                 : _loadSelectedProfile,
           ),
           secondaryActions: [
-            WizardAction(
+            ClWizardAction(
               label: t.common.action_back,
               onPressed: () => context.go('/'),
               isBack: true,
@@ -218,7 +217,7 @@ class _Body extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
+    final brand = context.brandColors;
     final registryLabel = registrySize == 1
         ? '1 entry'
         : '$registrySize entries';
@@ -232,7 +231,7 @@ class _Body extends StatelessWidget {
               child: TextField(
                 onChanged: onQuery,
                 decoration: InputDecoration(
-                  prefixIcon: Icon(Icons.search, size: 16, color: tokens.text4),
+                  prefixIcon: Icon(Icons.search, size: 16, color: brand.ink4),
                   hintText: 'Search $registrySize profiles…',
                 ),
               ),
@@ -242,15 +241,13 @@ class _Body extends StatelessWidget {
               children: [
                 Text(
                   'REGISTRY',
-                  style: TextStyle(
-                    fontFamily: DeckhandTokens.fontMono,
-                    fontSize: DeckhandTokens.tXs,
-                    color: tokens.text4,
+                  style: context.labelTechnical.copyWith(
+                    color: brand.ink4,
                     letterSpacing: 0,
                   ),
                 ),
                 const SizedBox(width: 6),
-                IdTag(registryLabel),
+                ClIdTag(registryLabel),
               ],
             );
             if (constraints.maxWidth < 460) {
@@ -301,14 +298,10 @@ class _Body extends StatelessWidget {
           spacing: 8,
           runSpacing: 6,
           children: [
-            Icon(Icons.menu_book_outlined, size: 14, color: tokens.text3),
+            Icon(Icons.menu_book_outlined, size: 14, color: brand.ink3),
             Text(
               'My printer isn\'t here — ',
-              style: TextStyle(
-                fontFamily: DeckhandTokens.fontSans,
-                fontSize: DeckhandTokens.tSm,
-                color: tokens.text3,
-              ),
+              style: context.clBodySmall.copyWith(color: brand.ink3),
             ),
             // The contribute link opens the deckhand-profiles repo's
             // CONTRIBUTING guide in the user's default browser.
@@ -326,19 +319,17 @@ class _Body extends StatelessWidget {
                   children: [
                     Text(
                       'contribute a profile',
-                      style: TextStyle(
-                        fontFamily: DeckhandTokens.fontSans,
-                        fontSize: DeckhandTokens.tSm,
-                        color: tokens.accent,
+                      style: context.clBodySmall.copyWith(
+                        color: brand.primary,
                         decoration: TextDecoration.underline,
-                        decorationColor: tokens.accent,
+                        decorationColor: brand.primary,
                       ),
                     ),
                     // Trailing arrow rendered as an Icon rather than
                     // U+2192 glyph — the unicode arrow is banned from
                     // the printer picker (regression guard from a
                     // prior copy bug).
-                    Icon(Icons.arrow_forward, size: 12, color: tokens.accent),
+                    Icon(Icons.arrow_forward, size: 12, color: brand.primary),
                   ],
                 ),
               ),
@@ -398,14 +389,14 @@ class _ProfileLoadStatus extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
-    final color = error == null ? tokens.info : tokens.bad;
+    final brand = context.brandColors;
+    final color = error == null ? brand.statusIdle : brand.bad;
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.08),
         border: Border.all(color: color.withValues(alpha: 0.35)),
-        borderRadius: BorderRadius.circular(DeckhandTokens.r2),
+        borderRadius: BorderRadius.circular(context.radii.sm),
       ),
       child: Row(
         children: [
@@ -413,7 +404,7 @@ class _ProfileLoadStatus extends StatelessWidget {
             const SizedBox(
               width: 16,
               height: 16,
-              child: DeckhandSpinner(size: 16, strokeWidth: 2),
+              child: ClSpinner(size: 16, strokeWidth: 2),
             )
           else
             Icon(Icons.error_outline, size: 16, color: color),
@@ -421,10 +412,8 @@ class _ProfileLoadStatus extends StatelessWidget {
           Expanded(
             child: Text(
               loading ? 'Loading selected printer profile...' : error!,
-              style: TextStyle(
-                fontFamily: DeckhandTokens.fontSans,
-                fontSize: DeckhandTokens.tSm,
-                color: error == null ? tokens.text3 : tokens.bad,
+              style: context.clBodySmall.copyWith(
+                color: error == null ? brand.ink3 : brand.bad,
               ),
             ),
           ),
@@ -475,18 +464,18 @@ class _SpecCardState extends State<_SpecCard> {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
+    final brand = context.brandColors;
     final entry = widget.entry;
     final selected = widget.selected;
 
     final borderColor = selected || _focused
-        ? tokens.accent
+        ? brand.primary
         : _hovering
-        ? tokens.rule
-        : tokens.line;
+        ? brand.borderStrong
+        : brand.borderStrong;
     final backgroundColor = selected
-        ? Color.alphaBlend(tokens.accent.withValues(alpha: 0.04), tokens.ink1)
-        : tokens.ink1;
+        ? Color.alphaBlend(brand.primary.withValues(alpha: 0.04), brand.bgAlt)
+        : brand.bgAlt;
 
     return Semantics(
       key: ValueKey('profile-card-${entry.id}'),
@@ -528,11 +517,11 @@ class _SpecCardState extends State<_SpecCard> {
               decoration: BoxDecoration(
                 color: backgroundColor,
                 border: Border.all(color: borderColor),
-                borderRadius: BorderRadius.circular(DeckhandTokens.r3),
+                borderRadius: BorderRadius.circular(context.radii.md),
                 boxShadow: selected
                     ? [
                         BoxShadow(
-                          color: tokens.accent.withValues(alpha: 0.18),
+                          color: brand.primary.withValues(alpha: 0.18),
                           blurRadius: 20,
                           offset: const Offset(0, 6),
                         ),
@@ -560,10 +549,10 @@ class _SpecCardState extends State<_SpecCard> {
                       child: Container(
                         width: 3,
                         decoration: BoxDecoration(
-                          color: tokens.accent,
-                          borderRadius: const BorderRadius.only(
-                            topLeft: Radius.circular(DeckhandTokens.r3),
-                            bottomLeft: Radius.circular(DeckhandTokens.r3),
+                          color: brand.primary,
+                          borderRadius: BorderRadius.only(
+                            topLeft: Radius.circular(context.radii.md),
+                            bottomLeft: Radius.circular(context.radii.md),
                           ),
                         ),
                       ),
@@ -578,15 +567,15 @@ class _SpecCardState extends State<_SpecCard> {
                         const SizedBox(height: 12),
                         _SpecGrid(entry: entry),
                         const SizedBox(height: 12),
-                        _Footer(entry: entry, tokens: tokens),
+                        _Footer(entry: entry),
                       ],
                     ),
                   ),
                   if (selected)
-                    Positioned(
+                    const Positioned(
                       top: 10,
                       right: 10,
-                      child: _SelBadge(tokens: tokens),
+                      child: _SelBadge(),
                     ),
                 ],
               ),
@@ -604,7 +593,7 @@ class _Header extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
+    final brand = context.brandColors;
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -614,32 +603,57 @@ class _Header extends StatelessWidget {
             children: [
               Text(
                 entry.displayName,
-                style: TextStyle(
-                  fontFamily: DeckhandTokens.fontSans,
-                  fontSize: 16,
+                style: context.clTitleMedium.copyWith(
                   fontWeight: FontWeight.w500,
                   letterSpacing: 0,
                   height: 1.2,
-                  color: tokens.text,
+                  color: brand.ink,
                 ),
               ),
               const SizedBox(height: 3),
               Text(
                 entry.manufacturer.toUpperCase(),
-                style: TextStyle(
-                  fontFamily: DeckhandTokens.fontMono,
-                  fontSize: 10,
+                style: context.labelTechnical.copyWith(
+                  color: brand.ink4,
                   letterSpacing: 0,
-                  color: tokens.text4,
                 ),
               ),
             ],
           ),
         ),
         const SizedBox(width: 8),
-        StatusPill.fromProfileStatus(context, entry.status),
+        _ProfileStatusChip(status: entry.status),
       ],
     );
+  }
+}
+
+/// Maps a profile registry `status` string onto a [ClStatusChip].
+/// Replaces the bespoke `StatusPill.fromProfileStatus`.
+class _ProfileStatusChip extends StatelessWidget {
+  const _ProfileStatusChip({required this.status});
+  final String status;
+
+  @override
+  Widget build(BuildContext context) {
+    final clean = status.trim().toLowerCase();
+    final (label, kind) = switch (clean) {
+      'stable' || 'verified' || 'supported' => (
+        status.toUpperCase(),
+        ClChipKind.good,
+      ),
+      'beta' || 'experimental' || 'wip' || 'draft' => (
+        status.toUpperCase(),
+        ClChipKind.warn,
+      ),
+      'deprecated' || 'broken' || 'unsupported' => (
+        status.toUpperCase(),
+        ClChipKind.bad,
+      ),
+      '' => ('UNKNOWN', ClChipKind.neutral),
+      _ => (status.toUpperCase(), ClChipKind.info),
+    };
+    return ClStatusChip(label: label, kind: kind, compact: true);
   }
 }
 
@@ -651,7 +665,7 @@ class _SpecGrid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
+    final brand = context.brandColors;
     final hardwareCells = <_SpecCell>[
       _SpecCell('SBC', entry.sbc),
       _SpecCell('KINEMATICS', entry.kinematics),
@@ -670,9 +684,9 @@ class _SpecGrid extends StatelessWidget {
       decoration: BoxDecoration(
         // The "background" you see between cells is just the soft-line
         // colour leaking through the 1px gaps in the grid below.
-        color: tokens.lineSoft,
-        border: Border.all(color: tokens.lineSoft),
-        borderRadius: BorderRadius.circular(DeckhandTokens.r1),
+        color: brand.borderSubtle,
+        border: Border.all(color: brand.borderSubtle),
+        borderRadius: BorderRadius.circular(context.radii.xs),
       ),
       child: Column(
         children: [
@@ -703,9 +717,9 @@ class _SpecCell {
   final String? value;
 
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
+    final brand = context.brandColors;
     return Container(
-      color: tokens.ink1,
+      color: brand.bgAlt,
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -713,23 +727,16 @@ class _SpecCell {
         children: [
           Text(
             label,
-            style: TextStyle(
-              fontFamily: DeckhandTokens.fontMono,
-              fontSize: 9,
+            style: context.labelTechnical.copyWith(
+              color: brand.ink4,
               letterSpacing: 0,
-              color: tokens.text4,
             ),
           ),
           const SizedBox(height: 2),
           Text(
             value == null || value!.isEmpty ? '—' : value!,
             overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontFamily: DeckhandTokens.fontMono,
-              fontSize: 12,
-              letterSpacing: 0,
-              color: tokens.text2,
-            ),
+            style: context.dataSmall.copyWith(color: brand.ink2),
           ),
         ],
       ),
@@ -751,17 +758,17 @@ String _profileStatusLabel(String status) {
 }
 
 class _Footer extends StatelessWidget {
-  const _Footer({required this.entry, required this.tokens});
+  const _Footer({required this.entry});
   final ProfileRegistryEntry entry;
-  final DeckhandTokens tokens;
 
   @override
   Widget build(BuildContext context) {
+    final brand = context.brandColors;
     final left = entry.latestTag ?? 'untagged';
     return Container(
       padding: const EdgeInsets.only(top: 10),
       decoration: BoxDecoration(
-        border: Border(top: BorderSide(color: tokens.lineSoft)),
+        border: Border(top: BorderSide(color: brand.borderSubtle)),
       ),
       child: Row(
         children: [
@@ -769,21 +776,17 @@ class _Footer extends StatelessWidget {
             child: Text(
               left,
               overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontFamily: DeckhandTokens.fontMono,
-                fontSize: 10,
+              style: context.labelTechnical.copyWith(
+                color: brand.ink4,
                 letterSpacing: 0,
-                color: tokens.text4,
               ),
             ),
           ),
           Text(
             entry.id,
-            style: TextStyle(
-              fontFamily: DeckhandTokens.fontMono,
-              fontSize: 10,
+            style: context.labelTechnical.copyWith(
+              color: brand.ink4,
               letterSpacing: 0,
-              color: tokens.text4,
             ),
           ),
         ],
@@ -793,26 +796,26 @@ class _Footer extends StatelessWidget {
 }
 
 class _SelBadge extends StatelessWidget {
-  const _SelBadge({required this.tokens});
-  final DeckhandTokens tokens;
+  const _SelBadge();
 
   @override
   Widget build(BuildContext context) {
+    final brand = context.brandColors;
     return Container(
       width: 20,
       height: 20,
       decoration: BoxDecoration(
-        color: tokens.accent,
+        color: brand.primary,
         shape: BoxShape.circle,
         boxShadow: [
           BoxShadow(
-            color: tokens.accent.withValues(alpha: 0.4),
+            color: brand.primary.withValues(alpha: 0.4),
             blurRadius: 6,
             offset: const Offset(0, 2),
           ),
         ],
       ),
-      child: Icon(Icons.check, size: 12, color: tokens.accentFg),
+      child: Icon(Icons.check, size: 12, color: brand.onPrimary),
     );
   }
 }
@@ -823,26 +826,22 @@ class _EmptyState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
+    final brand = context.brandColors;
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 48),
       width: double.infinity,
       decoration: BoxDecoration(
-        color: tokens.ink1,
-        border: Border.all(color: tokens.line),
-        borderRadius: BorderRadius.circular(DeckhandTokens.r3),
+        color: brand.bgAlt,
+        border: Border.all(color: brand.borderStrong),
+        borderRadius: BorderRadius.circular(context.radii.md),
       ),
       child: Column(
         children: [
-          Icon(Icons.search_off, size: 24, color: tokens.text3),
+          Icon(Icons.search_off, size: 24, color: brand.ink3),
           const SizedBox(height: 12),
           Text(
             'No profiles match "$query"',
-            style: TextStyle(
-              fontFamily: DeckhandTokens.fontSans,
-              fontSize: DeckhandTokens.tMd,
-              color: tokens.text2,
-            ),
+            style: context.clBodyMedium.copyWith(color: brand.ink2),
           ),
         ],
       ),

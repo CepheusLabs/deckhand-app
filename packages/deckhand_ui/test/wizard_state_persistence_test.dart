@@ -169,9 +169,9 @@ void main() {
         '"welcome"', () {
       // The user picked a printer (profileId set) but hasn't navigated
       // past welcome. Worth saving — they've made a real decision.
-      const s = WizardState(
+      final s = WizardState(
         profileId: 'phrozen-arco',
-        decisions: {},
+        decisions: const {},
         currentStep: 'welcome',
         flow: WizardFlow.none,
       );
@@ -181,9 +181,9 @@ void main() {
     test('a state with decisions IS persistable, even with no profileId', () {
       // Edge case — the profile load failed but some decisions were
       // recorded in the meantime. Don't lose them.
-      const s = WizardState(
+      final s = WizardState(
         profileId: '',
-        decisions: {'something': 'value'},
+        decisions: const {'something': 'value'},
         currentStep: 'welcome',
         flow: WizardFlow.none,
       );
@@ -191,9 +191,9 @@ void main() {
     });
 
     test('a fully populated mid-wizard state IS persistable', () {
-      const s = WizardState(
+      final s = WizardState(
         profileId: 'phrozen-arco',
-        decisions: {'flash.disk': 'PhysicalDrive3'},
+        decisions: const {'flash.disk': 'PhysicalDrive3'},
         currentStep: 'emmc-backup',
         flow: WizardFlow.freshFlash,
       );
@@ -208,9 +208,9 @@ void main() {
       // currentStep='pick-printer' but no profileId yet. That state
       // must not overwrite a real saved session — they haven't
       // committed to discarding it.
-      const s = WizardState(
+      final s = WizardState(
         profileId: '',
-        decisions: {},
+        decisions: const {},
         currentStep: 'pick-printer',
         flow: WizardFlow.none,
       );

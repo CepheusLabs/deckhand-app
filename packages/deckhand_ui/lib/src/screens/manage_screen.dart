@@ -5,16 +5,13 @@ import 'package:deckhand_core/deckhand_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:forge/forge.dart';
 import 'package:go_router/go_router.dart';
 
 import '../providers.dart';
-import '../theming/deckhand_tokens.dart';
 import '../utils/disk_display.dart';
 import '../utils/disk_operation_errors.dart';
 import '../utils/user_facing_errors.dart';
-import '../widgets/deckhand_loading.dart';
-import '../widgets/wizard_progress_bar.dart';
-import '../widgets/wizard_scaffold.dart';
 import 'manage_tuning_panel.dart';
 
 const _restoreCanceledMessage = 'Restore canceled.';
@@ -35,8 +32,7 @@ const _restoreCanceledMessage = 'Restore canceled.';
 ///    identity preserved, so a user can repair / reconfigure
 ///    without losing their profile selection.
 ///
-/// `WizardScaffold` is reused for chrome consistency. The
-/// stepper auto-hides on this route (it's not a wizard step).
+/// `ClWizardPageScaffold` is reused for chrome consistency.
 class ManageScreen extends ConsumerStatefulWidget {
   const ManageScreen({super.key});
 
@@ -73,16 +69,19 @@ class _EmmcRestoreScreenState extends State<EmmcRestoreScreen> {
       valueListenable: _footerAction,
       child: _RestoreTab(footerAction: _footerAction),
       builder: (context, footerAction, body) {
-        return WizardScaffold(
-          screenId: 'MGR-restore',
+        return ClWizardPageScaffold(
           title: 'Restore an eMMC backup.',
           helperText:
               'Writes a Deckhand backup image back to a selected eMMC adapter. '
               'Use this when you need to roll a printer back to a known image.',
+          preHeader: const ClPageHeader(
+            icon: Icons.restore,
+            title: 'Restore eMMC',
+          ),
           body: body!,
           primaryAction: footerAction.primaryAction,
           secondaryActions: [
-            WizardAction(
+            ClWizardAction(
               label: 'Back',
               onPressed: () => context.go('/'),
               isBack: true,
@@ -104,7 +103,7 @@ class _RestoreFooterAction {
   const _RestoreFooterAction.none() : signature = 'none', primaryAction = null;
 
   final String signature;
-  final WizardAction? primaryAction;
+  final ClWizardAction? primaryAction;
 }
 
 class _ManageScreenState extends ConsumerState<ManageScreen> {
@@ -135,13 +134,16 @@ class _ManageScreenState extends ConsumerState<ManageScreen> {
             ? 'Manage'
             : 'Manage · $printerLabel';
 
-        return WizardScaffold(
-          screenId: 'MGR-manage',
+        return ClWizardPageScaffold(
           title: title,
           helperText:
               'Things Klipper, Moonraker, and KIAUH don\'t already own. '
               'Updates to those tools live in those tools — Deckhand stays '
               'out of their lane.',
+          preHeader: const ClPageHeader(
+            icon: Icons.tune,
+            title: 'Manage',
+          ),
           primaryAction: _currentTab == _ManageTab.restore
               ? restoreFooterAction.primaryAction
               : null,
@@ -163,7 +165,7 @@ class _ManageScreenState extends ConsumerState<ManageScreen> {
             ],
           ),
           secondaryActions: [
-            WizardAction(
+            ClWizardAction(
               label: 'Back',
               onPressed: () => context.go('/'),
               isBack: true,
@@ -204,10 +206,10 @@ class _ManageTabStrip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
+    final brand = context.brandColors;
     return Container(
       decoration: BoxDecoration(
-        border: Border(bottom: BorderSide(color: tokens.line)),
+        border: Border(bottom: BorderSide(color: brand.borderStrong)),
       ),
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
@@ -241,7 +243,7 @@ class _TabStripButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
+    final brand = context.brandColors;
     return InkWell(
       onTap: onTap,
       child: Container(
@@ -252,7 +254,7 @@ class _TabStripButton extends StatelessWidget {
           // hairline rather than stacking on top of it.
           border: Border(
             bottom: BorderSide(
-              color: selected ? tokens.accent : Colors.transparent,
+              color: selected ? brand.primary : Colors.transparent,
               width: 2,
             ),
           ),
@@ -260,15 +262,14 @@ class _TabStripButton extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 14, color: selected ? tokens.text : tokens.text3),
+            Icon(icon, size: 14, color: selected ? brand.ink : brand.ink3),
             const SizedBox(width: 6),
             Text(
               label,
-              style: TextStyle(
-                fontFamily: DeckhandTokens.fontSans,
+              style: context.clBodySmall.copyWith(
                 fontSize: 13,
                 fontWeight: selected ? FontWeight.w500 : FontWeight.w400,
-                color: selected ? tokens.text : tokens.text3,
+                color: selected ? brand.ink : brand.ink3,
               ),
             ),
           ],
@@ -339,7 +340,7 @@ class _StatusTabState extends ConsumerState<_StatusTab> {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
+    final brand = context.brandColors;
     final controller = ref.watch(wizardControllerProvider);
     final host = widget.state.sshHost;
     final profile = widget.profile;
@@ -361,7 +362,7 @@ class _StatusTabState extends ConsumerState<_StatusTab> {
           if (snap.connectionState != ConnectionState.done) {
             return const Padding(
               padding: EdgeInsets.symmetric(vertical: 16),
-              child: Center(child: DeckhandSpinner(size: 24, strokeWidth: 2)),
+              child: Center(child: ClSpinner(size: 24, strokeWidth: 2)),
             );
           }
           final s = snap.data!;
@@ -383,15 +384,13 @@ class _StatusTabState extends ConsumerState<_StatusTab> {
               const SizedBox(height: 8),
               Row(
                 children: [
-                  _StateDot(color: _stateColor(tokens, s)),
+                  _StateDot(color: _stateColor(brand, s)),
                   const SizedBox(width: 10),
                   Text(
                     _stateLabel(s),
-                    style: TextStyle(
-                      fontFamily: DeckhandTokens.fontSans,
-                      fontSize: DeckhandTokens.t2Xl,
+                    style: context.clHeadlineSmall.copyWith(
                       fontWeight: FontWeight.w500,
-                      color: tokens.text,
+                      color: brand.ink,
                     ),
                   ),
                 ],
@@ -400,11 +399,7 @@ class _StatusTabState extends ConsumerState<_StatusTab> {
               if (s.error != null) ...[
                 Text(
                   s.error!,
-                  style: TextStyle(
-                    fontFamily: DeckhandTokens.fontMono,
-                    fontSize: DeckhandTokens.tSm,
-                    color: tokens.bad,
-                  ),
+                  style: context.dataSmall.copyWith(color: brand.bad),
                 ),
               ] else if (s.info != null) ...[
                 _StatGrid(
@@ -419,10 +414,8 @@ class _StatusTabState extends ConsumerState<_StatusTab> {
                 Text(
                   'No printer connected. Run the wizard once to pin a '
                   'host, then come back here for live status.',
-                  style: TextStyle(
-                    fontFamily: DeckhandTokens.fontSans,
-                    fontSize: DeckhandTokens.tSm,
-                    color: tokens.text3,
+                  style: context.clBodySmall.copyWith(
+                    color: brand.ink3,
                     height: 1.5,
                   ),
                 ),
@@ -461,13 +454,13 @@ class _StatusTabState extends ConsumerState<_StatusTab> {
     );
   }
 
-  Color _stateColor(DeckhandTokens tokens, _StatusSnapshot s) {
-    if (s.error != null) return tokens.bad;
-    if (s.info == null) return tokens.text4;
+  Color _stateColor(ClBrandColors brand, _StatusSnapshot s) {
+    if (s.error != null) return brand.bad;
+    if (s.info == null) return brand.ink4;
     final ks = s.info!.klippyState.toLowerCase();
-    if (ks == 'ready') return tokens.ok;
-    if (ks == 'error' || ks == 'shutdown') return tokens.bad;
-    return tokens.warn;
+    if (ks == 'ready') return brand.good;
+    if (ks == 'error' || ks == 'shutdown') return brand.bad;
+    return brand.warn;
   }
 
   String _stateLabel(_StatusSnapshot s) {
@@ -586,7 +579,7 @@ class _BackupTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
+    final brand = context.brandColors;
     return _Panel(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -597,10 +590,8 @@ class _BackupTab extends StatelessWidget {
             'Pull a complete byte-for-byte image of the printer\'s eMMC '
             'to local storage. SHA256-verified on completion. Recommended before '
             'any destructive change — flash, reconfigure, or migrate.',
-            style: TextStyle(
-              fontFamily: DeckhandTokens.fontSans,
-              fontSize: DeckhandTokens.tMd,
-              color: tokens.text2,
+            style: context.clBodyMedium.copyWith(
+              color: brand.ink2,
               height: 1.5,
             ),
           ),
@@ -706,7 +697,7 @@ class _RestoreTabState extends ConsumerState<_RestoreTab> {
     return switch (_step) {
       _RestoreStep.backup => _RestoreFooterAction(
         signature: 'backup:${image?.imagePath ?? '<none>'}:$_busy',
-        primaryAction: WizardAction(
+        primaryAction: ClWizardAction(
           label: 'Continue to target',
           disabledReason: _restoreBackupDisabledReason(image),
           onPressed: image == null || _busy
@@ -719,7 +710,7 @@ class _RestoreTabState extends ConsumerState<_RestoreTab> {
             'target:${image?.imagePath ?? '<none>'}:'
             '${image?.indexed ?? false}:'
             '${target?.id ?? '<none>'}:$_busy',
-        primaryAction: WizardAction(
+        primaryAction: ClWizardAction(
           label: 'Review restore',
           disabledReason: _restoreTargetDisabledReason(target),
           onPressed: target == null || _busy
@@ -734,7 +725,7 @@ class _RestoreTabState extends ConsumerState<_RestoreTab> {
             '${image?.manifestSha256 ?? ''}:'
             '${image?.imageBytes ?? 0}:'
             '${target?.id ?? '<none>'}:$_busy',
-        primaryAction: WizardAction(
+        primaryAction: ClWizardAction(
           label: 'Restore backup',
           destructive: true,
           disabledReason: _restoreConfirmDisabledReason(image, target),
@@ -783,15 +774,15 @@ class _RestoreTabState extends ConsumerState<_RestoreTab> {
     final preferredProfileId =
         _nonEmpty(controller.profile?.id) ??
         _nonEmpty(controller.state.profileId);
-    final tokens = DeckhandTokens.of(context);
+    final brand = context.brandColors;
 
     if ((manifestsAsync.isLoading && !manifestsAsync.hasValue) ||
         (candidatesAsync.isLoading && !candidatesAsync.hasValue)) {
       _publishFooterAction(const _RestoreFooterAction.none());
       return const Padding(
         padding: EdgeInsets.only(top: 8),
-        child: DeckhandLoadingBlock(
-          kind: DeckhandLoaderKind.emmcPins,
+        child: ClTechnicalLoadingBlock(
+          kind: ClTechnicalLoaderKind.emmcPins,
           title: 'Loading backups',
           message:
               'Deckhand is scanning local eMMC backup manifests before restore.',
@@ -832,10 +823,8 @@ class _RestoreTabState extends ConsumerState<_RestoreTab> {
             Text(
               'No eMMC backup images were found. Deckhand looked for '
               'manifest-indexed backups and standalone .img files in:',
-              style: TextStyle(
-                fontFamily: DeckhandTokens.fontSans,
-                fontSize: DeckhandTokens.tMd,
-                color: tokens.text2,
+              style: context.clBodyMedium.copyWith(
+                color: brand.ink2,
                 height: 1.5,
               ),
             ),
@@ -850,10 +839,8 @@ class _RestoreTabState extends ConsumerState<_RestoreTab> {
               'Put the backup image in that folder, or make a new eMMC '
               'backup from this recovery flow. Restore stays on this '
               'screen so canceling never drops into an install step.',
-              style: TextStyle(
-                fontFamily: DeckhandTokens.fontSans,
-                fontSize: DeckhandTokens.tSm,
-                color: tokens.text3,
+              style: context.clBodySmall.copyWith(
+                color: brand.ink3,
                 height: 1.45,
               ),
             ),
@@ -930,8 +917,8 @@ class _RestoreTabState extends ConsumerState<_RestoreTab> {
       _publishFooterAction(const _RestoreFooterAction.none());
       return const Padding(
         padding: EdgeInsets.only(top: 8),
-        child: DeckhandLoadingBlock(
-          kind: DeckhandLoaderKind.emmcPins,
+        child: ClTechnicalLoadingBlock(
+          kind: ClTechnicalLoaderKind.emmcPins,
           title: 'Scanning disks',
           message: 'Deckhand is enumerating removable drives before restore.',
         ),
@@ -993,7 +980,7 @@ class _RestoreTabState extends ConsumerState<_RestoreTab> {
     required EmmcBackupOrganizeResult? organization,
     required Object? organizationError,
   }) {
-    final tokens = DeckhandTokens.of(context);
+    final brand = context.brandColors;
     final grouped = _groupRestoreImagesByProfile(
       images,
       preferredProfileId: preferredProfileId,
@@ -1017,10 +1004,8 @@ class _RestoreTabState extends ConsumerState<_RestoreTab> {
           Text(
             'Select the local backup image to restore. Deckhand collapses '
             'manifested duplicates by SHA-256, but keeps every file on disk.',
-            style: TextStyle(
-              fontFamily: DeckhandTokens.fontSans,
-              fontSize: DeckhandTokens.tMd,
-              color: tokens.text2,
+            style: context.clBodyMedium.copyWith(
+              color: brand.ink2,
               height: 1.5,
             ),
           ),
@@ -1198,7 +1183,7 @@ class _RestoreTabState extends ConsumerState<_RestoreTab> {
     required _RestoreImage? selectedImage,
     required DiskInfo? selectedDisk,
   }) {
-    final tokens = DeckhandTokens.of(context);
+    final brand = context.brandColors;
     if (selectedImage == null || selectedDisk == null) {
       return const _RestoreProblem(
         message: 'Pick a backup image and target eMMC.',
@@ -1214,10 +1199,8 @@ class _RestoreTabState extends ConsumerState<_RestoreTab> {
             'Deckhand will overwrite ${diskDisplayName(selectedDisk)} with '
             '${_formatBytes(selectedImage.imageBytes)} from the selected '
             'backup image. Larger target drives are allowed.',
-            style: TextStyle(
-              fontFamily: DeckhandTokens.fontSans,
-              fontSize: DeckhandTokens.tMd,
-              color: tokens.text2,
+            style: context.clBodyMedium.copyWith(
+              color: brand.ink2,
               height: 1.5,
             ),
           ),
@@ -1237,7 +1220,7 @@ class _RestoreTabState extends ConsumerState<_RestoreTab> {
                 const Spacer(),
                 FilledButton.icon(
                   style: FilledButton.styleFrom(
-                    backgroundColor: tokens.bad,
+                    backgroundColor: brand.bad,
                     foregroundColor: const Color(0xFFFCFCFC),
                   ),
                   onPressed: _busy
@@ -1372,11 +1355,11 @@ class _RestoreTabState extends ConsumerState<_RestoreTab> {
   }
 
   Future<void> _confirmRestore(_RestoreImage image, DiskInfo disk) async {
-    final tokens = DeckhandTokens.of(context);
+    final brand = context.brandColors;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        icon: Icon(Icons.warning_amber_rounded, color: tokens.bad),
+        icon: Icon(Icons.warning_amber_rounded, color: brand.bad),
         title: const Text('Erase and restore eMMC?'),
         content: Text(
           'Deckhand will erase ${diskDisplayName(disk)} and restore:\n\n'
@@ -1395,7 +1378,7 @@ class _RestoreTabState extends ConsumerState<_RestoreTab> {
           ),
           FilledButton.icon(
             style: FilledButton.styleFrom(
-              backgroundColor: tokens.bad,
+              backgroundColor: brand.bad,
               foregroundColor: const Color(0xFFFCFCFC),
             ),
             onPressed: () => Navigator.of(dialogContext).pop(true),
@@ -1563,12 +1546,12 @@ class _RestoreTabState extends ConsumerState<_RestoreTab> {
   }
 
   Future<bool?> _confirmSafetyWarnings(List<String> warnings) {
-    final tokens = DeckhandTokens.of(context);
+    final brand = context.brandColors;
     final visibleWarnings = formatRestoreSafetyWarnings(warnings);
     return showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        icon: Icon(Icons.warning_amber_rounded, color: tokens.warn),
+        icon: Icon(Icons.warning_amber_rounded, color: brand.warn),
         title: const Text('Review disk warning'),
         content: Text(
           'Deckhand can continue, but the live disk safety check reported:\n\n'
@@ -1609,7 +1592,7 @@ class _RestoreProblem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
+    final brand = context.brandColors;
     return _Panel(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1617,15 +1600,13 @@ class _RestoreProblem extends StatelessWidget {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Icon(Icons.error_outline, size: 18, color: tokens.bad),
+              Icon(Icons.error_outline, size: 18, color: brand.bad),
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
                   message,
-                  style: TextStyle(
-                    fontFamily: DeckhandTokens.fontSans,
-                    fontSize: DeckhandTokens.tSm,
-                    color: tokens.bad,
+                  style: context.dataSmall.copyWith(
+                    color: brand.bad,
                     height: 1.45,
                   ),
                 ),
@@ -1709,17 +1690,17 @@ class _RestoreOrganizationNotice extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
+    final brand = context.brandColors;
     final color = switch (severity) {
-      _RestoreNoticeSeverity.info => tokens.ok,
-      _RestoreNoticeSeverity.warning => tokens.warn,
+      _RestoreNoticeSeverity.info => brand.good,
+      _RestoreNoticeSeverity.warning => brand.warn,
     };
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.07),
         border: Border.all(color: color.withValues(alpha: 0.35)),
-        borderRadius: BorderRadius.circular(DeckhandTokens.r2),
+        borderRadius: BorderRadius.circular(context.radii.sm),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1738,20 +1719,16 @@ class _RestoreOrganizationNotice extends StatelessWidget {
               children: [
                 Text(
                   title,
-                  style: TextStyle(
-                    fontFamily: DeckhandTokens.fontSans,
-                    fontSize: DeckhandTokens.tSm,
+                  style: context.clBodySmall.copyWith(
                     fontWeight: FontWeight.w600,
-                    color: tokens.text,
+                    color: brand.ink,
                   ),
                 ),
                 const SizedBox(height: 3),
                 Text(
                   message,
-                  style: TextStyle(
-                    fontFamily: DeckhandTokens.fontSans,
-                    fontSize: DeckhandTokens.tXs,
-                    color: tokens.text2,
+                  style: context.clLabelSmall.copyWith(
+                    color: brand.ink2,
                     height: 1.45,
                   ),
                 ),
@@ -1759,10 +1736,8 @@ class _RestoreOrganizationNotice extends StatelessWidget {
                   const SizedBox(height: 5),
                   Text(
                     detail!,
-                    style: TextStyle(
-                      fontFamily: DeckhandTokens.fontMono,
-                      fontSize: DeckhandTokens.tXs,
-                      color: tokens.text3,
+                    style: context.dataTiny.copyWith(
+                      color: brand.ink3,
                       height: 1.35,
                     ),
                   ),
@@ -1783,17 +1758,16 @@ class _SectionHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
+    final brand = context.brandColors;
     return Row(
       children: [
         _MonoLabel(label),
         const Spacer(),
         Text(
           trailing,
-          style: TextStyle(
-            fontFamily: DeckhandTokens.fontMono,
-            fontSize: DeckhandTokens.tXs,
-            color: tokens.text4,
+          style: context.labelTechnical.copyWith(
+            color: brand.ink4,
+            letterSpacing: 0,
           ),
         ),
       ],
@@ -1808,7 +1782,7 @@ class _RestoreStepStrip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
+    final brand = context.brandColors;
     const labels = <_RestoreStep, String>{
       _RestoreStep.backup: 'Backup',
       _RestoreStep.target: 'Target',
@@ -1819,9 +1793,9 @@ class _RestoreStepStrip extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
       decoration: BoxDecoration(
-        color: tokens.ink1,
-        border: Border.all(color: tokens.line),
-        borderRadius: BorderRadius.circular(DeckhandTokens.r2),
+        color: brand.bgAlt,
+        border: Border.all(color: brand.borderStrong),
+        borderRadius: BorderRadius.circular(context.radii.sm),
       ),
       child: LayoutBuilder(
         builder: (context, constraints) {
@@ -1841,7 +1815,7 @@ class _RestoreStepStrip extends StatelessWidget {
                         width: 44,
                         margin: const EdgeInsets.symmetric(horizontal: 8),
                         height: 1,
-                        color: tokens.rule,
+                        color: brand.borderStrong,
                       ),
                   ],
                 ],
@@ -1861,7 +1835,7 @@ class _RestoreStepStrip extends StatelessWidget {
                     child: Container(
                       margin: const EdgeInsets.symmetric(horizontal: 8),
                       height: 1,
-                      color: tokens.rule,
+                      color: brand.borderStrong,
                     ),
                   ),
               ],
@@ -1886,12 +1860,12 @@ class _RestoreStepPill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
+    final brand = context.brandColors;
     final color = active
-        ? tokens.accent
+        ? brand.primary
         : done
-        ? tokens.ok
-        : tokens.text4;
+        ? brand.good
+        : brand.ink4;
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -1899,9 +1873,7 @@ class _RestoreStepPill extends StatelessWidget {
         const SizedBox(width: 6),
         Text(
           label,
-          style: TextStyle(
-            fontFamily: DeckhandTokens.fontSans,
-            fontSize: DeckhandTokens.tSm,
+          style: context.clBodySmall.copyWith(
             fontWeight: active ? FontWeight.w600 : FontWeight.w400,
             color: color,
           ),
@@ -1934,33 +1906,35 @@ class _RestoreChoiceTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
+    final brand = context.brandColors;
     final enabled = onTap != null;
-    final accent = danger && selected ? tokens.bad : tokens.accent;
+    final accent = danger && selected ? brand.bad : brand.primary;
     final visual = MouseRegion(
       cursor: enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
       child: Opacity(
         opacity: enabled ? 1 : 0.46,
         child: InkWell(
           onTap: onTap,
-          borderRadius: BorderRadius.circular(DeckhandTokens.r2),
+          borderRadius: BorderRadius.circular(context.radii.sm),
           child: Container(
             padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
             decoration: BoxDecoration(
               color: selected
                   ? Color.alphaBlend(
                       accent.withValues(alpha: 0.08),
-                      tokens.ink0,
+                      brand.bg,
                     )
-                  : tokens.ink2,
+                  : brand.surface,
               border: Border.all(
-                color: selected ? accent.withValues(alpha: 0.55) : tokens.line,
+                color: selected
+                    ? accent.withValues(alpha: 0.55)
+                    : brand.borderStrong,
               ),
-              borderRadius: BorderRadius.circular(DeckhandTokens.r2),
+              borderRadius: BorderRadius.circular(context.radii.sm),
             ),
             child: Row(
               children: [
-                Icon(icon, size: 16, color: selected ? accent : tokens.text3),
+                Icon(icon, size: 16, color: selected ? accent : brand.ink3),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Column(
@@ -1973,11 +1947,9 @@ class _RestoreChoiceTile extends StatelessWidget {
                           title,
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontFamily: DeckhandTokens.fontSans,
-                            fontSize: DeckhandTokens.tSm,
+                          style: context.clBodySmall.copyWith(
                             fontWeight: FontWeight.w500,
-                            color: tokens.text,
+                            color: brand.ink,
                           ),
                         ),
                       ),
@@ -1989,10 +1961,8 @@ class _RestoreChoiceTile extends StatelessWidget {
                           subtitle,
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontFamily: DeckhandTokens.fontMono,
-                            fontSize: DeckhandTokens.tXs,
-                            color: tokens.text3,
+                          style: context.dataTiny.copyWith(
+                            color: brand.ink3,
                             height: 1.35,
                           ),
                         ),
@@ -2006,10 +1976,8 @@ class _RestoreChoiceTile extends StatelessWidget {
                             detail!,
                             maxLines: 4,
                             overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontFamily: DeckhandTokens.fontMono,
-                              fontSize: DeckhandTokens.tXs,
-                              color: tokens.text3,
+                            style: context.dataTiny.copyWith(
+                              color: brand.ink3,
                               height: 1.35,
                             ),
                           ),
@@ -2024,7 +1992,7 @@ class _RestoreChoiceTile extends StatelessWidget {
                       ? Icons.radio_button_checked
                       : Icons.radio_button_unchecked,
                   size: 18,
-                  color: selected ? accent : tokens.text4,
+                  color: selected ? accent : brand.ink4,
                 ),
               ],
             ),
@@ -2051,20 +2019,18 @@ class _MutedBox extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
+    final brand = context.brandColors;
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: tokens.ink2,
-        border: Border.all(color: tokens.line),
-        borderRadius: BorderRadius.circular(DeckhandTokens.r2),
+        color: brand.surface,
+        border: Border.all(color: brand.borderStrong),
+        borderRadius: BorderRadius.circular(context.radii.sm),
       ),
       child: Text(
         text,
-        style: TextStyle(
-          fontFamily: DeckhandTokens.fontSans,
-          fontSize: DeckhandTokens.tSm,
-          color: tokens.text3,
+        style: context.clBodySmall.copyWith(
+          color: brand.ink3,
           height: 1.45,
         ),
       ),
@@ -2089,18 +2055,18 @@ class _IndexImagePanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
+    final brand = context.brandColors;
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: tokens.warn.withValues(alpha: 0.06),
-        border: Border.all(color: tokens.warn.withValues(alpha: 0.35)),
-        borderRadius: BorderRadius.circular(DeckhandTokens.r2),
+        color: brand.warn.withValues(alpha: 0.06),
+        border: Border.all(color: brand.warn.withValues(alpha: 0.35)),
+        borderRadius: BorderRadius.circular(context.radii.sm),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(Icons.fact_check_outlined, size: 18, color: tokens.warn),
+          Icon(Icons.fact_check_outlined, size: 18, color: brand.warn),
           const SizedBox(width: 10),
           Expanded(
             child: Column(
@@ -2108,11 +2074,9 @@ class _IndexImagePanel extends StatelessWidget {
               children: [
                 Text(
                   'Verification needed',
-                  style: TextStyle(
-                    fontFamily: DeckhandTokens.fontSans,
-                    fontSize: DeckhandTokens.tSm,
+                  style: context.clBodySmall.copyWith(
                     fontWeight: FontWeight.w600,
-                    color: tokens.text,
+                    color: brand.ink,
                   ),
                 ),
                 const SizedBox(height: 4),
@@ -2120,10 +2084,8 @@ class _IndexImagePanel extends StatelessWidget {
                   target == null
                       ? 'Pick a target eMMC, then Deckhand can hash this image and write a manifest without creating another backup.'
                       : 'Deckhand can hash this image and write a manifest for ${diskDisplayName(target!)}. No backup is created.',
-                  style: TextStyle(
-                    fontFamily: DeckhandTokens.fontSans,
-                    fontSize: DeckhandTokens.tXs,
-                    color: tokens.text3,
+                  style: context.dataTiny.copyWith(
+                    color: brand.ink3,
                     height: 1.4,
                   ),
                 ),
@@ -2131,11 +2093,7 @@ class _IndexImagePanel extends StatelessWidget {
                   const SizedBox(height: 6),
                   Text(
                     error!,
-                    style: TextStyle(
-                      fontFamily: DeckhandTokens.fontMono,
-                      fontSize: DeckhandTokens.tXs,
-                      color: tokens.bad,
-                    ),
+                    style: context.dataTiny.copyWith(color: brand.bad),
                   ),
                 ],
               ],
@@ -2148,7 +2106,7 @@ class _IndexImagePanel extends StatelessWidget {
                 ? const SizedBox(
                     width: 14,
                     height: 14,
-                    child: DeckhandSpinner(size: 14, strokeWidth: 1.5),
+                    child: ClSpinner(size: 14, strokeWidth: 1.5),
                   )
                 : const Icon(Icons.verified_outlined, size: 14),
             label: Text(indexing ? 'Indexing…' : 'Verify and index'),
@@ -2205,7 +2163,7 @@ class _RestoreProgressPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
+    final brand = context.brandColors;
     final p = progress;
     final canceled = error == _restoreCanceledMessage;
     final failed = error != null && !canceled;
@@ -2222,12 +2180,12 @@ class _RestoreProgressPanel extends StatelessWidget {
         ? null
         : p.fraction.clamp(0.0, 1.0).toDouble();
     final accent = failed
-        ? tokens.bad
+        ? brand.bad
         : canceled
-        ? tokens.text3
+        ? brand.ink3
         : done
-        ? tokens.ok
-        : tokens.accent;
+        ? brand.good
+        : brand.primary;
 
     return _Panel(
       child: Column(
@@ -2252,17 +2210,16 @@ class _RestoreProgressPanel extends StatelessWidget {
               if (p != null && p.bytesTotal > 0)
                 Text(
                   '${(p.fraction * 100).clamp(0, 100).toStringAsFixed(1)}%',
-                  style: TextStyle(
-                    fontFamily: DeckhandTokens.fontMono,
-                    fontSize: DeckhandTokens.tXs,
-                    color: tokens.text3,
+                  style: context.labelTechnical.copyWith(
+                    color: brand.ink3,
+                    letterSpacing: 0,
                   ),
                 ),
             ],
           ),
           const SizedBox(height: 10),
-          WizardProgressBar(
-            fraction: done ? 1.0 : fraction,
+          ClTickedProgressBar(
+            value: done ? 1.0 : fraction,
             animateStripes: !failed && !canceled && !done,
           ),
           const SizedBox(height: 8),
@@ -2276,10 +2233,8 @@ class _RestoreProgressPanel extends StatelessWidget {
                 : '${_formatBytes(p.bytesDone)} of '
                       '${_formatBytes(p.bytesTotal)}'
                       '${p.message == null ? '' : ' · ${p.message}'}',
-            style: TextStyle(
-              fontFamily: DeckhandTokens.fontMono,
-              fontSize: DeckhandTokens.tXs,
-              color: failed ? tokens.bad : tokens.text3,
+            style: context.dataTiny.copyWith(
+              color: failed ? brand.bad : brand.ink3,
               height: 1.45,
             ),
           ),
@@ -2525,7 +2480,7 @@ class _ReRunWizardTab extends StatelessWidget {
   const _ReRunWizardTab();
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
+    final brand = context.brandColors;
     return _Panel(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -2537,10 +2492,8 @@ class _ReRunWizardTab extends StatelessWidget {
             'preserved. Use to repair, reconfigure, or migrate — the '
             'profile and host pin stay intact, you just re-pick the '
             'flow (stock-keep vs. fresh-flash).',
-            style: TextStyle(
-              fontFamily: DeckhandTokens.fontSans,
-              fontSize: DeckhandTokens.tMd,
-              color: tokens.text2,
+            style: context.clBodyMedium.copyWith(
+              color: brand.ink2,
               height: 1.5,
             ),
           ),
@@ -2569,13 +2522,13 @@ class _Panel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
+    final brand = context.brandColors;
     return Container(
       padding: const EdgeInsets.all(22),
       decoration: BoxDecoration(
-        color: tokens.ink1,
-        border: Border.all(color: tokens.line),
-        borderRadius: BorderRadius.circular(DeckhandTokens.r3),
+        color: brand.bgAlt,
+        border: Border.all(color: brand.borderStrong),
+        borderRadius: BorderRadius.circular(context.radii.md),
       ),
       child: child,
     );
@@ -2587,14 +2540,12 @@ class _MonoLabel extends StatelessWidget {
   final String text;
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
+    final brand = context.brandColors;
     return Text(
       text,
-      style: TextStyle(
-        fontFamily: DeckhandTokens.fontMono,
-        fontSize: 10,
+      style: context.labelTechnical.copyWith(
+        color: brand.ink4,
         letterSpacing: 0,
-        color: tokens.text4,
       ),
     );
   }
@@ -2615,7 +2566,7 @@ class _StatGrid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
+    final brand = context.brandColors;
     return GridView.count(
       crossAxisCount: 2,
       mainAxisSpacing: 10,
@@ -2628,9 +2579,9 @@ class _StatGrid extends StatelessWidget {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
             decoration: BoxDecoration(
-              color: tokens.ink2,
-              border: Border.all(color: tokens.line),
-              borderRadius: BorderRadius.circular(DeckhandTokens.r2),
+              color: brand.surface,
+              border: Border.all(color: brand.borderStrong),
+              borderRadius: BorderRadius.circular(context.radii.sm),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -2641,10 +2592,9 @@ class _StatGrid extends StatelessWidget {
                 Text(
                   s.v.isEmpty ? '—' : s.v,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontFamily: DeckhandTokens.fontMono,
-                    fontSize: DeckhandTokens.tMd,
-                    color: tokens.text,
+                  style: context.dataSmall.copyWith(
+                    color: brand.ink,
+                    fontSize: 14,
                   ),
                 ),
               ],

@@ -1,6 +1,7 @@
 import 'package:deckhand_core/deckhand_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:forge/forge.dart';
 
 import '../providers.dart';
 
@@ -59,9 +60,10 @@ class _DebugBundleScreenState extends ConsumerState<DebugBundleScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final brand = context.brandColors;
     final stats = _redacted.stats;
     return Scaffold(
+      backgroundColor: brand.bg,
       appBar: AppBar(
         title: const Text('Review debug bundle'),
         leading: IconButton(
@@ -79,28 +81,25 @@ class _DebugBundleScreenState extends ConsumerState<DebugBundleScreen> {
               'wizard decisions, the active profile, and a doctor '
               'report. This preview shows the redacted log content. '
               'Skim it, click Save when you\'re ready.',
-              style: theme.textTheme.bodyMedium,
+              style: context.clBodyMedium,
             ),
             const SizedBox(height: 16),
             _StatsCard(stats: stats),
             const SizedBox(height: 16),
-            Text('Redacted log preview',
-                style: theme.textTheme.titleSmall),
+            Text('Redacted log preview', style: context.clTitleSmall),
             const SizedBox(height: 8),
             Expanded(
               child: Container(
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                  color: theme.colorScheme.surfaceContainerHighest,
-                  borderRadius: BorderRadius.circular(8),
+                  color: brand.surface2,
+                  border: Border.all(color: brand.borderSubtle),
+                  borderRadius: BorderRadius.circular(context.radii.lg),
                 ),
                 child: SingleChildScrollView(
                   child: SelectableText(
                     _redacted.text,
-                    style: const TextStyle(
-                      fontFamily: 'monospace',
-                      fontSize: 12,
-                    ),
+                    style: context.dataSmall,
                   ),
                 ),
               ),
@@ -108,15 +107,16 @@ class _DebugBundleScreenState extends ConsumerState<DebugBundleScreen> {
             const SizedBox(height: 16),
             Row(
               children: [
-                TextButton(
+                ClButton(
+                  kind: ClButtonKind.text,
                   onPressed: widget.onCancel,
                   child: const Text('Cancel'),
                 ),
                 const Spacer(),
-                FilledButton.icon(
+                ClButton(
                   onPressed: () => widget.onSave(_redacted),
-                  icon: const Icon(Icons.save_alt),
-                  label: const Text('Save bundle'),
+                  icon: Icons.save_alt,
+                  child: const Text('Save bundle'),
                 ),
               ],
             ),
@@ -133,28 +133,24 @@ class _StatsCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final brand = context.brandColors;
     if (stats.isClean) {
-      return Card(
-        color: theme.colorScheme.primaryContainer,
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Row(
-            children: [
-              Icon(Icons.check_circle_outline,
-                  color: theme.colorScheme.onPrimaryContainer),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  'Nothing matched the redaction patterns. The bundle '
-                  'looks clean — but skim the log below anyway.',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onPrimaryContainer,
-                  ),
-                ),
+      return ClPanel(
+        background: brand.good.withValues(alpha: 0.08),
+        borderColor: brand.good.withValues(alpha: 0.35),
+        padding: const EdgeInsets.all(12),
+        body: Row(
+          children: [
+            Icon(Icons.check_circle_outline, color: brand.good),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Nothing matched the redaction patterns. The bundle '
+                'looks clean — but skim the log below anyway.',
+                style: context.clBodySmall.copyWith(color: brand.ink2),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       );
     }
@@ -166,28 +162,22 @@ class _StatsCard extends StatelessWidget {
       if (stats.fprCount > 0) ('SSH fingerprints', stats.fprCount),
       if (stats.secretCount > 0) ('probable secrets', stats.secretCount),
     ];
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Redactions applied',
-                style: theme.textTheme.titleSmall),
-            const SizedBox(height: 6),
-            Wrap(
-              spacing: 8,
-              runSpacing: 6,
-              children: [
-                for (final (label, count) in entries)
-                  Chip(
-                    label: Text('$count $label'),
-                    visualDensity: VisualDensity.compact,
-                  ),
-              ],
-            ),
-          ],
-        ),
+    return ClPanel(
+      padding: const EdgeInsets.all(12),
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Redactions applied', style: context.clTitleSmall),
+          const SizedBox(height: 6),
+          Wrap(
+            spacing: 8,
+            runSpacing: 6,
+            children: [
+              for (final (label, count) in entries)
+                ClStatusChip(label: '$count $label', kind: ClChipKind.warn),
+            ],
+          ),
+        ],
       ),
     );
   }

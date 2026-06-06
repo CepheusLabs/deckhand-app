@@ -1,14 +1,11 @@
 import 'package:deckhand_core/deckhand_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:forge/forge.dart';
 import 'package:go_router/go_router.dart';
 
 import '../i18n/translations.g.dart';
 import '../providers.dart';
-import '../theming/deckhand_tokens.dart';
-import '../widgets/selection_card.dart';
-import '../widgets/status_pill.dart';
-import '../widgets/wizard_scaffold.dart';
 
 class ChoosePathScreen extends ConsumerStatefulWidget {
   const ChoosePathScreen({super.key});
@@ -31,8 +28,7 @@ class _ChoosePathScreenState extends ConsumerState<ChoosePathScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return WizardScaffold(
-      screenId: 'S40-choose-path',
+    return ClWizardPageScaffold(
       title: 'How should we install the new firmware?',
       helperText:
           'Two safe paths. Both end with your printer running Kalico or '
@@ -43,10 +39,9 @@ class _ChoosePathScreenState extends ConsumerState<ChoosePathScreen> {
           final twoColumn = constraints.maxWidth >= 720;
           final keep = _PathCard(
             tag: 'FLOW A',
-            badge: const StatusPill(
+            badge: const ClStatusChip(
               label: 'recommended',
-              color: Color(0xFF2EA771),
-              noDot: true,
+              kind: ClChipKind.good,
             ),
             title: 'Keep my current OS',
             body:
@@ -62,10 +57,9 @@ class _ChoosePathScreenState extends ConsumerState<ChoosePathScreen> {
           );
           final fresh = _PathCard(
             tag: 'FLOW B',
-            badge: const StatusPill(
+            badge: const ClStatusChip(
               label: 'destructive',
-              color: Color(0xFFCC4A38),
-              noDot: true,
+              kind: ClChipKind.bad,
             ),
             title: 'Flash a fresh OS',
             body:
@@ -100,7 +94,7 @@ class _ChoosePathScreenState extends ConsumerState<ChoosePathScreen> {
           return Column(children: [keep, const SizedBox(height: 12), fresh]);
         },
       ),
-      primaryAction: WizardAction(
+      primaryAction: ClWizardAction(
         label: t.common.action_continue,
         onPressed: () {
           ref.read(wizardControllerProvider).setFlow(_choice);
@@ -120,7 +114,7 @@ class _ChoosePathScreenState extends ConsumerState<ChoosePathScreen> {
         },
       ),
       secondaryActions: [
-        WizardAction(
+        ClWizardAction(
           label: t.common.action_back,
           onPressed: () => context.go('/pick-printer'),
           isBack: true,
@@ -162,8 +156,8 @@ class _PathCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
-    return SelectionCard(
+    final brand = context.brandColors;
+    return ClSelectionCard(
       selected: selected,
       onTap: onTap,
       padding: const EdgeInsets.fromLTRB(22, 20, 22, 20),
@@ -172,15 +166,7 @@ class _PathCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              Text(
-                tag,
-                style: TextStyle(
-                  fontFamily: DeckhandTokens.fontMono,
-                  fontSize: 10,
-                  color: tokens.text4,
-                  letterSpacing: 0,
-                ),
-              ),
+              Text(tag, style: context.dataTiny.copyWith(color: brand.ink4)),
               const Spacer(),
               badge,
             ],
@@ -188,21 +174,17 @@ class _PathCard extends StatelessWidget {
           const SizedBox(height: 14),
           Text(
             title,
-            style: TextStyle(
-              fontFamily: DeckhandTokens.fontSans,
-              fontSize: DeckhandTokens.tXl,
+            style: context.clTitleLarge.copyWith(
               fontWeight: FontWeight.w500,
-              color: tokens.text,
+              color: brand.ink,
               letterSpacing: 0,
             ),
           ),
           const SizedBox(height: 8),
           Text(
             body,
-            style: TextStyle(
-              fontFamily: DeckhandTokens.fontSans,
-              fontSize: DeckhandTokens.tMd,
-              color: tokens.text2,
+            style: context.clBodyMedium.copyWith(
+              color: brand.ink2,
               height: 1.55,
             ),
           ),
@@ -214,7 +196,7 @@ class _PathCard extends StatelessWidget {
           const SizedBox(height: 14),
           Container(
             decoration: BoxDecoration(
-              border: Border(top: BorderSide(color: tokens.line)),
+              border: Border(top: BorderSide(color: brand.borderStrong)),
             ),
             padding: const EdgeInsets.only(top: 12),
             child: Column(
@@ -230,23 +212,13 @@ class _PathCard extends StatelessWidget {
                           width: 100,
                           child: Text(
                             d.label,
-                            style: TextStyle(
-                              fontFamily: DeckhandTokens.fontMono,
-                              fontSize: 10,
-                              color: tokens.text4,
-                              letterSpacing: 0,
-                            ),
+                            style: context.dataTiny.copyWith(color: brand.ink4),
                           ),
                         ),
                         Expanded(
                           child: Text(
                             d.value,
-                            style: TextStyle(
-                              fontFamily: DeckhandTokens.fontMono,
-                              fontSize: 10,
-                              color: tokens.text3,
-                              letterSpacing: 0,
-                            ),
+                            style: context.dataTiny.copyWith(color: brand.ink3),
                           ),
                         ),
                       ],
@@ -268,14 +240,14 @@ class _WarnLine extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
-    final color = kind == _PathWarn.bad ? tokens.bad : tokens.warn;
+    final brand = context.brandColors;
+    final color = kind == _PathWarn.bad ? brand.bad : brand.warn;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.08),
         border: Border.all(color: color.withValues(alpha: 0.30)),
-        borderRadius: BorderRadius.circular(DeckhandTokens.r2),
+        borderRadius: BorderRadius.circular(context.radii.sm),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -285,11 +257,7 @@ class _WarnLine extends StatelessWidget {
           Expanded(
             child: Text(
               message,
-              style: TextStyle(
-                fontFamily: DeckhandTokens.fontSans,
-                fontSize: DeckhandTokens.tSm,
-                color: color,
-              ),
+              style: context.clBodySmall.copyWith(color: color),
             ),
           ),
         ],

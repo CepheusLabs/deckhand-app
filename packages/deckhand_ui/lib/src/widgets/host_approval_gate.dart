@@ -1,6 +1,7 @@
 import 'package:deckhand_core/deckhand_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:forge/forge.dart';
 
 import '../providers.dart';
 
@@ -83,51 +84,53 @@ class HostApprovalGate {
     bool profileBatch = false,
   }) async {
     final hostText = hosts.length == 1 ? '"${hosts.single}"' : 'these hosts';
-    final result = await showDialog<bool>(
+    final result = await ClDialog.show<bool>(
       context: context,
       barrierDismissible: false,
-      builder: (ctx) => AlertDialog(
-        icon: const Icon(Icons.public),
-        title: Text(
-          profileBatch
-              ? 'Allow profile network access?'
-              : 'Allow network access?',
-        ),
-        content: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 520),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                profileBatch
-                    ? 'The selected printer profile declares $hostText for OS '
-                          'images, source archives, and release assets. '
-                          'Approving keeps this install moving while still '
-                          'making unexpected outbound hosts visible. You can '
-                          'revoke this later from Settings.'
-                    : 'Deckhand needs to contact $hostText for the current '
-                          'profile, image, or firmware step. Approving keeps '
-                          'unexpected outbound hosts visible instead of '
-                          'silently allowing them. You can revoke this later '
-                          'from Settings.',
-              ),
-              const SizedBox(height: 14),
-              _HostApprovalList(hosts: hosts),
-            ],
+      icon: ClIcons.globe,
+      maxWidth: 520,
+      title: profileBatch
+          ? 'Allow profile network access?'
+          : 'Allow network access?',
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            profileBatch
+                ? 'The selected printer profile declares $hostText for OS '
+                      'images, source archives, and release assets. '
+                      'Approving keeps this install moving while still '
+                      'making unexpected outbound hosts visible. You can '
+                      'revoke this later from Settings.'
+                : 'Deckhand needs to contact $hostText for the current '
+                      'profile, image, or firmware step. Approving keeps '
+                      'unexpected outbound hosts visible instead of '
+                      'silently allowing them. You can revoke this later '
+                      'from Settings.',
+            style: context.clBodyMedium,
           ),
-        ),
-        actions: [
-          TextButton(
+          const SizedBox(height: 14),
+          _HostApprovalList(hosts: hosts),
+        ],
+      ),
+      actions: [
+        Builder(
+          builder: (ctx) => ClButton(
+            kind: ClButtonKind.ghost,
+            size: ClButtonSize.sm,
             onPressed: () => Navigator.of(ctx).pop(false),
             child: const Text('Cancel'),
           ),
-          FilledButton(
+        ),
+        Builder(
+          builder: (ctx) => ClButton(
+            size: ClButtonSize.sm,
             onPressed: () => Navigator.of(ctx).pop(true),
             child: const Text('Allow'),
           ),
-        ],
-      ),
+        ),
+      ],
     );
     return result ?? false;
   }
@@ -140,16 +143,14 @@ class _HostApprovalList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final textStyle = Theme.of(
-      context,
-    ).textTheme.bodyMedium?.copyWith(fontFamily: 'IBMPlexMono', fontSize: 12);
+    final brand = context.brandColors;
     return Container(
       width: double.infinity,
       constraints: const BoxConstraints(maxHeight: 180),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(4),
+        color: brand.surface3,
+        borderRadius: BorderRadius.circular(context.radii.sm),
       ),
       child: SingleChildScrollView(
         child: Column(
@@ -159,7 +160,7 @@ class _HostApprovalList extends StatelessWidget {
             for (final host in hosts)
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 3),
-                child: Text(host, style: textStyle),
+                child: Text(host, style: context.dataSmall),
               ),
           ],
         ),

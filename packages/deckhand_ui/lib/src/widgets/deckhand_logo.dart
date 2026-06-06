@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
-
-import '../theming/deckhand_tokens.dart';
+import 'package:forge/forge.dart';
 
 /// Deckhand brand mark — caliper / tick-mark.
 ///
@@ -19,8 +18,7 @@ class DeckhandLogo extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
-    final paintColor = color ?? tokens.accent;
+    final paintColor = color ?? context.brandColors.primary;
     return SizedBox(
       width: size,
       height: size,

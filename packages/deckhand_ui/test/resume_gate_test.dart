@@ -16,9 +16,9 @@ void main() {
       // User got as far as picking a printer and then killed the app.
       // That counts as progress worth resuming, even if they're still
       // at `welcome` because pick_printer hasn't committed yet.
-      const s = WizardState(
+      final s = WizardState(
         profileId: 'sovol-zero',
-        decisions: {},
+        decisions: const {},
         currentStep: 'welcome',
         flow: WizardFlow.none,
       );
@@ -26,9 +26,9 @@ void main() {
     });
 
     test('mid-wizard snapshot -> prompt', () {
-      const s = WizardState(
+      final s = WizardState(
         profileId: 'phrozen-arco',
-        decisions: {'firmware': 'kalico'},
+        decisions: const {'firmware': 'kalico'},
         currentStep: 'verify',
         flow: WizardFlow.stockKeep,
       );

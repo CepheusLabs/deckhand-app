@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 
+import 'package:forge_wizard/forge_wizard.dart';
 import 'package:meta/meta.dart';
 import 'package:path/path.dart' as p;
 
@@ -139,7 +140,25 @@ class WizardController {
   // absent, file already deleted, etc.) even though the profile
   // declares them for the printer type.
   PrinterState _printerState = PrinterState.empty;
-  var _state = WizardState.initial();
+
+  // The neutral wizard-state owner from forge_wizard. It holds the
+  // single source of truth for navigation cursor, flow, subject
+  // (profile), connection, and the decision graph; this controller
+  // layers Deckhand's services, events, and side effects around it.
+  // Mutations go through the process (setCurrentStep/setDecision/
+  // setFlow/replace) so the engine — not ad-hoc copyWith calls —
+  // owns every transition.
+  final ForgeWizardFlowProcess<WizardState> _process =
+      ForgeWizardFlowProcess<WizardState>(
+        initialState: WizardState.initial(),
+        convert: wizardStateFromForge,
+      );
+
+  // Read/replace shims so the existing `_state` / `_state = …` call
+  // sites in the controller `part` files keep reading the same name
+  // while every write still flows through the owning process.
+  WizardState get _state => _process.state;
+  set _state(WizardState value) => _process.replace(value);
 
   WizardState get state => _state;
   PrinterProfile? get profile => _profile;
@@ -249,8 +268,10 @@ class WizardController {
   /// [FlowChanged] (the existing "wizard moved" event) so the
   /// `wizardStateProvider` stream picks it up and persists.
   void setCurrentStep(String step) {
-    if (step.isEmpty || step == _state.currentStep) return;
-    _state = _state.copyWith(currentStep: step);
+    // Route through the process; it no-ops (returns false) when the
+    // step is blank or unchanged, which preserves the prior
+    // "skip redundant save events on rebuilds" behaviour.
+    if (!_process.setCurrentStep(step)) return;
     _emit(FlowChanged(_state.flow));
   }
 
@@ -452,10 +473,10 @@ class WizardController {
   );
 
   Future<void> setDecision(String path, Object value) async {
-    // Immutable map merge rather than Map.from() + mutate. Avoids any
-    // possibility of two concurrent calls racing on the same temporary
-    // mutable map while the copyWith is scheduled.
-    _state = _state.copyWith(decisions: {..._state.decisions, path: value});
+    // The process performs the immutable map merge (a fresh
+    // unmodifiable snapshot, no shared mutable temporary), so two
+    // concurrent calls can't race on the same intermediate map.
+    _process.setDecision(path, value);
     _emit(DecisionRecorded(path: path, value: value));
   }
 
@@ -510,7 +531,11 @@ class WizardController {
   }
 
   void setFlow(WizardFlow flow) {
-    _state = _state.copyWith(flow: flow);
+    // Persist the flow on the process (keyed by the enum's name, which
+    // is how it round-trips through ForgeWizardStateCodec). Emit
+    // unconditionally — callers rely on FlowChanged firing even when
+    // re-selecting the current flow.
+    _process.setFlow(flow.name);
     _emit(FlowChanged(flow));
   }
 

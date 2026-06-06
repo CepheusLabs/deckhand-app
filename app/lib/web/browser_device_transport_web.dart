@@ -1,13 +1,13 @@
-import 'dart:html' as html;
-import 'dart:js_util' as js_util;
+import 'dart:js_interop';
+import 'dart:js_interop_unsafe';
 import 'dart:typed_data';
 
 import 'package:deckhand_core/deckhand_web_core.dart';
 
 class DeckhandBrowserDeviceTransport implements BrowserDeviceTransport {
-  Object? _serialPort;
-  Object? _usbDevice;
-  Object? _hidDevice;
+  JSObject? _serialPort;
+  JSObject? _usbDevice;
+  JSObject? _hidDevice;
 
   @override
   Future<void> openSerial({
@@ -15,14 +15,16 @@ class DeckhandBrowserDeviceTransport implements BrowserDeviceTransport {
     required int baudRate,
   }) async {
     final serial = _navigatorCapability('serial', 'WebSerial');
-    final port = await js_util.promiseToFuture<Object>(
-      js_util.callMethod(serial, 'requestPort', [_requestOptions(filters)]),
-    );
-    await js_util.promiseToFuture<void>(
-      js_util.callMethod(port, 'open', [
-        js_util.jsify({'baudRate': baudRate}),
-      ]),
-    );
+    final port = await serial
+        .callMethodVarArgs<JSPromise<JSObject>>('requestPort'.toJS, [
+          _requestOptions(filters),
+        ])
+        .toDart;
+    await port
+        .callMethodVarArgs<JSPromise<JSAny?>>('open'.toJS, [
+          {'baudRate': baudRate}.jsify(),
+        ])
+        .toDart;
     _serialPort = port;
   }
 
@@ -32,44 +34,50 @@ class DeckhandBrowserDeviceTransport implements BrowserDeviceTransport {
     if (port == null) {
       throw const DeckhandTransportException('Serial port is not open.');
     }
-    final writable = js_util.getProperty<Object?>(port, 'writable');
+    final writable = port.getProperty<JSObject?>('writable'.toJS);
     if (writable == null) {
       throw const DeckhandTransportException('Serial port is not writable.');
     }
-    final writer = js_util.callMethod<Object>(writable, 'getWriter', const []);
+    final writer = writable.callMethodVarArgs<JSObject>('getWriter'.toJS);
     try {
-      await js_util.promiseToFuture<void>(
-        js_util.callMethod(writer, 'write', [bytes]),
-      );
+      await writer
+          .callMethodVarArgs<JSPromise<JSAny?>>('write'.toJS, [bytes.toJS])
+          .toDart;
     } finally {
-      js_util.callMethod<void>(writer, 'releaseLock', const []);
+      writer.callMethodVarArgs<JSAny?>('releaseLock'.toJS);
     }
   }
 
   @override
   Future<void> openUsb({required Map<String, Object?> filters}) async {
     final usb = _navigatorCapability('usb', 'WebUSB');
-    final device = await js_util.promiseToFuture<Object>(
-      js_util.callMethod(usb, 'requestDevice', [_requestOptions(filters)]),
-    );
-    await js_util.promiseToFuture<void>(
-      js_util.callMethod(device, 'open', const []),
-    );
+    final device = await usb
+        .callMethodVarArgs<JSPromise<JSObject>>('requestDevice'.toJS, [
+          _requestOptions(filters),
+        ])
+        .toDart;
+    await device.callMethodVarArgs<JSPromise<JSAny?>>('open'.toJS).toDart;
     final configuration = _intValue(filters['configuration_value']);
     if (configuration != null) {
-      await js_util.promiseToFuture<void>(
-        js_util.callMethod(device, 'selectConfiguration', [configuration]),
-      );
-    } else if (js_util.getProperty<Object?>(device, 'configuration') == null) {
-      await js_util.promiseToFuture<void>(
-        js_util.callMethod(device, 'selectConfiguration', [1]),
-      );
+      await device
+          .callMethodVarArgs<JSPromise<JSAny?>>('selectConfiguration'.toJS, [
+            configuration.toJS,
+          ])
+          .toDart;
+    } else if (device.getProperty<JSAny?>('configuration'.toJS) == null) {
+      await device
+          .callMethodVarArgs<JSPromise<JSAny?>>('selectConfiguration'.toJS, [
+            1.toJS,
+          ])
+          .toDart;
     }
     final interfaceNumber = _intValue(filters['interface_number']);
     if (interfaceNumber != null) {
-      await js_util.promiseToFuture<void>(
-        js_util.callMethod(device, 'claimInterface', [interfaceNumber]),
-      );
+      await device
+          .callMethodVarArgs<JSPromise<JSAny?>>('claimInterface'.toJS, [
+            interfaceNumber.toJS,
+          ])
+          .toDart;
     }
     _usbDevice = device;
   }
@@ -87,34 +95,34 @@ class DeckhandBrowserDeviceTransport implements BrowserDeviceTransport {
     if (device == null) {
       throw const DeckhandTransportException('USB device is not open.');
     }
-    await js_util.promiseToFuture<Object?>(
-      js_util.callMethod(device, 'controlTransferOut', [
-        js_util.jsify({
-          'requestType': requestType,
-          'recipient': recipient,
-          'request': request,
-          'value': value,
-          'index': index,
-        }),
-        bytes,
-      ]),
-    );
+    await device
+        .callMethodVarArgs<JSPromise<JSAny?>>('controlTransferOut'.toJS, [
+          {
+            'requestType': requestType,
+            'recipient': recipient,
+            'request': request,
+            'value': value,
+            'index': index,
+          }.jsify(),
+          bytes.toJS,
+        ])
+        .toDart;
   }
 
   @override
   Future<void> openHid({required Map<String, Object?> filters}) async {
     final hid = _navigatorCapability('hid', 'WebHID');
-    final devices = await js_util.promiseToFuture<Object>(
-      js_util.callMethod(hid, 'requestDevice', [_requestOptions(filters)]),
-    );
-    final length = js_util.getProperty<int>(devices, 'length');
+    final devices = await hid
+        .callMethodVarArgs<JSPromise<JSObject>>('requestDevice'.toJS, [
+          _requestOptions(filters),
+        ])
+        .toDart;
+    final length = devices.getProperty<JSNumber>('length'.toJS).toDartInt;
     if (length == 0) {
       throw const DeckhandTransportException('No HID device was selected.');
     }
-    final device = js_util.getProperty<Object>(devices, '0');
-    await js_util.promiseToFuture<void>(
-      js_util.callMethod(device, 'open', const []),
-    );
+    final device = devices.getProperty<JSObject>('0'.toJS);
+    await device.callMethodVarArgs<JSPromise<JSAny?>>('open'.toJS).toDart;
     _hidDevice = device;
   }
 
@@ -127,9 +135,12 @@ class DeckhandBrowserDeviceTransport implements BrowserDeviceTransport {
     if (device == null) {
       throw const DeckhandTransportException('HID device is not open.');
     }
-    await js_util.promiseToFuture<void>(
-      js_util.callMethod(device, 'sendReport', [reportId, bytes]),
-    );
+    await device
+        .callMethodVarArgs<JSPromise<JSAny?>>('sendReport'.toJS, [
+          reportId.toJS,
+          bytes.toJS,
+        ])
+        .toDart;
   }
 
   @override
@@ -143,8 +154,9 @@ class DeckhandBrowserDeviceTransport implements BrowserDeviceTransport {
   }
 }
 
-Object _navigatorCapability(String key, String label) {
-  final capability = js_util.getProperty<Object?>(html.window.navigator, key);
+JSObject _navigatorCapability(String key, String label) {
+  final navigator = globalContext.getProperty<JSObject?>('navigator'.toJS);
+  final capability = navigator?.getProperty<JSObject?>(key.toJS);
   if (capability == null) {
     throw DeckhandTransportException(
       '$label is not available in this browser.',
@@ -153,14 +165,14 @@ Object _navigatorCapability(String key, String label) {
   return capability;
 }
 
-Object _requestOptions(Map<String, Object?> filters) {
+JSAny? _requestOptions(Map<String, Object?> filters) {
   final rawFilters = filters['filters'];
   final normalizedFilters = rawFilters is List
       ? rawFilters
       : filters.isEmpty
       ? const <Object?>[]
       : [_normalizeDeviceFilter(filters)];
-  return js_util.jsify({'filters': normalizedFilters});
+  return {'filters': normalizedFilters}.jsify();
 }
 
 Map<String, Object?> _normalizeDeviceFilter(Map<String, Object?> filter) {
@@ -199,14 +211,12 @@ int? _intValue(Object? value) {
   return int.tryParse(value?.toString() ?? '');
 }
 
-Future<void> _closeJsDevice(Object? device) async {
+Future<void> _closeJsDevice(JSObject? device) async {
   if (device == null) {
     return;
   }
   try {
-    await js_util.promiseToFuture<void>(
-      js_util.callMethod(device, 'close', const []),
-    );
+    await device.callMethodVarArgs<JSPromise<JSAny?>>('close'.toJS).toDart;
   } catch (_) {
     // Device was already disconnected or closed by the browser.
   }

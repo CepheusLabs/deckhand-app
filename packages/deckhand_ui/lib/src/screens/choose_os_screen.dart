@@ -2,14 +2,11 @@ import 'package:deckhand_core/deckhand_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:forge/forge.dart';
 import 'package:go_router/go_router.dart';
 
 import '../i18n/translations.g.dart';
 import '../providers.dart';
-import '../theming/deckhand_tokens.dart';
-import '../widgets/equal_height_grid.dart';
-import '../widgets/selection_card.dart';
-import '../widgets/wizard_scaffold.dart';
 
 class ChooseOsScreen extends ConsumerStatefulWidget {
   const ChooseOsScreen({super.key});
@@ -50,8 +47,7 @@ class _ChooseOsScreenState extends ConsumerState<ChooseOsScreen> {
         const <OsImageOption>[];
     _seedChoice(options);
 
-    return WizardScaffold(
-      screenId: 'S210-choose-os',
+    return ClWizardPageScaffold(
       title: 'Pick the OS image.',
       helperText:
           'Either pull a fresh Armbian build, or supply your own .img.xz '
@@ -61,7 +57,7 @@ class _ChooseOsScreenState extends ConsumerState<ChooseOsScreen> {
         builder: (context, constraints) {
           final w = constraints.maxWidth;
           final cols = w >= 1080 ? 3 : (w >= 720 ? 2 : 1);
-          return EqualHeightGrid(
+          return ClEqualHeightGrid(
             columns: cols,
             children: [
               for (final opt in options)
@@ -79,7 +75,7 @@ class _ChooseOsScreenState extends ConsumerState<ChooseOsScreen> {
           );
         },
       ),
-      primaryAction: WizardAction(
+      primaryAction: ClWizardAction(
         label: t.common.action_continue,
         disabledReason: _choice == null ? 'Select an OS image first.' : null,
         onPressed: _choice == null
@@ -92,7 +88,7 @@ class _ChooseOsScreenState extends ConsumerState<ChooseOsScreen> {
               },
       ),
       secondaryActions: [
-        WizardAction(
+        ClWizardAction(
           label: t.common.action_back,
           onPressed: () => context.go('/flash-target'),
           isBack: true,
@@ -139,8 +135,8 @@ class _OsCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
-    return SelectionCard(
+    final brand = context.brandColors;
+    return ClSelectionCard(
       selected: selected,
       onTap: onTap,
       padding: const EdgeInsets.fromLTRB(18, 16, 40, 16),
@@ -155,7 +151,7 @@ class _OsCard extends StatelessWidget {
                 child: Icon(
                   Icons.download_outlined,
                   size: 18,
-                  color: tokens.accent,
+                  color: brand.primary,
                 ),
               ),
               const SizedBox(width: 10),
@@ -169,18 +165,16 @@ class _OsCard extends StatelessWidget {
                   name,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontFamily: DeckhandTokens.fontSans,
-                    fontSize: DeckhandTokens.tLg,
+                  style: context.clTitleLarge.copyWith(
                     fontWeight: FontWeight.w500,
-                    color: tokens.text,
+                    color: brand.ink,
                     height: 1.25,
                   ),
                 ),
               ),
               if (recommended) ...[
                 const SizedBox(width: 8),
-                _Pill(label: 'rec.', color: tokens.ok),
+                const ClStatusChip(label: 'rec.', kind: ClChipKind.good),
               ],
             ],
           ),
@@ -188,10 +182,8 @@ class _OsCard extends StatelessWidget {
             const SizedBox(height: 8),
             Text(
               notes,
-              style: TextStyle(
-                fontFamily: DeckhandTokens.fontSans,
-                fontSize: DeckhandTokens.tSm,
-                color: tokens.text2,
+              style: context.clBodySmall.copyWith(
+                color: brand.ink2,
                 height: 1.5,
               ),
             ),
@@ -199,7 +191,7 @@ class _OsCard extends StatelessWidget {
           const SizedBox(height: 14),
           Container(
             decoration: BoxDecoration(
-              border: Border(top: BorderSide(color: tokens.line)),
+              border: Border(top: BorderSide(color: brand.borderStrong)),
             ),
             padding: const EdgeInsets.only(top: 10),
             child: Column(
@@ -211,7 +203,7 @@ class _OsCard extends StatelessWidget {
                 // a tooltip + click-to-copy that reveals the full
                 // value. The previous implementation just showed
                 // "56218f…a509" with no way to see the rest.
-                _ShaRow(short: shortSha, full: fullSha, tokens: tokens),
+                _ShaRow(short: shortSha, full: fullSha),
               ],
             ),
           ),
@@ -222,14 +214,9 @@ class _OsCard extends StatelessWidget {
 }
 
 class _ShaRow extends StatelessWidget {
-  const _ShaRow({
-    required this.short,
-    required this.full,
-    required this.tokens,
-  });
+  const _ShaRow({required this.short, required this.full});
   final String short;
   final String full;
-  final DeckhandTokens tokens;
 
   @override
   Widget build(BuildContext context) {
@@ -241,6 +228,7 @@ class _ShaRow extends StatelessWidget {
     // version is the lowest-risk fallback: short form inline, an
     // explicit "copy" button next to it for the full value. No
     // tooltip, no LayoutBuilder, nothing nested.
+    final brand = context.brandColors;
     final hasFull = full.isNotEmpty;
     return Padding(
       padding: const EdgeInsets.only(bottom: 2),
@@ -251,11 +239,7 @@ class _ShaRow extends StatelessWidget {
             width: 60,
             child: Text(
               'sha256',
-              style: TextStyle(
-                fontFamily: DeckhandTokens.fontMono,
-                fontSize: 11,
-                color: tokens.text4,
-              ),
+              style: context.dataTiny.copyWith(color: brand.ink4),
             ),
           ),
           Expanded(
@@ -263,11 +247,7 @@ class _ShaRow extends StatelessWidget {
               short,
               overflow: TextOverflow.ellipsis,
               maxLines: 1,
-              style: TextStyle(
-                fontFamily: DeckhandTokens.fontMono,
-                fontSize: 11,
-                color: tokens.text3,
-              ),
+              style: context.dataTiny.copyWith(color: brand.ink3),
             ),
           ),
           if (hasFull)
@@ -287,7 +267,7 @@ class _ShaRow extends StatelessWidget {
                   ),
                 );
               },
-              icon: Icon(Icons.content_copy, color: tokens.text4),
+              icon: Icon(Icons.content_copy, color: brand.ink4),
             ),
         ],
       ),
@@ -302,7 +282,7 @@ class _MetaRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
+    final brand = context.brandColors;
     return Padding(
       padding: const EdgeInsets.only(bottom: 2),
       child: Row(
@@ -311,51 +291,16 @@ class _MetaRow extends StatelessWidget {
             width: 60,
             child: Text(
               label,
-              style: TextStyle(
-                fontFamily: DeckhandTokens.fontMono,
-                fontSize: 11,
-                color: tokens.text4,
-              ),
+              style: context.dataTiny.copyWith(color: brand.ink4),
             ),
           ),
           Expanded(
             child: Text(
               value,
-              style: TextStyle(
-                fontFamily: DeckhandTokens.fontMono,
-                fontSize: 11,
-                color: tokens.text3,
-              ),
+              style: context.dataTiny.copyWith(color: brand.ink3),
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _Pill extends StatelessWidget {
-  const _Pill({required this.label, required this.color});
-  final String label;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.10),
-        border: Border.all(color: color.withValues(alpha: 0.40)),
-        borderRadius: BorderRadius.circular(9),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(
-          fontFamily: DeckhandTokens.fontSans,
-          fontSize: DeckhandTokens.tXs,
-          color: color,
-          fontWeight: FontWeight.w600,
-        ),
       ),
     );
   }

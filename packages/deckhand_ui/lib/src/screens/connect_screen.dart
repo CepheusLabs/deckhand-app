@@ -5,17 +5,29 @@ import 'dart:io';
 import 'package:deckhand_core/deckhand_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:forge/forge.dart';
 import 'package:go_router/go_router.dart';
 
 import '../i18n/translations.g.dart';
 import '../providers.dart';
 import '../screens/debug_bundle_screen.dart';
-import '../theming/deckhand_tokens.dart';
 import '../utils/user_facing_errors.dart';
-import '../widgets/deckhand_loading.dart';
 import '../widgets/save_debug_bundle.dart';
-import '../widgets/status_pill.dart';
-import '../widgets/wizard_scaffold.dart';
+
+/// Maps a Klipper/Klippy state string (ready, printing, startup,
+/// error, ...) to a forge [ClStatusChip] with a semantic kind. Used on
+/// the connect screen to tint each discovered printer card's state
+/// chip. Replaces the deleted `StatusPill.fromKlippyState`.
+ClStatusChip _klippyStateChip(String state) {
+  final normalized = state.toLowerCase();
+  final kind = switch (normalized) {
+    'ready' || 'printing' => ClChipKind.good,
+    'startup' || 'shutdown' => ClChipKind.warn,
+    'error' || 'disconnected' => ClChipKind.bad,
+    _ => ClChipKind.neutral,
+  };
+  return ClStatusChip(label: normalized, kind: kind, compact: true);
+}
 
 /// What we learned from probing a discovered host. Lives per-host in
 /// [_ConnectScreenState] so the card rebuilds as each async probe
@@ -477,7 +489,6 @@ class _ConnectScreenState extends ConsumerState<ConnectScreen> {
     required String? expectedFingerprint,
     required String receivedFingerprint,
   }) {
-    final tokens = DeckhandTokens.of(context);
     return showDialog<bool>(
       context: context,
       // Modal — closing by tapping outside would let a user dismiss
@@ -489,7 +500,6 @@ class _ConnectScreenState extends ConsumerState<ConnectScreen> {
         content: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 640),
           child: _MitmDangerCard(
-            tokens: tokens,
             host: host,
             expectedFingerprint: expectedFingerprint,
             receivedFingerprint: receivedFingerprint,
@@ -603,8 +613,7 @@ class _ConnectScreenState extends ConsumerState<ConnectScreen> {
         : null;
     final showManualFooterAction = focused || _tab == _ConnectTab.manual;
 
-    return WizardScaffold(
-      screenId: 'S20-connect',
+    return ClWizardPageScaffold(
       title: t.connect.title,
       helperText: t.connect.helper,
       body: focused
@@ -649,7 +658,7 @@ class _ConnectScreenState extends ConsumerState<ConnectScreen> {
               ),
             ),
       primaryAction: showManualFooterAction
-          ? WizardAction(
+          ? ClWizardAction(
               label: _connecting
                   ? t.connect.action_connecting
                   : t.connect.action_connect,
@@ -664,7 +673,7 @@ class _ConnectScreenState extends ConsumerState<ConnectScreen> {
             )
           : null,
       secondaryActions: [
-        WizardAction(
+        ClWizardAction(
           label: t.common.action_back,
           onPressed: () => context.go('/choose-path'),
           isBack: true,
@@ -721,7 +730,7 @@ class _DiscoveredCard extends StatelessWidget {
 
     final stateChip = enriched == null
         ? null
-        : StatusPill.fromKlippyState(context, enriched.klippyState);
+        : _klippyStateChip(enriched.klippyState);
 
     final matchBadge = showMatchBadge
         ? _MatchBadge(match: probe?.match, profileName: profileName)
@@ -876,7 +885,7 @@ class _MatchBadge extends StatelessWidget {
   }
 }
 
-// _StateChip removed; callers use StatusPill.fromKlippyState.
+// _StateChip removed; callers use _klippyStateChip (ClStatusChip).
 
 /// Focus body shown while an SSH handshake is in flight. Hides the
 /// rest of the discovery grid so the user's attention stays on the
@@ -897,7 +906,7 @@ class _ConnectingFocus extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
+    final brand = context.brandColors;
     final host = printer.hostname.isNotEmpty && printer.hostname != printer.host
         ? '${printer.hostname} (${printer.host})'
         : printer.host;
@@ -923,19 +932,17 @@ class _ConnectingFocus extends StatelessWidget {
                 height: 96,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  border: Border.all(color: tokens.accent, width: 2),
+                  border: Border.all(color: brand.primary, width: 2),
                 ),
                 alignment: Alignment.center,
-                child: const DeckhandSpinner(size: 48, strokeWidth: 2),
+                child: const ClSpinner(size: 48, strokeWidth: 2),
               ),
               const SizedBox(height: 22),
               Text(
                 'Connecting',
-                style: TextStyle(
-                  fontFamily: DeckhandTokens.fontSans,
-                  fontSize: DeckhandTokens.tXl,
+                style: context.clTitleLarge.copyWith(
                   fontWeight: FontWeight.w500,
-                  color: tokens.text,
+                  color: brand.ink,
                   letterSpacing: 0,
                 ),
               ),
@@ -944,10 +951,8 @@ class _ConnectingFocus extends StatelessWidget {
                 'SSH handshake with $host. We\'ll move on to '
                 'verification as soon as the printer responds.',
                 textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontFamily: DeckhandTokens.fontSans,
-                  fontSize: DeckhandTokens.tSm,
-                  color: tokens.text3,
+                style: context.clBodySmall.copyWith(
+                  color: brand.ink3,
                   height: 1.5,
                 ),
               ),
@@ -984,38 +989,28 @@ class _HostKeyField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
+    final brand = context.brandColors;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
           label.toUpperCase(),
-          style: TextStyle(
-            fontFamily: DeckhandTokens.fontMono,
-            fontSize: 10,
-            color: tokens.text4,
-            letterSpacing: 0,
-          ),
+          style: context.dataTiny.copyWith(fontSize: 10, color: brand.ink4),
         ),
         const SizedBox(height: 4),
         Container(
           width: double.infinity,
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
           decoration: BoxDecoration(
-            color: tokens.ink2,
-            border: Border.all(color: tokens.line),
-            borderRadius: BorderRadius.circular(DeckhandTokens.r2),
+            color: brand.surface,
+            border: Border.all(color: brand.borderStrong),
+            borderRadius: BorderRadius.circular(context.radii.sm),
           ),
           child: SelectableText(
             value,
-            style: TextStyle(
-              fontFamily: mono
-                  ? DeckhandTokens.fontMono
-                  : DeckhandTokens.fontSans,
-              fontSize: DeckhandTokens.tMd,
-              color: tokens.text,
-              height: 1.4,
-            ),
+            style: mono
+                ? context.dataSmall.copyWith(color: brand.ink, height: 1.4)
+                : context.clBodyMedium.copyWith(color: brand.ink, height: 1.4),
           ),
         ),
       ],
@@ -1035,36 +1030,29 @@ class _FingerprintField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
+    final brand = context.brandColors;
     final parsed = _parse(fingerprint);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
           'FINGERPRINT',
-          style: TextStyle(
-            fontFamily: DeckhandTokens.fontMono,
-            fontSize: 10,
-            color: tokens.text4,
-            letterSpacing: 0,
-          ),
+          style: context.dataTiny.copyWith(fontSize: 10, color: brand.ink4),
         ),
         const SizedBox(height: 4),
         Container(
           width: double.infinity,
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
           decoration: BoxDecoration(
-            color: tokens.ink2,
-            border: Border.all(color: tokens.line),
-            borderRadius: BorderRadius.circular(DeckhandTokens.r2),
+            color: brand.surface,
+            border: Border.all(color: brand.borderStrong),
+            borderRadius: BorderRadius.circular(context.radii.sm),
           ),
           child: parsed == null
               ? SelectableText(
                   fingerprint,
-                  style: TextStyle(
-                    fontFamily: DeckhandTokens.fontMono,
-                    fontSize: DeckhandTokens.tMd,
-                    color: tokens.text,
+                  style: context.dataSmall.copyWith(
+                    color: brand.ink,
                     height: 1.4,
                   ),
                 )
@@ -1073,18 +1061,16 @@ class _FingerprintField extends StatelessWidget {
                   children: [
                     Row(
                       children: [
-                        _Chip(label: parsed.algorithm, tokens: tokens),
+                        _Chip(label: parsed.algorithm),
                         const SizedBox(width: 6),
-                        _Chip(label: parsed.digestType, tokens: tokens),
+                        _Chip(label: parsed.digestType),
                       ],
                     ),
                     const SizedBox(height: 8),
                     SelectableText(
                       parsed.digest,
-                      style: TextStyle(
-                        fontFamily: DeckhandTokens.fontMono,
-                        fontSize: DeckhandTokens.tMd,
-                        color: tokens.text,
+                      style: context.dataSmall.copyWith(
+                        color: brand.ink,
                         height: 1.5,
                         letterSpacing: 0,
                       ),
@@ -1128,27 +1114,22 @@ class _ParsedFingerprint {
 }
 
 class _Chip extends StatelessWidget {
-  const _Chip({required this.label, required this.tokens});
+  const _Chip({required this.label});
   final String label;
-  final DeckhandTokens tokens;
 
   @override
   Widget build(BuildContext context) {
+    final brand = context.brandColors;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(
-        color: tokens.ink3,
-        border: Border.all(color: tokens.line),
-        borderRadius: BorderRadius.circular(DeckhandTokens.r1),
+        color: brand.surface2,
+        border: Border.all(color: brand.borderStrong),
+        borderRadius: BorderRadius.circular(context.radii.xs),
       ),
       child: Text(
         label.toUpperCase(),
-        style: TextStyle(
-          fontFamily: DeckhandTokens.fontMono,
-          fontSize: 10,
-          color: tokens.text2,
-          letterSpacing: 0,
-        ),
+        style: context.dataTiny.copyWith(fontSize: 10, color: brand.ink2),
       ),
     );
   }
@@ -1183,13 +1164,13 @@ class _TabbedBody extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
+    final brand = context.brandColors;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Container(
           decoration: BoxDecoration(
-            border: Border(bottom: BorderSide(color: tokens.line)),
+            border: Border(bottom: BorderSide(color: brand.borderStrong)),
           ),
           child: LayoutBuilder(
             builder: (context, constraints) {
@@ -1224,12 +1205,14 @@ class _TabbedBody extends StatelessWidget {
                           if (scanning)
                             const Padding(
                               padding: EdgeInsets.only(right: 8),
-                              child: DeckhandSpinner(strokeWidth: 1.5),
+                              child: ClSpinner(strokeWidth: 1.5),
                             ),
-                          TextButton.icon(
-                            icon: const Icon(Icons.refresh, size: 14),
-                            label: const Text('Refresh'),
+                          ClButton(
+                            kind: ClButtonKind.text,
+                            size: ClButtonSize.sm,
+                            icon: Icons.refresh,
                             onPressed: onRescan,
+                            child: const Text('Refresh'),
                           ),
                         ],
                       ),
@@ -1271,7 +1254,7 @@ class _TabButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
+    final brand = context.brandColors;
     return InkWell(
       onTap: onTap,
       child: Container(
@@ -1279,21 +1262,19 @@ class _TabButton extends StatelessWidget {
         decoration: BoxDecoration(
           border: Border(
             bottom: BorderSide(
-              color: active ? tokens.accent : Colors.transparent,
+              color: active ? brand.primary : Colors.transparent,
               width: 2,
             ),
           ),
         ),
         child: Row(
           children: [
-            Icon(icon, size: 14, color: active ? tokens.text : tokens.text3),
+            Icon(icon, size: 14, color: active ? brand.ink : brand.ink3),
             const SizedBox(width: 6),
             Text(
               label,
-              style: TextStyle(
-                fontFamily: DeckhandTokens.fontSans,
-                fontSize: DeckhandTokens.tSm,
-                color: active ? tokens.text : tokens.text3,
+              style: context.clBodySmall.copyWith(
+                color: active ? brand.ink : brand.ink3,
                 fontWeight: active ? FontWeight.w500 : FontWeight.w400,
               ),
             ),
@@ -1417,48 +1398,40 @@ class _SavedTabBody extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
-    final theme = Theme.of(context);
+    final brand = context.brandColors;
     if (hosts.isEmpty) {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 24),
         child: Text(
           'No saved hosts yet. Auto-discover or enter a host manually; '
           'Deckhand will remember the printers you successfully connect to.',
-          style: TextStyle(
-            fontFamily: DeckhandTokens.fontSans,
-            fontSize: DeckhandTokens.tSm,
-            color: tokens.text3,
-            height: 1.5,
-          ),
+          style: context.clBodySmall.copyWith(color: brand.ink3, height: 1.5),
         ),
       );
     }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Container(
-          decoration: BoxDecoration(
-            color: tokens.ink1,
-            border: Border.all(color: tokens.line),
-            borderRadius: BorderRadius.circular(DeckhandTokens.r3),
-          ),
-          clipBehavior: Clip.antiAlias,
-          child: Column(
-            children: [
-              for (var i = 0; i < hosts.length; i++)
-                _SavedRow(
-                  host: hosts[i],
-                  isLast: i == hosts.length - 1,
-                  onConnect: () => onConnect(hosts[i]),
-                  onForget: () => onForget(hosts[i]),
-                ),
-            ],
+        ClipRRect(
+          borderRadius: BorderRadius.circular(context.radii.md),
+          child: ClPanel(
+            background: brand.bgAlt,
+            body: Column(
+              children: [
+                for (var i = 0; i < hosts.length; i++)
+                  _SavedRow(
+                    host: hosts[i],
+                    isLast: i == hosts.length - 1,
+                    onConnect: () => onConnect(hosts[i]),
+                    onForget: () => onForget(hosts[i]),
+                  ),
+              ],
+            ),
           ),
         ),
         if (error != null) ...[
           const SizedBox(height: 12),
-          Text(error!, style: TextStyle(color: theme.colorScheme.error)),
+          Text(error!, style: TextStyle(color: brand.bad)),
         ],
       ],
     );
@@ -1480,7 +1453,7 @@ class _SavedRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
+    final brand = context.brandColors;
     return InkWell(
       onTap: onConnect,
       child: Container(
@@ -1488,11 +1461,11 @@ class _SavedRow extends StatelessWidget {
         decoration: BoxDecoration(
           border: isLast
               ? null
-              : Border(bottom: BorderSide(color: tokens.lineSoft)),
+              : Border(bottom: BorderSide(color: brand.borderSubtle)),
         ),
         child: Row(
           children: [
-            Icon(Icons.lock_outline, size: 16, color: tokens.text3),
+            Icon(Icons.lock_outline, size: 16, color: brand.ink3),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
@@ -1503,21 +1476,13 @@ class _SavedRow extends StatelessWidget {
                     '${host.port == 22 ? "" : ":${host.port}"}',
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontFamily: DeckhandTokens.fontMono,
-                      fontSize: DeckhandTokens.tMd,
-                      color: tokens.text,
-                    ),
+                    style: context.dataSmall.copyWith(color: brand.ink),
                   ),
                   if (host.lastUsed != null) ...[
                     const SizedBox(height: 4),
                     Text(
                       'last used ${_relativeShort(host.lastUsed!)}',
-                      style: TextStyle(
-                        fontFamily: DeckhandTokens.fontMono,
-                        fontSize: 11,
-                        color: tokens.text4,
-                      ),
+                      style: context.dataTiny.copyWith(color: brand.ink4),
                     ),
                   ],
                 ],
@@ -1552,7 +1517,6 @@ class _SavedRow extends StatelessWidget {
 /// distinct actions (Back / Save bundle / Clear & retry).
 class _MitmDangerCard extends StatelessWidget {
   const _MitmDangerCard({
-    required this.tokens,
     required this.host,
     required this.expectedFingerprint,
     required this.receivedFingerprint,
@@ -1561,7 +1525,6 @@ class _MitmDangerCard extends StatelessWidget {
     required this.onClearAndRetry,
   });
 
-  final DeckhandTokens tokens;
   final String host;
   final String? expectedFingerprint;
   final String receivedFingerprint;
@@ -1571,13 +1534,9 @@ class _MitmDangerCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    final brand = context.brandColors;
+    return ClDangerPanel(
       padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: tokens.ink1,
-        border: Border.all(color: tokens.bad, width: 1.5),
-        borderRadius: BorderRadius.circular(DeckhandTokens.r3),
-      ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1585,16 +1544,13 @@ class _MitmDangerCard extends StatelessWidget {
           // Header pill: warning icon + mono caps tagline.
           Row(
             children: [
-              Icon(Icons.warning_amber_rounded, size: 20, color: tokens.bad),
+              Icon(Icons.warning_amber_rounded, size: 20, color: brand.bad),
               const SizedBox(width: 10),
               Text(
                 'HARD STOP · MITM POSSIBLE',
-                style: TextStyle(
-                  fontFamily: DeckhandTokens.fontMono,
-                  fontSize: DeckhandTokens.tXs,
-                  color: tokens.bad,
+                style: context.labelTechnical.copyWith(
+                  color: brand.bad,
                   letterSpacing: 0,
-                  fontWeight: FontWeight.w600,
                 ),
               ),
             ],
@@ -1602,12 +1558,10 @@ class _MitmDangerCard extends StatelessWidget {
           const SizedBox(height: 14),
           Text(
             'Host key mismatch.',
-            style: TextStyle(
-              fontFamily: DeckhandTokens.fontSans,
-              fontSize: DeckhandTokens.t2Xl,
+            style: context.clHeadlineSmall.copyWith(
               fontWeight: FontWeight.w500,
               letterSpacing: 0,
-              color: tokens.text,
+              color: brand.ink,
             ),
           ),
           const SizedBox(height: 8),
@@ -1616,12 +1570,7 @@ class _MitmDangerCard extends StatelessWidget {
             'Deckhand recorded for this host. Either the printer was '
             "reflashed (in which case clearing the pin is fine) — or "
             'something is intercepting your connection.',
-            style: TextStyle(
-              fontFamily: DeckhandTokens.fontSans,
-              fontSize: DeckhandTokens.tSm,
-              color: tokens.text3,
-              height: 1.5,
-            ),
+            style: context.clBodySmall.copyWith(color: brand.ink3, height: 1.5),
           ),
           const SizedBox(height: 16),
           // EXPECTED vs RECEIVED side-by-side. The side-by-side layout
@@ -1632,7 +1581,6 @@ class _MitmDangerCard extends StatelessWidget {
             children: [
               Expanded(
                 child: _FingerprintBlock(
-                  tokens: tokens,
                   label: 'EXPECTED',
                   value: expectedFingerprint ?? '(not pinned in this profile)',
                   bad: false,
@@ -1641,7 +1589,6 @@ class _MitmDangerCard extends StatelessWidget {
               const SizedBox(width: 12),
               Expanded(
                 child: _FingerprintBlock(
-                  tokens: tokens,
                   label: 'RECEIVED',
                   value: receivedFingerprint,
                   bad: true,
@@ -1660,24 +1607,24 @@ class _MitmDangerCard extends StatelessWidget {
             alignment: WrapAlignment.spaceBetween,
             crossAxisAlignment: WrapCrossAlignment.center,
             children: [
-              TextButton.icon(
-                icon: const Icon(Icons.arrow_back, size: 14),
-                label: const Text('Back'),
+              ClButton(
+                kind: ClButtonKind.text,
+                size: ClButtonSize.sm,
+                icon: Icons.arrow_back,
                 onPressed: onBack,
+                child: const Text('Back'),
               ),
-              TextButton.icon(
-                icon: const Icon(Icons.archive_outlined, size: 14),
-                label: const Text('Save debug bundle'),
+              ClButton(
+                kind: ClButtonKind.text,
+                size: ClButtonSize.sm,
+                icon: Icons.archive_outlined,
                 onPressed: onSaveDebugBundle,
+                child: const Text('Save debug bundle'),
               ),
-              FilledButton.icon(
-                style: FilledButton.styleFrom(
-                  backgroundColor: tokens.bad,
-                  foregroundColor: Colors.white,
-                ),
-                icon: const Icon(Icons.delete_forever, size: 14),
-                label: const Text('Clear stored fingerprint & retry'),
+              ClButton.destructive(
+                icon: Icons.delete_forever,
                 onPressed: onClearAndRetry,
+                child: const Text('Clear stored fingerprint & retry'),
               ),
             ],
           ),
@@ -1689,33 +1636,27 @@ class _MitmDangerCard extends StatelessWidget {
 
 class _FingerprintBlock extends StatelessWidget {
   const _FingerprintBlock({
-    required this.tokens,
     required this.label,
     required this.value,
     required this.bad,
   });
 
-  final DeckhandTokens tokens;
   final String label;
   final String value;
   final bool bad;
 
   @override
   Widget build(BuildContext context) {
-    final bg = bad ? tokens.bad.withValues(alpha: 0.08) : tokens.ink2;
-    final border = bad ? tokens.bad.withValues(alpha: 0.4) : tokens.line;
-    final textColor = bad ? tokens.bad : tokens.text;
+    final brand = context.brandColors;
+    final bg = bad ? brand.bad.withValues(alpha: 0.08) : brand.surface;
+    final border = bad ? brand.bad.withValues(alpha: 0.4) : brand.borderStrong;
+    final textColor = bad ? brand.bad : brand.ink;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
           label,
-          style: TextStyle(
-            fontFamily: DeckhandTokens.fontMono,
-            fontSize: 10,
-            color: tokens.text4,
-            letterSpacing: 0,
-          ),
+          style: context.dataTiny.copyWith(fontSize: 10, color: brand.ink4),
         ),
         const SizedBox(height: 6),
         Container(
@@ -1724,16 +1665,11 @@ class _FingerprintBlock extends StatelessWidget {
           decoration: BoxDecoration(
             color: bg,
             border: Border.all(color: border),
-            borderRadius: BorderRadius.circular(DeckhandTokens.r2),
+            borderRadius: BorderRadius.circular(context.radii.sm),
           ),
           child: SelectableText(
             value,
-            style: TextStyle(
-              fontFamily: DeckhandTokens.fontMono,
-              fontSize: DeckhandTokens.tSm,
-              color: textColor,
-              height: 1.4,
-            ),
+            style: context.dataTiny.copyWith(color: textColor, height: 1.4),
           ),
         ),
       ],

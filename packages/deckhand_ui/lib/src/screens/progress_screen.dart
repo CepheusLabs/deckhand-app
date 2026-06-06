@@ -3,19 +3,16 @@ import 'dart:async';
 import 'package:deckhand_core/deckhand_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:forge/forge.dart';
 import 'package:go_router/go_router.dart';
 
 import '../i18n/translations.g.dart';
 import '../providers.dart';
-import '../theming/deckhand_tokens.dart';
 import '../utils/disk_display.dart';
 import '../utils/user_facing_errors.dart';
-import '../widgets/deckhand_prompt_card.dart';
 import '../widgets/host_approval_gate.dart';
 import '../widgets/profile_text.dart';
 import '../widgets/progress_run_workspace.dart';
-import '../widgets/wizard_progress_bar.dart';
-import '../widgets/wizard_scaffold.dart';
 
 String progressRunErrorMessage(Object? error) => userFacingError(error);
 
@@ -258,13 +255,19 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> {
     return _showFadedDialog<String>(
       barrierDismissible: false,
       child: Center(
-        child: DeckhandPromptCard(
+        child: ClPromptCard(
           title: title,
           message: flattenProfileText(message),
-          buttons: [
+          actions: [
             for (final a in buttons)
-              (id: a.id, label: a.label, severity: _severityFor(a.label)),
+              ClPromptAction(
+                id: a.id,
+                label: a.label,
+                severity: _severityFor(a.label),
+              ),
           ],
+          onSelected: (id) =>
+              Navigator.of(context, rootNavigator: true).pop(id),
         ),
       ),
     );
@@ -272,19 +275,19 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> {
 
   /// Heuristic — profile authors signal hierarchy through the label
   /// suffix today (`(recommended)` / `(not recommended)`). Translating
-  /// that to a [PromptSeverity] lets the dialog render a primary
-  /// FilledButton for the recommended path and a warning-tinted text
-  /// button for the destructive escape hatch, instead of three
-  /// indistinguishable TextButtons.
-  PromptSeverity _severityFor(String label) {
+  /// that to a [ClPromptSeverity] lets the dialog render a primary
+  /// button for the recommended path and a low-emphasis button for the
+  /// destructive escape hatch, instead of three indistinguishable
+  /// buttons.
+  ClPromptSeverity _severityFor(String label) {
     final l = label.toLowerCase();
     if (l.contains('not recommended') ||
         l.contains('skip') ||
         l.contains('destructive')) {
-      return PromptSeverity.destructive;
+      return ClPromptSeverity.destructive;
     }
-    if (l.contains('recommended')) return PromptSeverity.recommended;
-    return PromptSeverity.neutral;
+    if (l.contains('recommended')) return ClPromptSeverity.recommended;
+    return ClPromptSeverity.neutral;
   }
 
   Future<String?> _showChooseOneDialog(Map<String, dynamic> step) async {
@@ -685,12 +688,15 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> {
               : (_currentFraction ?? _overallProgressFraction(flowSteps)))
         : null;
     final activeStepNumber = _activeStepNumber(flowSteps);
-    return WizardScaffold(
-      screenId: 'S900-progress',
+    return ClWizardPageScaffold(
       title: _titleForState(),
       helperText: _failed
           ? 'The run stopped before Deckhand changed anything further. Review the failed step below.'
           : (_cancelled ? t.progress.helper_cancelled : null),
+      preHeader: const ClPageHeader(
+        icon: Icons.play_circle_outline,
+        title: 'Run progress',
+      ),
       maxContentWidth: 1440,
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -709,8 +715,8 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> {
               value: t.progress.semantics_progress_percent(
                 percent: ((progressFraction ?? 0) * 100).round(),
               ),
-              child: WizardProgressBar(
-                fraction: progressFraction,
+              child: ClTickedProgressBar(
+                value: progressFraction,
                 animateStripes: false,
               ),
             ),
@@ -749,7 +755,7 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> {
           ),
         ],
       ),
-      primaryAction: WizardAction(
+      primaryAction: ClWizardAction(
         label: _done
             ? t.progress.action_finish
             : ((_failed || _cancelled)
@@ -761,7 +767,7 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> {
       ),
       secondaryActions: [
         if (!_done && !_failed && !_cancelled)
-          WizardAction(
+          ClWizardAction(
             label: _cancelRequested
                 ? t.progress.action_cancel_requested
                 : t.progress.action_cancel,
@@ -811,7 +817,7 @@ class _ProgressHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
+    final brand = context.brandColors;
     final pct = fraction == null ? null : (fraction! * 100).toStringAsFixed(1);
     final stepLabel = switch ((stepId, activeStepNumber)) {
       (final id?, final stepNumber?) when totalSteps > 0 =>
@@ -824,10 +830,8 @@ class _ProgressHeader extends StatelessWidget {
         Expanded(
           child: Text(
             stepLabel,
-            style: TextStyle(
-              fontFamily: DeckhandTokens.fontMono,
-              fontSize: 10,
-              color: tokens.text3,
+            style: context.labelTechnical.copyWith(
+              color: brand.ink3,
               letterSpacing: 0,
             ),
           ),
@@ -835,10 +839,8 @@ class _ProgressHeader extends StatelessWidget {
         if (pct != null)
           Text(
             '$pct%',
-            style: TextStyle(
-              fontFamily: DeckhandTokens.fontMono,
-              fontSize: 10,
-              color: tokens.text3,
+            style: context.labelTechnical.copyWith(
+              color: brand.ink3,
               letterSpacing: 0,
             ),
           ),
@@ -848,11 +850,7 @@ class _ProgressHeader extends StatelessWidget {
             child: Text(
               message!,
               overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontFamily: DeckhandTokens.fontMono,
-                fontSize: 10,
-                color: tokens.text4,
-              ),
+              style: context.labelTechnical.copyWith(color: brand.ink4),
             ),
           ),
         ],

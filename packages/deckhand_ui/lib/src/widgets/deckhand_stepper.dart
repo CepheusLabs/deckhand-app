@@ -1,18 +1,18 @@
 import 'package:deckhand_core/deckhand_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:forge/forge.dart';
 import 'package:go_router/go_router.dart';
 
 import '../providers.dart';
-import 'deckhand_wizard_stepper.dart';
 import 'wizard_nav_map.dart';
 
-/// Wizard-state-aware adapter around [DeckhandWizardStepper]. Reads
-/// the active wizard state + current route, maps them to a screen-ID
-/// (`S15`, `S40`, …) plus a phase, and delegates rendering to the
-/// underlying compressed-phase stepper.
+/// Wizard-state-aware adapter around forge's [ClWizardPhaseStepper].
+/// Reads the active wizard state + current route, maps them to a
+/// screen-ID (`S15`, `S40`, …) plus the flow's phase grouping, and
+/// feeds that straight into the forge compressed-phase stepper.
 ///
-/// Used as `const DeckhandStepper()` in every [WizardScaffold].
+/// Used as `const DeckhandStepper()` at the top of every wizard screen.
 class DeckhandStepper extends ConsumerWidget {
   const DeckhandStepper({super.key});
 
@@ -20,10 +20,9 @@ class DeckhandStepper extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     // Watch wizard state so the chip + popover redraw when the
     // controller advances or the user picks a flow. Tests that pump
-    // a bare WizardScaffold (e.g. wizard_scaffold_shortcuts_test)
-    // don't wire the wizard controller — degrade to an empty
-    // placeholder rather than throwing UnimplementedProvider so
-    // the scaffold remains testable in isolation.
+    // a screen without wiring the wizard controller degrade to an
+    // empty placeholder rather than throwing UnimplementedProvider so
+    // the screen remains testable in isolation.
     final WizardController controller;
     try {
       ref.watch(wizardStateProvider);
@@ -32,7 +31,7 @@ class DeckhandStepper extends ConsumerWidget {
       return const SizedBox.shrink();
     }
     final flow = controller.state.flow;
-    // Orthogonal pages (Settings, Error) reuse [WizardScaffold] for
+    // Orthogonal pages (Settings, Error) reuse the wizard screen
     // chrome but aren't part of the wizard flow. Showing a stepper
     // there would mislabel them as "Entry · Welcome". Same defense
     // for tests where there's no GoRouter ancestor.
@@ -67,12 +66,12 @@ class DeckhandStepper extends ConsumerWidget {
     // to distinguish wizard-route screens from orthogonal ones.
     return Padding(
       padding: const EdgeInsets.only(bottom: 24),
-      child: DeckhandWizardStepper(
+      child: ClWizardPhaseStepper(
         phases: WizardNavMap.phasesForFlow(flow),
         currentStepId: currentSid,
         stepLabels: WizardNavMap.stepLabels,
         visitedIds: visited,
-        onJumpTo: (sid) {
+        onJumpTo: (String sid) {
           final route = WizardNavMap.sidToRoute(sid);
           if (route != null) context.go(route);
         },

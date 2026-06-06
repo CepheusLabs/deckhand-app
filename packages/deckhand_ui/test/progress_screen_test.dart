@@ -3,9 +3,8 @@ import 'dart:async';
 import 'package:deckhand_core/deckhand_core.dart';
 import 'package:deckhand_ui/src/providers.dart';
 import 'package:deckhand_ui/src/screens/progress_screen.dart';
-import 'package:deckhand_ui/src/theming/deckhand_theme.dart';
-import 'package:deckhand_ui/src/widgets/wizard_progress_bar.dart';
 import 'package:flutter/material.dart';
+import 'package:forge/forge.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
@@ -450,10 +449,10 @@ void main() {
       expect(find.text('50.0%'), findsOneWidget);
       expect(find.textContaining('5.0 MiB / 10.0 MiB'), findsOneWidget);
 
-      final bar = tester.widget<WizardProgressBar>(
-        find.byType(WizardProgressBar),
+      final bar = tester.widget<ClTickedProgressBar>(
+        find.byType(ClTickedProgressBar),
       );
-      expect(bar.fraction, 0.5);
+      expect(bar.value, 0.5);
       expect(bar.animateStripes, isFalse);
 
       releaseDownload.complete();
@@ -640,8 +639,10 @@ void main() {
         await tester.pump(const Duration(milliseconds: 50));
       }
 
-      expect(find.widgetWithText(TextButton, 'Cancel install'), findsOneWidget);
-      await tester.tap(find.widgetWithText(TextButton, 'Cancel install'));
+      // The cancel trigger is now a ClWizardPageScaffold secondary action,
+      // rendered as a ClButton (text kind) in the footer action bar.
+      expect(find.widgetWithText(ClButton, 'Cancel install'), findsOneWidget);
+      await tester.tap(find.widgetWithText(ClButton, 'Cancel install'));
       for (var i = 0; i < 5; i++) {
         await tester.pump(const Duration(milliseconds: 50));
       }
@@ -705,10 +706,10 @@ void main() {
       expect(find.text('0.0%'), findsNothing);
       expect(find.textContaining('8.0 MiB'), findsOneWidget);
 
-      final bar = tester.widget<WizardProgressBar>(
-        find.byType(WizardProgressBar),
+      final bar = tester.widget<ClTickedProgressBar>(
+        find.byType(ClTickedProgressBar),
       );
-      expect(bar.fraction, isNull);
+      expect(bar.value, isNull);
       expect(bar.animateStripes, isFalse);
 
       releaseDownload.complete();
@@ -765,10 +766,10 @@ void main() {
       expect(find.text('80.0%'), findsOneWidget);
       expect(find.textContaining('8.0 MiB / 10.0 MiB'), findsOneWidget);
 
-      final bar = tester.widget<WizardProgressBar>(
-        find.byType(WizardProgressBar),
+      final bar = tester.widget<ClTickedProgressBar>(
+        find.byType(ClTickedProgressBar),
       );
-      expect(bar.fraction, 0.8);
+      expect(bar.value, 0.8);
 
       releaseDownload.complete();
       for (var i = 0; i < 10; i++) {
@@ -936,8 +937,16 @@ Widget _progressHandoffHarness(WizardController controller) {
     ],
     child: MaterialApp.router(
       routerConfig: router,
-      theme: DeckhandTheme.light(),
-      darkTheme: DeckhandTheme.dark(),
+      theme: buildClTheme(
+        brightness: Brightness.light,
+        density: ClDensity.compact,
+        accentPalette: ClAccentPalette.violet,
+      ),
+      darkTheme: buildClTheme(
+        brightness: Brightness.dark,
+        density: ClDensity.compact,
+        accentPalette: ClAccentPalette.violet,
+      ),
     ),
   );
 }

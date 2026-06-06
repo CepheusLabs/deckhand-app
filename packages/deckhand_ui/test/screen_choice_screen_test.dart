@@ -1,7 +1,6 @@
 import 'package:deckhand_core/deckhand_core.dart';
 import 'package:deckhand_ui/src/screens/screen_choice_screen.dart';
-import 'package:deckhand_ui/src/widgets/status_pill.dart';
-import 'package:flutter/material.dart';
+import 'package:forge/forge.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'helpers.dart';
@@ -49,12 +48,11 @@ void main() {
       expect(find.text('Open Arco Screen'), findsOneWidget);
       expect(find.text('No touchscreen'), findsOneWidget);
 
-      // Status pills render via the shared StatusPill widget. Pills
-      // visually uppercase the label per the design spec — search for
-      // the rendered (uppercase) form.
-      expect(find.byType(StatusPill), findsWidgets);
-      expect(find.text('ALPHA'), findsOneWidget);
-      expect(find.text('STABLE'), findsWidgets);
+      // Status badges render via forge's ClStatusChip, which prints the
+      // profile status label verbatim (lowercase, as authored).
+      expect(find.byType(ClStatusChip), findsWidgets);
+      expect(find.text('alpha'), findsOneWidget);
+      expect(find.text('stable'), findsWidgets);
     });
 
     testWidgets(
@@ -125,8 +123,8 @@ void main() {
       expect(find.text('Open Arco Screen'), findsOneWidget);
       expect(find.text('Experimental Screen'), findsOneWidget);
       expect(controller.state.decisions['screen'], isNull);
-      final continueButton = tester.widget<FilledButton>(
-        find.widgetWithText(FilledButton, 'Continue'),
+      final continueButton = tester.widget<ClButton>(
+        find.widgetWithText(ClButton, 'Continue'),
       );
       expect(continueButton.onPressed, isNull);
     });

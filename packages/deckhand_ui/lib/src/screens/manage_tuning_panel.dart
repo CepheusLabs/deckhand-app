@@ -4,12 +4,10 @@ import 'package:deckhand_core/deckhand_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:forge/forge.dart';
 
 import '../providers.dart';
-import '../theming/deckhand_tokens.dart';
 import '../utils/user_facing_errors.dart';
-import '../widgets/deckhand_loading.dart';
-import '../widgets/deckhand_panel.dart';
 
 class ManageTuningPanel extends ConsumerStatefulWidget {
   const ManageTuningPanel({super.key});
@@ -113,28 +111,27 @@ class _ManageTuningPanelState extends ConsumerState<ManageTuningPanel> {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
+    final brand = context.brandColors;
     final configService = ref.watch(printerConfigServiceProvider);
     return FutureBuilder<_TuningSnapshot>(
       future: _snapshot,
       builder: (context, snap) {
         if (snap.connectionState != ConnectionState.done) {
-          return const DeckhandLoadingBlock(
-            kind: DeckhandLoaderKind.oscilloscope,
+          return const ClTechnicalLoadingBlock(
+            kind: ClTechnicalLoaderKind.oscilloscope,
             title: 'Loading printer tuning',
             message: 'Reading live Klipper status before enabling controls.',
           );
         }
         final snapshot = snap.data ?? const _TuningSnapshot.disconnected();
         if (snapshot.host == null) {
-          return DeckhandPanel(
-            head: const DeckhandPanelHead(label: 'TUNING'),
-            child: Text(
-              'Connect to a printer before opening tuning controls.',
-              style: TextStyle(
-                fontFamily: DeckhandTokens.fontSans,
-                fontSize: DeckhandTokens.tMd,
-                color: tokens.text2,
+          return ClPanel(
+            head: const ClPanelLabelHead(label: 'TUNING'),
+            body: Padding(
+              padding: const EdgeInsets.all(14),
+              child: Text(
+                'Connect to a printer before opening tuning controls.',
+                style: context.clBodyMedium.copyWith(color: brand.ink2),
               ),
             ),
           );
@@ -343,71 +340,70 @@ class _ManagedConfigPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
+    final brand = context.brandColors;
     final disabled = snapshot.printing || busy;
     final status = preview == null
         ? null
         : preview!.changed
         ? 'Preview ready - pending change'
         : 'Preview ready - already up to date';
-    return DeckhandPanel(
-      head: const DeckhandPanelHead(label: 'MANAGED PRINTER.CFG'),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Container(
-            constraints: const BoxConstraints(minHeight: 96),
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: tokens.ink2,
-              border: Border.all(color: tokens.line),
-              borderRadius: BorderRadius.circular(DeckhandTokens.r2),
-            ),
-            child: SelectableText(
-              settingsText,
-              style: TextStyle(
-                fontFamily: DeckhandTokens.fontMono,
-                fontSize: DeckhandTokens.tSm,
-                height: 1.45,
-                color: tokens.text,
+    return ClPanel(
+      head: const ClPanelLabelHead(label: 'MANAGED PRINTER.CFG'),
+      body: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Container(
+              constraints: const BoxConstraints(minHeight: 96),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: brand.surface,
+                border: Border.all(color: brand.borderStrong),
+                borderRadius: BorderRadius.circular(context.radii.sm),
+              ),
+              child: SelectableText(
+                settingsText,
+                style: context.dataSmall.copyWith(
+                  color: brand.ink,
+                  height: 1.45,
+                ),
               ),
             ),
-          ),
-          if (status != null || error != null) ...[
-            const SizedBox(height: 10),
-            Text(
-              error ?? status!,
-              style: TextStyle(
-                fontFamily: DeckhandTokens.fontSans,
-                fontSize: DeckhandTokens.tSm,
-                color: error == null ? tokens.text2 : tokens.bad,
-              ),
-            ),
-          ],
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              OutlinedButton.icon(
-                icon: busy
-                    ? const SizedBox(
-                        width: 14,
-                        height: 14,
-                        child: DeckhandSpinner(size: 14, strokeWidth: 2),
-                      )
-                    : const Icon(Icons.visibility_outlined, size: 16),
-                label: const Text('Preview'),
-                onPressed: disabled ? null : onPreview,
-              ),
-              OutlinedButton.icon(
-                icon: const Icon(Icons.backup_table_outlined, size: 16),
-                label: const Text('Apply with backup'),
-                onPressed: disabled ? null : onApply,
+            if (status != null || error != null) ...[
+              const SizedBox(height: 10),
+              Text(
+                error ?? status!,
+                style: context.clBodySmall.copyWith(
+                  color: error == null ? brand.ink2 : brand.bad,
+                ),
               ),
             ],
-          ),
-        ],
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                OutlinedButton.icon(
+                  icon: busy
+                      ? const SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: ClSpinner(size: 14, strokeWidth: 2),
+                        )
+                      : const Icon(Icons.visibility_outlined, size: 16),
+                  label: const Text('Preview'),
+                  onPressed: disabled ? null : onPreview,
+                ),
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.backup_table_outlined, size: 16),
+                  label: const Text('Apply with backup'),
+                  onPressed: disabled ? null : onApply,
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -421,9 +417,9 @@ class _TuningHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
-    return DeckhandPanel(
-      head: DeckhandPanelHead(
+    final brand = context.brandColors;
+    return ClPanel(
+      head: ClPanelLabelHead(
         label: 'LIVE PRINTER',
         trailing: IconButton(
           tooltip: 'Refresh',
@@ -432,37 +428,40 @@ class _TuningHeader extends StatelessWidget {
           visualDensity: VisualDensity.compact,
         ),
       ),
-      child: Wrap(
-        spacing: 10,
-        runSpacing: 10,
-        children: [
-          _StatusChip(
-            label: 'Host',
-            value: snapshot.host ?? '',
-            color: tokens.info,
-          ),
-          _StatusChip(
-            label: 'State',
-            value: snapshot.printing ? 'Printing' : snapshot.printState,
-            color: snapshot.printing ? tokens.warn : tokens.ok,
-          ),
-          _StatusChip(
-            label: 'Hotend',
-            value: _tempLabel(snapshot.hotendTemperature),
-            color: tokens.text3,
-          ),
-          _StatusChip(
-            label: 'Bed',
-            value: _tempLabel(snapshot.bedTemperature),
-            color: tokens.text3,
-          ),
-          if (snapshot.error != null)
+      body: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Wrap(
+          spacing: 10,
+          runSpacing: 10,
+          children: [
             _StatusChip(
-              label: 'Error',
-              value: snapshot.error!,
-              color: tokens.bad,
+              label: 'Host',
+              value: snapshot.host ?? '',
+              color: brand.statusIdle,
             ),
-        ],
+            _StatusChip(
+              label: 'State',
+              value: snapshot.printing ? 'Printing' : snapshot.printState,
+              color: snapshot.printing ? brand.warn : brand.good,
+            ),
+            _StatusChip(
+              label: 'Hotend',
+              value: _tempLabel(snapshot.hotendTemperature),
+              color: brand.ink3,
+            ),
+            _StatusChip(
+              label: 'Bed',
+              value: _tempLabel(snapshot.bedTemperature),
+              color: brand.ink3,
+            ),
+            if (snapshot.error != null)
+              _StatusChip(
+                label: 'Error',
+                value: snapshot.error!,
+                color: brand.bad,
+              ),
+          ],
+        ),
       ),
     );
   }
@@ -485,42 +484,45 @@ class _PidPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return DeckhandPanel(
-      head: const DeckhandPanelHead(label: 'PID'),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _CommandRow(
-            label: 'Hotend',
-            controller: hotendTarget,
-            suffix: 'C',
-            scriptBuilder: () =>
-                'PID_CALIBRATE HEATER=extruder TARGET=${hotendTarget.text.trim()}',
-            enabled: !snapshot.printing,
-            busyScript: busyScript,
-            onRun: onRun,
-          ),
-          const SizedBox(height: 10),
-          _CommandRow(
-            label: 'Bed',
-            controller: bedTarget,
-            suffix: 'C',
-            scriptBuilder: () =>
-                'PID_CALIBRATE HEATER=heater_bed TARGET=${bedTarget.text.trim()}',
-            enabled: !snapshot.printing,
-            busyScript: busyScript,
-            onRun: onRun,
-          ),
-          const SizedBox(height: 12),
-          _ScriptButton(
-            label: 'Save config',
-            icon: Icons.save_outlined,
-            script: 'SAVE_CONFIG',
-            enabled: !snapshot.printing,
-            busyScript: busyScript,
-            onRun: onRun,
-          ),
-        ],
+    return ClPanel(
+      head: const ClPanelLabelHead(label: 'PID'),
+      body: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _CommandRow(
+              label: 'Hotend',
+              controller: hotendTarget,
+              suffix: 'C',
+              scriptBuilder: () =>
+                  'PID_CALIBRATE HEATER=extruder TARGET=${hotendTarget.text.trim()}',
+              enabled: !snapshot.printing,
+              busyScript: busyScript,
+              onRun: onRun,
+            ),
+            const SizedBox(height: 10),
+            _CommandRow(
+              label: 'Bed',
+              controller: bedTarget,
+              suffix: 'C',
+              scriptBuilder: () =>
+                  'PID_CALIBRATE HEATER=heater_bed TARGET=${bedTarget.text.trim()}',
+              enabled: !snapshot.printing,
+              busyScript: busyScript,
+              onRun: onRun,
+            ),
+            const SizedBox(height: 12),
+            _ScriptButton(
+              label: 'Save config',
+              icon: Icons.save_outlined,
+              script: 'SAVE_CONFIG',
+              enabled: !snapshot.printing,
+              busyScript: busyScript,
+              onRun: onRun,
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -548,61 +550,64 @@ class _MotionPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final nextRotation = _nextRotationDistance;
-    return DeckhandPanel(
-      head: const DeckhandPanelHead(label: 'EXTRUSION'),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _CommandRow(
-            label: 'Pressure advance',
-            controller: pressureAdvance,
-            suffix: '',
-            scriptBuilder: () =>
-                'SET_PRESSURE_ADVANCE ADVANCE=${pressureAdvance.text.trim()}',
-            enabled: !snapshot.printing,
-            busyScript: busyScript,
-            onRun: onRun,
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: _NumberField(
-                  label: 'Current',
-                  controller: rotationCurrent,
+    return ClPanel(
+      head: const ClPanelLabelHead(label: 'EXTRUSION'),
+      body: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _CommandRow(
+              label: 'Pressure advance',
+              controller: pressureAdvance,
+              suffix: '',
+              scriptBuilder: () =>
+                  'SET_PRESSURE_ADVANCE ADVANCE=${pressureAdvance.text.trim()}',
+              enabled: !snapshot.printing,
+              busyScript: busyScript,
+              onRun: onRun,
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: _NumberField(
+                    label: 'Current',
+                    controller: rotationCurrent,
+                  ),
                 ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: _NumberField(
-                  label: 'Asked',
-                  controller: rotationRequested,
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _NumberField(
+                    label: 'Asked',
+                    controller: rotationRequested,
+                  ),
                 ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: _NumberField(
-                  label: 'Measured',
-                  controller: rotationMeasured,
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _NumberField(
+                    label: 'Measured',
+                    controller: rotationMeasured,
+                  ),
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          _ScriptButton(
-            label: nextRotation == null
-                ? 'Apply rotation'
-                : 'Apply ${nextRotation.toStringAsFixed(4)}',
-            icon: Icons.straighten,
-            script: nextRotation == null
-                ? ''
-                : 'SET_EXTRUDER_ROTATION_DISTANCE EXTRUDER=extruder '
-                      'DISTANCE=${nextRotation.toStringAsFixed(6)}',
-            enabled: !snapshot.printing && nextRotation != null,
-            busyScript: busyScript,
-            onRun: onRun,
-          ),
-        ],
+              ],
+            ),
+            const SizedBox(height: 10),
+            _ScriptButton(
+              label: nextRotation == null
+                  ? 'Apply rotation'
+                  : 'Apply ${nextRotation.toStringAsFixed(4)}',
+              icon: Icons.straighten,
+              script: nextRotation == null
+                  ? ''
+                  : 'SET_EXTRUDER_ROTATION_DISTANCE EXTRUDER=extruder '
+                        'DISTANCE=${nextRotation.toStringAsFixed(6)}',
+              enabled: !snapshot.printing && nextRotation != null,
+              busyScript: busyScript,
+              onRun: onRun,
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -630,55 +635,58 @@ class _InputShaperPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return DeckhandPanel(
-      head: const DeckhandPanelHead(label: 'INPUT SHAPER'),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _ScriptButton(
-            label: 'Auto calibrate',
-            icon: Icons.graphic_eq,
-            script: 'SHAPER_CALIBRATE',
-            enabled: !snapshot.printing,
-            busyScript: busyScript,
-            onRun: onRun,
-          ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              Expanded(
-                child: _ScriptButton(
-                  label: 'Test X',
-                  icon: Icons.swap_horiz,
-                  script: 'TEST_RESONANCES AXIS=X',
-                  enabled: !snapshot.printing,
-                  busyScript: busyScript,
-                  onRun: onRun,
+    return ClPanel(
+      head: const ClPanelLabelHead(label: 'INPUT SHAPER'),
+      body: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _ScriptButton(
+              label: 'Auto calibrate',
+              icon: Icons.graphic_eq,
+              script: 'SHAPER_CALIBRATE',
+              enabled: !snapshot.printing,
+              busyScript: busyScript,
+              onRun: onRun,
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: _ScriptButton(
+                    label: 'Test X',
+                    icon: Icons.swap_horiz,
+                    script: 'TEST_RESONANCES AXIS=X',
+                    enabled: !snapshot.printing,
+                    busyScript: busyScript,
+                    onRun: onRun,
+                  ),
                 ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: _ScriptButton(
-                  label: 'Test Y',
-                  icon: Icons.swap_vert,
-                  script: 'TEST_RESONANCES AXIS=Y',
-                  enabled: !snapshot.printing,
-                  busyScript: busyScript,
-                  onRun: onRun,
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _ScriptButton(
+                    label: 'Test Y',
+                    icon: Icons.swap_vert,
+                    script: 'TEST_RESONANCES AXIS=Y',
+                    enabled: !snapshot.printing,
+                    busyScript: busyScript,
+                    onRun: onRun,
+                  ),
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          _ScriptButton(
-            label: 'Save config',
-            icon: Icons.save_outlined,
-            script: 'SAVE_CONFIG',
-            enabled: !snapshot.printing,
-            busyScript: busyScript,
-            onRun: onRun,
-          ),
-        ],
+              ],
+            ),
+            const SizedBox(height: 10),
+            _ScriptButton(
+              label: 'Save config',
+              icon: Icons.save_outlined,
+              script: 'SAVE_CONFIG',
+              enabled: !snapshot.printing,
+              busyScript: busyScript,
+              onRun: onRun,
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -754,7 +762,7 @@ class _ScriptButton extends StatelessWidget {
           ? const SizedBox(
               width: 14,
               height: 14,
-              child: DeckhandSpinner(size: 14, strokeWidth: 2),
+              child: ClSpinner(size: 14, strokeWidth: 2),
             )
           : Icon(icon, size: 16),
       label: Text(label),
@@ -805,14 +813,14 @@ class _StatusChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = DeckhandTokens.of(context);
+    final brand = context.brandColors;
     return Container(
       constraints: const BoxConstraints(minHeight: 42, minWidth: 120),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        color: tokens.ink2,
-        border: Border.all(color: tokens.line),
-        borderRadius: BorderRadius.circular(DeckhandTokens.r2),
+        color: brand.surface,
+        border: Border.all(color: brand.borderStrong),
+        borderRadius: BorderRadius.circular(context.radii.sm),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -831,20 +839,15 @@ class _StatusChip extends StatelessWidget {
                 Text(
                   label.toUpperCase(),
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontFamily: DeckhandTokens.fontMono,
-                    fontSize: 10,
-                    color: tokens.text4,
+                  style: context.labelTechnical.copyWith(
+                    color: brand.ink4,
+                    letterSpacing: 0,
                   ),
                 ),
                 Text(
                   value.isEmpty ? '-' : value,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontFamily: DeckhandTokens.fontSans,
-                    fontSize: DeckhandTokens.tSm,
-                    color: tokens.text,
-                  ),
+                  style: context.clBodySmall.copyWith(color: brand.ink),
                 ),
               ],
             ),

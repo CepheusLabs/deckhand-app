@@ -1,8 +1,8 @@
 import 'package:deckhand_core/deckhand_core.dart';
 import 'package:deckhand_ui/src/providers.dart';
 import 'package:deckhand_ui/src/screens/flash_target_screen.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:forge/forge.dart';
 
 import 'helpers.dart';
 
@@ -148,10 +148,13 @@ void main() {
   });
 }
 
-FilledButton _primaryButton(WidgetTester tester) {
-  final finder = find.widgetWithText(FilledButton, 'Use this disk');
+// The wizard scaffold renders its primaryAction ('Use this disk') as a
+// forge ClButton; a disabled action passes onPressed: null straight
+// through, so enabled-state assertions read ClButton.onPressed.
+ClButton _primaryButton(WidgetTester tester) {
+  final finder = find.widgetWithText(ClButton, 'Use this disk');
   expect(finder, findsOneWidget);
-  return tester.widget<FilledButton>(finder);
+  return tester.widget<ClButton>(finder);
 }
 
 class _MutableFlashService implements FlashService {
