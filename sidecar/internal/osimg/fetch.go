@@ -797,13 +797,22 @@ func sanitizeURL(raw string) string {
 	return u.String()
 }
 
+// allowLoopbackDownloads gates approval of localhost / loopback download
+// targets. It is false in production: a privileged downloader must not be
+// steerable at local services (an SSRF-to-loopback primitive). Tests flip
+// it true via TestMain so they can serve fixtures from httptest on
+// 127.0.0.1.
+var allowLoopbackDownloads = false
+
 func isApprovedDownloadHost(host string) bool {
 	host = strings.ToLower(strings.TrimSuffix(host, "."))
-	if host == "localhost" {
-		return true
-	}
 	if ip := net.ParseIP(host); ip != nil {
-		return ip.IsLoopback()
+		// Bare IPs are never an approved production target; loopback is
+		// allowed only when explicitly enabled for tests.
+		return allowLoopbackDownloads && ip.IsLoopback()
+	}
+	if host == "localhost" {
+		return allowLoopbackDownloads
 	}
 	for _, suffix := range approvedDownloadHostSuffixes {
 		suffix = strings.ToLower(strings.TrimPrefix(suffix, "."))
