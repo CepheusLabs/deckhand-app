@@ -443,6 +443,13 @@ func shouldRedactKey(k string) bool {
 		strings.Contains(lk, "token")
 }
 
+// SanitizeErrorMessage redacts credentials and query strings from any
+// URLs embedded in an error message before it crosses a trust boundary.
+// The stdio response writer applies the same redaction; this exported
+// wrapper lets the local-agent HTTP bridge sanitize handler errors it
+// returns to web origins instead of leaking raw paths/URLs to JavaScript.
+func SanitizeErrorMessage(msg string) string { return sanitizeErrorMessage(msg) }
+
 func sanitizeErrorMessage(msg string) string {
 	return sensitiveURLPattern.ReplaceAllStringFunc(msg, func(raw string) string {
 		u, err := url.Parse(raw)
