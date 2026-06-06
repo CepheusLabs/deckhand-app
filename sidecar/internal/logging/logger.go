@@ -27,6 +27,24 @@ const (
 	DefaultLogName      = "deckhand-sidecar.log"
 )
 
+// LogLevelEnv lets a field operator raise or lower sidecar log verbosity
+// without a rebuild: DECKHAND_LOG_LEVEL=debug|info|warn|error
+// (case-insensitive). Defaults to info.
+const LogLevelEnv = "DECKHAND_LOG_LEVEL"
+
+func logLevelFromEnv() slog.Level {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv(LogLevelEnv))) {
+	case "debug":
+		return slog.LevelDebug
+	case "warn", "warning":
+		return slog.LevelWarn
+	case "error":
+		return slog.LevelError
+	default: // "", "info", or anything unrecognised
+		return slog.LevelInfo
+	}
+}
+
 // Options lets tests tune rotation bounds without touching the public
 // Init signature. Zero values mean "use the default".
 type Options struct {
@@ -80,7 +98,7 @@ func InitWithOptions(dataDir string, opts Options) (*slog.Logger, func() error, 
 	// itself - rotatingFile's mutex is what makes this safe.
 	mw := io.MultiWriter(rf, os.Stderr)
 	handler := slog.NewJSONHandler(mw, &slog.HandlerOptions{
-		Level: slog.LevelInfo,
+		Level: logLevelFromEnv(),
 	})
 	logger := slog.New(handler)
 
