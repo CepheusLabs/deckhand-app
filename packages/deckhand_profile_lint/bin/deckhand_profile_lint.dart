@@ -12,7 +12,7 @@ import 'package:deckhand_profile_lint/deckhand_profile_lint.dart';
 Future<void> main(List<String> argv) async {
   try {
     final report = await runProfileLint(argv);
-    report.write(stdout);
+    report.writeTo(stdout);
     exit(report.hasErrors ? 1 : 0);
   } on LintUsageException catch (e) {
     stderr.writeln('deckhand-profile-lint: ${e.message}');

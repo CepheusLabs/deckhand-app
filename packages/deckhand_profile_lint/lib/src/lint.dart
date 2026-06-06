@@ -8,6 +8,18 @@ import 'package:yaml/yaml.dart';
 
 enum LintSeverity { error, warning, info }
 
+/// Output format for the lint report. `text` is the human-readable
+/// default; `json` and `sarif` are machine-readable for CI/code-scanning
+/// integration (SARIF 2.1.0 is what GitHub code scanning ingests).
+enum LintFormat { text, json, sarif }
+
+LintFormat parseLintFormat(String value) => switch (value) {
+  'text' => LintFormat.text,
+  'json' => LintFormat.json,
+  'sarif' => LintFormat.sarif,
+  _ => throw LintUsageException('unknown --format: $value'),
+};
+
 class LintFinding {
   LintFinding(this.severity, this.path, this.message);
   final LintSeverity severity;
@@ -23,9 +35,10 @@ class LintResult {
 }
 
 class LintReport {
-  LintReport(this.results, {required this.strict});
+  LintReport(this.results, {required this.strict, this.format = LintFormat.text});
   final List<LintResult> results;
   final bool strict;
+  final LintFormat format;
 
   bool get hasErrors {
     for (final r in results) {
@@ -63,6 +76,99 @@ class LintReport {
       '${results.length} profile(s) scanned, $errors error(s), $warnings warning(s).',
     );
   }
+
+  /// Write the report in the configured [format].
+  void writeTo(IOSink sink) {
+    switch (format) {
+      case LintFormat.text:
+        write(sink);
+      case LintFormat.json:
+        sink.writeln(const JsonEncoder.withIndent('  ').convert(toJson()));
+      case LintFormat.sarif:
+        sink.writeln(const JsonEncoder.withIndent('  ').convert(toSarif()));
+    }
+  }
+
+  int _count(LintSeverity s) {
+    var n = 0;
+    for (final r in results) {
+      for (final f in r.findings) {
+        if (f.severity == s) n++;
+      }
+    }
+    return n;
+  }
+
+  /// Stable JSON shape for CI consumers that want the raw findings.
+  Map<String, dynamic> toJson() => {
+    'tool': 'deckhand-profile-lint',
+    'strict': strict,
+    'summary': {
+      'profiles': results.length,
+      'errors': _count(LintSeverity.error),
+      'warnings': _count(LintSeverity.warning),
+      'infos': _count(LintSeverity.info),
+    },
+    'results': [
+      for (final r in results)
+        {
+          'file': r.file,
+          if (r.profileId != null) 'profile_id': r.profileId,
+          'findings': [
+            for (final f in r.findings)
+              {
+                'severity': f.severity.name,
+                'path': f.path,
+                'message': f.message,
+              },
+          ],
+        },
+    ],
+  };
+
+  /// SARIF 2.1.0 — the format GitHub code scanning ingests, so profile
+  /// lint findings can surface as annotations in the Security tab.
+  Map<String, dynamic> toSarif() {
+    String level(LintSeverity s) => switch (s) {
+      LintSeverity.error => 'error',
+      LintSeverity.warning => 'warning',
+      LintSeverity.info => 'note',
+    };
+    final sarifResults = <Map<String, dynamic>>[];
+    for (final r in results) {
+      for (final f in r.findings) {
+        sarifResults.add({
+          'ruleId': f.path.isEmpty ? 'profile' : f.path,
+          'level': level(f.severity),
+          'message': {'text': f.message},
+          'locations': [
+            {
+              'physicalLocation': {
+                'artifactLocation': {'uri': r.file},
+              },
+            },
+          ],
+        });
+      }
+    }
+    return {
+      r'$schema': 'https://json.schemastore.org/sarif-2.1.0.json',
+      'version': '2.1.0',
+      'runs': [
+        {
+          'tool': {
+            'driver': {
+              'name': 'deckhand-profile-lint',
+              'informationUri':
+                  'https://github.com/CepheusLabs/deckhand-profiles',
+              'rules': <Map<String, dynamic>>[],
+            },
+          },
+          'results': sarifResults,
+        },
+      ],
+    };
+  }
 }
 
 class LintUsageException implements Exception {
@@ -83,6 +189,12 @@ Future<LintReport> runProfileLint(List<String> argv) async {
           'Path to profile.schema.json (defaults to <root>/schema/profile.schema.json)',
     )
     ..addFlag('strict', help: 'Treat warnings as errors.', defaultsTo: false)
+    ..addOption(
+      'format',
+      help: 'Output format for CI integration.',
+      allowed: ['text', 'json', 'sarif'],
+      defaultsTo: 'text',
+    )
     ..addFlag(
       'regenerate-registry',
       help:
@@ -105,6 +217,7 @@ Future<LintReport> runProfileLint(List<String> argv) async {
       'Usage: deckhand-profile-lint --root <dir>\n${parser.usage}',
     );
   }
+  final format = parseLintFormat(args['format'] as String);
   final root = Directory(args['root'] as String);
   if (!root.existsSync()) {
     throw LintUsageException('root does not exist: ${root.path}');
@@ -127,7 +240,7 @@ Future<LintReport> runProfileLint(List<String> argv) async {
               '(${_countProfiles(root)} entries)',
         ),
       ]),
-    ], strict: args['strict'] as bool);
+    ], strict: args['strict'] as bool, format: format);
     return report;
   }
   final schemaPath =
@@ -350,7 +463,7 @@ Future<LintReport> runProfileLint(List<String> argv) async {
     results.add(LintResult(rel, profileId, findings));
   }
 
-  return LintReport(results, strict: args['strict'] as bool);
+  return LintReport(results, strict: args['strict'] as bool, format: format);
 }
 
 /// Step kinds that have built-in idempotency baked into the

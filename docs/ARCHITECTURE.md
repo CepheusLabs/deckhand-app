@@ -65,7 +65,7 @@ deckhand/
 │   ├── ARCHITECTURE.md                  # this file
 │   ├── WIZARD-FLOW.md                   # screen-by-screen UX spec
 │   ├── IPC.md                           # sidecar JSON-RPC method catalog
-│   ├── PROFILE-SCHEMA.md                # profile.yaml spec (content authored in deckhand-profiles, lives here)
+│   │   # profile.yaml spec lives in the deckhand-profiles repo (AUTHORING.md)
 │   └── RELEASING.md                     # versioning, tagging, CI
 ├── app/                                 # Deckhand desktop app
 │   ├── pubspec.yaml                     # depends on deckhand_* packages
@@ -121,7 +121,7 @@ deckhand/
 │   └── internal/
 │       ├── rpc/                         # JSON-RPC over stdio
 │       ├── disks/                       # per-OS disk enumeration + flash
-│       ├── os_images/                   # HTTP fetch + sha256
+│       ├── osimg/                       # HTTP fetch + sha256 + XZ extract
 │       ├── hash/                        # streaming sha256
 │       └── host/
 ├── scripts/                             # build + release helpers
@@ -428,12 +428,14 @@ Sidecar is bundled alongside the app binary. On install:
 
 - **Flutter 3.38.9**
 - **Dart 3.10.8**
-- **Go 1.22+** (for sidecar; only needed if you touch sidecar code)
+- **Go 1.26+** (for sidecar; only needed if you touch sidecar code).
+  `sidecar/go.mod` pins `go 1.26`; CI `setup-go` matches.
 - Windows: VS Build Tools (C++ workload)
 - macOS: Xcode CLI tools
 - Linux: `cmake`, `ninja`, `libgtk-3-dev`, `libsecret-1-dev`
 
-Flutter path on this dev machine: `D:\git\flutter\bin\flutter.bat`.
+Point your shell at whatever `flutter` is on `PATH`; the version above is
+the floor. CI uses the org's pinned `subosito/flutter-action`.
 
 ## Testing strategy
 

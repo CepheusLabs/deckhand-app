@@ -419,6 +419,24 @@ class ScenarioRunner {
           'took $elapsed (cap ${scenario.maxDuration})',
         );
       }
+
+      // Guard against the classic harness false-negative: a scenario that
+      // declares no outcome expectations (no ports, no remote files, no
+      // step statuses) would otherwise pass green having proven only that
+      // the flow *ran*, not that it produced the right result. Fail such
+      // scenarios so an empty/typo'd expectations block can't gate a
+      // release on nothing.
+      final declaresExpectations = scenario.declaresOutcomeExpectations;
+      record(
+        'scenario.has_expectations',
+        declaresExpectations,
+        declaresExpectations
+            ? 'ports=${scenario.expectedPorts.length} '
+                  'files=${scenario.expectedRemoteFiles.length} '
+                  'steps=${scenario.expectedStepStatus.length}'
+            : 'scenario declares no port/file/step expectations — a pass '
+                  'would prove only that the flow ran, not its result',
+      );
     } finally {
       try {
         if (sshSession != null && sshService != null) {

@@ -1,6 +1,6 @@
 module github.com/CepheusLabs/deckhand/sidecar
 
-go 1.22
+go 1.26
 
 require (
 	github.com/go-git/go-git/v5 v5.13.1

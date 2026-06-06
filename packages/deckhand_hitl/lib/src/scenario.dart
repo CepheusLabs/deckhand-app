@@ -127,8 +127,19 @@ class Scenario {
 
   /// Whether the SSH connect should accept-on-first-use the
   /// printer's host key (vs. demanding a pinned fingerprint match).
-  /// Default true for HITL — see the parser comment for rationale.
+  /// Defaults to false; a scenario opts in explicitly with
+  /// `accept_host_key: true` (see the parser comment for rationale).
   final bool acceptHostKey;
+
+  /// Whether the scenario asserts anything about the *result* of the run
+  /// (open ports, remote files, or per-step statuses) rather than only
+  /// that the flow executed. The HITL runner fails scenarios that don't,
+  /// so an empty or typo'd expectations block can't gate a release on a
+  /// run that proved nothing.
+  bool get declaresOutcomeExpectations =>
+      expectedStepStatus.isNotEmpty ||
+      expectedPorts.isNotEmpty ||
+      expectedRemoteFiles.isNotEmpty;
 }
 
 class ExpectedFile {

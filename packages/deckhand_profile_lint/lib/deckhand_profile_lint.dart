@@ -7,4 +7,5 @@ export 'src/lint.dart'
         LintUsageException,
         LintSeverity,
         LintFinding,
+        LintFormat,
         runProfileLint;

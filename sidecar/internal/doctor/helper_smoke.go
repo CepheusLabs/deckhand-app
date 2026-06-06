@@ -180,10 +180,6 @@ func commandExitCode(err error) int {
 	return -1
 }
 
-func powerShellDoubleQuoted(s string) string {
-	return `"` + strings.ReplaceAll(s, `"`, `""`) + `"`
-}
-
 func powerShellSingleQuoted(s string) string {
 	return `'` + strings.ReplaceAll(s, `'`, `''`) + `'`
 }

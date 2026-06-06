@@ -17,6 +17,10 @@ name: HITL
 # point.
 
 on:
+  # A v* tag gates the release pipeline (see docs/RELEASING.md): the
+  # full rig matrix must pass before a tag's artifacts ship.
+  push:
+    tags: ['v*']
   schedule:
     # 06:00 UTC. Picks a quiet hour in every timezone so the rigs
     # aren't competing with maintainers manually probing them.

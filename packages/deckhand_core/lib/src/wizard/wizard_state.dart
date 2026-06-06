@@ -54,6 +54,27 @@ WizardFlow _flowFromId(String flowId) => WizardFlow.values.firstWhere(
   orElse: () => WizardFlow.none,
 );
 
+/// Whether a decision key holds a secret (a user-chosen password or
+/// passphrase). Secret decisions are kept in the in-memory decision
+/// graph while the wizard runs — the install step still interpolates
+/// them via `{{decisions.…}}` — but they MUST NOT be written to disk by
+/// [WizardState.toJson] nor leak un-redacted into a debug bundle.
+///
+/// The rule keys off the final dotted segment so there is no
+/// hand-maintained allowlist to drift: `first_boot.password`,
+/// `hardening.new_password`, any `*.passphrase`, etc. are all covered.
+/// This is what makes the "no passwords on disk" guarantee an enforced
+/// invariant rather than a convention.
+bool isSecretDecisionKey(String key) {
+  final segment = key.contains('.')
+      ? key.substring(key.lastIndexOf('.') + 1)
+      : key;
+  return segment == 'password' ||
+      segment == 'new_password' ||
+      segment == 'passphrase' ||
+      segment == 'secret';
+}
+
 /// Immutable snapshot of the wizard at a point in time.
 ///
 /// Built on the pure-Dart [ForgeWizardState] so `deckhand_core` shares
@@ -123,7 +144,22 @@ class WizardState extends ForgeWizardState {
   int? get sshPort => connection.port;
   String? get sshUser => connection.user;
 
-  Map<String, dynamic> toJson() => _wizardStateCodec.toJson(this);
+  /// Serialize through the shared [ForgeWizardStateCodec] (one on-disk
+  /// schema), then strip secret decisions (passwords/passphrases) so they
+  /// never reach disk — see [isSecretDecisionKey]. Resume therefore
+  /// re-prompts for them: a restored session can't replay a credential the
+  /// user never re-entered.
+  Map<String, dynamic> toJson() {
+    final json = _wizardStateCodec.toJson(this);
+    final decisions = json['decisions'];
+    if (decisions is Map) {
+      json['decisions'] = <String, Object?>{
+        for (final entry in decisions.entries)
+          if (!isSecretDecisionKey('${entry.key}')) '${entry.key}': entry.value,
+      };
+    }
+    return json;
+  }
 
   @override
   WizardState copyWith({

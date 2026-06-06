@@ -10,6 +10,10 @@ name: Release
 #                         ref, defaults to main)
 
 on:
+  # Normal path (see docs/RELEASING.md): cut a tag, the pipeline fires.
+  #   git tag v<YY.M.D>-<BUILD> && git push --tags
+  push:
+    tags: ['v*']
   workflow_dispatch:
     inputs:
       ref:
@@ -66,6 +70,43 @@ jobs:
             exit 1
           fi
 
+      - name: Require signing material on tagged releases
+        # A v* tag is a public release: refuse to ship an unsigned
+        # installer or privileged helper. Manual workflow_dispatch
+        # rebuilds may run unsigned (warn only) for iteration — matching
+        # docs/RELEASING.md's "they won't be signed, so don't ship them".
+        shell: bash
+        env:
+          IS_TAG: ${{ startsWith(github.ref, 'refs/tags/v') }}
+          WINDOWS_SIGN_THUMBPRINT: ${{ secrets.WINDOWS_SIGN_THUMBPRINT }}
+          MACOS_SIGN_CERT_P12: ${{ secrets.MACOS_SIGN_CERT_P12 }}
+          MACOS_SIGN_CERT_PASSWORD: ${{ secrets.MACOS_SIGN_CERT_PASSWORD }}
+          MACOS_SIGN_ID: ${{ secrets.MACOS_SIGN_ID }}
+          MACOS_NOTARIZE_APPLE_ID: ${{ secrets.MACOS_NOTARIZE_APPLE_ID }}
+          MACOS_NOTARIZE_PASSWORD: ${{ secrets.MACOS_NOTARIZE_PASSWORD }}
+          MACOS_NOTARIZE_TEAM_ID: ${{ secrets.MACOS_NOTARIZE_TEAM_ID }}
+          GPG_SIGNING_KEY: ${{ secrets.GPG_SIGNING_KEY }}
+          GPG_SIGNING_KEY_PASSPHRASE: ${{ secrets.GPG_SIGNING_KEY_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          missing=()
+          for v in WINDOWS_SIGN_THUMBPRINT \
+                   MACOS_SIGN_CERT_P12 MACOS_SIGN_CERT_PASSWORD MACOS_SIGN_ID \
+                   MACOS_NOTARIZE_APPLE_ID MACOS_NOTARIZE_PASSWORD MACOS_NOTARIZE_TEAM_ID \
+                   GPG_SIGNING_KEY GPG_SIGNING_KEY_PASSPHRASE; do
+            if [ -z "${!v:-}" ]; then missing+=("$v"); fi
+          done
+          if [ ${#missing[@]} -eq 0 ]; then
+            echo "::notice::all signing material present"
+            exit 0
+          fi
+          if [ "$IS_TAG" = "true" ]; then
+            echo "::error ::tagged release is missing required signing secrets: ${missing[*]}"
+            echo "::error ::a v* tag must not ship unsigned (Authenticode / Developer-ID + notarization / GPG). See docs/RELEASING.md."
+            exit 1
+          fi
+          echo "::warning::signing material missing (${missing[*]}); this workflow_dispatch rebuild will be UNSIGNED — do not distribute."
+
       - id: v
         shell: bash
         run: |
@@ -110,7 +151,7 @@ jobs:
 
       - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c  # v6
         with:
-          go-version: "1.22"
+          go-version: "1.26"
           cache-dependency-path: sidecar/go.sum
 
       - name: Build sidecar + helper (Windows)
@@ -180,7 +221,7 @@ jobs:
   # Flutter desktop builds → installers (one per OS).
   # ------------------------------------------------------------------
   windows:
-    name: Windows (MSI)
+    name: Windows (Inno EXE)
     needs: [version, go-binaries]
     runs-on: [self-hosted, windows]
     steps:

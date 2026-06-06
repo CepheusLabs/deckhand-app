@@ -3,10 +3,12 @@ package localagent
 import (
 	"context"
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
 	"sync"
@@ -16,6 +18,18 @@ import (
 )
 
 const ProtocolVersion = "deckhand-local-agent/v1"
+
+// maxRequestBodyBytes bounds a single RPC request body. Params are small
+// (binary payloads travel as file paths, never inline JSON), so 2 MiB is
+// generous; the cap stops a hostile/buggy web client from forcing the
+// privileged agent to buffer an unbounded body into memory.
+const maxRequestBodyBytes = 2 << 20
+
+// operationRetention is how long a finished operation stays retrievable
+// (so a slow SSE consumer can still read its terminal event) before the
+// registry evicts it. Without eviction the registry grew unbounded for
+// the life of the process.
+const operationRetention = 5 * time.Minute
 
 type Config struct {
 	Token        string
@@ -71,6 +85,10 @@ type service struct {
 	ops    *operationRegistry
 }
 
+// log returns the shared sidecar logger so bridge events land in the same
+// structured stream as the stdio RPC path.
+func (s *service) log() *slog.Logger { return s.server.Logger() }
+
 type rpcRequest struct {
 	Method string          `json:"method"`
 	Params json.RawMessage `json:"params"`
@@ -112,7 +130,7 @@ func (s *service) handleRPC(w http.ResponseWriter, r *http.Request) {
 		operationNotifier{op: nil},
 	)
 	if err != nil {
-		writeError(w, http.StatusBadGateway, err.Error())
+		writeError(w, http.StatusBadGateway, rpc.SanitizeErrorMessage(err.Error()))
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -141,8 +159,18 @@ func (s *service) handleOperations(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithCancel(context.Background())
 	op := newOperation(id, cancel)
 	s.ops.add(op)
+	s.log().Info("localagent.operation_start",
+		"operation_id", id,
+		"method", req.Method,
+		"origin", r.Header.Get("Origin"),
+		"active", s.ops.count(),
+	)
 	go func() {
 		defer cancel()
+		// Evict from the registry once the operation has been terminal
+		// long enough for any slow SSE consumer to drain it — bounds the
+		// registry instead of leaking an entry per operation forever.
+		defer time.AfterFunc(operationRetention, func() { s.ops.remove(id) })
 		result, err := s.server.Invoke(
 			ctx,
 			id,
@@ -151,16 +179,20 @@ func (s *service) handleOperations(w http.ResponseWriter, r *http.Request) {
 			operationNotifier{op: op},
 		)
 		if err != nil {
+			s.log().Warn("localagent.operation_failed",
+				"operation_id", id, "method", req.Method)
 			op.finish(agentEvent{
 				name:     "failed",
 				terminal: true,
 				data: map[string]any{
 					"phase":   "failed",
-					"message": err.Error(),
+					"message": rpc.SanitizeErrorMessage(err.Error()),
 				},
 			})
 			return
 		}
+		s.log().Info("localagent.operation_done",
+			"operation_id", id, "method", req.Method)
 		op.finish(agentEvent{
 			name:     "done",
 			terminal: true,
@@ -251,11 +283,23 @@ func (s *service) authorize(w http.ResponseWriter, r *http.Request) bool {
 		got = strings.TrimSpace(got[len("bearer "):])
 	}
 	if got == "" {
+		// EventSource (SSE) cannot set an Authorization header, so the
+		// token also rides as a query param on the events stream. This
+		// server does not log request URLs, so it is not written to a log
+		// here; callers should still prefer the header where possible.
 		got = strings.TrimSpace(r.URL.Query().Get("token"))
 	}
-	if got == token {
+	if subtle.ConstantTimeCompare([]byte(got), []byte(token)) == 1 {
 		return true
 	}
+	// Log the rejection (never the token) — repeated failures from a
+	// non-loopback peer are the signal that something is probing the
+	// privileged agent.
+	s.log().Warn("localagent.auth_failed",
+		"remote", r.RemoteAddr,
+		"method", r.Method,
+		"path", r.URL.Path,
+	)
 	writeError(w, http.StatusUnauthorized, "unauthorized")
 	return false
 }
@@ -283,9 +327,12 @@ func (s *service) originAllowed(origin string) bool {
 	}
 	allowed := s.cfg.AllowOrigins
 	if len(allowed) == 0 {
-		return strings.HasPrefix(origin, "https://") ||
-			strings.HasPrefix(origin, "http://localhost") ||
-			strings.HasPrefix(origin, "http://127.0.0.1")
+		// Deny by default. An unconfigured agent is reachable only from
+		// loopback origins (the desktop-paired local web app). Previously
+		// ANY https:// site was allowed, which let any page on the
+		// internet drive raw-disk I/O through the browser. Production web
+		// deployments must declare their origin via AllowOrigins.
+		return isLoopbackOrigin(origin)
 	}
 	for _, pattern := range allowed {
 		pattern = strings.TrimSpace(pattern)
@@ -294,6 +341,22 @@ func (s *service) originAllowed(origin string) bool {
 		}
 		if strings.HasSuffix(pattern, "/*") &&
 			strings.HasPrefix(origin, strings.TrimSuffix(pattern, "*")) {
+			return true
+		}
+	}
+	return false
+}
+
+// isLoopbackOrigin reports whether an Origin header points at the local
+// machine (localhost / 127.0.0.1 / [::1]), the only origins an
+// unconfigured privileged agent trusts.
+func isLoopbackOrigin(origin string) bool {
+	for _, prefix := range []string{
+		"http://localhost", "https://localhost",
+		"http://127.0.0.1", "https://127.0.0.1",
+		"http://[::1]", "https://[::1]",
+	} {
+		if strings.HasPrefix(origin, prefix) {
 			return true
 		}
 	}
@@ -332,6 +395,18 @@ func (r *operationRegistry) get(id string) *operation {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	return r.ops[id]
+}
+
+func (r *operationRegistry) remove(id string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	delete(r.ops, id)
+}
+
+func (r *operationRegistry) count() int {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return len(r.ops)
 }
 
 type operation struct {
@@ -410,8 +485,16 @@ type agentEvent struct {
 
 func readRPCRequest(w http.ResponseWriter, r *http.Request) (rpcRequest, bool) {
 	defer r.Body.Close()
+	// Bound the body so a hostile/buggy client can't make the privileged
+	// agent buffer an unbounded request into memory.
+	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodyBytes)
 	var req rpcRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			writeError(w, http.StatusRequestEntityTooLarge, "request body too large")
+			return req, false
+		}
 		writeError(w, http.StatusBadRequest, "invalid JSON")
 		return req, false
 	}

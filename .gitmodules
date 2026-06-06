@@ -8,3 +8,7 @@
 [submodule "shared/forge"]
 	path = shared/forge
 	url = https://github.com/CepheusLabs/forge.git
+[submodule "shared/telescope"]
+	path = shared/telescope
+	url = https://github.com/CepheusLabs/telescope.git
+	branch = main
