@@ -10,6 +10,27 @@ const Object _copyWithUnset = Object();
 /// Deckhand should wait for over SSH.
 const firstBootReadyForSshWaitDecision = 'first_boot.ready_for_ssh_wait';
 
+/// Whether a decision key holds a secret (a user-chosen password or
+/// passphrase). Secret decisions are kept in the in-memory decision
+/// graph while the wizard runs — the install step still interpolates
+/// them via `{{decisions.…}}` — but they MUST NOT be written to disk by
+/// [WizardState.toJson] nor leak un-redacted into a debug bundle.
+///
+/// The rule keys off the final dotted segment so there is no
+/// hand-maintained allowlist to drift: `first_boot.password`,
+/// `hardening.new_password`, any `*.passphrase`, etc. are all covered.
+/// This is what makes the "no passwords on disk" guarantee in the
+/// [WizardState] doc an enforced invariant rather than a convention.
+bool isSecretDecisionKey(String key) {
+  final segment = key.contains('.')
+      ? key.substring(key.lastIndexOf('.') + 1)
+      : key;
+  return segment == 'password' ||
+      segment == 'new_password' ||
+      segment == 'passphrase' ||
+      segment == 'secret';
+}
+
 /// Immutable snapshot of the wizard at a point in time.
 ///
 /// Only data the wizard owns goes here — no live SSH session, no
@@ -74,7 +95,11 @@ class WizardState {
   Map<String, dynamic> toJson() => <String, dynamic>{
     'schema': 'deckhand.wizard_state/1',
     'profileId': profileId,
-    'decisions': decisions,
+    // Secret decisions (passwords/passphrases) are stripped here so they
+    // never reach disk — see [isSecretDecisionKey]. Resume therefore
+    // re-prompts for them, which is the desired behaviour: a restored
+    // session can't replay a credential the user never re-entered.
+    'decisions': _withoutSecretDecisions(decisions),
     'currentStep': currentStep,
     'flow': flow.name,
     if (sshHost != null) 'sshHost': sshHost,
@@ -105,6 +130,17 @@ class WizardState {
         ? this.sshUser
         : sshUser as String?,
   );
+}
+
+/// Drop secret decisions before serialization. Pure of side effects;
+/// returns a fresh map so the in-memory decision graph is untouched.
+Map<String, Object> _withoutSecretDecisions(Map<String, Object> decisions) {
+  final out = <String, Object>{};
+  for (final entry in decisions.entries) {
+    if (isSecretDecisionKey(entry.key)) continue;
+    out[entry.key] = entry.value;
+  }
+  return out;
 }
 
 Map<String, Object> _immutableDecisionMap(Map<String, Object> decisions) {
