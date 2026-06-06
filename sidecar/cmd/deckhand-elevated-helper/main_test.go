@@ -8,10 +8,21 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
 )
+
+// platformSmokeTarget returns a raw-device target string valid for the current
+// OS's allowlist, so cross-platform tests in this (build-tag-free) file pass on
+// Windows, macOS, and Linux alike rather than hardcoding a Windows-only id.
+func platformSmokeTarget() string {
+	if runtime.GOOS == "windows" {
+		return "PhysicalDrive3"
+	}
+	return "/dev/sdz"
+}
 
 func TestValidateBackupOutputPathAllowsNewDirectImageChild(t *testing.T) {
 	root := makeBackupRoot(t)
@@ -439,26 +450,27 @@ func TestValidateWriteImageRequestSmokeSkipsRawDeviceAccess(t *testing.T) {
 	if err := os.WriteFile(tokenFile, []byte(token+"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	target := platformSmokeTarget()
 	manifest := filepath.Join(root, "write-manifest.json")
 	writeManifestFile(t, manifest, writeManifest{
 		Version:     1,
 		Op:          "write-image",
 		ImagePath:   image,
 		ImageSHA256: sha,
-		Target:      "PhysicalDrive3",
+		Target:      target,
 		TokenSHA256: tokenDigest(token),
 		ExpiresAt:   time.Now().Add(time.Minute).UTC(),
 	})
 
 	request, err := validateWriteImageRequest(writeImageRequestOptions{
 		OpName:        "write-image-smoke",
-		Args:          []string{"--image", image, "--target", "PhysicalDrive3", "--token-file", tokenFile, "--manifest", manifest, "--sha256", sha},
+		Args:          []string{"--image", image, "--target", target, "--token-file", tokenFile, "--manifest", manifest, "--sha256", sha},
 		RequireAccess: false,
 	})
 	if err != nil {
 		t.Fatalf("validateWriteImageRequest() error = %v", err)
 	}
-	if request.Image != image || request.Target != "PhysicalDrive3" || request.ExpectedSHA != sha {
+	if request.Image != image || request.Target != target || request.ExpectedSHA != sha {
 		t.Fatalf("request = %+v", request)
 	}
 	if _, err := os.Stat(tokenFile); !os.IsNotExist(err) {
