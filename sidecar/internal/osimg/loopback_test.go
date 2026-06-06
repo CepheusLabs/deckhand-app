@@ -45,3 +45,33 @@ func TestIsApprovedDownloadHost_AllowsLoopbackWhenEnabled(t *testing.T) {
 		}
 	}
 }
+
+func TestExtraDownloadHosts_WidensAllowlistFromEnv(t *testing.T) {
+	// Not allowed by default.
+	if isApprovedDownloadHost("images.corp.example") {
+		t.Fatal("host approved before being configured")
+	}
+	t.Setenv(extraDownloadHostEnv, " mirror.lan , corp.example ,")
+	if !isApprovedDownloadHost("corp.example") {
+		t.Error("exact extra host suffix not approved")
+	}
+	if !isApprovedDownloadHost("images.corp.example") {
+		t.Error("subdomain of extra host suffix not approved")
+	}
+	if !isApprovedDownloadHost("mirror.lan") {
+		t.Error("second extra host suffix not approved")
+	}
+	if isApprovedDownloadHost("notcorp.example.evil.com") {
+		t.Error("unrelated host wrongly approved")
+	}
+}
+
+func TestExtraDownloadHosts_RejectsWildcardsAndJunk(t *testing.T) {
+	t.Setenv(extraDownloadHostEnv, "*, https://x.com, a b, has/slash")
+	// None of those degenerate entries should widen the allowlist.
+	for _, host := range []string{"anything.example", "x.com", "b", "slash"} {
+		if isApprovedDownloadHost(host) {
+			t.Errorf("junk env entry approved host %q", host)
+		}
+	}
+}

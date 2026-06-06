@@ -78,6 +78,31 @@ var approvedDownloadHostSuffixes = []string{
 	"raspberrypi.org",
 }
 
+// extraDownloadHostEnv lets an operator add internal / air-gapped image
+// mirrors to the download allowlist without a rebuild — comma-separated
+// host suffixes, e.g. "mirror.corp.example,images.lan". It can only WIDEN
+// the allowlist by host: wildcards and entries bearing a path, scheme, or
+// whitespace are dropped, and every download is still HTTPS-only and
+// sha256-verified regardless of host. Set by the deployment, not the app.
+const extraDownloadHostEnv = "DECKHAND_EXTRA_DOWNLOAD_HOSTS"
+
+func extraDownloadHostSuffixes() []string {
+	raw := os.Getenv(extraDownloadHostEnv)
+	if raw == "" {
+		return nil
+	}
+	var out []string
+	for _, part := range strings.Split(raw, ",") {
+		s := strings.ToLower(strings.TrimSpace(part))
+		s = strings.TrimPrefix(s, ".")
+		if s == "" || s == "*" || strings.ContainsAny(s, " \t/\\*:") {
+			continue
+		}
+		out = append(out, s)
+	}
+	return out
+}
+
 var probeXZUncompressedSize = xzUncompressedSize
 
 // Download fetches rawURL to destPath, streaming progress through note.
@@ -816,6 +841,11 @@ func isApprovedDownloadHost(host string) bool {
 	}
 	for _, suffix := range approvedDownloadHostSuffixes {
 		suffix = strings.ToLower(strings.TrimPrefix(suffix, "."))
+		if host == suffix || strings.HasSuffix(host, "."+suffix) {
+			return true
+		}
+	}
+	for _, suffix := range extraDownloadHostSuffixes() {
 		if host == suffix || strings.HasSuffix(host, "."+suffix) {
 			return true
 		}
