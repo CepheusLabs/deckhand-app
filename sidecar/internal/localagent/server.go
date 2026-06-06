@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
 	"sync"
@@ -84,6 +85,10 @@ type service struct {
 	ops    *operationRegistry
 }
 
+// log returns the shared sidecar logger so bridge events land in the same
+// structured stream as the stdio RPC path.
+func (s *service) log() *slog.Logger { return s.server.Logger() }
+
 type rpcRequest struct {
 	Method string          `json:"method"`
 	Params json.RawMessage `json:"params"`
@@ -154,6 +159,12 @@ func (s *service) handleOperations(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithCancel(context.Background())
 	op := newOperation(id, cancel)
 	s.ops.add(op)
+	s.log().Info("localagent.operation_start",
+		"operation_id", id,
+		"method", req.Method,
+		"origin", r.Header.Get("Origin"),
+		"active", s.ops.count(),
+	)
 	go func() {
 		defer cancel()
 		// Evict from the registry once the operation has been terminal
@@ -168,6 +179,8 @@ func (s *service) handleOperations(w http.ResponseWriter, r *http.Request) {
 			operationNotifier{op: op},
 		)
 		if err != nil {
+			s.log().Warn("localagent.operation_failed",
+				"operation_id", id, "method", req.Method)
 			op.finish(agentEvent{
 				name:     "failed",
 				terminal: true,
@@ -178,6 +191,8 @@ func (s *service) handleOperations(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
+		s.log().Info("localagent.operation_done",
+			"operation_id", id, "method", req.Method)
 		op.finish(agentEvent{
 			name:     "done",
 			terminal: true,
@@ -277,6 +292,14 @@ func (s *service) authorize(w http.ResponseWriter, r *http.Request) bool {
 	if subtle.ConstantTimeCompare([]byte(got), []byte(token)) == 1 {
 		return true
 	}
+	// Log the rejection (never the token) — repeated failures from a
+	// non-loopback peer are the signal that something is probing the
+	// privileged agent.
+	s.log().Warn("localagent.auth_failed",
+		"remote", r.RemoteAddr,
+		"method", r.Method,
+		"path", r.URL.Path,
+	)
 	writeError(w, http.StatusUnauthorized, "unauthorized")
 	return false
 }
@@ -378,6 +401,12 @@ func (r *operationRegistry) remove(id string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	delete(r.ops, id)
+}
+
+func (r *operationRegistry) count() int {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return len(r.ops)
 }
 
 type operation struct {
