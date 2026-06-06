@@ -648,7 +648,7 @@ packages:
   printdeck_telescope:
     dependency: "direct main"
     description:
-      path: "../../telescope/clients/flutter"
+      path: "../shared/telescope/clients/flutter"
       relative: true
     source: path
     version: "0.0.1"

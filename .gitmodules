@@ -5,3 +5,7 @@
 [submodule "shared/printdeck/product_platform"]
 	path = shared/printdeck/product_platform
 	url = ../printdeck_product_platform.git
+[submodule "shared/telescope"]
+	path = shared/telescope
+	url = https://github.com/CepheusLabs/telescope.git
+	branch = main
