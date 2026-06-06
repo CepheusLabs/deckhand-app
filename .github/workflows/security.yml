@@ -1,6 +1,9 @@
 name: Security
 
 on:
+  pull_request:
+  push:
+    branches: [main]
   schedule:
     # Weekly re-scan against latest vuln databases — catches issues in
     # otherwise-quiet dependencies.
@@ -117,7 +120,7 @@ jobs:
 
       - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c  # v6
         with:
-          go-version: "1.22"
+          go-version: "1.26"
           cache-dependency-path: sidecar/go.sum
 
       - uses: securego/gosec@d4617f51baf75f4f809066386a4f9d27b3ac3e46  # v2.21.4
@@ -153,7 +156,7 @@ jobs:
 
       - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c  # v6
         with:
-          go-version: "1.22"
+          go-version: "1.26"
           cache-dependency-path: sidecar/go.sum
 
       - name: Fuzz ValidateParams

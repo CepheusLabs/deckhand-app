@@ -10,6 +10,10 @@ name: Release
 #                         ref, defaults to main)
 
 on:
+  # Normal path (see docs/RELEASING.md): cut a tag, the pipeline fires.
+  #   git tag v<YY.M.D>-<BUILD> && git push --tags
+  push:
+    tags: ['v*']
   workflow_dispatch:
     inputs:
       ref:
@@ -110,7 +114,7 @@ jobs:
 
       - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c  # v6
         with:
-          go-version: "1.22"
+          go-version: "1.26"
           cache-dependency-path: sidecar/go.sum
 
       - name: Build sidecar + helper (Windows)
