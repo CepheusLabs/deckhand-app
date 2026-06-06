@@ -221,7 +221,7 @@ jobs:
   # Flutter desktop builds → installers (one per OS).
   # ------------------------------------------------------------------
   windows:
-    name: Windows (MSI)
+    name: Windows (Inno EXE)
     needs: [version, go-binaries]
     runs-on: [self-hosted, windows]
     steps:

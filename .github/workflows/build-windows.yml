@@ -3,11 +3,11 @@ name: Build Windows (self-hosted)
 # Lightweight Windows build that runs on the org's self-hosted runner.
 #
 # Why a separate workflow from `release.yml`:
-#   - `release.yml` is the canonical signed-MSIX path used for tagged
-#     releases; it's slower and produces installer artifacts.
+#   - `release.yml` is the canonical signed Inno Setup (.exe) installer
+#     path used for tagged releases; it's slower and produces installers.
 #   - This workflow exists for fast iteration: build the Flutter
 #     Windows binary on `cl-windowsdesktop-primary`, no codesigning,
-#     no MSIX packaging, just a zipped Release\ tree for smoke-testing.
+#     no installer packaging, just a zipped Release\ tree for smoke-testing.
 #   - Mirrors `build-macos.yml` so dev-loop ergonomics are symmetric
 #     across platforms.
 #
@@ -144,8 +144,8 @@ jobs:
 
       # Drop the Go binaries next to deckhand.exe so the produced
       # artifact is a self-contained directory the user can run
-      # directly. Production releases use the codesigned MSIX path
-      # in release.yml; this is a smoke artifact.
+      # directly. Production releases use the codesigned Inno Setup
+      # installer in release.yml; this is a smoke artifact.
       - name: Stage Go binaries next to deckhand.exe
         run: |
           $ErrorActionPreference = "Stop"
