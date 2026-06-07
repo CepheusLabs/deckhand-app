@@ -181,6 +181,16 @@ jobs:
 
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5
+        with:
+          # Don't persist the job token's auth header: it's scoped to
+          # this repo only, so it can't fetch the private cross-repo
+          # submodules and (worse) makes checkout's own submodule-auth
+          # step fail with "Unable to replace auth placeholder". Init the
+          # path-dep submodules below using the runner's own git creds.
+          persist-credentials: false
+
+      - name: Check out path-dep submodules (forge / product_platform / telescope)
+        run: git submodule update --init --recursive shared/forge shared/printdeck/product_platform shared/telescope
 
       - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2  # v2
         with:
