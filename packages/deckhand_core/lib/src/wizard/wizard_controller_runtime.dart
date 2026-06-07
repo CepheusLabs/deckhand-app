@@ -340,8 +340,27 @@ Future<void> _runStateAttachSessionImpl(WizardController c) async {
   final current = c._runState;
   try {
     final remote = await c._runStateStore.load(session);
-    if (remote == null) return;
-    c._runState = current == null ? remote : current.merging(remote);
+    final RunState? next;
+    if (current == null) {
+      next = remote;
+    } else if (remote == null) {
+      next = current;
+    } else {
+      next = current.merging(remote);
+    }
+    if (next == null) return;
+    c._runState = next;
+    if (current == null || current.steps.isEmpty) return;
+    try {
+      await c._runStateStore.save(session, next);
+    } on Object catch (e) {
+      c._emit(
+        StepWarning(
+          stepId: 'run_state_attach',
+          message: 'run-state attach flush failed (continuing): $e',
+        ),
+      );
+    }
   } on Object {
     return;
   }
@@ -353,10 +372,11 @@ Future<void> _runStateAttachSessionImpl(WizardController c) async {
 /// a missed write is recoverable.
 Future<void> _runStateRecordImpl(WizardController c, RunStateStep step) async {
   final state = c._runState;
-  final session = c._session;
-  if (state == null || session == null) return;
+  if (state == null) return;
   final next = state.upsertingLast(step);
   c._runState = next;
+  final session = c._session;
+  if (session == null) return;
   try {
     await c._runStateStore.save(session, next);
   } on Object catch (e) {

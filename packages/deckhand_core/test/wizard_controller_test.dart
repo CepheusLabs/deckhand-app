@@ -3385,6 +3385,149 @@ void main() {
       },
     );
 
+    test('flushes pre-connect run-state when SSH attaches mid-flow', () async {
+      final ssh = FakeSsh();
+      final controller = newController(
+        profileJson: baseProfileJson(
+          freshFlashSteps: [
+            {
+              'id': 'os_choice',
+              'kind': 'choose_one',
+              'options_from': 'os.fresh_install_options',
+            },
+            {'id': 'wait_for_ssh', 'kind': 'wait_for_ssh'},
+          ],
+        ),
+        ssh: ssh,
+      );
+      await controller.loadProfile('test-printer');
+      controller.setFlow(WizardFlow.freshFlash);
+      await controller.setDecision('flash.os', 'debian-bookworm');
+
+      await expectLater(
+        controller.startExecution(),
+        throwsA(isA<WizardHandoffRequiredException>()),
+      );
+      expect(_savedRunStates(ssh), isEmpty);
+
+      await controller.connectSsh(host: '192.168.1.50');
+
+      final saved = _savedRunStates(ssh).single;
+      expect(saved.lastFor('os_choice')?.status, RunStateStatus.completed);
+      expect(saved.lastFor('wait_for_ssh')?.status, RunStateStatus.inProgress);
+    });
+
+    test('attach flushes merged remote and in-memory run-state', () async {
+      final remote =
+          RunState.empty(
+            deckhandVersion: 'remote',
+            profileId: 'test-printer',
+            profileCommit: 'remote-sha',
+          ).appending(
+            RunStateStep(
+              id: 'remote_completed',
+              status: RunStateStatus.completed,
+              startedAt: DateTime.utc(2026, 5, 7),
+              inputHash: 'sha256:remote',
+            ),
+          );
+      final ssh = FakeSsh()
+        ..responsesByContains['cat '] = SshCommandResult(
+          stdout: const JsonEncoder().convert(remote.toJson()),
+          stderr: '',
+          exitCode: 0,
+        );
+      final controller = newController(
+        profileJson: baseProfileJson(
+          freshFlashSteps: [
+            {
+              'id': 'os_choice',
+              'kind': 'choose_one',
+              'options_from': 'os.fresh_install_options',
+            },
+            {'id': 'wait_for_ssh', 'kind': 'wait_for_ssh'},
+          ],
+        ),
+        ssh: ssh,
+      );
+      await controller.loadProfile('test-printer');
+      controller.setFlow(WizardFlow.freshFlash);
+      await controller.setDecision('flash.os', 'debian-bookworm');
+
+      await expectLater(
+        controller.startExecution(),
+        throwsA(isA<WizardHandoffRequiredException>()),
+      );
+      await controller.connectSsh(host: '192.168.1.50');
+
+      final saved = _savedRunStates(ssh).single;
+      expect(
+        saved.lastFor('remote_completed')?.status,
+        RunStateStatus.completed,
+      );
+      expect(saved.lastFor('os_choice')?.status, RunStateStatus.completed);
+    });
+
+    test(
+      'attach save failure emits a warning without failing connect',
+      () async {
+        final ssh = FakeSsh()
+          ..responsesByContains['base64 -d'] = const SshCommandResult(
+            stdout: '',
+            stderr: 'permission denied',
+            exitCode: 1,
+          );
+        final controller = newController(
+          profileJson: baseProfileJson(
+            freshFlashSteps: [
+              {
+                'id': 'os_choice',
+                'kind': 'choose_one',
+                'options_from': 'os.fresh_install_options',
+              },
+              {'id': 'wait_for_ssh', 'kind': 'wait_for_ssh'},
+            ],
+          ),
+          ssh: ssh,
+        );
+        await controller.loadProfile('test-printer');
+        controller.setFlow(WizardFlow.freshFlash);
+        await controller.setDecision('flash.os', 'debian-bookworm');
+        final warnings = <StepWarning>[];
+        final sub = controller.events.listen((event) {
+          if (event is StepWarning) warnings.add(event);
+        });
+
+        await expectLater(
+          controller.startExecution(),
+          throwsA(isA<WizardHandoffRequiredException>()),
+        );
+        await controller.connectSsh(host: '192.168.1.50');
+        await Future<void>.delayed(Duration.zero);
+        await sub.cancel();
+
+        expect(
+          warnings.map((w) => w.message),
+          contains(contains('run-state attach flush failed')),
+        );
+      },
+    );
+
+    test('attaching with empty in-memory run-state does not save', () async {
+      final ssh = FakeSsh();
+      final controller = newController(
+        profileJson: baseProfileJson(),
+        ssh: ssh,
+      );
+      await controller.loadProfile('test-printer');
+      controller.setFlow(WizardFlow.stockKeep);
+
+      await controller.startExecution();
+      await controller.connectSsh(host: '192.168.1.50');
+
+      expect(_savedRunStates(ssh), isEmpty);
+    });
+
     test('idempotency post-check failure fails the step', () async {
       final ssh = FakeSsh()
         ..responsesByContains['/tmp/post-check'] = const SshCommandResult(
@@ -4162,6 +4305,27 @@ class FakeSsh implements SshService {
   Future<void> disconnect(SshSession session) async {
     disconnectCalls.add(session);
   }
+}
+
+List<RunState> _savedRunStates(FakeSsh ssh) {
+  return ssh.runCalls
+      .where((cmd) => cmd.contains('base64 -d'))
+      .map(_savedRunStateFromCommand)
+      .toList();
+}
+
+RunState _savedRunStateFromCommand(String command) {
+  final encoded = RegExp(
+    r"printf %s '([^']+)' \| base64 -d",
+  ).firstMatch(command)?.group(1);
+  if (encoded == null) {
+    throw StateError('run-state save command did not contain base64 JSON');
+  }
+  final json = jsonDecode(utf8.decode(base64.decode(encoded)));
+  if (json is! Map<String, dynamic>) {
+    throw StateError('run-state save command did not decode to an object');
+  }
+  return RunState.fromJson(json);
 }
 
 /// Writes a minimal shell script to the stub profile directory and
