@@ -52,6 +52,7 @@ jobs:
         with:
           fetch-depth: 0
           ref: ${{ inputs.ref || 'main' }}
+          submodules: recursive
 
       # Resolve the version stamp once. If the dispatcher passed
       # an explicit `version`, use that; otherwise produce a

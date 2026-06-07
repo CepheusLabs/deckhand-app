@@ -202,11 +202,11 @@ Decomposed by file group; each group applies the token map + widget map.
 - [ ] Remove IBM Plex font assets from disk.
 - **Validation:** analyze 0 errors; all non-golden tests pass.
 
-### Phase 6 — Goldens + manual QA  *(CI / Linux; owner: lead)*
-- [ ] Regenerate goldens on Linux (forge's canonical render target):
-      `flutter test --tags=golden --run-skipped --update-goldens`.
+### Phase 6 — Manual QA  *(owner: lead)*
 - [ ] Manual smoke: both wizard flows (stock-keep, fresh-flash), light + dark.
-- **Validation:** goldens committed from Linux CI only; smoke checklist signed off.
+- **Note:** `deckhand_ui` has NO golden tests (no `matchesGoldenFile` / `goldens/`),
+  so nothing needs regenerating — the earlier "goldens on Linux" plan was moot.
+- **Validation:** smoke checklist signed off.
 
 ## Acceptance criteria
 - No `package:deckhand_ui` references to `DeckhandTokens`/`DeckhandTheme`.
