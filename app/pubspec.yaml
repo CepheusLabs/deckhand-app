@@ -22,6 +22,10 @@ dependencies:
     path: ../shared/telescope/clients/flutter
   printdeck_product_platform:
     path: ../shared/printdeck/product_platform
+  cl_updater:
+    git:
+      url: https://github.com/CepheusLabs/cl_updater.git
+      ref: e8e8b60a830ac6183d67a1d63df3e3dafee669dd
   forge:
     path: ../shared/forge
   shared_preferences: ^2.3.0

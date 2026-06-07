@@ -28,5 +28,14 @@
 	<string>MainMenu</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
+	<!-- cl_updater / Sparkle auto-update. SUPublicEDKey = contracts-registry `current`
+	     Ed25519 key (see lib/deckhand_updater.dart); feed URL is set at runtime by
+	     SparkleUpdater (per-channel, with install_id). -->
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
+	<key>SUAutomaticallyUpdate</key>
+	<true/>
+	<key>SUPublicEDKey</key>
+	<string>QnZ88k2M321Cf/vV04KfQAL0tSgLwT16SoGRmukAL/o=</string>
 </dict>
 </plist>

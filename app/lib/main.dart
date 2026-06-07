@@ -20,6 +20,7 @@ import 'package:window_manager/window_manager.dart';
 import 'telescope_integration.dart';
 import 'deckhand_product_platform.dart';
 import 'window_geometry_observer.dart';
+import 'deckhand_updater.dart';
 
 const profileTrustKeyringAssetPath = 'app/assets/keyring.asc';
 
@@ -250,9 +251,14 @@ Future<void> main() async {
       deckhandVersion: build_info.deckhandVersion,
     );
 
+    // Shared self-updater (cl_updater): create once, begin silent background checks.
+    final updater = await createDeckhandUpdater();
+    unawaited(updater.start());
+
     runApp(
       ProviderScope(
         overrides: [
+          deckhandUpdaterProvider.overrideWithValue(updater),
           deckhandTelescopeProvider.overrideWithValue(telescope),
           deckhandSettingsProvider.overrideWithValue(settings),
           wizardStateStoreProvider.overrideWithValue(wizardStore),
