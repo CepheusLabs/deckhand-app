@@ -190,6 +190,13 @@ jobs:
           persist-credentials: false
 
       - name: Check out path-dep submodules (forge / product_platform / telescope)
+        # Pin HOME to the runner user's home so git + gh resolve errai's
+        # credential helper (`gh auth setup-git`) and stored token; the
+        # step's default HOME doesn't surface them, so the HTTPS clone of
+        # the private submodules would otherwise fail with "could not read
+        # Username".
+        env:
+          HOME: /home/errai
         run: git submodule update --init --recursive shared/forge shared/printdeck/product_platform shared/telescope
 
       - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2  # v2
