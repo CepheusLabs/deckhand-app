@@ -745,6 +745,17 @@ second-chance last look, not a first-time warning.
 
 **Adapter calls.** Many. See `IPC.md` for the method map of step kinds.
 
+**Profile verifiers.** Profiles can declare read-only checks in `verifiers[]`
+that run from the `verify` step:
+
+- `ssh_command`: requires `command`; optional `expect_stdout_contains` or
+  `expect_stdout_equals` turn command success into an explicit PASS/FAIL.
+- `http_get`: probes Moonraker for the recorded host and logs the live
+  `klippy_state`.
+- `moonraker_gcode`: requires `script` (or `gcode`) and dispatches it through
+  `MoonrakerService.runGCode`. Failures abort the step unless the verifier has
+  `optional: true`; missing host is logged and skipped.
+
 **On failure:**
 
 - Step shown red with error detail.

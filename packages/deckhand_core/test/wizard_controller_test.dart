@@ -64,6 +64,7 @@ void main() {
     FakeUpstream? upstream,
     _StubFlashService? flash,
     _StubDiscoveryService? discovery,
+    _StubMoonrakerService? moonraker,
     FakeElevatedHelper? helper,
     FakeSecurity? security,
     String? osImagesDir,
@@ -74,7 +75,7 @@ void main() {
       ssh: ssh ?? FakeSsh(),
       flash: flash ?? _StubFlashService(),
       discovery: discovery ?? _StubDiscoveryService(),
-      moonraker: _StubMoonrakerService(),
+      moonraker: moonraker ?? _StubMoonrakerService(),
       upstream: upstream ?? FakeUpstream(),
       security: security ?? FakeSecurity(),
       elevatedHelper: helper,
@@ -1347,6 +1348,180 @@ void main() {
           ),
         ),
       );
+    });
+
+    test('moonraker_gcode verifier runs the configured script', () async {
+      final moonraker = _StubMoonrakerService();
+      final controller = newController(
+        profileJson: baseProfileJson(
+          stockKeepSteps: [
+            {'id': 'verify', 'kind': 'verify'},
+          ],
+          verifiers: [
+            {
+              'id': 'pid-calibration-ready',
+              'kind': 'moonraker_gcode',
+              'script': 'M118 Deckhand verifier',
+            },
+          ],
+        ),
+        moonraker: moonraker,
+      );
+      await controller.loadProfile('test-printer');
+      controller.setFlow(WizardFlow.stockKeep);
+      await controller.connectSsh(host: '127.0.0.1');
+
+      await controller.startExecution();
+
+      expect(moonraker.runGCodeCalls, hasLength(1));
+      expect(moonraker.runGCodeCalls.single.host, '127.0.0.1');
+      expect(moonraker.runGCodeCalls.single.script, 'M118 Deckhand verifier');
+    });
+
+    test('moonraker_gcode verifier accepts gcode as script alias', () async {
+      final moonraker = _StubMoonrakerService();
+      final controller = newController(
+        profileJson: baseProfileJson(
+          stockKeepSteps: [
+            {'id': 'verify', 'kind': 'verify'},
+          ],
+          verifiers: [
+            {
+              'id': 'macro-check',
+              'kind': 'moonraker_gcode',
+              'gcode': 'M118 Alias verifier',
+            },
+          ],
+        ),
+        moonraker: moonraker,
+      );
+      await controller.loadProfile('test-printer');
+      controller.setFlow(WizardFlow.stockKeep);
+      await controller.connectSsh(host: '127.0.0.1');
+
+      await controller.startExecution();
+
+      expect(moonraker.runGCodeCalls.single.script, 'M118 Alias verifier');
+    });
+
+    test('moonraker_gcode verifier requires a script string', () async {
+      final controller = newController(
+        profileJson: baseProfileJson(
+          stockKeepSteps: [
+            {'id': 'verify', 'kind': 'verify'},
+          ],
+          verifiers: [
+            {'id': 'macro-check', 'kind': 'moonraker_gcode'},
+          ],
+        ),
+      );
+      await controller.loadProfile('test-printer');
+      controller.setFlow(WizardFlow.stockKeep);
+      await controller.connectSsh(host: '127.0.0.1');
+
+      await expectLater(
+        controller.startExecution(),
+        throwsA(
+          isA<StepExecutionException>().having(
+            (e) => e.toString(),
+            'message',
+            contains('verifier macro-check script must be a string'),
+          ),
+        ),
+      );
+    });
+
+    test('moonraker_gcode failure fails non-optional verifier', () async {
+      final moonraker = _StubMoonrakerService()
+        ..runGCodeError = Exception('macro missing');
+      final controller = newController(
+        profileJson: baseProfileJson(
+          stockKeepSteps: [
+            {'id': 'verify', 'kind': 'verify'},
+          ],
+          verifiers: [
+            {
+              'id': 'macro-check',
+              'kind': 'moonraker_gcode',
+              'script': 'M118 Deckhand verifier',
+            },
+          ],
+        ),
+        moonraker: moonraker,
+      );
+      await controller.loadProfile('test-printer');
+      controller.setFlow(WizardFlow.stockKeep);
+      await controller.connectSsh(host: '127.0.0.1');
+
+      await expectLater(
+        controller.startExecution(),
+        throwsA(
+          isA<StepExecutionException>().having(
+            (e) => e.toString(),
+            'message',
+            contains('verifier macro-check failed: Exception: macro missing'),
+          ),
+        ),
+      );
+    });
+
+    test(
+      'moonraker_gcode failure is logged and skipped when optional',
+      () async {
+        final moonraker = _StubMoonrakerService()
+          ..runGCodeError = Exception('macro missing');
+        final controller = newController(
+          profileJson: baseProfileJson(
+            stockKeepSteps: [
+              {'id': 'verify', 'kind': 'verify'},
+            ],
+            verifiers: [
+              {
+                'id': 'macro-check',
+                'kind': 'moonraker_gcode',
+                'script': 'M118 Deckhand verifier',
+                'optional': true,
+              },
+            ],
+          ),
+          moonraker: moonraker,
+        );
+        await controller.loadProfile('test-printer');
+        controller.setFlow(WizardFlow.stockKeep);
+        await controller.connectSsh(host: '127.0.0.1');
+
+        await controller.startExecution();
+
+        expect(moonraker.runGCodeCalls, hasLength(1));
+      },
+    );
+
+    test('moonraker_gcode verifier skips when no host is recorded', () async {
+      final moonraker = _StubMoonrakerService();
+      final controller = newController(
+        profileJson: baseProfileJson(
+          stockKeepSteps: [
+            {'id': 'verify', 'kind': 'verify'},
+          ],
+          verifiers: [
+            {
+              'id': 'macro-check',
+              'kind': 'moonraker_gcode',
+              'script': 'M118 Deckhand verifier',
+            },
+          ],
+        ),
+        moonraker: moonraker,
+      );
+      await controller.loadProfile('test-printer');
+      controller.setFlow(WizardFlow.stockKeep);
+      controller.setSession(
+        const SshSession(id: 'fake', host: '', port: 22, user: 'root'),
+      );
+
+      await controller.startExecution();
+
+      expect(moonraker.runGCodeCalls, isEmpty);
     });
   });
 
@@ -4182,6 +4357,9 @@ class _StubDiscoveryService implements DiscoveryService {
 }
 
 class _StubMoonrakerService implements MoonrakerService {
+  final runGCodeCalls = <({String host, int port, String script})>[];
+  Object? runGCodeError;
+
   @override
   Future<KlippyInfo> info({required String host, int port = 7125}) async =>
       const KlippyInfo(
@@ -4204,7 +4382,12 @@ class _StubMoonrakerService implements MoonrakerService {
     required String host,
     int port = 7125,
     required String script,
-  }) async {}
+  }) async {
+    runGCodeCalls.add((host: host, port: port, script: script));
+    final error = runGCodeError;
+    if (error != null) throw error;
+  }
+
   @override
   Future<List<String>> listObjects({
     required String host,

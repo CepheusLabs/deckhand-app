@@ -816,7 +816,27 @@ Future<void> _runVerifyImpl(
           }
         }
       case 'moonraker_gcode':
-        c._log(step, '[verify] ${v.id}: moonraker_gcode not yet wired');
+        final script =
+            _stringValue(v.raw['script']) ?? _stringValue(v.raw['gcode']);
+        if (script == null || script.trim().isEmpty) {
+          throw StepExecutionException(
+            'verifier ${v.id} script must be a string',
+          );
+        }
+        final host = c._state.sshHost;
+        if (host == null || host.trim().isEmpty) {
+          c._log(step, '[verify] ${v.id}: no host - skipping');
+          continue;
+        }
+        try {
+          await c.moonraker.runGCode(host: host, script: script);
+          c._log(step, '[verify] ${v.id}: PASS');
+        } catch (e) {
+          c._log(step, '[verify] ${v.id}: $e');
+          if (!optional) {
+            throw StepExecutionException('verifier ${v.id} failed: $e');
+          }
+        }
       default:
         c._log(step, '[verify] ${v.id}: unknown kind $kind');
     }

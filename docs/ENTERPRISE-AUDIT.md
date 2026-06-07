@@ -114,9 +114,9 @@ These throw, silently pass, or no-op where a real implementation is expected:
 - **`resume=continue` is unimplemented** — an interrupted step declaring this
   documented resume mode hard-fails the wizard on retry
   (`wizard_controller_runtime.dart:245`).
-- **`moonraker_gcode` verifier is a no-op** — it logs "not yet wired" and
-  *falls through as PASS* (`wizard_controller_runtime.dart:798`); a profile
-  relying on a G-code verification gets a false green.
+- **`moonraker_gcode` verifier is implemented** — it dispatches the declared
+  `script`/`gcode` through `MoonrakerService.runGCode`, fails non-optional
+  verifiers on Moonraker errors, and skips only when no host is recorded.
 - **`restore_from_backup` screen kind is unimplemented** — throws
   (`wizard_controller_steps.dart:260`); only `bundled` source kinds work.
   (Already tracked in [`BACKLOG.md`](BACKLOG.md).)

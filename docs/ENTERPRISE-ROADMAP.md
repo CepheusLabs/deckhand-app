@@ -174,9 +174,8 @@ roadmap.*
 ### Phase 3 — Close every functional gap (the "no stubs" phase)
 
 - **Build, don't defer**, each §3.2 item: real `version.compat` gating;
-  `resume=continue`; the `moonraker_gcode` verifier (a silent false-PASS today —
-  treat as a correctness bug); `restore_from_backup`; the **S900 resume-preview
-  UI**; checkpointed step continuation (+ lift the profile-lint rejection); the
+  `resume=continue`; `restore_from_backup`; the **S900 resume-preview UI**;
+  checkpointed step continuation (+ lift the profile-lint rejection); the
   **debug-bundle zip pipeline**; the `DeckhandProductModule` task lifecycle
   (`taskStatus`/`taskCancel`/events) so agents can poll/cancel a flash; replace
   the fabricated log timestamps with real controller-emitted timestamps.
