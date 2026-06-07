@@ -3469,6 +3469,58 @@ void main() {
     });
 
     test(
+      'fresh-flash resume persists pre-connect and post-connect steps',
+      () async {
+        final ssh = FakeSsh();
+        final controller = newController(
+          profileJson: baseProfileJson(
+            freshFlashSteps: [
+              {
+                'id': 'os_choice',
+                'kind': 'choose_one',
+                'options_from': 'os.fresh_install_options',
+              },
+              {'id': 'wait_for_ssh', 'kind': 'wait_for_ssh'},
+              {
+                'id': 'post_connect_cmd',
+                'kind': 'ssh_commands',
+                'commands': ['touch /tmp/after-connect'],
+              },
+            ],
+          ),
+          ssh: ssh,
+        );
+        await controller.loadProfile('test-printer');
+        controller.setFlow(WizardFlow.freshFlash);
+        await controller.setDecision('flash.os', 'debian-bookworm');
+
+        await expectLater(
+          controller.startExecution(),
+          throwsA(isA<WizardHandoffRequiredException>()),
+        );
+        await controller.connectSsh(host: '192.168.1.50');
+        final attached = _savedRunStates(ssh).single;
+        ssh.responsesByContains['cat '] = SshCommandResult(
+          stdout: const JsonEncoder().convert(attached.toJson()),
+          stderr: '',
+          exitCode: 0,
+        );
+        await controller.setDecision(firstBootReadyForSshWaitDecision, true);
+
+        await controller.startExecution();
+
+        final saved = _savedRunStates(ssh).last;
+        expect(saved.lastFor('os_choice')?.status, RunStateStatus.completed);
+        expect(saved.lastFor('wait_for_ssh')?.status, RunStateStatus.completed);
+        expect(
+          saved.lastFor('post_connect_cmd')?.status,
+          RunStateStatus.completed,
+        );
+        expect(ssh.steps, contains('touch /tmp/after-connect'));
+      },
+    );
+
+    test(
       'attach save failure emits a warning without failing connect',
       () async {
         final ssh = FakeSsh()
