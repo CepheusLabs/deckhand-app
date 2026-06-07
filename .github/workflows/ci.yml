@@ -190,14 +190,22 @@ jobs:
           persist-credentials: false
 
       - name: Check out path-dep submodules (forge / product_platform / telescope)
-        # Pin HOME to the runner user's home so git + gh resolve errai's
-        # credential helper (`gh auth setup-git`) and stored token; the
-        # step's default HOME doesn't surface them, so the HTTPS clone of
-        # the private submodules would otherwise fail with "could not read
-        # Username".
+        # The private cross-repo submodules clone over HTTPS. The job's
+        # GITHUB_TOKEN can't read other repos, and git's invocation of
+        # errai's gh credential helper doesn't resolve inside the Actions
+        # env (clone fails "could not read Username" even with HOME set).
+        # Resolve the runner's gh token explicitly (HOME points gh at
+        # errai's auth) and inject it via url.insteadOf for the submodule
+        # fetch only. Token is masked from the logs.
         env:
           HOME: /home/errai
-        run: git submodule update --init --recursive shared/forge shared/printdeck/product_platform shared/telescope
+        run: |
+          set -euo pipefail
+          token="$(gh auth token)"
+          echo "::add-mask::$token"
+          test -n "$token" || { echo "::error::gh auth token empty on runner"; exit 1; }
+          git -c "url.https://x-access-token:${token}@github.com/.insteadOf=https://github.com/" \
+            submodule update --init --recursive shared/forge shared/printdeck/product_platform shared/telescope
 
       - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2  # v2
         with:
