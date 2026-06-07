@@ -95,13 +95,15 @@ class DeckhandProductModule implements ProductModule {
   }
 
   Future<ProductActionResult> _writeImage(Map<String, Object?> input) async {
-    final imagePath = input['image_path'] as String?;
-    final diskId = input['disk_id'] as String?;
-    final confirmationToken = input['confirmation_token'] as String?;
+    final imagePath = (input['image_path'] ?? input['image_ref']) as String?;
+    final diskId = (input['disk_id'] ?? input['device_id']) as String?;
+    final confirmationToken =
+        (input['confirmation_token'] ?? input['safety_check_ref']) as String?;
     if (imagePath == null || diskId == null || confirmationToken == null) {
       return const ProductActionResult(
         status: ProductActionStatus.failed,
-        message: 'image_path, disk_id, and confirmation_token are required',
+        message:
+            'image_ref/device_id/safety_check_ref or image_path/disk_id/confirmation_token are required',
       );
     }
 
@@ -198,13 +200,13 @@ const deckhandHostDiagnoseCapability = AgenticCapabilityDescriptor(
   taskBehavior: ProductTaskBehavior.longRunning,
   exposure: AgenticProjection(
     shell: true,
-    cortex: false,
+    cortex: true,
     mcp: true,
     nexus: true,
   ),
   transport: AgenticTransport(
-    kind: AgenticTransportKind.localRuntime,
-    target: 'deckhand.module/action.invoke',
+    kind: AgenticTransportKind.edgeRelay,
+    target: 'deckhand',
   ),
   command: AgenticCommandMetadata(category: 'Host', surface: 'doctor'),
   nexus: AgenticNexusMetadata(nodeType: 'action'),
@@ -220,7 +222,22 @@ const deckhandImageApplyCapability = AgenticCapabilityDescriptor(
       'Write a validated setup image through the guarded provisioning path.',
   inputSchema: <String, Object?>{
     'type': 'object',
-    'required': <String>['image_path', 'disk_id', 'confirmation_token'],
+    'properties': <String, Object?>{
+      'image_ref': <String, Object?>{'type': 'string'},
+      'device_id': <String, Object?>{'type': 'string'},
+      'safety_check_ref': <String, Object?>{'type': 'string'},
+      'image_path': <String, Object?>{'type': 'string'},
+      'disk_id': <String, Object?>{'type': 'string'},
+      'confirmation_token': <String, Object?>{'type': 'string'},
+    },
+    'oneOf': <Object?>[
+      <String, Object?>{
+        'required': <String>['image_ref', 'device_id', 'safety_check_ref'],
+      },
+      <String, Object?>{
+        'required': <String>['image_path', 'disk_id', 'confirmation_token'],
+      },
+    ],
   },
   outputSchema: <String, Object?>{'type': 'object'},
   permissions: <String>{'setup.image.write'},
@@ -230,13 +247,13 @@ const deckhandImageApplyCapability = AgenticCapabilityDescriptor(
   taskBehavior: ProductTaskBehavior.longRunning,
   exposure: AgenticProjection(
     shell: true,
-    cortex: false,
+    cortex: true,
     mcp: true,
     nexus: true,
   ),
   transport: AgenticTransport(
-    kind: AgenticTransportKind.localRuntime,
-    target: 'deckhand.module/action.invoke',
+    kind: AgenticTransportKind.edgeRelay,
+    target: 'deckhand',
   ),
   command: AgenticCommandMetadata(category: 'Image', surface: 'images'),
   nexus: AgenticNexusMetadata(nodeType: 'action'),

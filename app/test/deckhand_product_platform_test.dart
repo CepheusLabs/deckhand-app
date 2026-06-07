@@ -26,6 +26,13 @@ void main() {
       capabilityIds,
       containsAll(<String>{'deckhand.host.diagnose', 'deckhand.image.apply'}),
     );
+
+    final cortexCapabilityIds = runtime
+        .listCapabilities(cortex: true)
+        .map((capability) => capability.id)
+        .toSet();
+    expect(cortexCapabilityIds, contains('deckhand.host.diagnose'));
+    expect(cortexCapabilityIds, contains('deckhand.image.apply'));
   });
 
   test('hosts Deckhand module through the shared JSON-RPC protocol', () async {
@@ -54,6 +61,13 @@ void main() {
       (module['capabilities'] as List).map((capability) => capability['id']),
       containsAll(<String>{'deckhand.host.diagnose', 'deckhand.image.apply'}),
     );
+    final imageApply = ((module['capabilities'] as List).cast<Map>())
+        .singleWhere(
+          (capability) => capability['id'] == 'deckhand.image.apply',
+        );
+    expect((imageApply['exposure'] as Map)['cortex'], isTrue);
+    expect((imageApply['transport'] as Map)['kind'], 'edge_relay');
+    expect(imageApply['approval'], 'fresh_required');
   });
 }
 
