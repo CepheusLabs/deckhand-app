@@ -19,13 +19,21 @@ dependencies:
   path_provider: ^2.1.0
   path: ^1.9.0
   printdeck_telescope:
-    path: ../shared/telescope/clients/flutter
+    git:
+      url: https://github.com/CepheusLabs/telescope.git
+      ref: e1ee9b5e1d946fbd65d875ae5b68f33a27179995
+      path: clients/flutter
   printdeck_product_platform:
-    path: ../shared/printdeck/product_platform
+    git:
+      url: https://github.com/CepheusLabs/printdeck_product_platform.git
+      ref: 0868d05956df91410d91d7d56e34c315c371c809
   forge:
-    path: ../shared/forge
+    git:
+      url: https://github.com/CepheusLabs/forge.git
+      ref: d5eee693745598978f182c6e34311b520f359e9b
   shared_preferences: ^2.3.0
   cupertino_icons: ^1.0.8
+  web: ^1.1.1
   window_manager: ^0.4.3
 
   deckhand_core:

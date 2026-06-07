@@ -1,6 +1,4 @@
 import 'dart:async';
-import 'dart:ffi' as ffi;
-import 'dart:io';
 
 import 'package:deckhand_core/deckhand_core.dart';
 import 'package:flutter/material.dart';
@@ -12,6 +10,8 @@ import '../i18n/translations.g.dart';
 import '../providers.dart';
 import '../screens/debug_bundle_screen.dart';
 import '../utils/user_facing_errors.dart';
+import '../utils/host_info_snapshot.dart';
+import '../utils/local_cidrs.dart';
 import '../widgets/save_debug_bundle.dart';
 
 /// Maps a Klipper/Klippy state string (ready, printing, startup,
@@ -203,24 +203,7 @@ class _ConnectScreenState extends ConsumerState<ConnectScreen> {
   }
 
   Future<List<String>> _localCidrs() async {
-    try {
-      final interfaces = await NetworkInterface.list(
-        includeLoopback: false,
-        includeLinkLocal: false,
-        type: InternetAddressType.IPv4,
-      );
-      final cidrs = <String>{};
-      for (final iface in interfaces) {
-        for (final addr in iface.addresses) {
-          final parts = addr.address.split('.');
-          if (parts.length != 4) continue;
-          cidrs.add('${parts[0]}.${parts[1]}.${parts[2]}.0/24');
-        }
-      }
-      return cidrs.toList();
-    } catch (_) {
-      return const [];
-    }
+    return localIpv4Cidrs();
   }
 
   Future<void> _connect(
@@ -564,10 +547,10 @@ class _ConnectScreenState extends ConsumerState<ConnectScreen> {
   ].join('\n');
 
   HostInfoSnapshot _hostInfoSnapshot() => HostInfoSnapshot(
-    os: '${Platform.operatingSystem} ${Platform.operatingSystemVersion}',
-    arch: ffi.Abi.current().toString(),
+    os: deckhandHostOperatingSystem(),
+    arch: deckhandHostArchitecture(),
     deckhandVersion: ref.read(deckhandVersionProvider),
-    dartVersion: Platform.version.split(' ').first,
+    dartVersion: deckhandHostDartVersion(),
   );
 
   @override

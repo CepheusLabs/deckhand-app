@@ -28,8 +28,8 @@ The gap to *enterprise* is therefore **not "build the missing 80%."** It is:
    macOS/Linux; release signing is optional; the repo can't be cloned-and-built
    standalone. The quality machinery exists and is switched off.
 2. **A web/mobile story that is one-third built.** The desktop path is strong;
-   the web path is an 823-line god-widget on deprecated `dart:html` with an
-   under-hardened local-agent bridge; mobile does not exist.
+   the web path remains a large standalone surface with an under-hardened
+   local-agent bridge; mobile does not exist.
 3. **A small set of real functional gaps and one real security bug**, plus
    pervasive *sustainability* debt (god-files, duplication, hardcoded config)
    and *scalability* debt (missing cancellation/timeouts/streaming/backpressure)
@@ -168,8 +168,9 @@ either build properly or formally cut.
   emitted — dead protocol surface.
 - Whole firmware images are loaded into memory with **no size guard**
   (`main_web.dart:147`) — a large `.img` OOMs the tab.
-- Built on **deprecated `dart:html` + `dart:js_util`** (5 files), which are
-  unsupported under WasmGC — a hard blocker for the modern Flutter-web target.
+- **Resolved follow-up: browser interop migration** — active web entrypoints now
+  use `package:web` + `dart:js_interop`; `flutter build web` and the Wasm dry
+  run pass. The architectural gaps above remain.
 
 ### 3.5 MVP corner-cutting that recurs everywhere
 
@@ -266,10 +267,9 @@ The dominant pattern across the MVP modules is the *same five gaps*, repeated:
   Authenticode, macOS Developer-ID + notarization, and Linux GPG are each gated
   on a secret being present; absent it, the lane ships an **unsigned privileged
   helper**. For a firmware/disk tool this is an enterprise blocker.
-- **The repo cannot be cloned-and-built standalone** — `app/pubspec.yaml`
-  declares `printdeck_telescope` as a `path:` dependency on a **sibling repo
-  that is not a submodule and not in `.gitmodules`**; a clean clone fails
-  `flutter pub get`.
+- **Resolved follow-up: clone/build dependency wiring** — first-party external
+  packages are now committed as explicit git pins, with sibling `main` checkouts
+  reserved for local development/tool overrides.
 - **Dependency lag** — Riverpod 2→3, go_router 14→17, bonsoir 5→7 (mDNS, two
   majors behind), plus unmerged patch bumps for `xz` (the image decompressor),
   `go-git`, and `x/sys`. Nine open Dependabot branches, none merged (consistent
@@ -286,8 +286,8 @@ The dominant pattern across the MVP modules is the *same five gaps*, repeated:
   actually builds an Inno `.exe`.
 - **Conflicting release machinery** — a `release-please--…` branch exists but no
   release-please config is committed; `release.yml` hand-rolls CalVer.
-- **Relative submodule URL** for `product_platform` (breaks forks/mirrors);
-  submodules float on `main` rather than pinned tags.
+- **Resolved follow-up: first-party dependency model** — submodules/gitlinks are
+  removed from Deckhand; first-party external packages use explicit git refs.
 
 ## 6. Sustainability debt (maintainability)
 

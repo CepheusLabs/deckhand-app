@@ -40,27 +40,21 @@ forge, the way it would have been built if forge had existed first.
 | Density | `ClDensity.compact` (matches anvil) |
 | `info`/`accentDim`/`accentBright` | **dropped** → forge semantics (`primary`, state layers, `ClShadows.glow`) |
 | Wizard state | `deckhand_core` adopts `forge_wizard` (`ForgeWizardState`/`ForgeWizardFlowProcess`) |
-| forge wiring | git submodule at `shared/forge`, pinned to `d5eee69`; `path:` deps |
+| forge wiring | pinned git dependencies; no submodules or nested first-party checkouts |
 | Shell | unchanged — already on `printdeck_product_platform.ProductShellFrame` |
 
 ## Wiring (Phase 0)
 
-`shared/forge` submodule (mirrors how `product_platform` is vendored):
-
-```ini
-# .gitmodules
-[submodule "shared/forge"]
-	path = shared/forge
-	url = https://github.com/CepheusLabs/forge.git
-```
-
-Pubspec deps:
+Deckhand consumes first-party packages the same way as the rest of the
+workspace: upstream code lives in sibling `main` checkouts for development, and
+Deckhand's manifests commit explicit git pins for reproducible clean clones.
+Do not add `.gitmodules`, gitlinks, or nested first-party mirrors.
 
 | Package | Add |
 |---|---|
-| `packages/deckhand_ui/pubspec.yaml` | `forge: { path: ../../shared/forge }` |
-| `app/pubspec.yaml` | `forge: { path: ../shared/forge }` |
-| `packages/deckhand_core/pubspec.yaml` | `forge_wizard: { path: ../../shared/forge/packages/forge_wizard }` |
+| `packages/deckhand_ui/pubspec.yaml` | `forge` git pin to `CepheusLabs/forge` |
+| `app/pubspec.yaml` | `forge` git pin to `CepheusLabs/forge` |
+| `packages/deckhand_core/pubspec.yaml` | `forge_wizard` git pin to `CepheusLabs/forge`, path `packages/forge_wizard` |
 
 Remove the IBM Plex `fonts:` block from `deckhand_ui/pubspec.yaml`. No
 `dependency_overrides` required (riverpod ^2.6.1 / go_router ^14 are
@@ -129,9 +123,9 @@ for monospace. `buildClTheme` provides the base `TextTheme` in Geist.
 | `deckhand_app_chrome` | keep (thin frame) | fill `ProductShellFrame` slots with `ClCommandBar` + `ClThemeToggle` |
 | `deckhand_logo`, `wizard_nav_map`, `profile_text` | **keep** | — |
 
-> Agents MUST read the target forge component's source under
-> `shared/forge/lib/src/components/` to confirm its constructor API before
-> swapping. The public surface is `package:forge/forge.dart` only.
+> Agents MUST read the target forge component's source from the sibling Forge
+> checkout, the package cache, or the pinned commit before swapping. The public
+> surface is `package:forge/forge.dart` only.
 
 ## Wizard engine (`deckhand_core`)
 
@@ -151,10 +145,9 @@ Each phase ends green before the next begins. Validation commands run from
 `deckhand-app/`. Flutter: `D:\git\flutter\bin\flutter.bat`.
 
 ### Phase 0 — Foundation / wiring  *(sequential; owner: lead)*
-- [ ] Branch `feat/forge-migration` in `deckhand-app`.
-- [ ] `git submodule update --init --recursive` (populate existing).
-- [ ] Add `shared/forge` submodule; check out `d5eee69`.
-- [ ] Add forge / forge_wizard path deps (table above); drop IBM Plex fonts.
+- [x] Work directly on `main` in `deckhand-app`.
+- [x] Add forge / forge_wizard pinned git deps (table above); drop IBM Plex fonts.
+- [x] Remove `.gitmodules` and all nested first-party gitlinks.
 - **Test plan:** `flutter pub get` resolves in `app/`, `packages/deckhand_ui/`,
   `packages/deckhand_core/`.
 - **Validation:** `flutter pub get` exit 0; `forge` + `forge_wizard` appear in
@@ -211,7 +204,8 @@ Decomposed by file group; each group applies the token map + widget map.
 ## Acceptance criteria
 - No `package:deckhand_ui` references to `DeckhandTokens`/`DeckhandTheme`.
 - Deleted widgets (table) removed from the tree.
-- `deckhand_ui` + `app` depend on `forge`; `deckhand_core` on `forge_wizard`.
+- `deckhand_ui` + `app` depend on `forge`; `deckhand_core` on `forge_wizard`;
+  all first-party external packages are pinned git dependencies.
 - IBM Plex assets gone; app renders in Geist with forge violet.
 - `flutter analyze` clean; unit/widget tests green; goldens regenerated on Linux.
 
@@ -221,5 +215,5 @@ Decomposed by file group; each group applies the token map + widget map.
   converge in Phase 5.
 - **Goldens are Linux-only** — never commit goldens rendered on Windows
   (font-hinting drift); defer to CI.
-- **Rollback:** all work on `feat/forge-migration`; abandon the branch and
-  `git submodule deinit shared/forge` to revert.
+- **Rollback:** revert the `main` commit that changed the manifests and
+  generated locks; do not reintroduce submodules.

@@ -12,14 +12,19 @@ dependencies:
   deckhand_core:
     path: ../deckhand_core
   forge:
-    path: ../../shared/forge
+    git:
+      url: https://github.com/CepheusLabs/forge.git
+      ref: d5eee693745598978f182c6e34311b520f359e9b
   flutter_riverpod: ^2.6.1
   go_router: ^14.0.0
   path: ^1.9.0
   printdeck_product_platform:
-    path: ../../shared/printdeck/product_platform
+    git:
+      url: https://github.com/CepheusLabs/printdeck_product_platform.git
+      ref: 0868d05956df91410d91d7d56e34c315c371c809
   slang: ^4.0.0
   slang_flutter: ^4.0.0
+  web: ^1.1.1
 
 dev_dependencies:
   flutter_test:

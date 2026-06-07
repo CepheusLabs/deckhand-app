@@ -345,16 +345,20 @@ packages:
   forge:
     dependency: "direct main"
     description:
-      path: "../shared/forge"
-      relative: true
-    source: path
+      path: "."
+      ref: d5eee693745598978f182c6e34311b520f359e9b
+      resolved-ref: d5eee693745598978f182c6e34311b520f359e9b
+      url: "https://github.com/CepheusLabs/forge.git"
+    source: git
     version: "2.1.0"
   forge_wizard:
     dependency: transitive
     description:
-      path: "../shared/forge/packages/forge_wizard"
-      relative: true
-    source: path
+      path: "packages/forge_wizard"
+      ref: d5eee693745598978f182c6e34311b520f359e9b
+      resolved-ref: d5eee693745598978f182c6e34311b520f359e9b
+      url: "https://github.com/CepheusLabs/forge.git"
+    source: git
     version: "0.1.0"
   freezed_annotation:
     dependency: transitive
@@ -663,16 +667,20 @@ packages:
   printdeck_product_platform:
     dependency: "direct main"
     description:
-      path: "../shared/printdeck/product_platform"
-      relative: true
-    source: path
+      path: "."
+      ref: "0868d05956df91410d91d7d56e34c315c371c809"
+      resolved-ref: "0868d05956df91410d91d7d56e34c315c371c809"
+      url: "https://github.com/CepheusLabs/printdeck_product_platform.git"
+    source: git
     version: "0.1.0"
   printdeck_telescope:
     dependency: "direct main"
     description:
-      path: "../shared/telescope/clients/flutter"
-      relative: true
-    source: path
+      path: "clients/flutter"
+      ref: e1ee9b5e1d946fbd65d875ae5b68f33a27179995
+      resolved-ref: e1ee9b5e1d946fbd65d875ae5b68f33a27179995
+      url: "https://github.com/CepheusLabs/telescope.git"
+    source: git
     version: "0.0.1"
   pub_semver:
     dependency: transitive
@@ -912,7 +920,7 @@ packages:
     source: hosted
     version: "1.2.1"
   web:
-    dependency: transitive
+    dependency: "direct main"
     description:
       name: web
       sha256: "868d88a33d8a87b18ffc05f9f030ba328ffefba92d6c127917a2ba740f9cfe4a"

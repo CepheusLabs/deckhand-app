@@ -73,9 +73,9 @@ void main() {
     });
 
     test('throws when required browser transport is unavailable', () async {
-      final executor = DeckhandTransportExecutor(
-        availability: const DeckhandTransportAvailability(),
-        transports: const [],
+      const executor = DeckhandTransportExecutor(
+        availability: DeckhandTransportAvailability(),
+        transports: <DeckhandFlashTransport>[],
       );
 
       expect(

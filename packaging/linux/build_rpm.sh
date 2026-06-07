@@ -100,5 +100,5 @@ DEST="$OUT_DIR/${APP}-${RPM_VERSION}-1.x86_64.rpm"
 cp "$RPM" "$DEST"
 echo "Wrote $DEST"
 
-SIGNER="${CBUILD_TOOL_ROOT:-$REPO_ROOT/shared/cepheus-build}/scripts/sign-linux-gpg.sh"
+SIGNER="${CBUILD_TOOL_ROOT:-$REPO_ROOT/../cepheus-build}/scripts/sign-linux-gpg.sh"
 [ -f "$SIGNER" ] && bash "$SIGNER" "$DEST" || echo "note: shared GPG signer not found; skipping signature"

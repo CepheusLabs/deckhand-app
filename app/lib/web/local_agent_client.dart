@@ -1,9 +1,10 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:html' as html;
+import 'dart:js_interop';
 
 import 'package:deckhand_core/deckhand_web_core.dart';
 import 'package:dio/dio.dart';
+import 'package:web/web.dart' as web;
 
 class DeckhandLocalAgentClient implements LocalAgentClient {
   DeckhandLocalAgentClient({
@@ -48,18 +49,18 @@ class DeckhandLocalAgentClient implements LocalAgentClient {
   }
 
   Stream<Map<String, Object?>> _operationEvents(String id) {
-    late final html.EventSource source;
+    late final web.EventSource source;
     late final StreamController<Map<String, Object?>> controller;
     controller = StreamController<Map<String, Object?>>(
       onCancel: () => source.close(),
     );
-    source = html.EventSource(
+    source = web.EventSource(
       _url('/operations/$id/events', eventSource: true),
     );
 
-    void addEvent(html.Event event) {
+    void addEvent(web.Event event) {
       if (controller.isClosed) return;
-      final message = event as html.MessageEvent;
+      final message = event as web.MessageEvent;
       final data = _decodeEventData(message.data);
       controller.add(data);
       final phase = data['phase']?.toString();
@@ -75,7 +76,7 @@ class DeckhandLocalAgentClient implements LocalAgentClient {
     }
 
     for (final name in const ['progress', 'done', 'failed', 'cancelled']) {
-      source.addEventListener(name, addEvent);
+      source.addEventListener(name, addEvent.toJS);
     }
     source.onError.listen((_) {
       if (controller.isClosed) return;
@@ -88,9 +89,11 @@ class DeckhandLocalAgentClient implements LocalAgentClient {
     return controller.stream;
   }
 
-  Map<String, Object?> _decodeEventData(Object? raw) {
-    if (raw is String && raw.trim().isNotEmpty) {
-      final decoded = jsonDecode(raw);
+  Map<String, Object?> _decodeEventData(JSAny? raw) {
+    if (raw != null) {
+      final text = (raw as JSString).toDart;
+      if (text.trim().isEmpty) return const <String, Object?>{};
+      final decoded = jsonDecode(text);
       if (decoded is Map) {
         return decoded.cast<String, Object?>();
       }

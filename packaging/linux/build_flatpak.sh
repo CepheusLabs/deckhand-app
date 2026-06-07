@@ -66,7 +66,7 @@ mkdir -p "$OUT_DIR"
 # Optional GPG signing of the OSTree repo (env-gated; reuse the shared helper's
 # key import). Resolve the signing key id without forcing a signature.
 GPG_ARGS=()
-SIGNER="${CBUILD_TOOL_ROOT:-$REPO_ROOT/shared/cepheus-build}/scripts/sign-linux-gpg.sh"
+SIGNER="${CBUILD_TOOL_ROOT:-$REPO_ROOT/../cepheus-build}/scripts/sign-linux-gpg.sh"
 if [ -f "$SIGNER" ] && [ -n "${GPG_SIGNING_KEY:-}" ]; then
   # shellcheck source=/dev/null
   source "$SIGNER"

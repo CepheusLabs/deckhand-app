@@ -3,6 +3,7 @@
 /// This model is intentionally pure Dart: Flutter web, desktop UI, HITL tests,
 /// and a future local-agent bridge can all evaluate the same profile step
 /// without importing `dart:html` or platform channels.
+library;
 
 enum DeckhandExecutionSurface { browser, localAgent, desktopApp, unavailable }
 

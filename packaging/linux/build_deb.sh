@@ -83,5 +83,5 @@ dpkg-deb --build --root-owner-group "$DEB_ROOT" "$DEB"
 echo "Wrote $DEB"
 
 # Detached GPG signature (env-gated).
-SIGNER="${CBUILD_TOOL_ROOT:-$REPO_ROOT/shared/cepheus-build}/scripts/sign-linux-gpg.sh"
+SIGNER="${CBUILD_TOOL_ROOT:-$REPO_ROOT/../cepheus-build}/scripts/sign-linux-gpg.sh"
 [ -f "$SIGNER" ] && bash "$SIGNER" "$DEB" || echo "note: shared GPG signer not found; skipping signature"

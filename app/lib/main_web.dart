@@ -1,11 +1,11 @@
 import 'dart:async';
-import 'dart:convert';
-import 'dart:html' as html;
+import 'dart:js_interop';
 import 'dart:typed_data';
 
 import 'package:deckhand_core/deckhand_web_core.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:web/web.dart' as web;
 
 import 'web/browser_device_transport.dart';
 import 'web/local_agent_client.dart';
@@ -85,16 +85,14 @@ class _DeckhandWebAppState extends State<DeckhandWebApp> {
   }
 
   Future<void> _loadProfileFile() async {
-    final input = html.FileUploadInputElement();
-    input.accept = '.yaml,.yml,text/yaml,text/plain';
+    final input = web.HTMLInputElement()
+      ..type = 'file'
+      ..accept = '.yaml,.yml,text/yaml,text/plain';
     input.click();
     await input.onChange.first;
-    final file = input.files?.first;
+    final file = input.files?.item(0);
     if (file == null) return;
-    final reader = html.FileReader();
-    reader.readAsText(file);
-    await reader.onLoad.first;
-    final text = reader.result?.toString() ?? '';
+    final text = (await file.text().toDart).toDart;
     try {
       _setProfile(parseDeckhandWebProfileYaml(text), file.name);
     } catch (error) {
@@ -137,22 +135,18 @@ class _DeckhandWebAppState extends State<DeckhandWebApp> {
   }
 
   Future<void> _pickFirmware() async {
-    final input = html.FileUploadInputElement();
-    input.accept = '.bin,.uf2,.hex,.dfu,.img,application/octet-stream';
+    final input = web.HTMLInputElement()
+      ..type = 'file'
+      ..accept = '.bin,.uf2,.hex,.dfu,.img,application/octet-stream';
     input.click();
     await input.onChange.first;
-    final file = input.files?.first;
+    final file = input.files?.item(0);
     if (file == null) return;
-    final reader = html.FileReader();
-    reader.readAsArrayBuffer(file);
-    await reader.onLoad.first;
-    final result = reader.result;
-    if (result is ByteBuffer) {
-      setState(() {
-        _firmwareBytes = Uint8List.view(result);
-        _firmwareName = file.name;
-      });
-    }
+    final bytes = (await file.arrayBuffer().toDart).toDart.asUint8List();
+    setState(() {
+      _firmwareBytes = bytes;
+      _firmwareName = file.name;
+    });
   }
 
   Future<void> _runSelectedStep() async {
@@ -226,7 +220,7 @@ class _DeckhandWebAppState extends State<DeckhandWebApp> {
   }
 
   DeckhandTransportExecutor _executor() {
-    final browserTransport = DeckhandBrowserDeviceTransport();
+    const browserTransport = DeckhandBrowserDeviceTransport();
     return DeckhandTransportExecutor(
       availability: _availability,
       transports: [
@@ -274,21 +268,22 @@ class _DeckhandWebAppState extends State<DeckhandWebApp> {
     final href = operation.firmwareUrl?.toString();
     final String url;
     if (bytes != null) {
-      final blob = html.Blob([bytes]);
-      url = html.Url.createObjectUrlFromBlob(blob);
+      final blob = web.Blob(<web.BlobPart>[bytes.toJS].toJS);
+      url = web.URL.createObjectURL(blob);
     } else if (href != null && href.isNotEmpty) {
       url = href;
     } else {
       _append('No firmware bytes or URL are available for download.');
       return;
     }
-    final anchor = html.AnchorElement(href: url)
+    final anchor = web.HTMLAnchorElement()
+      ..href = url
       ..download = operation.fileName ?? _firmwareName ?? 'firmware.bin'
       ..style.display = 'none';
-    html.document.body?.append(anchor);
+    web.document.body?.appendChild(anchor);
     anchor.click();
     anchor.remove();
-    if (bytes != null) html.Url.revokeObjectUrl(url);
+    if (bytes != null) web.URL.revokeObjectURL(url);
   }
 
   void _append(String message) {

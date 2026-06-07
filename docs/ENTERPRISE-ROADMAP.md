@@ -97,9 +97,10 @@ roadmap.*
 - Make the Go suite green cross-platform: bump `go.mod` and the `setup-go` pins
   to **Go 1.26**; add `//go:build windows` to the `PhysicalDrive3` test (or
   parametrize the target by GOOS). Verified RED today.
-- Make the repo **clone-and-build standalone**: convert `printdeck_telescope`
-  from an out-of-tree `path:` dependency into a tracked submodule (or vendor
-  it); make both submodule URLs absolute; pin submodules to tags.
+- Make the repo **clone-and-build standalone**: consume first-party packages
+  through committed git pins, with sibling `main` checkouts available only as
+  local development/tool overrides. Do not add submodules, gitlinks, or vendored
+  first-party mirrors.
 - **Mandatory signing on the release lane**: fail the tagged build if signing
   secrets are absent (mirror the existing keyring fail-closed check), so a
   privileged helper is never shipped unsigned. Commit the production trust-
@@ -146,8 +147,9 @@ roadmap.*
 - **Unify the transport-capability layer** (§1): one typed requirement
   vocabulary and capability matrix shared by desktop/web/mobile/CLI; the UI
   always explains availability per platform.
-- **Migrate the web stack off deprecated `dart:html`/`dart:js_util`** to
-  `package:web` + `dart:js_interop` (unblocks WasmGC) across all 5 files.
+- **Keep the web stack on modern browser interop**: `package:web` +
+  `dart:js_interop` is now the active browser API boundary; keep `flutter build
+  web` and the Wasm dry run green as the web architecture is rebuilt.
 - **Rebuild the web app to the desktop's architectural bar**: dissolve the
   823-line `main_web.dart` god-widget into Riverpod + GoRouter + tested
   screens; add cancellation/timeout/size-guards; bounded streaming firmware
