@@ -279,6 +279,49 @@ class StubDiscoveryService implements DiscoveryService {
 /// step *does* need Moonraker the runner surfaces the resulting
 /// assertion failure as a scenario error. See the comment on
 /// [HeadlessSecurityService] for why this is `@internal`.
+///
+/// ## Method boundary — no-op/trivial vs throwing
+///
+/// The HITL headless runner never talks to a real Moonraker host, so
+/// this stub satisfies the [MoonrakerService] contract without doing
+/// any I/O. Methods fall into two groups:
+///
+/// **Trivial safe defaults** (read-only probes the wizard treats as
+/// best-effort, so an empty/false answer is harmless):
+/// - [isPrinting] → `false` (nothing is printing on a fresh rig).
+/// - [listObjects] → `const []` (no object enumeration in HITL).
+/// - [fetchConfigFile] → `null` (config-file reads are absent, not
+///   errors — callers treat `null` as "file not present").
+///
+/// **Throwing** (action/live-query methods that have no meaningful
+/// headless answer — calling one is a profile authoring signal that a
+/// step genuinely needs a live printer, which HITL cannot provide):
+/// - [info] → throws [_StubUnavailable]`('moonraker.info')`.
+/// - [queryObjects] → throws [_StubUnavailable]`('moonraker.queryObjects')`.
+/// - [runGCode] → throws [_StubUnavailable]`('moonraker.runGCode')`.
+///
+/// Every [_StubUnavailable]`.toString()` reads
+/// `'moonraker stub: <method> not implemented for HITL'`.
+///
+/// ## Reachability — why throwing is safe here (T194)
+///
+/// The only controller path that reaches a throwing method is the
+/// `http_get` verifier kind in
+/// `wizard_controller_runtime.dart` (`c.moonraker.info(...)`). That
+/// call is wrapped in a `try/catch`: a [_StubUnavailable] is logged,
+/// then either swallowed (when the verifier is `optional`) or
+/// re-surfaced as a `StepExecutionException` for a required verifier —
+/// which the runner records as a scenario assertion failure rather
+/// than crashing. No HITL flow ever lets a [_StubUnavailable] escape
+/// unhandled. [queryObjects] and [runGCode] have no
+/// [WizardController] call site at all; they're exercised only by the
+/// deckhand_ui screens, which run against the real
+/// `MoonrakerHttpService`, never this stub.
+///
+/// This stub is unreachable from any real-printer runtime: it is
+/// injected exclusively by [ScenarioRunner] (HITL). The shipping app
+/// wires `MoonrakerHttpService` in `app/lib/main.dart`
+/// (`moonrakerServiceProvider.overrideWithValue(MoonrakerHttpService())`).
 @internal
 @immutable
 class StubMoonrakerService implements MoonrakerService {
