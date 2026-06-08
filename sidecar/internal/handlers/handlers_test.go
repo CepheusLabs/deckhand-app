@@ -64,6 +64,72 @@ func TestRegister_RegistersEveryMethod(t *testing.T) {
 	}
 }
 
+func TestVersionCompatReportsCurrentSingleContract(t *testing.T) {
+	resp := dispatch(t, map[string]any{
+		"jsonrpc": "2.0",
+		"id":      "compat",
+		"method":  "version.compat",
+		"params":  map[string]any{"ui_version": "2026.6.7"},
+	})
+
+	if _, hasErr := resp["error"]; hasErr {
+		t.Fatalf("expected no error, got %+v", resp["error"])
+	}
+	result, ok := resp["result"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected result object, got %+v", resp)
+	}
+	if compatible, _ := result["compatible"].(bool); !compatible {
+		t.Fatalf("expected compatible=true for current single-contract policy, got %+v", result)
+	}
+	if got, _ := result["sidecar_version"].(string); got != "test-version" {
+		t.Fatalf("sidecar_version = %q, want test-version", got)
+	}
+	if got, _ := result["ui_version"].(string); got != "2026.6.7" {
+		t.Fatalf("ui_version = %q, want echoed UI version", got)
+	}
+}
+
+func TestVersionCompatAllowsEmptyUIVersion(t *testing.T) {
+	resp := dispatch(t, map[string]any{
+		"jsonrpc": "2.0",
+		"id":      "compat-empty",
+		"method":  "version.compat",
+		"params":  map[string]any{"ui_version": ""},
+	})
+
+	if _, hasErr := resp["error"]; hasErr {
+		t.Fatalf("expected no error for empty ui_version, got %+v", resp["error"])
+	}
+	result, ok := resp["result"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected result object, got %+v", resp)
+	}
+	if compatible, _ := result["compatible"].(bool); !compatible {
+		t.Fatalf("expected compatible=true for empty ui_version, got %+v", result)
+	}
+	if got, _ := result["ui_version"].(string); got != "" {
+		t.Fatalf("ui_version = %q, want empty echo", got)
+	}
+}
+
+func TestVersionCompatRejectsMalformedParams(t *testing.T) {
+	resp := dispatch(t, map[string]any{
+		"jsonrpc": "2.0",
+		"id":      "compat-bad",
+		"method":  "version.compat",
+		"params":  "not an object",
+	})
+
+	errObj, ok := resp["error"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected malformed params error, got %+v", resp)
+	}
+	if msg, _ := errObj["message"].(string); !strings.Contains(msg, "decode params") {
+		t.Fatalf("expected decode params error, got %q", msg)
+	}
+}
+
 // dispatch runs the full RPC read/dispatch/respond loop for a single
 // request and returns the decoded response. It's the integration
 // seam we want when a handler test isn't about the domain package

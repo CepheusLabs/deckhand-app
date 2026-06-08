@@ -60,9 +60,13 @@ Smoke test the sidecar is alive.
 - **Result**: `{ sidecar_version: str, os: str, arch: str }`
 
 #### `version.compat`
-Check whether the sidecar speaks the UI's protocol version.
+Check whether the sidecar speaks the UI's protocol version. Today Deckhand has
+one JSON-RPC method-surface contract, so the sidecar returns
+`compatible: true` for every decoded UI version and echoes that version for
+diagnostics. When a breaking sidecar/UI contract is introduced this method
+becomes the compatibility-policy gate.
 - **Params**: `{ ui_version: str }`
-- **Result**: `{ compatible: bool, sidecar_version: str }`
+- **Result**: `{ compatible: bool, sidecar_version: str, ui_version: str }`
 
 #### `host.info`
 Return host platform info + the OS-appropriate data directories.

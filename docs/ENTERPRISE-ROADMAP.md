@@ -173,10 +173,11 @@ roadmap.*
 
 ### Phase 3 — Close every functional gap (the "no stubs" phase)
 
-- **Build, don't defer**, each §3.2 item: real `version.compat` gating;
-  `resume=continue`; `restore_from_backup`; the **S900 resume-preview UI**;
-  checkpointed step continuation (+ lift the profile-lint rejection); the
-  **debug-bundle zip pipeline**; the `DeckhandProductModule` task lifecycle
+- **Build, don't defer**, each §3.2 item: real `version.compat` gating once a
+  breaking sidecar/UI contract is introduced; `resume=continue`;
+  `restore_from_backup`; the **S900 resume-preview UI**; checkpointed step
+  continuation (+ lift the profile-lint rejection); the **debug-bundle zip pipeline**;
+  the `DeckhandProductModule` task lifecycle
   (`taskStatus`/`taskCancel`/events) so agents can poll/cancel a flash; replace
   the fabricated log timestamps with real controller-emitted timestamps.
 - **Profile-script runtime — decide and execute** (no middle ground): either

@@ -107,10 +107,11 @@ finding below survived that filter.
 
 These throw, silently pass, or no-op where a real implementation is expected:
 
-- **`version.compat` is a hardcoded stub** — always returns
-  `{"compatible": true}` regardless of the UI version
-  (`sidecar/internal/handlers/handlers.go:62`). There is no real UI↔sidecar
-  version gating, which an enterprise staged rollout depends on.
+- **`version.compat` is intentionally single-contract today** — it returns
+  `{"compatible": true, "sidecar_version": ..., "ui_version": ...}` for every
+  decoded UI version because no breaking sidecar/UI contract exists yet. The
+  future gap is a policy gate once staged rollout needs a minimum UI/sidecar
+  contract version.
 - **`resume=continue` is unimplemented** — an interrupted step declaring this
   documented resume mode hard-fails the wizard on retry
   (`wizard_controller_runtime.dart:245`).

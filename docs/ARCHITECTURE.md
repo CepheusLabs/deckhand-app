@@ -348,8 +348,10 @@ Sidecar is bundled alongside the app binary. On install:
 - **Profile schema** has its own `schema_version` (starts at `1`). Schema
   major bumps require Deckhand release bump too. Deckhand supports current
   schema + one back.
-- **Sidecar** has its own version. UI asserts compatibility on launch via
-  `version.compat`.
+- **Sidecar** has its own version. UI checks compatibility on launch via
+  `version.compat`; the current single-contract policy returns compatible for
+  every decoded UI version and echoes the UI version for diagnostics. A future
+  breaking sidecar/UI contract introduces the real minimum-version gate.
 
 ## Security model
 
