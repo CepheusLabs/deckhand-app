@@ -16,7 +16,7 @@ publish_to: none
 # MoonrakerService where the wizard would normally call into
 # Bonsoir-backed mDNS or HTTP probes.
 environment:
-  sdk: ^3.10.0
+  sdk: ^3.11.5
 
 dependencies:
   flutter:
