@@ -3,7 +3,9 @@ module github.com/CepheusLabs/deckhand/sidecar
 go 1.26.4
 
 require (
+	github.com/cepheuslabs/printdeck_product_platform v0.0.0-20260612010045-53a76a175d31
 	github.com/go-git/go-git/v5 v5.13.1
+	github.com/gorilla/websocket v1.5.3
 	github.com/ulikunitz/xz v0.5.14
 	golang.org/x/sys v0.28.0
 )

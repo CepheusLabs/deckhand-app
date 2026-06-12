@@ -10,6 +10,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -24,6 +25,7 @@ import (
 	"github.com/CepheusLabs/deckhand/sidecar/internal/host"
 	"github.com/CepheusLabs/deckhand/sidecar/internal/localagent"
 	"github.com/CepheusLabs/deckhand/sidecar/internal/logging"
+	"github.com/CepheusLabs/deckhand/sidecar/internal/relay"
 	"github.com/CepheusLabs/deckhand/sidecar/internal/rpc"
 )
 
@@ -38,6 +40,12 @@ Usage:
                                Start the local HTTP/SSE bridge for browser
                                Deckhand. Token may also come from
                                DECKHAND_AGENT_TOKEN.
+  deckhand-sidecar relay --endpoint WSS_URL --runtime-id ID
+                               [--token TOKEN] [--tenant TENANT]
+                               Dial the cortex edge relay and answer agentic
+                               deckhand.* capability invocations. Flags may
+                               also come from DECKHAND_RELAY_ENDPOINT/_TOKEN/
+                               _TENANT/_RUNTIME_ID.
   deckhand-sidecar doctor      Run a self-diagnostic and exit. Exit code
                                0 means healthy, 1 means a blocking issue
                                was found. Prints a human-readable report
@@ -114,6 +122,54 @@ func main() {
 				Version:      Version,
 			}); err != nil && !errors.Is(err, context.Canceled) {
 				logger.Error("local_agent.serve_error", "error", err.Error())
+				os.Exit(1)
+			}
+			return
+		case "relay":
+			fs := flag.NewFlagSet("relay", flag.ExitOnError)
+			endpoint := fs.String("endpoint", os.Getenv("DECKHAND_RELAY_ENDPOINT"), "cortex WSS edge endpoint, for example wss://cortex.example/edge")
+			token := fs.String("token", os.Getenv("DECKHAND_RELAY_TOKEN"), "bearer/runtime token presented to the cortex gateway")
+			tenant := fs.String("tenant", os.Getenv("DECKHAND_RELAY_TENANT"), "tenant id this runtime belongs to")
+			runtimeID := fs.String("runtime-id", os.Getenv("DECKHAND_RELAY_RUNTIME_ID"), "stable runtime id; must match the gateway-validated identity")
+			if err := fs.Parse(os.Args[2:]); err != nil {
+				fmt.Fprintf(os.Stderr, "[deckhand-sidecar] relay: %v\n", err)
+				os.Exit(2)
+			}
+			if strings.TrimSpace(*endpoint) == "" || strings.TrimSpace(*runtimeID) == "" {
+				fmt.Fprintln(os.Stderr, "[deckhand-sidecar] relay: --endpoint and --runtime-id are required")
+				os.Exit(2)
+			}
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			logger, closeLog, err := logging.Init(host.Current().Data)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "[deckhand-sidecar] log init failed: %v\n", err)
+				logger = slog.Default()
+				closeLog = func() error { return nil }
+			}
+			defer func() { _ = closeLog() }()
+			server := rpc.NewServer()
+			server.SetLogger(logger)
+			handlers.Register(server, cancel, Version)
+			module := relay.NewDeckhandModule(serverInvoker{server: server})
+			client, err := relay.NewClient(relay.Config{
+				Endpoint:  *endpoint,
+				Token:     *token,
+				TenantID:  *tenant,
+				RuntimeID: *runtimeID,
+			}, module)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "[deckhand-sidecar] relay: %v\n", err)
+				os.Exit(1)
+			}
+			logger.Info("relay.start",
+				"version", Version,
+				"endpoint", *endpoint,
+				"runtime_id", *runtimeID,
+				"tenant_id", *tenant,
+			)
+			if err := client.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
+				logger.Error("relay.run_error", "error", err.Error())
 				os.Exit(1)
 			}
 			return
@@ -347,6 +403,26 @@ func main() {
 		os.Exit(1)
 	}
 }
+
+// serverInvoker adapts the sidecar's *rpc.Server to the relay.Invoker seam so
+// the DeckhandModule drives the exact same handlers, cancellation registry, and
+// concurrency limits as the stdio IPC and local-agent HTTP paths. Relay calls
+// carry no progress notifier (progress is polled via task.status over the
+// relay), so a discarding notifier is supplied.
+type serverInvoker struct {
+	server *rpc.Server
+}
+
+func (s serverInvoker) Invoke(ctx context.Context, operationID, method string, params json.RawMessage) (any, error) {
+	return s.server.Invoke(ctx, operationID, method, params, discardNotifier{})
+}
+
+// discardNotifier drops progress notifications. The relay transport has no
+// notification channel back to the cloud; the agent observes long-running
+// progress by polling task.status instead.
+type discardNotifier struct{}
+
+func (discardNotifier) Notify(string, any) {}
 
 func splitComma(raw string) []string {
 	raw = strings.TrimSpace(raw)
