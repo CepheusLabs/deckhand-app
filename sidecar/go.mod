@@ -7,7 +7,7 @@ require (
 	github.com/go-git/go-git/v5 v5.13.1
 	github.com/gorilla/websocket v1.5.3
 	github.com/ulikunitz/xz v0.5.14
-	golang.org/x/sys v0.28.0
+	golang.org/x/sys v0.46.0
 )
 
 require (
