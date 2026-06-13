@@ -6,7 +6,39 @@ CalVer (`YY.M.D+<commits>`); tags are `v<YY.M.D>-<commits>`. The
 release time by [`scripts/stamp_changelog.sh`](scripts/stamp_changelog.sh)
 (invoked from the release workflow before the tag is created).
 
-## Unreleased — Initial release
+## Unreleased
+
+Work landed on `main` since the initial-release notes below (no tag cut
+yet; this section is rewritten to the resolved tag at release time).
+
+### Changed
+- **UI rebuilt on the shared `forge` design system.** The bespoke
+  `DeckhandTokens`/`DeckhandTheme` fork and its duplicate widgets were
+  deleted; the app and `deckhand_ui` now consume `forge`, and
+  `deckhand_core`'s wizard runs on `forge_wizard`
+  (see [`docs/FORGE-MIGRATION.md`](docs/FORGE-MIGRATION.md)).
+
+### Added
+- **Cortex edge-relay sidecar mode.** A new opt-in
+  `deckhand-sidecar relay` mode lets the hosted control plane drive a
+  fixed set of `deckhand.*` capabilities over the same handlers, with the
+  critical `deckhand.image.apply` gated by a fresh-approval floor. A
+  `deckhand-sidecar agent` local HTTP/SSE bridge backs browser Deckhand.
+  (see [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — "Cortex edge-relay").
+
+### Security
+- **P0: wizard passwords are never persisted to disk** — closed a path
+  that could serialize an SSH password into wizard session state.
+- Hardened the local-agent web bridge and rejected loopback OS-image
+  download targets in production builds.
+
+### Tooling
+- CI Flutter pin bumped to **3.41.7** and the sidecar Go toolchain
+  standardized to **1.26.4** to satisfy the Dart `^3.11.5` floor.
+
+---
+
+## Initial release
 
 First public release of Deckhand: a local-only desktop tool that
 flashes, sets up, and maintains Klipper-based 3D printers.

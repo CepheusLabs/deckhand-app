@@ -1,5 +1,12 @@
 # Deckhand — Enterprise-Readiness Audit (state of the code)
 
+> **⏱ Point-in-time snapshot, as of 2026-06-05.** The hard LOC counts and
+> percentages below describe the codebase *at that date* and have not been
+> recomputed since. They predate the `forge` UI rebuild and the Cortex
+> edge-relay sidecar mode, so treat the absolute numbers as historical, not
+> current. The findings and direction remain the reference; the figures are a
+> baseline.
+>
 > Date: 2026-06-05. Reviewer pass: function-level audit of the entire
 > codebase (~98K LOC: ~83K Dart + ~15K Go), 18 module agents + a
 > cross-cutting agent, every stub/high-impact claim adversarially

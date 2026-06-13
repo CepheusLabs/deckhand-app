@@ -1,5 +1,10 @@
 # Deckhand — Enterprise-Readiness Roadmap
 
+> **⏱ Point-in-time snapshot, as of 2026-06-05.** Any concrete LOC/percentage
+> figures cited here are inherited from the companion audit at that date and
+> predate the `forge` UI rebuild and the Cortex edge-relay sidecar mode; read
+> them as a historical baseline, not current state.
+>
 > Companion to [`ENTERPRISE-AUDIT.md`](ENTERPRISE-AUDIT.md) (the state-of-code
 > findings this roadmap acts on). Target: make Deckhand — the Klipper
 > flasher/setup/maintenance tool — **enterprise-grade**, with **Desktop, Web,

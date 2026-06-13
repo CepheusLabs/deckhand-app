@@ -16,12 +16,17 @@
 3. **Cross-platform where possible, platform-specific where necessary.**
    Pure Dart for models, profile handling, SSH, UI. Platform-specific code
    only where required (disk flashing requires admin/root).
-4. **Modern Flutter stack.** Flutter 3.38 / Dart 3.10, Riverpod 2.x,
+4. **Modern Flutter stack.** Flutter 3.41 / Dart `^3.11.5`, Riverpod 2.x,
    GoRouter, Freezed + json_serializable, Dio, `flutter_secure_storage`,
-   Slang i18n, Material 3.
-5. **No hosted backend.** The app runs fully local; the only network
-   traffic is direct - to the user's printer on LAN and to public upstream
-   sources (GitHub, Armbian) for downloads.
+   Slang i18n, Material 3. UI is built on the shared `forge` design system
+   (`forge` + `forge_wizard`, pinned git deps) rather than a bespoke theme.
+5. **Local-first, optionally cloud-controllable.** The app runs fully local
+   by default; the only network traffic is direct — to the user's printer on
+   LAN and to public upstream sources (GitHub, Armbian) for downloads. An
+   opt-in **Cortex edge-relay** sidecar mode lets the hosted control plane
+   drive a fixed set of `deckhand.*` capabilities (see "Cortex edge-relay /
+   local agent" below); when it is not started, no outbound control channel
+   exists.
 6. **Non-technical users welcome.** Wizard screens are the default path.
    Technical users can drop into YAML authoring and CLI mode.
 
@@ -70,14 +75,14 @@ deckhand/
 ├── app/                                 # Deckhand desktop app
 │   ├── pubspec.yaml                     # depends on deckhand_* packages
 │   └── lib/main.dart                    # bootstraps with sidecar adapters
-├── packages/
+├── packages/                            # 10 Dart packages (ls packages/)
 │   ├── deckhand_core/                   # platform-agnostic, UI-agnostic
 │   │   ├── pubspec.yaml
 │   │   └── lib/
 │   │       ├── src/
 │   │       │   ├── models/              # freezed: Profile, Printer, Session, ...
 │   │       │   ├── services/            # interfaces only
-│   │       │   └── wizard/              # state machine for the install flow
+│   │       │   └── wizard/              # ForgeWizard-backed install-flow state
 │   │       └── deckhand_core.dart
 │   ├── deckhand_profiles/               # consumes deckhand_core
 │   │   └── lib/
@@ -103,26 +108,35 @@ deckhand/
 │   │       └── src/
 │   │           ├── mdns.dart            # bonsoir / nsd
 │   │           └── cidr_scan.dart
-│   ├── deckhand_ui/                     # Flutter widgets - wizard screens
+│   ├── deckhand_ui/                     # Flutter widgets — wizard screens, on forge
 │   │   └── lib/
 │   │       └── src/
 │   │           ├── screens/             # wizard screens
-│   │           ├── widgets/             # shared UI components
-│   │           └── theming/             # material 3 theme
-│   └── deckhand_profile_script/         # sandboxed API for profile-shipped scripts
-│       └── lib/
-│           └── src/
-│               ├── api.dart             # ScriptContext + annotation types
-│               ├── runner.dart          # loads & runs Dart scripts in restricted isolate
-│               └── sandbox/             # static analysis + runtime guards
+│   │           └── widgets/             # thin Deckhand-identity widgets over forge
+│   ├── deckhand_profile_script/         # sandboxed API for profile-shipped scripts
+│   │   └── lib/
+│   │       └── src/
+│   │           ├── api.dart             # ScriptContext + annotation types
+│   │           ├── runner.dart          # loads & runs Dart scripts in restricted isolate
+│   │           └── sandbox/             # static analysis + runtime guards
+│   ├── deckhand_profile_lint/           # lint rules for authored profile.yaml files
+│   ├── deckhand_hitl/                   # headless hardware-in-the-loop driver (see HITL.md)
+│   └── deckhand_lints/                  # shared custom_lint rules for the workspace
 ├── sidecar/                             # Go sidecar (Go-backed privileged ops)
-│   ├── go.mod
-│   ├── cmd/deckhand-sidecar/main.go
+│   ├── go.mod                           # go 1.26.4
+│   ├── cmd/
+│   │   ├── deckhand-sidecar/main.go     # stdio RPC + `agent`/`relay`/diagnostics CLIs
+│   │   ├── deckhand-elevated-helper/    # single-op elevated binary
+│   │   └── deckhand-ipc-docs/           # generates docs/IPC-METHODS.md
 │   └── internal/
 │       ├── rpc/                         # JSON-RPC over stdio
+│       ├── handlers/                    # method handlers shared by stdio/agent/relay
 │       ├── disks/                       # per-OS disk enumeration + flash
 │       ├── osimg/                       # HTTP fetch + sha256 + XZ extract
 │       ├── hash/                        # streaming sha256
+│       ├── doctor/                      # self-diagnostic (doctor.run + smokes)
+│       ├── localagent/                  # local HTTP/SSE bridge for browser Deckhand
+│       ├── relay/                       # Cortex edge-relay module + WS client
 │       └── host/
 ├── scripts/                             # build + release helpers
 └── .github/workflows/                   # CI matrix
@@ -159,6 +173,13 @@ External deps:
 - `path ^1.9.0`
 - `path_provider ^2.1.0`
 - `sqlite3_flutter_libs` + `drift` if we need local persistence beyond JSON
+
+First-party (pinned git) deps:
+
+- `forge` — shared design system (theme + widgets); the UI is built on it.
+- `printdeck_product_platform` — the `ProductShellFrame` app shell and the
+  `productplatform.Module` contract the Cortex relay implements.
+- `printdeck_telescope` — shared observability/telemetry client.
 
 ## Interface pattern
 
@@ -268,6 +289,56 @@ separate small helper binary:
 Rationale for separate helper over sidecar relaunch: the elevated surface
 is tiny (one binary, one op at a time), easier to audit and sign, and
 isolates any privileged code from the sidecar's larger attack surface.
+
+## Cortex edge-relay / local agent (sidecar modes)
+
+The same `deckhand-sidecar` binary runs in one of several modes, selected by
+its first CLI argument (`cmd/deckhand-sidecar/main.go`). The default — no
+argument — is the stdio JSON-RPC loop the desktop app spawns. Two additional
+long-running modes expose the *same* handler set, cancellation registry, and
+concurrency limits through different transports:
+
+- **`deckhand-sidecar agent`** — starts a local HTTP/SSE bridge
+  (`internal/localagent`, default `127.0.0.1:48765`, bearer-token-gated) so a
+  browser build of Deckhand can drive the sidecar over loopback instead of
+  stdio. Token comes from `--token` or `DECKHAND_AGENT_TOKEN`.
+- **`deckhand-sidecar relay`** — dials the hosted **Cortex edge relay** over
+  WSS and lets the cloud control plane (`pd-cortex`) drive a fixed set of
+  agentic capabilities. The desktop is the *client* (it dials out); the cloud
+  is the WebSocket server and JSON-RPC caller. Flags: `--endpoint`,
+  `--runtime-id` (required), `--token`, `--tenant`, also readable from
+  `DECKHAND_RELAY_ENDPOINT/_TOKEN/_TENANT/_RUNTIME_ID`.
+
+The relay implementation lives in `internal/relay`:
+
+- **`module.go` — `DeckhandModule`** implements the cloud
+  `productplatform.Module` contract. `InvokeAction` maps each `deckhand.*`
+  capability onto an existing sidecar handler through an `Invoker` seam (in
+  production, the sidecar's own `rpc.Server.Invoke`), so relay invocations
+  share the exact handlers, cancellation registry, and concurrency limits as
+  the stdio and local-agent paths. Long-running capabilities are launched in
+  the background and observed via `TaskStatus`/`TaskCancel` (the relay carries
+  no event stream; progress is *polled*, not pushed).
+- **`client.go` — `Client`** is the WS dialer + register handshake + the
+  inbound-frame pump feeding a hosted `productplatform.JSONRPCServer`.
+- **`catalog.go`** declares the six advertised capabilities and their
+  manifest-mirrored danger/approval levels:
+
+  | Capability | Sidecar method | Danger | Approval | Task |
+  |---|---|---|---|---|
+  | `deckhand.host.diagnose` | `doctor.run` | safe | none | long-running |
+  | `deckhand.disks.inspect` | `disks.list` | safe | none | immediate |
+  | `deckhand.disks.preflight` | `disks.safety_check` | safe | none | immediate |
+  | `deckhand.profile.fetch` | `profiles.fetch` | safe | none | immediate |
+  | `deckhand.archive.snapshot` | `disks.read_image` | moderate | policy | long-running |
+  | `deckhand.image.apply` | `disks.write_image` | **critical** | **fresh-required** | long-running |
+
+  The critical `deckhand.image.apply` is gated by the cloud `TenantPolicy`
+  fresh-approval floor *before* the invoke reaches the wire; the module still
+  re-applies the desktop's own defense-in-depth (`disks.preflight` blocks
+  unsafe targets and `write_image` re-probes the disk live in the handler), so
+  the relay never weakens the local security model. `relay` is opt-in: if the
+  subcommand is never started, no outbound control channel exists.
 
 ## Per-user data directories
 
@@ -428,10 +499,10 @@ Sidecar is bundled alongside the app binary. On install:
 
 ## Build prerequisites (contributor)
 
-- **Flutter 3.38.9**
-- **Dart 3.10.8**
+- **Flutter 3.41.7** (CI pin; any stable 3.41.x ships Dart ≥ 3.11.5).
+- **Dart `^3.11.5`** — the SDK floor every `pubspec.yaml` declares.
 - **Go 1.26+** (for sidecar; only needed if you touch sidecar code).
-  `sidecar/go.mod` pins `go 1.26`; CI `setup-go` matches.
+  `sidecar/go.mod` pins `go 1.26.4`; CI `setup-go` matches.
 - Windows: VS Build Tools (C++ workload)
 - macOS: Xcode CLI tools
 - Linux: `cmake`, `ninja`, `libgtk-3-dev`, `libsecret-1-dev`

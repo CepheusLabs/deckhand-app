@@ -1,6 +1,9 @@
 # Deckhand → forge migration
 
-> **Status:** in progress (started 2026-06-06)
+> **Status:** ✅ **COMPLETE** — shipped to `main` 2026-06 (commits `a5a2b47` / `ef3a8d2`).
+> `DeckhandTokens`/`DeckhandTheme` and the bespoke widget fork are gone from the
+> tree; `forge` + `forge_wizard` are pinned git dependencies. This document is
+> retained as the migration record; the checklists below are all done.
 > **Type:** greenfield rebuild — **no users, no cutover, no compatibility layer.**
 > **Owner:** evan@cepheuslabs.com
 
@@ -154,49 +157,49 @@ Each phase ends green before the next begins. Validation commands run from
   each `pubspec.lock`.
 
 ### Phase 1 — Theme foundation  *(sequential; owner: lead)*
-- [ ] `wizard_shell.dart`: `MaterialApp.router` theme/darkTheme →
+- [x] `wizard_shell.dart`: `MaterialApp.router` theme/darkTheme →
       `buildClTheme(brightness, density: ClDensity.compact, accentPalette: ClAccentPalette.violet)`.
-- [ ] Delete `theming/deckhand_theme.dart`, `theming/deckhand_tokens.dart`
+- [x] Delete `theming/deckhand_theme.dart`, `theming/deckhand_tokens.dart`
       (and the `oklch()` helper), and the `deckhand_ui.dart` barrel exports for them.
-- [ ] Update `test/helpers.dart` to pump through `buildClTheme`.
+- [x] Update `test/helpers.dart` to pump through `buildClTheme`.
 - **Test plan:** package will not compile until Phase 2 finishes (expected).
 - **Validation:** `grep -r DeckhandTokens lib/` returns only files queued for
   Phase 2; theme bootstrap references resolve.
 
 ### Phase 2 — Token + widget sweep  *(parallel fan-out; owner: team)*
 Decomposed by file group; each group applies the token map + widget map.
-- [ ] Group A — screens 1–10
-- [ ] Group B — screens 11–20
-- [ ] Group C — screens 21–29
-- [ ] Group D — widgets: delete-and-replace set
-- [ ] Group E — widgets: rebuild-on-forge set
+- [x] Group A — screens 1–10
+- [x] Group B — screens 11–20
+- [x] Group C — screens 21–29
+- [x] Group D — widgets: delete-and-replace set
+- [x] Group E — widgets: rebuild-on-forge set
 - **Test plan:** per-group self-check that no `DeckhandTokens`/deleted-widget
   refs remain in the group's files.
 - **Validation:** after all groups, `grep -r "DeckhandTokens\|DeckhandTheme" lib/`
   is empty; deleted widget files removed.
 
 ### Phase 3 — Chrome + stepper  *(sequential; owner: lead)*
-- [ ] `deckhand_app_chrome`: `_TopBar` → `ClCommandBar` + `ClNavPill`;
+- [x] `deckhand_app_chrome`: `_TopBar` → `ClCommandBar` + `ClNavPill`;
       `ThemeToggleButton` → `ClThemeToggle`.
-- [ ] `deckhand_stepper` adapter → feeds `ClWizardPhaseStepper`.
-- [ ] All 29 screens → `ClWizardPageScaffold` + `ClPageHeader`.
+- [x] `deckhand_stepper` adapter → feeds `ClWizardPhaseStepper`.
+- [x] All 29 screens → `ClWizardPageScaffold` + `ClPageHeader`.
 - **Validation:** `flutter analyze packages/deckhand_ui` — drive to 0 errors.
 
 ### Phase 4 — Wizard engine  *(sequential; owner: dedicated agent)*
-- [ ] `deckhand_core`: `WizardState`→`ForgeWizardState`, `WizardController`
+- [x] `deckhand_core`: `WizardState`→`ForgeWizardState`, `WizardController`
       wraps `ForgeWizardFlowProcess`, persistence via `ForgeWizardStateCodec`.
 - **Test plan:** existing `deckhand_core` wizard tests must pass unchanged in
   behavior (decisions graph, resume, secrets-not-serialized).
 - **Validation:** `flutter test packages/deckhand_core` green.
 
 ### Phase 5 — Convergence  *(sequential loop; owner: lead)*
-- [ ] `flutter analyze` (workspace) → fix → repeat until 0 errors.
-- [ ] `flutter test packages/deckhand_ui packages/deckhand_core` → fix → green.
-- [ ] Remove IBM Plex font assets from disk.
+- [x] `flutter analyze` (workspace) → fix → repeat until 0 errors.
+- [x] `flutter test packages/deckhand_ui packages/deckhand_core` → fix → green.
+- [x] Remove IBM Plex font assets from disk.
 - **Validation:** analyze 0 errors; all non-golden tests pass.
 
 ### Phase 6 — Manual QA  *(owner: lead)*
-- [ ] Manual smoke: both wizard flows (stock-keep, fresh-flash), light + dark.
+- [x] Manual smoke: both wizard flows (stock-keep, fresh-flash), light + dark.
 - **Note:** `deckhand_ui` has NO golden tests (no `matchesGoldenFile` / `goldens/`),
   so nothing needs regenerating — the earlier "goldens on Linux" plan was moot.
 - **Validation:** smoke checklist signed off.
