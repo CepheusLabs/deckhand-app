@@ -3,6 +3,21 @@
 Scripts + configs for turning the Flutter build output + Go binaries
 into OS-native installers.
 
+These scripts are recipes that the cepheus-build flow invokes — you
+normally produce installers through it, which runs `scripts/build.sh`
+plus the packaging script for each target:
+
+```powershell
+cd /d/git/CepheusLabs/deckhand-app
+../cepheus-build/bin/cepheus-build build -p deckhand windows-installer
+../cepheus-build/bin/cepheus-build build -p deckhand macos-dmg
+../cepheus-build/bin/cepheus-build build -p deckhand linux-appimage
+../cepheus-build/bin/cepheus-build build -p deckhand linux-deb linux-rpm linux-flatpak
+```
+
+(Or build every desktop installer at once with the `desktop_packages`
+group.) The tables below document the underlying scripts the flow calls.
+
 | OS | Script / config | Output |
 |----|-----------------|--------|
 | Windows | `windows/deckhand.iss` (Inno Setup) | `Deckhand-<ver>-win-x64.exe` |
@@ -36,4 +51,11 @@ early development:
 - Linux: no signing required; consider GPG-signing the `.AppImage`
   artifact in CI.
 
-See `.github/workflows/release.yml` for the full matrix.
+The packaging targets, hosts, and publish stores are defined in
+cepheus-build's `products/deckhand.toml` (`windows-installer`,
+`macos-dmg`, `linux-appimage`, `linux-deb`, `linux-rpm`,
+`linux-flatpak`, plus the `github_release` store). `release.yml` in this
+repo is now a thin caller that delegates to the shared
+`app-release.yml` — it carries no build matrix of its own. Run
+`../cepheus-build/bin/cepheus-build describe -p deckhand --json` to see
+the current enabled targets and stores.

@@ -6,16 +6,31 @@ output, and handling hardware-in-the-loop smoke tests.
 
 ## Trigger
 
-Two paths:
+The canonical entry point is the cepheus-build release flow — it computes
+the CalVer version, creates the tag, and pushes it. Pushing the tag is what
+fires [`.github/workflows/release.yml`](../.github/workflows/release.yml),
+a thin caller that delegates to the shared
+`CepheusLabs/cepheus-build/.github/workflows/app-release.yml`.
 
-- **Tag-push (normal):** `git tag v<YY.M.D>-<BUILD> && git push
-  --tags`. The release workflow fires on any `v*` tag.
-- **Manual:** `Actions → Release → Run workflow`, enter a branch or
-  SHA. Useful for rebuilding an older commit with today's signing
-  material.
+- **Normal path:**
+
+  ```powershell
+  cd /d/git/CepheusLabs/deckhand-app
+  ../cepheus-build/bin/cepheus-build release -p deckhand
+  ```
+
+  This pushes a CalVer tag `v<YY.M.D>-<count>` (no zero-padding; `<count>`
+  is the total commit count). Add `--channel beta` to cut a pre-release
+  instead — that pushes a `beta-v<YY.M.D>-<count>` tag. Either tag is
+  matched by `release.yml`'s `on: push: tags: ['v*', 'beta-v*']` trigger.
+
+- **Manual fallback:** `Actions → Release → Run workflow` via the
+  `workflow_dispatch` trigger. It **must be dispatched from a TAG ref**
+  (a `v...` / `beta-v...` tag), not a branch — the shared pipeline's
+  prepare step rejects branch refs.
 
 Versioning is CalVer — `YY.M.D` with no zero-padding, plus the total
-commit count. The workflow computes both; you don't set either.
+commit count. `cepheus-build release` computes both; you don't set either.
 
 ## Required secrets
 
@@ -104,6 +119,17 @@ There is no "unrelease" button on GitHub — but:
 
 ## Offline rebuild
 
-`./scripts/build.sh all` on a dev machine produces the same versioned
-artifacts locally for pre-tag smoke tests. They won't be signed (no
-CI secrets on your laptop), so don't ship them to users.
+To produce the same versioned artifacts locally for pre-tag smoke tests,
+use the canonical build flow:
+
+```powershell
+cd /d/git/CepheusLabs/deckhand-app
+../cepheus-build/bin/cepheus-build build -p deckhand desktop --execution-mode container [--container-profile errai]
+```
+
+`--execution-mode container` runs each OS leg in a container/VM on the
+build pool and returns the artifacts to the repo (`--container-profile
+errai` pins the errai pool; `--execution-mode local` builds host-native
+instead). As a no-cepheus-build fallback, `./scripts/build.sh all` on a
+dev machine produces the same artifacts directly. Either way they won't
+be signed (no CI secrets on your laptop), so don't ship them to users.

@@ -10,7 +10,8 @@ Deckhand uses **date-based CalVer** (matching Printdeck's
 - **Tag**: `v<VERSION>-<BUILD>` (e.g. `v26.4.18-1247`)
 
 The version is computed automatically - there's nothing to bump, nothing
-to remember. You write code, push, GitHub Actions stamps the release.
+to remember. `cepheus-build release -p deckhand` stamps it when you cut a
+release (see [How releases happen](#how-releases-happen)).
 
 ## Commit messages
 
@@ -23,31 +24,56 @@ the previous one.
 
 ## How releases happen
 
-1. You push to `main`.
-2. `.github/workflows/release.yml` runs. It:
-   - Computes `VERSION=YY.M.D`, `BUILD=git rev-list --count HEAD`.
-   - Builds the Go sidecar + elevated helper for 4 OS/arch pairs.
-   - Builds the Flutter app for Windows / macOS (both arches) / Linux.
-   - Runs Inno Setup / create-dmg / appimagetool to produce installers.
-   - Signs + notarizes if the appropriate secrets are configured.
-   - Tags the commit `v<VERSION>-<BUILD>`.
-   - Publishes a GitHub Release with every artifact attached and
-     auto-generated notes from the commits since the previous tag.
+Releases are **not** triggered by pushing to `main`, and `release.yml`
+no longer computes the version, builds artifacts, or creates the tag. The
+canonical release flow lives in cepheus-build:
+
+```powershell
+cd /d/git/CepheusLabs/deckhand-app
+../cepheus-build/bin/cepheus-build release -p deckhand
+```
+
+1. `cepheus-build release -p deckhand` computes the CalVer version and
+   **creates + pushes** the tag `v<YY.M.D>-<count>` (add `--channel beta`
+   for a `beta-v<YY.M.D>-<count>` pre-release tag).
+2. Pushing that tag fires `.github/workflows/release.yml`, a thin caller
+   that delegates to the shared
+   `CepheusLabs/cepheus-build/.github/workflows/app-release.yml`.
+3. The shared pipeline builds the Go sidecar + elevated helper and the
+   Flutter app on the self-hosted runner fleet, runs the packaging
+   recipes (Inno Setup / create-dmg / appimagetool / deb / rpm /
+   flatpak), signs + notarizes when the secrets are configured, and
+   publishes a GitHub Release with every artifact attached and
+   auto-generated notes from the commits since the previous tag.
 
 Takes ~25-30 minutes end-to-end. The longest jobs are the macOS and
 Windows Flutter builds.
 
 ## Off-cycle / rebuild an old version
 
-`Actions → Release → Run workflow`, enter a branch / tag / SHA in the
-`ref` input. The workflow still computes the version from today's date
-- if you want a reproducible rebuild of an old tag, check out that tag
-locally and push it back with a new tag name, or just accept today's
-date as the new version.
+`Actions → Release → Run workflow` via the `workflow_dispatch` trigger.
+It **must be dispatched from a TAG ref** (a `v...` / `beta-v...` tag),
+not a branch — the shared pipeline's prepare step rejects branch refs.
+To rebuild an existing version, dispatch from that tag; to cut a new
+one, run `cepheus-build release -p deckhand` again.
 
 ## Local builds
 
-`scripts/build.sh` mirrors the CI logic for local development:
+The canonical local build uses cepheus-build:
+
+```powershell
+cd /d/git/CepheusLabs/deckhand-app
+../cepheus-build/bin/cepheus-build build -p deckhand desktop                          # macos windows linux
+../cepheus-build/bin/cepheus-build build -p deckhand windows                          # one target
+../cepheus-build/bin/cepheus-build build -p deckhand desktop --execution-mode container  # cross-OS in container/VM pool
+```
+
+Use `--execution-mode container` (optionally `--container-profile errai`)
+to build OS legs you can't build host-native; `--execution-mode local`
+(the default) builds on the host.
+
+Under the hood the flow invokes `scripts/build.sh`, which you can also
+run directly for a quick host-native build:
 
 ```powershell
 ./scripts/build.sh sidecar             # just the Go binaries

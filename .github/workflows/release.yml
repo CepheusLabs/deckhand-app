@@ -20,5 +20,5 @@ jobs:
     uses: CepheusLabs/cepheus-build/.github/workflows/app-release.yml@main
     with:
       product: deckhand
-      targets: linux web
+      targets: macos windows linux
     secrets: inherit   # org/repo signing + store secrets; unset ones degrade gracefully
